@@ -1,0 +1,51 @@
+---
+name: Question
+description: Ask a question about ai-skills
+labels: [question, needs-triage]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What would you like to know?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context / Goal
+      description: What are you trying to accomplish? What have you tried?
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent tool
+      options:
+        - Claude Code
+        - Cursor
+        - Codex
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: skill-name
+    attributes:
+      label: Skill name
+      placeholder: e.g. stand-general
+  - type: input
+    id: env-os
+    attributes:
+      label: OS version
+      placeholder: macOS 15 / Ubuntu 22.04
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples tried (commands or configuration)
+      render: text
+  - type: checkboxes
+    id: research
+    attributes:
+      label: Research done
+      options:
+        - label: I checked the README
+        - label: I searched existing issues
+        - label: I tried the documented install flow

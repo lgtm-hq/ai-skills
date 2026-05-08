@@ -1,0 +1,7 @@
+node_modules/
+.lintro/
+.lintro/*
+.lintro/**
+.git
+__pycache__
+plugins/

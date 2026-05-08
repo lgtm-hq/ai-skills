@@ -1,0 +1,34 @@
+# CODEOWNERS - Define code ownership for pull request reviews
+#
+# Rules are evaluated top-to-bottom; LAST matching pattern wins.
+# To exclude files from review requirements, place them at the end with no owner.
+
+# =============================================================================
+# Global default - all files require maintainer review
+# =============================================================================
+* @lgtm-hq/maintainers @TurboCoder13
+
+# =============================================================================
+# Core repository paths
+# =============================================================================
+/skills/ @lgtm-hq/maintainers
+/scripts/ @lgtm-hq/maintainers
+/plugins/ @lgtm-hq/maintainers
+
+# =============================================================================
+# CI/CD and GitHub configuration
+# =============================================================================
+/.github/ @lgtm-hq/maintainers
+
+# =============================================================================
+# Documentation and root configs
+# =============================================================================
+/README.md @lgtm-hq/maintainers
+/CLAUDE.md @lgtm-hq/maintainers
+/AGENTS.md @lgtm-hq/maintainers
+
+# =============================================================================
+# Dependency files - EXCLUDED from code review requirements
+# This allows Renovate patch automerge to work without blocking on reviews.
+# =============================================================================
+renovate.json

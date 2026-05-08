@@ -1,0 +1,76 @@
+---
+name: Bug report
+description: Create a report to help us improve ai-skills
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please fill out all required fields to help us diagnose the issue.
+  - type: input
+    id: title
+    attributes:
+      label: Bug summary
+      description: Concise summary of the bug
+      placeholder: Example - Skill install fails in Codex
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps and observed output
+      placeholder: |
+        1. Run: npx skills add lgtm-hq/ai-skills
+        2. Open Codex
+        3. See error ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent tool
+      options:
+        - Claude Code
+        - Cursor
+        - Codex
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: skill-name
+    attributes:
+      label: Skill name
+      placeholder: e.g. gh-fix-ci
+  - type: input
+    id: env-os
+    attributes:
+      label: OS version
+      placeholder: macOS 15 / Ubuntu 22.04
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error / logs
+      render: text
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues
+        - label: I can reproduce consistently
+        - label: I verified this is not local configuration
