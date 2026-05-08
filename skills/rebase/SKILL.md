@@ -12,19 +12,24 @@ Rebase the current branch onto the latest `origin/main`.
 When asked to rebase:
 
 1. **Check current state**:
+
    ```bash
    git status
    git branch --show-current
    ```
+
    - If on `main`, warn the user and stop — rebasing main onto itself is a no-op
-   - If there are uncommitted changes, warn the user and stop — do NOT stash automatically
+   - If there are uncommitted changes, warn the user and stop — do NOT stash
+     automatically
 
 2. **Fetch latest**:
+
    ```bash
    git fetch origin
    ```
 
 3. **Rebase onto main**:
+
    ```bash
    git rebase origin/main
    ```
@@ -38,9 +43,11 @@ When asked to rebase:
      - To abort: `git rebase --abort`
 
 5. **Confirm** — Print a summary:
-   ```
+
+   ```text
    Rebased feat/123-add-watch-mode onto origin/main
    ```
+
    - Do NOT push automatically
    - If the user explicitly asks to push, use `git push --force-with-lease`
    - NEVER use `--force` — always `--force-with-lease` for safety

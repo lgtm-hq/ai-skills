@@ -15,17 +15,23 @@ Global standards that apply to all projects and languages.
 
 ## Single Source of Truth
 
-Any value defined in one place and consumed in another should be referenced, not copied. Applies to versions, paths, URLs, schema constants, and configuration.
+Any value defined in one place and consumed in another should be referenced, not copied.
+Applies to versions, paths, URLs, schema constants, and configuration.
 
-- If two files would need to be updated in lockstep, the second is a derived artifact — generate it, don't hand-maintain it.
-- CI verification of two files agreeing is a smell: the right pattern is run-the-generator + `git diff --exit-code`, not parse-and-compare.
-- Hand-maintained mirrors of canonical sources rot silently. The cost of a small generator is always lower than the cost of recurring drift bugs.
+- If two files would need to be updated in lockstep, the second is a derived artifact —
+  generate it, don't hand-maintain it.
+- CI verification of two files agreeing is a smell: the right pattern is
+  run-the-generator + `git diff --exit-code`, not parse-and-compare.
+- Hand-maintained mirrors of canonical sources rot silently. The cost of a small
+  generator is always lower than the cost of recurring drift bugs.
 
 ## Ignoring Issues
 
-- Ignoring issues is NOT permitted unless it's the absolute last resort and completely justified
+- Ignoring issues is NOT permitted unless it's the absolute last resort and completely
+  justified
 - This includes docstrings for tests - they are still required
 - When an ignore IS applied, a comment MUST explain why:
+
   ```python
   # Ignore: Third-party library returns untyped data
   value: Any = external_lib.get_data()  # type: ignore[no-untyped-call]
@@ -40,13 +46,16 @@ Any value defined in one place and consumed in another should be referenced, not
 ## Commits
 
 Pre-commit requirements:
+
 1. All linting must pass (`lintro chk`)
 2. All tests must pass (`lintro tst`)
 3. Docker builds must pass (where applicable)
 
 Commit rules:
+
 - Every commit must be signed/verified (`git commit -S`)
-- Use semantic prefixes: `fix:`, `feat:`, `chore:`, `docs:`, `refactor:`, `test:`, `build:`, `ci:`, `perf:`, `style:`
+- Use semantic prefixes: `fix:`, `feat:`, `chore:`, `docs:`, `refactor:`, `test:`,
+  `build:`, `ci:`, `perf:`, `style:`
 - Use imperative mood ("Add feature" not "Added feature")
 
 ## Pull Requests
@@ -63,5 +72,6 @@ Commit rules:
 ## Language-Specific
 
 See also:
+
 - `/stand-py` - Python >= 3.11 standards
 - `/stand-ts` - TypeScript/JavaScript standards

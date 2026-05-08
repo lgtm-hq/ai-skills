@@ -51,8 +51,10 @@ def function_with_docstring(
 ## Design Patterns
 
 - Use `dataclasses` for structured records with fixed fields and named attributes
-- Use `collections.defaultdict` for dynamic key-value aggregation with automatic defaults
-- Choose based on the use case: typed record-like object (`dataclass`) vs map with default values (`defaultdict`)
+- Use `collections.defaultdict` for dynamic key-value aggregation with automatic
+  defaults
+- Choose based on the use case: typed record-like object (`dataclass`) vs map with
+  default values (`defaultdict`)
 - Each dataclass should be in a separate file
 - String Enums should use `StrEnum` with `auto()`
 - Use `auto()` with all Enums where it makes sense
@@ -60,6 +62,7 @@ def function_with_docstring(
 ## Formatting Rules
 
 - More than 1 arg/param requires a trailing comma:
+
   ```python
   # Good
   def foo(bar: str, baz: int,) -> None:
@@ -69,6 +72,7 @@ def function_with_docstring(
   ```
 
 - Be explicit with function calls when more than 1 arg:
+
   ```python
   # Good
   foo(bar=bar, baz=baz)
@@ -78,6 +82,7 @@ def function_with_docstring(
   ```
 
 - Single arg can be positional:
+
   ```python
   # OK
   foo(bar)
@@ -93,6 +98,7 @@ def function_with_docstring(
 - Ignoring issues is NOT permitted unless absolutely justified as a last resort
 - Docstrings are required even for tests - no exceptions
 - When an ignore IS necessary, add a comment explaining why:
+
   ```python
   # Ignore: External API returns dynamic structure
   data: Any = api.fetch()  # type: ignore[no-untyped-call]
@@ -120,13 +126,21 @@ def test_foo_bar() -> None:
 
 ### Wiring vs. Behavior
 
-A test that asserts `field == "literal"` where `"literal"` is also defined in source code is duplication, and produces silent drift the moment either side changes.
+A test that asserts `field == "literal"` where `"literal"` is also defined in source
+code is duplication, and produces silent drift the moment either side changes.
 
-- **Wiring tests** (does X read from canonical Y) — source from the constant. Better still, ask whether the test is just restating the constant's value; if so, delete it. The codegen / source-of-truth machinery is what guarantees that wiring, not a per-consumer assertion.
-- **Behavior tests** (does X meet a fixed external contract — protocol versions, public API shapes, business rules) — hardcode the literal. The literal *is* the contract.
-- **Fixture data and parser inputs** are not wiring — keep those literal. They represent the world being modeled, not internal state.
+- **Wiring tests** (does X read from canonical Y) — source from the constant. Better
+  still, ask whether the test is just restating the constant's value; if so, delete it.
+  The codegen / source-of-truth machinery is what guarantees that wiring, not a
+  per-consumer assertion.
+- **Behavior tests** (does X meet a fixed external contract — protocol versions, public
+  API shapes, business rules) — hardcode the literal. The literal _is_ the contract.
+- **Fixture data and parser inputs** are not wiring — keep those literal. They represent
+  the world being modeled, not internal state.
 
-Parametrize IDs should describe the case under test (`attr=min_version`), never encode mutable data values (`min_version_is_0.43.0`) — IDs that change with every dependency bump are a smell.
+Parametrize IDs should describe the case under test (`attr=min_version`), never encode
+mutable data values (`min_version_is_0.43.0`) — IDs that change with every dependency
+bump are a smell.
 
 ### Parametrize ID Hygiene
 

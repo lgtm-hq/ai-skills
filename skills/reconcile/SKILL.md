@@ -47,7 +47,8 @@ Accepts an optional project name as an argument:
 For each branch (excluding `main`/`master`), determine its status:
 
 1. **Check remote tracking**:
-   - If tracking branch shows `gone` → remote branch was deleted (PR likely merged or closed)
+   - If tracking branch shows `gone` → remote branch was deleted (PR likely merged or
+     closed)
    - If tracking branch exists → check PR status
 
 2. **Check GitHub PR status** (if `gh` is available):
@@ -117,12 +118,14 @@ After confirmation, perform the cleanup in this order:
 
 1. **Remove worktree directories**:
    - Try `git worktree remove <path>` first
-   - Before any fallback delete, resolve `<path>` to a canonical path and verify all of the following:
+   - Before any fallback delete, resolve `<path>` to a canonical path and verify all of
+     the following:
      - Path is non-empty and exists
      - Path is NOT `/` and NOT the home directory
      - Path is under an allowed prefix (repo sibling worktree/clone root)
      - Path is not a symlink escaping the allowed prefix
-   - Only with explicit user confirmation, if removal still fails (orphaned directory), run `rm -rf <path>` then `git worktree prune`
+   - Only with explicit user confirmation, if removal still fails (orphaned directory),
+     run `rm -rf <path>` then `git worktree prune`
 
 2. **Stash uncommitted changes** (if any, on branches being kept):
 
@@ -153,7 +156,8 @@ After confirmation, perform the cleanup in this order:
    rm -rf <clone-path>
    ```
 
-   - Apply the same canonical path-safety checks before deletion (non-empty, exists, not `/` or home, within allowed prefix, no symlink escape)
+   - Apply the same canonical path-safety checks before deletion (non-empty, exists, not
+     `/` or home, within allowed prefix, no symlink escape)
 
 ### Phase 6 — Verify
 
@@ -178,7 +182,8 @@ Print the final state:
 - NEVER force-push or modify remote state
 - NEVER delete `main` or `master` branches
 - Always present the full picture before taking action
-- If a directory can't be identified as a worktree or clone, flag it and ask — don't assume
+- If a directory can't be identified as a worktree or clone, flag it and ask — don't
+  assume
 - If `gh` is not available, fall back to checking remote tracking status only
 - Branches with open PRs should default to "keep" in the recommendation
 - Branches with no PR and no remote should be flagged for user decision

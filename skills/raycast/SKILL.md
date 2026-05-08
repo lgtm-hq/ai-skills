@@ -5,11 +5,13 @@ description: Raycast extension development standards. Use when writing or modify
 
 # Raycast Extension Development
 
-Standards for developing Raycast extensions. **These override the global `standards` skill when working in Raycast extension directories.**
+Standards for developing Raycast extensions. **These override the global `standards`
+skill when working in Raycast extension directories.**
 
 ## Linting & Formatting
 
-**IMPORTANT:** Do NOT use `lintro` for Raycast extensions. Use Raycast's native toolchain:
+**IMPORTANT:** Do NOT use `lintro` for Raycast extensions. Use Raycast's native
+toolchain:
 
 ```bash
 # Check for issues
@@ -26,6 +28,7 @@ bun run dev         # or: ray develop
 ```
 
 Raycast uses:
+
 - ESLint with `@raycast/eslint-config`
 - Prettier for formatting
 - TypeScript strict mode
@@ -34,7 +37,8 @@ Raycast uses:
 
 - Authoritative policy: split by context
   - Local development: use `bun` (`bun install`, `bun run <script>`)
-  - CI/Store submission validation: use `npm run build` and `npm run lint` to match Raycast repository expectations
+  - CI/Store submission validation: use `npm run build` and `npm run lint` to match
+    Raycast repository expectations
 
 ## Project Structure
 
@@ -62,10 +66,10 @@ Each command is a separate entry point in `package.json`:
 {
   "commands": [
     {
-      "name": "index",           // Matches src/index.tsx
+      "name": "index", // Matches src/index.tsx
       "title": "Command Title",
       "description": "What it does",
-      "mode": "view"             // or "no-view" for background
+      "mode": "view" // or "no-view" for background
     }
   ]
 }
@@ -79,7 +83,7 @@ Each command is a separate entry point in `package.json`:
 import { getSelectedFinderItems } from "@raycast/api";
 
 const items = await getSelectedFinderItems();
-const paths = items.map(item => item.path);
+const paths = items.map((item) => item.path);
 ```
 
 ### Toast Notifications
@@ -91,7 +95,11 @@ import { showToast, Toast } from "@raycast/api";
 await showToast({ style: Toast.Style.Success, title: "Done" });
 
 // Error
-await showToast({ style: Toast.Style.Failure, title: "Error", message: details });
+await showToast({
+  style: Toast.Style.Failure,
+  title: "Error",
+  message: details,
+});
 
 // Loading
 await showToast({ style: Toast.Style.Animated, title: "Working..." });
@@ -166,7 +174,8 @@ Before opening a PR to `raycast/extensions`, verify every item below.
 
 ### Package.json
 
-- Required fields: `name`, `title`, `description`, `icon`, `author`, `platforms`, `categories`, `license` (must be `"MIT"`)
+- Required fields: `name`, `title`, `description`, `icon`, `author`, `platforms`,
+  `categories`, `license` (must be `"MIT"`)
 - `commands` array with `name`, `title`, `description`, `mode` for each command
 - Command titles in Title Case (Apple Style Guide)
 - Required scripts: `build`, `dev`, `lint`, `fix-lint`, `publish`
@@ -206,8 +215,10 @@ Before opening a PR to `raycast/extensions`, verify every item below.
 ### CHANGELOG.md
 
 - Exists at extension root
-- New version entry uses `{PR_MERGE_DATE}` as the date placeholder (never hardcode dates)
-- For updates to existing extensions: add NEW entries at the top, never modify existing entries
+- New version entry uses `{PR_MERGE_DATE}` as the date placeholder (never hardcode
+  dates)
+- For updates to existing extensions: add NEW entries at the top, never modify existing
+  entries
 - Entries must accurately reflect implemented features (no phantom features)
 
 ### README.md
@@ -231,6 +242,8 @@ Before opening a PR to `raycast/extensions`, verify every item below.
 - PR title format: `Extension Name: Brief description`
 - Include a screencast or screenshot in PR description
 - Label: `extension fix / improvement` for updates, `new extension` for new extensions
-- Greptile bot auto-checks: CHANGELOG date format, Preferences interfaces, Prettier config
+- Greptile bot auto-checks: CHANGELOG date format, Preferences interfaces, Prettier
+  config
 - Human reviewers check: screenshot consistency, changelog entries, visual expression
-- Respond to review feedback promptly — 14 days no activity marks PR stale, 21 days auto-closes
+- Respond to review feedback promptly — 14 days no activity marks PR stale, 21 days
+  auto-closes
