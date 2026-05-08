@@ -55,6 +55,7 @@ For each branch (excluding `main`/`master`), determine its status:
    ```bash
    gh pr list --state all --json number,title,headRefName,state
    ```
+
    - Map each branch to its PR (if any)
    - Categorize: `merged`, `open`, `closed` (without merge), or `no PR`
 
@@ -106,7 +107,7 @@ Ask the user to confirm the plan using `AskUserQuestion`:
 - Which branches to keep vs delete
 - Whether to remove separate clones
 - Whether to clear stale stashes
-- Whether uncommitted changes should be stashed or discarded
+- Confirm that uncommitted changes will be stashed
 
 Do NOT proceed without explicit confirmation.
 
@@ -151,6 +152,7 @@ After confirmation, perform the cleanup in this order:
    ```bash
    rm -rf <clone-path>
    ```
+
    - Apply the same canonical path-safety checks before deletion (non-empty, exists, not `/` or home, within allowed prefix, no symlink escape)
 
 ### Phase 6 — Verify
@@ -172,7 +174,7 @@ Print the final state:
 ## Important
 
 - NEVER delete branches or worktrees without asking the user first
-- NEVER discard uncommitted changes — always stash or ask
+- ALWAYS stash uncommitted changes before cleanup
 - NEVER force-push or modify remote state
 - NEVER delete `main` or `master` branches
 - Always present the full picture before taking action
