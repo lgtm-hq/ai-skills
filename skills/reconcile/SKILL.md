@@ -123,15 +123,16 @@ After confirmation, perform the cleanup in this order:
    git -C <worktree-path> stash push -m "reconcile: WIP on <branch-name>"
    ```
 
-3. **Switch main worktree to `main`**:
+3. **Switch main worktree to the default branch**:
    ```bash
-   git checkout main
+   DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD | sed 's#^origin/##')
+   git checkout "$DEFAULT_BRANCH"
    git pull
    ```
 
 4. **Delete merged branches**:
    ```bash
-   git branch -D <branch1> <branch2> ...
+   git branch -d <branch1> <branch2> ...
    ```
 
 5. **Clear stale stashes** (only if user confirmed):

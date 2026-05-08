@@ -67,7 +67,7 @@ At baseline, these were **disabled** (not scored by scorecard but still worth tr
 
 Present findings in this format:
 
-```
+```markdown
 ## OpenSSF Scorecard Audit — py-lintro
 
 **Current Score:** X.X/10
@@ -97,7 +97,7 @@ Present findings in this format:
 
 If the audit reveals new findings, outdated information, or checks that have been resolved, update the baseline table in this skill file:
 
-```
+```bash
 Edit skills/scorecard/SKILL.md
 ```
 
