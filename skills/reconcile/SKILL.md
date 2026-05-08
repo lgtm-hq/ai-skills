@@ -111,7 +111,12 @@ After confirmation, perform the cleanup in this order:
 
 1. **Remove worktree directories**:
    - Try `git worktree remove <path>` first
-   - If that fails (orphaned directory), `rm -rf <path>` then `git worktree prune`
+   - Before any fallback delete, resolve `<path>` to a canonical path and verify all of the following:
+     - Path is non-empty and exists
+     - Path is NOT `/` and NOT the home directory
+     - Path is under an allowed prefix (repo sibling worktree/clone root)
+     - Path is not a symlink escaping the allowed prefix
+   - Only with explicit user confirmation, if removal still fails (orphaned directory), run `rm -rf <path>` then `git worktree prune`
 
 2. **Stash uncommitted changes** (if any, on branches being kept):
    ```bash
@@ -136,6 +141,7 @@ After confirmation, perform the cleanup in this order:
    ```bash
    rm -rf <clone-path>
    ```
+   - Apply the same canonical path-safety checks before deletion (non-empty, exists, not `/` or home, within allowed prefix, no symlink escape)
 
 ### Phase 6 — Verify
 

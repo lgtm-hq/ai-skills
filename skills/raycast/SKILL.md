@@ -32,15 +32,15 @@ Raycast uses:
 
 ## Package Management
 
-- Use `bun` instead of `npm` (per CLAUDE.md)
-- Install: `bun install`
-- Run scripts: `bun run <script>`
+- Authoritative policy: split by context
+  - Local development: use `bun` (`bun install`, `bun run <script>`)
+  - CI/Store submission validation: use `npm run build` and `npm run lint` to match Raycast repository expectations
 
 ## Project Structure
 
 Follow modular architecture with small, focused files:
 
-```
+```text
 src/
 ├── <command>.tsx           # One file per command
 ├── components/             # Reusable React components
@@ -74,6 +74,7 @@ Each command is a separate entry point in `package.json`:
 ## API Patterns
 
 ### File Selection
+
 ```typescript
 import { getSelectedFinderItems } from "@raycast/api";
 
@@ -82,6 +83,7 @@ const paths = items.map(item => item.path);
 ```
 
 ### Toast Notifications
+
 ```typescript
 import { showToast, Toast } from "@raycast/api";
 
@@ -96,6 +98,7 @@ await showToast({ style: Toast.Style.Animated, title: "Working..." });
 ```
 
 ### Confirmation Dialogs
+
 ```typescript
 import { confirmAlert, Alert } from "@raycast/api";
 
@@ -110,6 +113,7 @@ const confirmed = await confirmAlert({
 ```
 
 ### Local Storage
+
 ```typescript
 import { LocalStorage } from "@raycast/api";
 
@@ -119,6 +123,7 @@ const data = raw ? JSON.parse(raw) : defaultValue;
 ```
 
 ### Cached State (persists across invocations)
+
 ```typescript
 import { useCachedState } from "@raycast/utils";
 
@@ -171,13 +176,13 @@ Before opening a PR to `raycast/extensions`, verify every item below.
 
 ### Build & Lint
 
-- `npm run build` passes (use npm, not bun, for final validation)
-- `npm run lint` passes (ESLint + Prettier)
+- `npm run build` passes (CI/Store submission validation)
+- `npm run lint` passes (CI/Store submission validation)
 - Prettier config: `printWidth: 120`, `singleQuote: false`
 
 ### Lock Files
 
-- `package-lock.json` must exist (npm)
+- `package-lock.json` must exist for CI/Store submission
 - No `bun.lock`, `bun.lockb`, `yarn.lock`, or `pnpm-lock.yaml` committed
 - Root `.gitignore` of `raycast/extensions` already blocks non-npm lockfiles
 

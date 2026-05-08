@@ -52,8 +52,7 @@ Commit rules:
 ## Pull Requests
 
 - Use the PR template from the current repository
-- Assign PR to me (`--assignee @me`)
-- Add appropriate labels
+- Assignees/labels are managed by CI and PR-workflow docs for the repository
 
 ## Code Review
 

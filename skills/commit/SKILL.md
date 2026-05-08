@@ -65,12 +65,13 @@ If commits are poorly structured (too large, wrong groupings, or showing modifie
 When asked to commit:
 1. Run lint check - abort if any issues:
    - Projects with lintro: `lintro chk` (full, no --tools flag)
-   - Raycast extensions: `npm run lint`
+   - Raycast extensions: `ray lint`
    - Other projects: use appropriate lint command
 2. Run tests - abort if any failures:
    - Projects with lintro: `lintro tst`
-   - Raycast extensions: `npm test`
+   - Raycast extensions: `ray test`
    - Other projects: use appropriate test command
+   - When authoring or modifying a Raycast extension, use the `raycast` skill for toolchain-specific guidance
 3. Check Docker if applicable
 4. Review changes with `git status` to plan logical groupings
 5. Stage and commit in logical groups with signed, semantic, imperative messages:

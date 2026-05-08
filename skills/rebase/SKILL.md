@@ -1,6 +1,6 @@
 ---
 name: rebase
-description: Rebase the current branch onto the latest main. Use when asked to rebase, sync with main, update branch, or pull latest changes. Fetches, rebases, and force-pushes with lease.
+description: Rebase the current branch onto the latest main. Use when asked to rebase, sync with main, update branch, or pull latest changes. Fetches and rebases onto latest main; does not push automatically.
 ---
 
 # Rebase

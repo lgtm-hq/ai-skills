@@ -50,7 +50,9 @@ def function_with_docstring(
 
 ## Design Patterns
 
-- Prefer `dataclasses` over `defaultdict`
+- Use `dataclasses` for structured records with fixed fields and named attributes
+- Use `collections.defaultdict` for dynamic key-value aggregation with automatic defaults
+- Choose based on the use case: typed record-like object (`dataclass`) vs map with default values (`defaultdict`)
 - Each dataclass should be in a separate file
 - String Enums should use `StrEnum` with `auto()`
 - Use `auto()` with all Enums where it makes sense
