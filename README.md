@@ -19,10 +19,13 @@ Planned badges (enabled in later PRs):
 ## Quick Start
 
 ```bash
-npx skills add lgtm-hq/ai-skills
+git clone git@github.com:lgtm-hq/ai-skills.git
+cd ai-skills
 ```
 
-Manual installer support will be added in a later PR:
+Repository bootstrap is in progress. Installer and package-based setup will be
+added in a later PR. For now, use the repository directly while files and
+workflows are being introduced.
 
 ```bash
 ./install.sh

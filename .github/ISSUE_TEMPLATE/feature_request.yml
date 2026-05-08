@@ -46,9 +46,9 @@ body:
     attributes:
       label: Backward compatibility
       options:
-        - label: Fully compatible
-        - label: Requires config changes
-        - label: Breaking change
+        - Fully compatible
+        - Requires config changes
+        - Breaking change
   - type: checkboxes
     id: checklist
     attributes:

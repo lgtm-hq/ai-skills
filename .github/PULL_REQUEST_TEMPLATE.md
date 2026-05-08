@@ -39,9 +39,7 @@ Describe the changes and why.
 ## Checklist
 
 - [ ] Title follows Conventional Commits
-- [ ] Skill frontmatter is valid (`name` + `description`) for changed skills
 - [ ] Docs updated if user-facing
-- [ ] `AGENTS.md` updated if skills were added or removed
 
 ## Related Issues
 

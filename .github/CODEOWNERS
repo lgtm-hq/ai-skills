@@ -6,26 +6,25 @@
 # =============================================================================
 # Global default - all files require maintainer review
 # =============================================================================
-* @lgtm-hq/maintainers @TurboCoder13
+* @TurboCoder13
 
 # =============================================================================
 # Core repository paths
 # =============================================================================
-/skills/ @lgtm-hq/maintainers
-/scripts/ @lgtm-hq/maintainers
-/plugins/ @lgtm-hq/maintainers
+/skills/ @TurboCoder13
+/scripts/ @TurboCoder13
+/plugins/ @TurboCoder13
 
 # =============================================================================
 # CI/CD and GitHub configuration
 # =============================================================================
-/.github/ @lgtm-hq/maintainers
+/.github/ @TurboCoder13
 
 # =============================================================================
 # Documentation and root configs
 # =============================================================================
-/README.md @lgtm-hq/maintainers
-/CLAUDE.md @lgtm-hq/maintainers
-/AGENTS.md @lgtm-hq/maintainers
+/README.md @TurboCoder13
+/CLAUDE.md @TurboCoder13
 
 # =============================================================================
 # Dependency files - EXCLUDED from code review requirements
