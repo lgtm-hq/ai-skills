@@ -24,6 +24,7 @@ Accepts an optional project name as an argument:
    - Confirm it's a git repository — if not, stop
 
 2. **Find all worktrees**:
+
    ```bash
    git worktree list
    ```
@@ -36,6 +37,7 @@ Accepts an optional project name as an argument:
      - **Unrelated** (different remote or not a git repo) — ignore these
 
 4. **Collect all branches**:
+
    ```bash
    git branch -vv --no-color
    ```
@@ -49,6 +51,7 @@ For each branch (excluding `main`/`master`), determine its status:
    - If tracking branch exists → check PR status
 
 2. **Check GitHub PR status** (if `gh` is available):
+
    ```bash
    gh pr list --state all --json number,title,headRefName,state
    ```
@@ -56,11 +59,13 @@ For each branch (excluding `main`/`master`), determine its status:
    - Categorize: `merged`, `open`, `closed` (without merge), or `no PR`
 
 3. **Check for uncommitted changes** in each worktree:
+
    ```bash
    git -C <worktree-path> status --short
    ```
 
 4. **Check for stashes**:
+
    ```bash
    git stash list
    ```
@@ -71,7 +76,7 @@ For each branch (excluding `main`/`master`), determine its status:
 
 Present a summary to the user, grouped by action:
 
-```
+```text
 Project: turbo-themes
 Main worktree: ~/Code/turbo-themes (on refactor/265 — should be main)
 
@@ -119,11 +124,13 @@ After confirmation, perform the cleanup in this order:
    - Only with explicit user confirmation, if removal still fails (orphaned directory), run `rm -rf <path>` then `git worktree prune`
 
 2. **Stash uncommitted changes** (if any, on branches being kept):
+
    ```bash
    git -C <worktree-path> stash push -m "reconcile: WIP on <branch-name>"
    ```
 
 3. **Switch main worktree to the default branch**:
+
    ```bash
    DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD | sed 's#^origin/##')
    git checkout "$DEFAULT_BRANCH"
@@ -131,6 +138,7 @@ After confirmation, perform the cleanup in this order:
    ```
 
 4. **Delete merged branches**:
+
    ```bash
    git branch -d <branch1> <branch2> ...
    ```
@@ -139,6 +147,7 @@ After confirmation, perform the cleanup in this order:
    - Drop stashes that reference deleted branches
 
 6. **Remove separate clones** (only if user confirmed):
+
    ```bash
    rm -rf <clone-path>
    ```
@@ -148,7 +157,7 @@ After confirmation, perform the cleanup in this order:
 
 Print the final state:
 
-```
+```text
 === worktrees ===
 ~/Code/turbo-themes  abc1234 [main]
 
