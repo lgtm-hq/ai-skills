@@ -6,6 +6,18 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
+
+@pytest.fixture(scope="module")
+def repo_root() -> Path:
+    """Return the absolute path to the repository root (parent of ``tests/``).
+
+    Returns:
+        Path: Root directory of the checkout under test.
+    """
+    return Path(__file__).resolve().parents[1]
+
 
 def _copy_validate_script(
     repo_root: Path,
@@ -33,10 +45,10 @@ def _run_validate(
 
 
 def test_validate_skips_when_skills_directory_is_missing(
+    repo_root: Path,
     tmp_path: Path,
 ) -> None:
     """Skip successfully when a repository has no skills directory yet."""
-    repo_root = Path(__file__).resolve().parents[1]
     script_path = _copy_validate_script(repo_root=repo_root, tmp_path=tmp_path)
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
@@ -46,10 +58,10 @@ def test_validate_skips_when_skills_directory_is_missing(
 
 
 def test_validate_accepts_matching_skill_and_agents_entry(
+    repo_root: Path,
     tmp_path: Path,
 ) -> None:
     """Accept a skill when SKILL.md frontmatter and AGENTS.md agree."""
-    repo_root = Path(__file__).resolve().parents[1]
     script_path = _copy_validate_script(repo_root=repo_root, tmp_path=tmp_path)
     skill_dir = tmp_path / "skills" / "example"
     skill_dir.mkdir(parents=True)
@@ -68,10 +80,10 @@ def test_validate_accepts_matching_skill_and_agents_entry(
 
 
 def test_validate_rejects_missing_agents_entry(
+    repo_root: Path,
     tmp_path: Path,
 ) -> None:
     """Reject a skill directory that is not listed in AGENTS.md."""
-    repo_root = Path(__file__).resolve().parents[1]
     script_path = _copy_validate_script(repo_root=repo_root, tmp_path=tmp_path)
     skill_dir = tmp_path / "skills" / "example"
     skill_dir.mkdir(parents=True)
