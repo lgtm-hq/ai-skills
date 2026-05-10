@@ -9,7 +9,7 @@ Write API tests using Playwright's built-in HTTP client.
 
 ## Project Structure
 
-```
+```text
 tests/
 ├── specs/           # Test files organized by feature/domain
 ├── fixtures/        # Playwright fixtures (lifecycle + wiring)
@@ -167,7 +167,10 @@ for (const { name, input, status } of cases) {
 Or wrap in a helper if used frequently:
 
 ```typescript
-function testEach<T>(cases: { name: string; data: T }[], fn: (data: T) => Promise<void>) {
+function testEach<T>(
+  cases: { name: string; data: T }[],
+  fn: (data: T) => Promise<void>,
+) {
   for (const { name, data } of cases) {
     test(name, () => fn(data));
   }

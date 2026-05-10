@@ -1,6 +1,7 @@
 # AGENTS
 
 <!-- markdownlint-disable MD013 -->
+
 Canonical skill index for agent-compatible tooling in this repository.
 
 ## Skills
@@ -37,4 +38,5 @@ Canonical skill index for agent-compatible tooling in this repository.
 - `which-pr`: Report which PR is being worked on in the current conversation. Use when asked about the current PR context. (`skills/which-pr/SKILL.md`)
 
 Total skills: 30
+
 <!-- markdownlint-enable MD013 -->

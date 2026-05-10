@@ -5,7 +5,8 @@ description: Run tests with coverage reporting. Auto-detects test frameworks (Vi
 
 # Test
 
-Run tests with coverage reporting. This skill auto-detects test frameworks in the project.
+Run tests with coverage reporting. This skill auto-detects test frameworks in the
+project.
 
 ## Primary Command
 
@@ -13,18 +14,19 @@ Run tests with coverage reporting. This skill auto-detects test frameworks in th
 
 ## Framework Detection
 
-When lintro is unavailable or you need to run specific test types, detect frameworks by checking for:
+When lintro is unavailable or you need to run specific test types, detect frameworks by
+checking for:
 
-| Framework | Config Files | Test Patterns | Run Command |
-|-----------|-------------|---------------|-------------|
-| **Vitest** | `vitest.config.ts` | `*.test.ts`, `*.spec.ts` | `bun test` or `bunx vitest` |
-| **Jest** | `jest.config.js` | `*.test.js`, `*.spec.js` | `bun test` or `bunx jest` |
-| **Playwright** | `playwright.config.ts` | `e2e/*.spec.ts` | `bun run e2e` or `bunx playwright test` |
-| **RSpec** | `.rspec`, `Gemfile` | `spec/*_spec.rb` | `bundle exec rspec` |
-| **pytest** | `pytest.ini`, `pyproject.toml` | `test_*.py`, `*_test.py` | `uv run pytest` |
-| **BATS** | `tests/bats/`, `tests/helpers/` | `*.bats` | `bats --recursive tests/bats/` |
-| **Go** | `go.mod` | `*_test.go` | `go test ./...` |
-| **Rust** | `Cargo.toml` | `#[test]` functions | `cargo test` |
+| Framework      | Config Files                    | Test Patterns            | Run Command                             |
+| -------------- | ------------------------------- | ------------------------ | --------------------------------------- |
+| **Vitest**     | `vitest.config.ts`              | `*.test.ts`, `*.spec.ts` | `bun test` or `bunx vitest`             |
+| **Jest**       | `jest.config.js`                | `*.test.js`, `*.spec.js` | `bun test` or `bunx jest`               |
+| **Playwright** | `playwright.config.ts`          | `e2e/*.spec.ts`          | `bun run e2e` or `bunx playwright test` |
+| **RSpec**      | `.rspec`, `Gemfile`             | `spec/*_spec.rb`         | `bundle exec rspec`                     |
+| **pytest**     | `pytest.ini`, `pyproject.toml`  | `test_*.py`, `*_test.py` | `uv run pytest`                         |
+| **BATS**       | `tests/bats/`, `tests/helpers/` | `*.bats`                 | `bats --recursive tests/bats/`          |
+| **Go**         | `go.mod`                        | `*_test.go`              | `go test ./...`                         |
+| **Rust**       | `Cargo.toml`                    | `#[test]` functions      | `cargo test`                            |
 
 ## Rules
 

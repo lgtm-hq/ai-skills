@@ -6,11 +6,12 @@ disable-model-invocation: true
 
 # Jira Ticket
 
-Generate a structured Jira ticket description from context (conversation, code changes, PR, or user description).
+Generate a structured Jira ticket description from context (conversation, code changes,
+PR, or user description).
 
 ## Output Format
 
-```
+```text
 **Title:** <imperative mood, concise>
 
 **Type:** <Task | Bug | Story | Spike | Sub-task>
@@ -34,9 +35,11 @@ Generate a structured Jira ticket description from context (conversation, code c
 ## Rules
 
 - Title: imperative mood, no Jira prefix (the user adds their own project key)
-- Description: concise — explain the problem and the solution direction, not implementation details
+- Description: concise — explain the problem and the solution direction, not
+  implementation details
 - Acceptance criteria: specific, testable, checkboxable — not vague ("works correctly")
-- Priority: infer from context (security = High/Critical, cosmetic = Low, functional = Medium)
+- Priority: infer from context (security = High/Critical, cosmetic = Low, functional =
+  Medium)
 - Component: infer from files touched or domain discussed
 - PR link: include if a PR was created in the same conversation
 - Omit optional fields (Epic, Sprint, Story Points) unless the user asks for them
@@ -44,11 +47,13 @@ Generate a structured Jira ticket description from context (conversation, code c
 ## Examples
 
 **Good acceptance criteria:**
+
 - `pr-auto-assign.yml` assigns the PR author on `opened` events
 - `bin/assign-random-codeowner.sh` is deleted
 - CODEOWNERS review requests are unaffected
 
 **Bad acceptance criteria:**
+
 - It works
 - The workflow is correct
 - Tests pass

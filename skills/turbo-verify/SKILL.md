@@ -27,15 +27,18 @@ checklist items below.
   - `name` - display name
   - `homepage` - theme homepage URL
   - `license` - (recommended) license metadata with `spdx`, `url`, `copyright`
-  - `source` - (recommended for synced) source metadata with `package`, `version`, `repository`
+  - `source` - (recommended for synced) source metadata with `package`, `version`,
+    `repository`
   - `flavors` - array of theme variants
 - [ ] Each flavor has:
   - `id` - unique identifier (lowercase with hyphens)
-  - `label` - full display name (e.g., "Catppuccin Mocha", "Gruvbox Dark Hard", "Solarized Light")
+  - `label` - full display name (e.g., "Catppuccin Mocha", "Gruvbox Dark Hard",
+    "Solarized Light")
   - `vendor` - matches theme family
   - `appearance` - 'light' or 'dark'
   - `tokens` - complete token object with all required groups
-- [ ] No `iconUrl` in flavor definitions (icons resolved via `VENDOR_ICON_MAP` in theme-mapper.ts)
+- [ ] No `iconUrl` in flavor definitions (icons resolved via `VENDOR_ICON_MAP` in
+      theme-mapper.ts)
 
 ### Required Token Groups
 
@@ -96,7 +99,8 @@ This is the **single source of truth** for the site. Both `ThemeDropdown.astro`
 and `BaseLayout.astro` are data-driven from this file.
 
 - [ ] Theme group added to `themeGroups` array with `id`, `displayName`, and `flavors`
-- [ ] All variants added to `themeNames` with short display labels (e.g., "Mocha", "Dark Hard" — shorter than the token `label` field)
+- [ ] All variants added to `themeNames` with short display labels (e.g., "Mocha", "Dark
+      Hard" — shorter than the token `label` field)
 - [ ] All variants added to `themeIcons` with icon filenames
 - [ ] `validThemeIds` is auto-derived (verify count matches expected total)
 
@@ -114,7 +118,8 @@ and `BaseLayout.astro` are data-driven from this file.
 
 ### Base Layout (`apps/site/src/layouts/BaseLayout.astro`)
 
-- [ ] Imports `validThemeIds` from `theme-meta.ts` (data-driven, no hardcoded VALID_THEMES)
+- [ ] Imports `validThemeIds` from `theme-meta.ts` (data-driven, no hardcoded
+      VALID_THEMES)
 - [ ] Uses `define:vars` to pass `validThemeIds` to inline script
 
 ### Index Page (`apps/site/src/pages/index.astro`)
@@ -153,7 +158,8 @@ cd apps/site && bun run build
 # Expected: No errors
 ```
 
-**Note on Visual Regression Tests**: If E2E visual regression tests fail after adding themes
+**Note on Visual Regression Tests**: If E2E visual regression tests fail after adding
+themes
 to the hero preview strip, this is expected. Visual snapshots are generated on Linux CI.
 Use the `maintenance-generate-snapshots.yml` workflow to regenerate them:
 Actions → Maintenance: Generate Playwright Snapshots → Run workflow
@@ -165,7 +171,8 @@ Actions → Maintenance: Generate Playwright Snapshots → Run workflow
 ### Sync Script Integration (if using sync script)
 
 - [ ] Sync script added to `theme:sync` in package.json
-- [ ] Sync script output path is `src/themes/packs/` (NOT `packages/core/src/themes/packs/`)
+- [ ] Sync script output path is `src/themes/packs/` (NOT
+      `packages/core/src/themes/packs/`)
 - [ ] Sync script reads version from `node_modules/<package>/package.json`
 - [ ] `source.version` field is populated in generated ThemePackage
 - [ ] Build succeeds from clean state (test: delete `.synced.ts` file and run build)
@@ -202,7 +209,8 @@ After all changes, verify these files are committed:
 - [ ] `examples/react/index.html` - `VALID_THEMES` in FOUC script
 - [ ] `examples/vue/index.html` - `VALID_THEMES` in FOUC script
 - [ ] `examples/tailwind/index.html` - `<select>` options and `VALID_THEMES` array
-- [ ] `examples/jekyll/_layouts/default.html` - `<select>`, FOUC `VALID_THEMES`, main `VALID_THEMES`
+- [ ] `examples/jekyll/_layouts/default.html` - `<select>`, FOUC `VALID_THEMES`, main
+      `VALID_THEMES`
 - [ ] `examples/stackblitz/html-vanilla/index.html` - `<select>` and `VALID_THEMES`
 - [ ] `examples/stackblitz/bootstrap/index.html` - `<select>` options
 - [ ] `examples/stackblitz/bootstrap/src/main.js` - `VALID_THEMES` and `LIGHT_THEMES`
@@ -212,6 +220,7 @@ After all changes, verify these files are committed:
 - [ ] `examples/stackblitz/vue/src/App.vue` - `THEMES` array
 
 **Note:** These files auto-update from core and do NOT need manual changes:
+
 - `examples/react/src/hooks/useTheme.ts`
 - `examples/vue/src/composables/useTheme.ts`
 - `examples/bootstrap/src/main.ts`
@@ -219,10 +228,12 @@ After all changes, verify these files are committed:
 ### Swift Example (`examples/swift-swiftui/`)
 
 - [ ] `Sources/TurboThemes/ThemeId.swift` - enum cases for all variants
-- [ ] `Sources/TurboThemes/ThemeRegistry.swift` - `ThemeDefinition` with palette for each variant
+- [ ] `Sources/TurboThemes/ThemeRegistry.swift` - `ThemeDefinition` with palette for
+      each variant
 - [ ] `Tests/.../ThemeRegistryTests.swift` - expected count matches total themes
 - [ ] `Tests/.../ThemeRegistryTests.swift` - `expectedLabels` includes all variants
-- [ ] `Tests/.../ThemeRegistryTests.swift` - `testThemeIdRawValues` includes all variants
+- [ ] `Tests/.../ThemeRegistryTests.swift` - `testThemeIdRawValues` includes all
+      variants
 
 ---
 
@@ -263,7 +274,8 @@ After all changes, verify these files are committed:
 - [ ] **In correct dropdown group**: `VENDOR_FAMILY_MAP` mapping correct
 - [ ] **Theme count accurate**: Count in themes.astro sidebar matches variants
 - [ ] **Tests not broken**: Any hardcoded theme arrays in tests updated
-- [ ] **Examples updated**: All hardcoded theme lists in `examples/` include new variants
+- [ ] **Examples updated**: All hardcoded theme lists in `examples/` include new
+      variants
 - [ ] **Swift example updated**: ThemeId enum, ThemeRegistry, and tests updated
 
 ---
@@ -344,7 +356,7 @@ grep "<theme>" examples/swift-swiftui/Tests/TurboThemesTests/ThemeRegistryTests.
 
 After reviewing, provide a summary:
 
-```
+```text
 ## Theme Review: <theme_name>
 
 ### Status: PASS / FAIL / PARTIAL
@@ -369,27 +381,27 @@ After reviewing, provide a summary:
 
 ## Quick Fix Reference
 
-| Issue                       | Solution                                          |
-| --------------------------- | ------------------------------------------------- |
-| Theme reverts on navigation | Add to `VALID_THEMES` in BaseLayout.astro         |
-| Wrong/missing label         | Add to `themeNames` in BaseLayout.astro           |
-| Missing icon                | Add to `themeIcons` in BaseLayout.astro + add PNG |
-| Theme in wrong group        | Fix `VENDOR_FAMILY_MAP` in theme-mapper.ts        |
-| Theme not appearing         | Check ThemeFamily type, THEME_FAMILIES constant   |
-| Build fails                 | Check TypeScript syntax, imports                  |
-| Tests fail                  | Update assertions to use `data-theme-id` lookups  |
-| Bundle too large            | Increase budget in bundle-size.test.ts            |
-| CI "Cannot find module"     | Add sync script to `theme:sync` in package.json   |
+| Issue                       | Solution                                            |
+| --------------------------- | --------------------------------------------------- |
+| Theme reverts on navigation | Add to `VALID_THEMES` in BaseLayout.astro           |
+| Wrong/missing label         | Add to `themeNames` in BaseLayout.astro             |
+| Missing icon                | Add to `themeIcons` in BaseLayout.astro + add PNG   |
+| Theme in wrong group        | Fix `VENDOR_FAMILY_MAP` in theme-mapper.ts          |
+| Theme not appearing         | Check ThemeFamily type, THEME_FAMILIES constant     |
+| Build fails                 | Check TypeScript syntax, imports                    |
+| Tests fail                  | Update assertions to use `data-theme-id` lookups    |
+| Bundle too large            | Increase budget in bundle-size.test.ts              |
+| CI "Cannot find module"     | Add sync script to `theme:sync` in package.json     |
 | tokens.json wrong metadata  | Add to `vendorMeta` in prepare-style-dictionary.mjs |
-| Generated assets outdated   | Run `bun run build` and commit generated files    |
-| Missing descriptions        | Add to `FLAVOR_DESCRIPTIONS` in theme-mapper.ts   |
-| Missing license/source      | Add `license` and `source` to ThemePackage        |
-| Sync writes to wrong path   | Change outPath to `src/themes/packs/`             |
-| Missing version in source   | Read from `node_modules/<pkg>/package.json`       |
-| Visual regression fails     | Run `maintenance-generate-snapshots.yml` workflow |
-| Missing from hero strip     | Add buttons to index.astro hero preview section   |
+| Generated assets outdated   | Run `bun run build` and commit generated files      |
+| Missing descriptions        | Add to `FLAVOR_DESCRIPTIONS` in theme-mapper.ts     |
+| Missing license/source      | Add `license` and `source` to ThemePackage          |
+| Sync writes to wrong path   | Change outPath to `src/themes/packs/`               |
+| Missing version in source   | Read from `node_modules/<pkg>/package.json`         |
+| Visual regression fails     | Run `maintenance-generate-snapshots.yml` workflow   |
+| Missing from hero strip     | Add buttons to index.astro hero preview section     |
 | Missing from examples       | Update ~16 example files with hardcoded theme lists |
-| Missing from Swift example  | Add to ThemeId.swift, ThemeRegistry.swift, tests  |
-| Theme not in site dropdown  | Add to `themeGroups` in theme-meta.ts             |
-| Wrong label in site header  | Fix `themeNames` in theme-meta.ts                 |
-| Missing icon in site header | Fix `themeIcons` in theme-meta.ts + add PNG       |
+| Missing from Swift example  | Add to ThemeId.swift, ThemeRegistry.swift, tests    |
+| Theme not in site dropdown  | Add to `themeGroups` in theme-meta.ts               |
+| Wrong label in site header  | Fix `themeNames` in theme-meta.ts                   |
+| Missing icon in site header | Fix `themeIcons` in theme-meta.ts + add PNG         |

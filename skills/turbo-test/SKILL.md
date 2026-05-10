@@ -39,14 +39,14 @@ If any stage fails, stop and fix before continuing to the next stage.
 
 ## Subcommands
 
-| Argument | Stages | Use when... |
-|----------|--------|-------------|
-| *(none)* | All 5 stages | Full validation (default) |
-| `lint` | Lint only | Quick formatting/style check |
-| `build` | Build + examples:build | Verifying build works |
-| `unit` | Unit tests only | Running tests after a build |
-| `examples` | examples:build + examples:test | Validating example projects |
-| `quick` | Lint + build + unit tests | Fast check, skip examples |
+| Argument   | Stages                         | Use when...                  |
+| ---------- | ------------------------------ | ---------------------------- |
+| _(none)_   | All 5 stages                   | Full validation (default)    |
+| `lint`     | Lint only                      | Quick formatting/style check |
+| `build`    | Build + examples:build         | Verifying build works        |
+| `unit`     | Unit tests only                | Running tests after a build  |
+| `examples` | examples:build + examples:test | Validating example projects  |
+| `quick`    | Lint + build + unit tests      | Fast check, skip examples    |
 
 ## Optional E2E Stages
 

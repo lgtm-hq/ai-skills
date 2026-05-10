@@ -23,6 +23,7 @@ gh issue view <number> --json title,body,labels
 ```
 
 Use the issue context to:
+
 1. Link the issue using the **Closes** section format (see below)
 2. Inform the PR summary and description from the issue's title and body
 
@@ -46,6 +47,7 @@ automatically. Do **not** append the issue title after the number — GitHub
 handles that via its rich formatting.
 
 Rules:
+
 - Use a `## Closes` heading (not `## Related Issues`)
 - Each link is a bullet point: `- Closes #<number>`
 - Use `Relates to` instead of `Closes` for issues that are related but not
@@ -72,21 +74,25 @@ When asked to create a PR:
    - Leave sections like Breaking Changes, Screenshots, Deployment Notes
      with their placeholder comments if not applicable
 6. **Create the PR**:
+
    ```bash
    gh pr create --title "<title>" --body "<filled template>"
    ```
+
    Use a HEREDOC for the body to preserve formatting.
 
 **Important**: Do NOT use `gh pr create --fill` — it only uses the commit
 message and skips the PR template entirely. Always read and fill the template.
 
 Note: Assignees and labels are handled automatically by GitHub Actions:
+
 - `pr-auto-assign.yml` - Assigns a random CODEOWNER
 - `pr-labeler.yml` - Labels based on changed files (see `.github/labeler.yml`)
 
 ## Checklist
 
 Before creating PR:
+
 - [ ] All linting passes
 - [ ] All tests pass
 - [ ] Branch is pushed to remote

@@ -37,12 +37,6 @@ defaults:
         options:
           printWidth: 88
 
-  markdownlint:
-    MD013:
-      line_length: 88
-      code_blocks: false
-      tables: false
-
   yamllint:
     extends: 'default'
     rules:

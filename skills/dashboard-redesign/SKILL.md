@@ -10,6 +10,7 @@ Invoke `/dashboard-redesign` to reload context in any session.
 ## Goal
 
 The dashboard serves two audiences:
+
 1. **POM users** — want page object models for traditional UI testing
 2. **MBT users** — want graph models for GraphWalker/AltWalker
 
@@ -21,7 +22,7 @@ separation between crawl output (what exists now) and MBT test output (future).
 Replace the current horizontal-only tab bar with a **vertical sidebar** (left)
 for top-level sections + **horizontal tabs** (top) within each section.
 
-```
+```text
 +----------------+-------------------------------------------+
 |                |  Overview | Pages | Flows                  |
 |  Exploration   |--------------------------------------------|
@@ -38,17 +39,20 @@ for top-level sections + **horizontal tabs** (top) within each section.
 ### Left Sidebar Sections
 
 **Exploration** (populated now — all crawl data):
+
 - Overview
 - Pages
 - Flows
 
 **Testing** (future — MBT execution):
+
 - Models (exported GraphWalker/AltWalker models)
 - Test Runs (MBT execution results)
 - Coverage (model coverage from test runs)
 - Shows empty state placeholder until MBT is implemented
 
 ### Why Vertical Sidebar
+
 - Scales better than horizontal tabs as sections grow
 - Clearly separates "what was found" (crawl) from "what was tested" (MBT)
 - Room for future sections (cross-run history, settings, export)
@@ -56,7 +60,9 @@ for top-level sections + **horizontal tabs** (top) within each section.
 ## Horizontal Tabs Within "Exploration"
 
 ### Overview Tab
+
 What's currently the Summary tab, minus the Pages Discovered table:
+
 - Exploration Report header (hostname, duration, stats)
 - Exploration Efficiency section (stat cards with tooltips, progress bar)
 - Issues modal (click Issues Found stat to review)
@@ -64,9 +70,11 @@ What's currently the Summary tab, minus the Pages Discovered table:
 - Cross-Run Changes section
 
 ### Pages Tab
+
 **The POM deliverable hub.** Discovery + page objects unified.
 
 Content:
+
 - **Pages Discovered table** (moved from Overview)
   - Grouped by URL, expandable to show individual states
   - "States" column with count, expand chevron for multi-state URLs
@@ -83,11 +91,13 @@ Content:
   - Locator recommendations
 
 ### Flows Tab
+
 **The MBT deliverable hub.** Flows + graph + execution unified.
 
 Sub-navigation pills: **Flows** | **Site Graph** | **All Steps**
 
 **Flows pill** (default):
+
 - Flow template cards with Gherkin-style rendering
 - Page badges showing pages traversed per flow
 - Expandable execution steps per flow
@@ -95,16 +105,19 @@ Sub-navigation pills: **Flows** | **Site Graph** | **All Steps**
 - Stability badges per template
 
 **Site Graph pill**:
+
 - The existing GraphView component (full site graph, not per-flow)
 - Page types as nodes, transitions as edges
 - Future: click a flow template to highlight its path on the graph
 - Coverage overlay (uncovered edges)
 
 **All Steps pill**:
+
 - Flat execution timeline for power users
 - Step detail modal with title stripping
 
 Quality metrics that belong to flows:
+
 - Flaky actions
 - Low stability steps
 
@@ -164,23 +177,23 @@ Quality metrics that belong to flows:
 
 ## File Map (Current)
 
-| Area | File | Role |
-|------|------|------|
-| Layout | `components/layout/AppShell.tsx` | Sidebar + content area shell |
-| Layout | `components/layout/TabBar.tsx` | Horizontal sub-tabs |
-| Layout | `components/layout/Sidebar.tsx` | Vertical section nav |
-| Tabs | `components/tabs/Summary.tsx` | Overview tab (stats, efficiency, issues) |
-| Tabs | `components/tabs/Pages.tsx` | Pages tab (discovery table, page objects, locator health) |
-| Tabs | `components/tabs/Timeline.tsx` | Flows tab (flows, site graph, all steps, stability) |
-| Tabs | `components/tabs/GraphView.tsx` | Site graph (sub-pill of Flows) |
-| Tabs | `components/tabs/TestingPlaceholder.tsx` | MBT placeholder |
-| Quality | `components/tabs/quality/LocatorHealth.tsx` | Used by Pages tab |
-| Quality | `components/tabs/quality/BlockedPages.tsx` | Used by Pages tab |
-| Quality | `components/tabs/quality/Recommendations.tsx` | Used by Pages + Flows tabs |
-| Quality | `components/tabs/quality/FlakyActions.tsx` | Used by Flows/Stability pill |
-| Quality | `components/tabs/quality/LowStability.tsx` | Used by Flows/Stability pill |
-| State | `App.tsx` | Two-tier navigation context (SECTIONS model) |
-| Types | `types.ts` | No changes needed |
+| Area    | File                                          | Role                                                      |
+| ------- | --------------------------------------------- | --------------------------------------------------------- |
+| Layout  | `components/layout/AppShell.tsx`              | Sidebar + content area shell                              |
+| Layout  | `components/layout/TabBar.tsx`                | Horizontal sub-tabs                                       |
+| Layout  | `components/layout/Sidebar.tsx`               | Vertical section nav                                      |
+| Tabs    | `components/tabs/Summary.tsx`                 | Overview tab (stats, efficiency, issues)                  |
+| Tabs    | `components/tabs/Pages.tsx`                   | Pages tab (discovery table, page objects, locator health) |
+| Tabs    | `components/tabs/Timeline.tsx`                | Flows tab (flows, site graph, all steps, stability)       |
+| Tabs    | `components/tabs/GraphView.tsx`               | Site graph (sub-pill of Flows)                            |
+| Tabs    | `components/tabs/TestingPlaceholder.tsx`      | MBT placeholder                                           |
+| Quality | `components/tabs/quality/LocatorHealth.tsx`   | Used by Pages tab                                         |
+| Quality | `components/tabs/quality/BlockedPages.tsx`    | Used by Pages tab                                         |
+| Quality | `components/tabs/quality/Recommendations.tsx` | Used by Pages + Flows tabs                                |
+| Quality | `components/tabs/quality/FlakyActions.tsx`    | Used by Flows/Stability pill                              |
+| Quality | `components/tabs/quality/LowStability.tsx`    | Used by Flows/Stability pill                              |
+| State   | `App.tsx`                                     | Two-tier navigation context (SECTIONS model)              |
+| Types   | `types.ts`                                    | No changes needed                                         |
 
 ## Verification
 

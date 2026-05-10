@@ -10,8 +10,10 @@ Run CodeRabbit to review code changes.
 ## Commands
 
 - `cr -h` - Show CodeRabbit help
-- `coderabbit --prompt-only -t committed --base main` - Review full branch diff against main (matches CI behavior)
-- `coderabbit --prompt-only -t uncommitted` - Review only uncommitted/unstaged changes (quick local check)
+- `coderabbit --prompt-only -t committed --base main` - Review full branch diff against
+  main (matches CI behavior)
+- `coderabbit --prompt-only -t uncommitted` - Review only uncommitted/unstaged changes
+  (quick local check)
 
 ## Rules
 
@@ -23,10 +25,13 @@ Run CodeRabbit to review code changes.
 ## Usage
 
 When asked to review code:
-1. Run `coderabbit --prompt-only -t committed --base main` to review the full branch diff against main
+
+1. Run `coderabbit --prompt-only -t committed --base main` to review the full branch
+   diff against main
 2. Analyze the review output
 3. Address any issues identified
 4. Track the number of review runs (max 3 per change set)
 
 Note: `-t uncommitted` only sees unstaged changes, which is empty after a commit.
-Using `--base main` matches what CI sees and catches issues across the entire change set.
+Using `--base main` matches what CI sees and catches issues across the entire change
+set.

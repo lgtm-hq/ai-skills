@@ -31,7 +31,7 @@ bats --jobs 4 tests/bats/
 
 ## Directory Structure
 
-```
+```text
 tests/
 ├── bats/
 │   ├── unit/

@@ -11,7 +11,7 @@ Create well-structured GitHub issues following repository conventions.
 
 Use semantic prefixes matching conventional commits:
 
-```
+```text
 feat(scope): short description    # New feature
 fix(scope): short description     # Bug fix
 docs(scope): short description    # Documentation
@@ -36,6 +36,7 @@ What problem does this solve? What's the current limitation?
 ## Proposed Solution
 
 Detailed description with:
+
 - Code examples showing desired behavior
 - ASCII diagrams or mockups if applicable
 - Configuration examples
@@ -62,6 +63,7 @@ One paragraph describing the bug.
 
 What's happening vs what should happen?
 Include:
+
 - Steps to reproduce
 - Error messages or screenshots
 - Environment details if relevant
@@ -79,20 +81,20 @@ How to fix it (if known).
 
 Apply appropriate labels based on issue type:
 
-| Issue Type | Labels |
-|------------|--------|
-| New feature | `enhancement` |
-| Bug fix | `bug` |
-| Documentation | `documentation` |
-| Security issue | `bug`, `security` |
-| CI/CD related | `ci` |
+| Issue Type        | Labels                    |
+| ----------------- | ------------------------- |
+| New feature       | `enhancement`             |
+| Bug fix           | `bug`                     |
+| Documentation     | `documentation`           |
+| Security issue    | `bug`, `security`         |
+| CI/CD related     | `ci`                      |
 | New tool (lintro) | `enhancement`, `new tool` |
 
 ## AI Implementation Prompt
 
 For issues that involve code changes, add a comment with an AI implementation prompt:
 
-```markdown
+````markdown
 ## AI Implementation Prompt
 
 Use this prompt in a new Claude Code session to implement this feature:
@@ -103,10 +105,12 @@ Use this prompt in a new Claude Code session to implement this feature:
 ## Requirements
 
 ### 1. [First Component]
+
 - What to create/modify
 - Code examples
 
 ### 2. [Second Component]
+
 - What to create/modify
 - Code examples
 
@@ -120,11 +124,12 @@ Use this prompt in a new Claude Code session to implement this feature:
 - Use assertpy, fixtures
 
 ## Before Submitting
+
 - Run `uv run lintro chk` - must pass
 - Run `uv run lintro fmt` - must pass
 - Run `uv run pytest` - must pass
-\```
-```
+  \```
+````
 
 ## Usage
 
@@ -133,6 +138,7 @@ When asked to create an issue:
 1. **Gather requirements** - Ask clarifying questions if needed
 2. **Review existing issues** - Check for duplicates with `gh issue list`
 3. **Create the issue**:
+
    ```bash
    gh issue create \
      --title "feat(scope): description" \
@@ -143,7 +149,9 @@ When asked to create an issue:
    EOF
    )"
    ```
+
 4. **Add AI prompt comment** (for implementation issues):
+
    ```bash
    gh issue comment <issue-number> --body "$(cat <<'EOF'
    ## AI Implementation Prompt
@@ -151,6 +159,7 @@ When asked to create an issue:
    EOF
    )"
    ```
+
 5. **Return the issue URL** to the user
 
 ## Examples

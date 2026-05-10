@@ -24,8 +24,8 @@ Actions MUST be pinned to SHA hashes for security and reproducibility:
 - uses: actions/setup-python@v5
 
 # CORRECT - pinned to SHA (immutable, secure)
-- uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
-- uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
+- uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+- uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
 ```
 
 ### Finding SHAs
@@ -69,7 +69,7 @@ jobs:
 
 ## Script Organization
 
-```
+```text
 scripts/
 └── ci/
     ├── build.sh
@@ -87,12 +87,18 @@ scripts/
 
 ## No Hand-Maintained Mirrors of Canonical Sources
 
-If CI needs to verify that two files agree on the same value, the second file is a derived artifact — generate it, don't validate it.
+If CI needs to verify that two files agree on the same value, the second file is a
+derived artifact — generate it, don't validate it.
 
-- Replace `verify-X-sync.py` scripts with `generate-X.py`; CI runs the generator with `--check` (exit 1 + unified diff on drift) instead of parsing both files and comparing.
-- The same generator runs locally for the writer flow and in CI for the gate flow — a single code path, no parser duplication.
-- Generators consumed by automation (e.g. Renovate `postUpgradeTasks`) should be **stdlib-only** so they run in any minimal container without dep installation.
-- Treat automation hooks as convenience, not correctness. The `--check` gate is the truth-keeper; if the hook silently fails, CI still catches the drift.
+- Replace `verify-X-sync.py` scripts with `generate-X.py`; CI runs the generator with
+  `--check` (exit 1 + unified diff on drift) instead of parsing both files and
+  comparing.
+- The same generator runs locally for the writer flow and in CI for the gate flow — a
+  single code path, no parser duplication.
+- Generators consumed by automation (e.g. Renovate `postUpgradeTasks`) should be
+  **stdlib-only** so they run in any minimal container without dep installation.
+- Treat automation hooks as convenience, not correctness. The `--check` gate is the
+  truth-keeper; if the hook silently fails, CI still catches the drift.
 
 ```yaml
 # WRONG — verify two files agree

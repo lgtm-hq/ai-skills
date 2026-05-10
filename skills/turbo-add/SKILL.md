@@ -19,18 +19,18 @@ turbo-themes.
 
 ## Quick Reference
 
-### Files to Create
+### New files (paths)
 
-```
+```text
 scripts/sync-<theme>.mjs                           # Optional: sync from npm package
 src/themes/packs/<theme>.synced.ts                 # Theme definitions
 schema/tokens/themes/<theme-id>.tokens.json        # W3C Design Token files (one per variant)
 assets/img/<theme-id>.png                          # Theme icons (one per variant)
 ```
 
-### Files to Update
+### Updated files (paths)
 
-```
+```text
 src/themes/registry.ts                             # Import and register themes
 packages/theme-selector/src/types.ts               # Add to ThemeFamily type
 packages/theme-selector/src/constants.ts           # Add to THEME_FAMILIES
@@ -42,9 +42,9 @@ test/integration/bundle-size.test.ts               # May need to increase budget
 scripts/prepare-style-dictionary.mjs               # Add to vendorMeta
 ```
 
-### Example Files to Update
+### Example files to update (paths)
 
-```
+```text
 examples/html-vanilla/index.html                   # <select> options + VALID_THEMES array
 examples/bootstrap/index.html                      # <select> options + VALID_THEMES + lightThemes
 examples/react/index.html                          # VALID_THEMES in FOUC script
@@ -64,8 +64,11 @@ examples/swift-swiftui/Tests/.../ThemeRegistryTests.swift        # Update counts
 ```
 
 **Note:** Some example files are dynamic and auto-update from core:
-- `examples/react/src/hooks/useTheme.ts` (imports from `@lgtm-hq/turbo-themes-core/tokens`)
-- `examples/vue/src/composables/useTheme.ts` (imports from `@lgtm-hq/turbo-themes-core/tokens`)
+
+- `examples/react/src/hooks/useTheme.ts` (imports from
+  `@lgtm-hq/turbo-themes-core/tokens`)
+- `examples/vue/src/composables/useTheme.ts` (imports from
+  `@lgtm-hq/turbo-themes-core/tokens`)
 - `examples/bootstrap/src/main.ts` (imports from `@lgtm-hq/turbo-themes-core/tokens`)
 
 ---
@@ -229,15 +232,15 @@ If the theme has an npm package with palette data:
  * Run: node scripts/sync-<theme>.mjs
  */
 
-import { writeFileSync } from 'fs';
-import { palette } from '@<theme>/palette';
+import { writeFileSync } from "fs";
+import { palette } from "@<theme>/palette";
 
 // Map palette colors to turbo-themes tokens
 const variants = Object.entries(palette).map(([key, colors]) => ({
   id: `<theme>-${key}`,
   label: key.charAt(0).toUpperCase() + key.slice(1),
-  vendor: '<theme>',
-  appearance: colors.isLight ? 'light' : 'dark',
+  vendor: "<theme>",
+  appearance: colors.isLight ? "light" : "dark",
   // ... map colors to tokens
 }));
 
@@ -252,23 +255,38 @@ export const <theme>Synced: ThemePackage = {
 } as const;
 `;
 
-writeFileSync('src/themes/packs/<theme>.synced.ts', output);
-console.log('Synced <theme> themes');
+writeFileSync("src/themes/packs/<theme>.synced.ts", output);
+console.log("Synced <theme> themes");
 ```
 
 ### Sync Script Best Practices
 
 When writing a sync script:
 
-1. **Output path must be `src/themes/packs/`** - The registry imports from `src/themes/packs/`,
+1. **Output path must be `src/themes/packs/`** - The registry imports from
+   `src/themes/packs/`,
    NOT `packages/core/src/themes/packs/`:
 
    ```javascript
    // CORRECT
-   const outPath = path.join(projectRoot, 'src', 'themes', 'packs', '<theme>.synced.ts');
+   const outPath = path.join(
+     projectRoot,
+     "src",
+     "themes",
+     "packs",
+     "<theme>.synced.ts",
+   );
 
    // WRONG - registry won't find the file
-   const outPath = path.join(projectRoot, 'packages', 'core', 'src', 'themes', 'packs', '<theme>.synced.ts');
+   const outPath = path.join(
+     projectRoot,
+     "packages",
+     "core",
+     "src",
+     "themes",
+     "packs",
+     "<theme>.synced.ts",
+   );
    ```
 
 2. **Read version from node_modules** - Include version metadata for traceability:
@@ -291,7 +309,7 @@ When writing a sync script:
 
    ```javascript
    function normalizeHex(color) {
-     const hex = color.hex.replace(/^#/, '');
+     const hex = color.hex.replace(/^#/, "");
      return `#${hex}`;
    }
    ```
@@ -326,12 +344,12 @@ const allFlavors: ThemeFlavor[] = [
 
 ```typescript
 export type ThemeFamily =
-  | 'bulma'
-  | 'catppuccin'
-  | 'github'
-  | 'dracula'
-  | 'rose-pine'
-  | '<theme>';
+  | "bulma"
+  | "catppuccin"
+  | "github"
+  | "dracula"
+  | "rose-pine"
+  | "<theme>";
 ```
 
 ### 3. Theme Families Metadata (`packages/theme-selector/src/constants.ts`)
@@ -339,7 +357,7 @@ export type ThemeFamily =
 ```typescript
 export const THEME_FAMILIES: Record<ThemeFamily, ThemeFamilyMeta> = {
   // ... existing ...
-  '<theme>': { name: '<Theme Name>', description: '<Theme description>' },
+  "<theme>": { name: "<Theme Name>", description: "<Theme description>" },
 };
 ```
 
@@ -348,34 +366,35 @@ export const THEME_FAMILIES: Record<ThemeFamily, ThemeFamilyMeta> = {
 ```typescript
 const VENDOR_FAMILY_MAP: Record<string, ThemeFamily> = {
   // ... existing ...
-  '<theme>': '<theme>',
+  "<theme>": "<theme>",
 };
 
 // VENDOR_ICON_MAP is the sole source for icon resolution.
 // Do NOT add iconUrl to individual flavor definitions in theme packs or W3C token files.
 const VENDOR_ICON_MAP: Record<string, string | AppearanceIcons> = {
   // ... existing ...
-  '<theme>': 'assets/img/<theme>.png',
+  "<theme>": "assets/img/<theme>.png",
   // Or for appearance-specific icons (use when family has both light and dark variants):
-  '<theme>': {
-    light: 'assets/img/<theme>-light.png',
-    dark: 'assets/img/<theme>-dark.png',
+  "<theme>": {
+    light: "assets/img/<theme>-light.png",
+    dark: "assets/img/<theme>-dark.png",
   },
 };
 
 // Add descriptions for each variant
 const FLAVOR_DESCRIPTIONS: Partial<Record<string, string>> = {
   // ... existing ...
-  '<theme-variant-1>': 'Description of this variant.',
-  '<theme-variant-2>': 'Deeper variant with enhanced contrast.',
-  '<theme-light>': 'Light variant for daytime use.',
+  "<theme-variant-1>": "Description of this variant.",
+  "<theme-variant-2>": "Deeper variant with enhanced contrast.",
+  "<theme-light>": "Light variant for daytime use.",
 };
 ```
 
 ### 5. Site Theme Metadata (`apps/site/src/data/theme-meta.ts`)
 
 This is the **single source of truth** for the site's theme dropdown, VALID_THEMES,
-and icon/label mappings. Both `BaseLayout.astro` and `ThemeDropdown.astro` are data-driven
+and icon/label mappings. Both `BaseLayout.astro` and `ThemeDropdown.astro` are
+data-driven
 from this file.
 
 ```typescript
@@ -383,28 +402,29 @@ from this file.
 export const themeGroups: ThemeGroup[] = [
   // ... existing groups ...
   {
-    id: '<theme>',
-    displayName: '<Theme Name>',
-    flavors: ['<theme-variant-1>', '<theme-variant-2>'],
+    id: "<theme>",
+    displayName: "<Theme Name>",
+    flavors: ["<theme-variant-1>", "<theme-variant-2>"],
   },
 ];
 
 // Add to themeNames (short labels for dropdown trigger)
 export const themeNames: Record<string, string> = {
   // ... existing ...
-  '<theme-variant-1>': '<Short Label>',
-  '<theme-variant-2>': '<Short Label>',
+  "<theme-variant-1>": "<Short Label>",
+  "<theme-variant-2>": "<Short Label>",
 };
 
 // Add to themeIcons (icon filenames relative to /assets/img/)
 export const themeIcons: Record<string, string> = {
   // ... existing ...
-  '<theme-variant-1>': '<theme-variant-1>.png',
-  '<theme-variant-2>': '<theme-variant-2>.png',
+  "<theme-variant-1>": "<theme-variant-1>.png",
+  "<theme-variant-2>": "<theme-variant-2>.png",
 };
 ```
 
-**Important:** `validThemeIds` is derived automatically via `themeGroups.flatMap(g => g.flavors)`.
+**Important:** `validThemeIds` is derived automatically via `themeGroups.flatMap(g =>
+g.flavors)`.
 `ThemeDropdown.astro` and `BaseLayout.astro` both import from this file - no hardcoded
 arrays to maintain.
 
@@ -462,7 +482,7 @@ Add to `vendorMeta`:
 ```javascript
 const vendorMeta = {
   // ... existing ...
-  '<theme>': { name: '<Theme Name>', homepage: 'https://<theme-homepage>/' },
+  "<theme>": { name: "<Theme Name>", homepage: "https://<theme-homepage>/" },
 };
 ```
 
@@ -477,15 +497,18 @@ Add sync script to `theme:sync`:
 ### 11. Example Files
 
 Add the new theme variants to all example projects with hardcoded theme lists.
-Each file has different areas to update (dropdowns, VALID_THEMES arrays, LIGHT_THEMES arrays).
+Each file has different areas to update (dropdowns, VALID_THEMES arrays, LIGHT_THEMES
+arrays).
 
 **Web examples** need theme IDs added to:
+
 - `<select>` dropdown `<option>` elements
 - `VALID_THEMES` JavaScript arrays (FOUC scripts and main scripts)
 - `LIGHT_THEMES` arrays (if present, add light variants)
 - `THEMES` arrays in React/Vue components (id + display name)
 
 **Swift example** (`examples/swift-swiftui/`) needs:
+
 - New enum cases in `ThemeId.swift`
 - Full `ThemeDefinition` entries with color palettes in `ThemeRegistry.swift`
 - Updated counts and labels in `ThemeRegistryTests.swift`
@@ -502,7 +525,8 @@ with hardcoded theme lists.
 - **Variant Label** (token `label` field): Full display name including theme family
   (e.g., "Catppuccin Mocha", "Gruvbox Dark Hard", "Solarized Light", "Rosé Pine Moon")
   - Match the convention in W3C `.tokens.json` files and existing theme packs
-- **Short Label** (site `themeNames` in `theme-meta.ts`): Short name for dropdown trigger
+- **Short Label** (site `themeNames` in `theme-meta.ts`): Short name for dropdown
+  trigger
   (e.g., "Mocha", "Dark Hard", "Light", "Moon")
   - These are the condensed labels shown in the site header when a theme is selected
 - **Vendor**: Same as theme family name (e.g., `rose-pine`)
@@ -545,27 +569,34 @@ cd apps/site && bun run dev
 3. **No icon showing**: Forgot to add to `themeIcons` mapping or icon file missing
 4. **Theme not in dropdown**: Forgot to add to `VENDOR_FAMILY_MAP` in theme-mapper.ts
 5. **Theme in wrong family group**: `VENDOR_FAMILY_MAP` mapping is incorrect
-6. **Tests fail with theme order**: Update test assertions to use `data-theme-id` attribute
+6. **Tests fail with theme order**: Update test assertions to use `data-theme-id`
+   attribute
    lookups instead of array indices
 7. **Bundle size test fails**: Increase budget in bundle-size.test.ts
-8. **CI fails "Cannot find module './packs/<theme>.synced.js'"**: Forgot to add sync script
+8. **CI fails "Cannot find module './packs/{theme}.synced.js'"**: Forgot to add sync
+   script
    to `theme:sync` in package.json - the build pipeline must generate the file before
    TypeScript compilation
 9. **tokens.json shows wrong name/homepage**: Forgot to add theme to `vendorMeta` in
    scripts/prepare-style-dictionary.mjs
 10. **Generated assets outdated**: After changes, run `bun run build` and commit the
     generated files (`assets/js/theme-selector.*`, `tokens.json` files in core/python/swift)
-11. **TypeScript build error with license/source fields**: If adding new interfaces to types,
+11. **TypeScript build error with license/source fields**: If adding new interfaces to
+    types,
     update BOTH `src/themes/types.ts` AND `packages/core/src/themes/types.ts` - they are
     separate files that must be kept in sync
-12. **Visual regression tests fail after adding theme to hero**: E2E visual snapshots are
-    generated on Linux CI. Use the `maintenance-generate-snapshots.yml` workflow to regenerate
+12. **Visual regression tests fail after adding theme to hero**: E2E visual snapshots
+    are
+    generated on Linux CI. Use the `maintenance-generate-snapshots.yml` workflow to
+    regenerate
     them (Actions → Maintenance: Generate Playwright Snapshots → Run workflow)
-13. **Missing from hero preview strip**: Add theme buttons to `apps/site/src/pages/index.astro`
+13. **Missing from hero preview strip**: Add theme buttons to
+    `apps/site/src/pages/index.astro`
     in the hero theme preview area (alongside Bulma, Catppuccin, etc.)
 14. **Missing from example files**: ~16 example files have hardcoded theme lists that
     need updating (dropdowns, VALID_THEMES, LIGHT_THEMES, THEMES arrays)
-15. **Missing from Swift example**: `ThemeId.swift` enum, `ThemeRegistry.swift` palettes,
+15. **Missing from Swift example**: `ThemeId.swift` enum, `ThemeRegistry.swift`
+    palettes,
     and `ThemeRegistryTests.swift` counts/labels all need updating
 
 ---

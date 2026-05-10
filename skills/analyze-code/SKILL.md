@@ -8,6 +8,7 @@ description: Code-level quality analysis. Use when asked to review code for smel
 Perform a code-level quality analysis of this project. Evaluate:
 
 ## Implementation Quality
+
 - Best practices adherence for the language/framework used
 - Scalability and performance considerations
 - Error handling—are failures handled gracefully and consistently?
@@ -18,6 +19,7 @@ Perform a code-level quality analysis of this project. Evaluate:
 - Logging/observability—can issues be diagnosed in production?
 
 ## Code Smells
+
 - Long methods/functions that do too much
 - God classes or modules with too many responsibilities
 - Feature envy—code that uses another module's data more than its own
@@ -30,6 +32,7 @@ Perform a code-level quality analysis of this project. Evaluate:
 - Inappropriate intimacy—modules tightly coupled to each other's internals
 
 ## Security Best Practices
+
 - OWASP Top 10 exposure: injection (SQL, command, XSS), broken auth, SSRF, etc.
 - Secrets management—no hardcoded credentials, tokens, or API keys in source
 - Input validation and sanitization at system boundaries
@@ -40,6 +43,7 @@ Perform a code-level quality analysis of this project. Evaluate:
 - Sensitive data handling—PII/secrets not leaked in logs, errors, or responses
 
 ## Testing
+
 - Test quality—flag any "nothing burger" tests that don't meaningfully validate behavior
 - Use of parameterization where appropriate
 - Coverage of edge cases and failure modes
@@ -47,6 +51,7 @@ Perform a code-level quality analysis of this project. Evaluate:
 - Do tests cover the right layer (unit vs integration vs e2e)?
 
 ## Output Format
+
 Rate severity of issues as: **Critical** | **Should Fix** | **Nice to Have**
 
 Prioritize actionable feedback over observations.

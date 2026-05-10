@@ -15,9 +15,9 @@ This document serves as a comprehensive guide for adding a new tool to Lintro.
 
 ## Quick Reference
 
-### Files to Create
+### New files (paths)
 
-```
+```text
 lintro/parsers/<tool>/__init__.py
 lintro/parsers/<tool>/<tool>_issue.py
 lintro/parsers/<tool>/<tool>_parser.py
@@ -28,9 +28,9 @@ tests/unit/tools/<tool>/__init__.py
 tests/unit/tools/<tool>/test_<tool>_plugin.py
 ```
 
-### Files to Update
+### Updated files (paths)
 
-```
+```text
 lintro/enums/tool_name.py              # Add to ToolName enum
 lintro/tools/core/version_parsing.py   # Add to TOOLS_WITH_SIMPLE_VERSION_PATTERN
 lintro/tools/core/version_checking.py  # Add install hints
@@ -51,19 +51,24 @@ scripts/ci/homebrew/templates/lintro.rb.template  # Add depends_on + update cave
 For external tools (not bundled Python packages), versions must be consistent across:
 
 1. **`lintro/_tool_versions.py`** - Source of truth for install-tools.sh
-2. **`lintro/tools/manifest.json`** - Must match _tool_versions.py for binary/cargo/rustup tools
-3. **`package.json`** - For npm tools, must match _tool_versions.py
-4. **Plugin `min_version`** - In tool definition, should match or be <= _tool_versions.py
-5. **`renovate.json`** - Must have custom managers to update BOTH _tool_versions.py AND manifest.json
+2. **`lintro/tools/manifest.json`** - Must match \_tool_versions.py for
+   binary/cargo/rustup tools
+3. **`package.json`** - For npm tools, must match \_tool_versions.py
+4. **Plugin `min_version`** - In tool definition, should match or be <=
+   \_tool_versions.py
+5. **`renovate.json`** - Must have custom managers to update BOTH \_tool_versions.py AND
+   manifest.json
 
 CI runs `scripts/ci/verify-manifest-sync.py` on every PR. It validates:
+
 - pip tools in manifest.json against pyproject.toml
 - npm tools in manifest.json against package.json
-- binary/cargo/rustup tools in manifest.json against TOOL_VERSIONS in _tool_versions.py
+- binary/cargo/rustup tools in manifest.json against TOOL_VERSIONS in_tool_versions.py
 
 **PRs will fail if versions drift between these files.**
 
 Example for npm tool:
+
 ```python
 # lintro/_tool_versions.py
 TOOL_VERSIONS = {
@@ -98,15 +103,18 @@ min_version="0.27.0",  # Must match
 If the tool is available as a Homebrew formula, add it to the Homebrew formula template:
 
 1. **`scripts/ci/homebrew/templates/lintro.rb.template`** — add `depends_on "<tool>"`
-2. **Update caveats** in the same file to list the new tool under the appropriate category
-3. **Note**: Bundled Python tools (ruff, black, mypy, bandit, yamllint) are excluded from
+2. **Update caveats** in the same file to list the new tool under the appropriate
+   category
+3. **Note**: Bundled Python tools (ruff, black, mypy, bandit, yamllint) are excluded
+   from
    the Homebrew venv via `generate_resources.py --exclude`. They are installed as separate
    Homebrew formulae and discovered via PATH (`shutil.which`), NOT via `python -m`.
    The `PythonBundledBuilder` in `command_builders.py` handles this automatically.
 
 ## Project Context
 
-Lintro is a unified CLI for code linting/formatting. It uses a plugin architecture where tools are:
+Lintro is a unified CLI for code linting/formatting. It uses a plugin architecture where
+tools are:
 
 1. Defined in `lintro/tools/definitions/<tool>.py` - uses `@register_tool` decorator
 2. Parsed by `lintro/parsers/<tool>/<tool>_parser.py` and `<tool>_issue.py`
@@ -301,7 +309,8 @@ Create a minimal file that triggers at least one violation from the tool.
 
 ### 6. Parser Unit Tests (`tests/unit/parsers/test_<tool>_parser.py`)
 
-See the `test` skill for pytest conventions. Use pytest-style functions, fixtures, and parametrization.
+See the `test` skill for pytest conventions. Use pytest-style functions, fixtures, and
+parametrization.
 
 ```python
 """Unit tests for <tool> parser."""
@@ -560,6 +569,7 @@ Add a new entry to the `tools` array (in alphabetical order):
 ```
 
 For npm tools, include the package name and binary:
+
 ```json
 {
   "name": "<tool>",
@@ -585,6 +595,7 @@ This ensures `lintro doctor` can verify the tool is installed and report its ver
 ### 7. Add to Docker verification steps
 
 **`Dockerfile`** — Add to the root-user verification block:
+
 ```dockerfile
 RUN echo "Verifying tools..." && \
     # ... existing tools ...
@@ -593,6 +604,7 @@ RUN echo "Verifying tools..." && \
 ```
 
 And to the non-root user verification block:
+
 ```dockerfile
 RUN echo "Verifying tools as non-root user..." && \
     # ... existing tools ...
@@ -601,6 +613,7 @@ RUN echo "Verifying tools as non-root user..." && \
 ```
 
 **`Dockerfile.tools`** — Add to the verification block:
+
 ```dockerfile
 RUN echo "=== Verifying all tools ===" && \
     # ... existing tools ...
@@ -639,14 +652,18 @@ Can be combined: `ToolType.LINTER | ToolType.FORMATTER`
 
 ## Common Gotchas
 
-1. **Version command variations**: Some tools use `version` instead of `--version` (e.g., `gitleaks version`). Check the tool's CLI.
+1. **Version command variations**: Some tools use `version` instead of `--version`
+   (e.g., `gitleaks version`). Check the tool's CLI.
 
-2. **ToolResult invariant for fix operations**: When returning fix results, must satisfy:
-   ```
+2. **ToolResult invariant for fix operations**: When returning fix results, must
+   satisfy:
+
+   ```text
    initial_issues_count = fixed_issues_count + remaining_issues_count
    ```
 
 3. **Test mocking patterns**:
+
    ```python
    # Mock version check (use this in most tests)
    patch("lintro.plugins.execution_preparation.verify_tool_version", return_value=None)
@@ -656,15 +673,20 @@ Can be combined: `ToolType.LINTER | ToolType.FORMATTER`
    patch.object(plugin, "_run_subprocess", side_effect=subprocess.TimeoutExpired(...))
    ```
 
-4. **File discovery**: `_prepare_execution()` handles file filtering by `file_patterns`. Use `ctx.rel_files` for the filtered list.
+4. **File discovery**: `_prepare_execution()` handles file filtering by `file_patterns`.
+   Use `ctx.rel_files` for the filtered list.
 
-5. **Subprocess safety**: Always use list args, never `shell=True`. Add `# nosec B404` comment on subprocess import.
+5. **Subprocess safety**: Always use list args, never `shell=True`. Add `# nosec B404`
+   comment on subprocess import.
 
-6. **Return early**: If `ctx.should_skip` is True, return `ctx.early_result` immediately.
+6. **Return early**: If `ctx.should_skip` is True, return `ctx.early_result`
+   immediately.
 
-7. **Parser function naming**: Must be `parse_<tool>_output(output: str | None) -> list[<Tool>Issue]`.
+7. **Parser function naming**: Must be `parse_<tool>_output(output: str | None) ->
+list[<Tool>Issue]`.
 
-8. **Issue class**: Must inherit from `BaseIssue`. Use `DISPLAY_FIELD_MAP` for custom field name mappings.
+8. **Issue class**: Must inherit from `BaseIssue`. Use `DISPLAY_FIELD_MAP` for custom
+   field name mappings.
 
 ---
 
@@ -686,13 +708,14 @@ After adding the tool:
 - [ ] Tool detects violations in sample file
 - [ ] Parser unit tests pass: `pytest tests/unit/parsers/test_<tool>_parser.py -v`
 - [ ] Plugin unit tests pass: `pytest tests/unit/tools/<tool>/ -v`
-- [ ] Coverage >80% on new code: `pytest --cov=lintro/parsers/<tool> --cov=lintro/tools/definitions/<tool>`
+- [ ] Coverage >80% on new code: `pytest --cov=lintro/parsers/<tool>
+--cov=lintro/tools/definitions/<tool>`
 - [ ] No linting errors: `lintro fmt && lintro chk`
 - [ ] Manifest sync passes: `python3 scripts/ci/verify-manifest-sync.py`
 - [ ] Tool added to `Dockerfile` verification step (both root and non-root)
 - [ ] Tool added to `Dockerfile.tools` verification step
 - [ ] Tool added to `install-tools.sh` (external tools only)
-- [ ] Tool added to `lintro/tools/manifest.json` (version matches _tool_versions.py)
+- [ ] Tool added to `lintro/tools/manifest.json` (version matches \_tool_versions.py)
 - [ ] Renovate managers added for BOTH `_tool_versions.py` and `manifest.json`
 - [ ] Homebrew formula updated with `depends_on` + caveats (if Homebrew-installable)
 - [ ] Docker image builds successfully: `docker build -t py-lintro:test .`
@@ -703,7 +726,11 @@ After adding the tool:
 
 See existing implementations for reference:
 
-- **Simple tool (no fix)**: `lintro/tools/definitions/actionlint.py`, `lintro/tools/definitions/hadolint.py`
-- **Tool with fix support**: `lintro/tools/definitions/ruff.py`, `lintro/tools/definitions/black.py`
-- **Security scanner**: `lintro/tools/definitions/bandit.py`, `lintro/tools/definitions/semgrep.py`
-- **Shell tools**: `lintro/tools/definitions/shellcheck.py`, `lintro/tools/definitions/shfmt.py`
+- **Simple tool (no fix)**: `lintro/tools/definitions/actionlint.py`,
+  `lintro/tools/definitions/hadolint.py`
+- **Tool with fix support**: `lintro/tools/definitions/ruff.py`,
+  `lintro/tools/definitions/black.py`
+- **Security scanner**: `lintro/tools/definitions/bandit.py`,
+  `lintro/tools/definitions/semgrep.py`
+- **Shell tools**: `lintro/tools/definitions/shellcheck.py`,
+  `lintro/tools/definitions/shfmt.py`
