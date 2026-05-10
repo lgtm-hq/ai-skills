@@ -4,6 +4,10 @@
 
 Canonical skill index for agent-compatible tooling in this repository.
 
+## Quality tooling
+
+Use **`uv run lintro chk`** or **`uv run lintro fmt`**; do not run bundled tools (for example `bandit`, `ruff`, `black`) directly unless a skill here explicitly overrides that.
+
 ## Skills
 
 - `analyze-code`: Code-level quality analysis. Use when asked to review code for smells, security issues, implementation quality, or test coverage. (`skills/analyze-code/SKILL.md`)
