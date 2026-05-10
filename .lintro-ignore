@@ -4,4 +4,3 @@ node_modules/
 .lintro/**
 .git
 __pycache__
-plugins/

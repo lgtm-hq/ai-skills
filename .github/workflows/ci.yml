@@ -1,0 +1,40 @@
+---
+name: CI
+
+"on":
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lintro Quality Checks
+    runs-on: ubuntu-latest
+    container:
+      # Reuse the lgtm-ci lintro image instead of vendoring shared CI scripts.
+      # yamllint disable-line rule:line-length
+      image: ghcr.io/lgtm-hq/py-lintro@sha256:7333cf9cc5567f0a9bb6c4cf52d95d3c88d75be5784e23f9b319df5ba021ed1f
+      options: --user 0
+
+    steps:
+      - name: Checkout repository
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Add lintro to PATH
+        shell: bash
+        run: echo "/app/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Run lintro quality checks
+        shell: bash
+        run: lintro chk
+
+      - name: Validate skill repository structure
+        shell: bash
+        run: bash scripts/validate.sh
