@@ -1,0 +1,93 @@
+---
+# Lintro Configuration
+# https://github.com/lgtm-hq/py-lintro
+#
+# ai-skills is a markdown-focused repository with lightweight Python tests for
+# repository validation. Enable only tools relevant to those files.
+
+enforce:
+  line_length: 88
+
+execution:
+  enabled_tools:
+    - black
+    - ruff
+    - prettier
+    - markdownlint
+    - yamllint
+    - pydoclint
+    - actionlint
+    - shellcheck
+    - shfmt
+    - taplo
+    - gitleaks
+    - pytest
+  tool_order: 'priority'
+  fail_fast: false
+
+defaults:
+  prettier:
+    semi: true
+    singleQuote: true
+    tabWidth: 2
+    printWidth: 88
+    trailingComma: 'es5'
+    overrides:
+      - files: '*.md'
+        options:
+          printWidth: 88
+
+  markdownlint:
+    MD013:
+      line_length: 88
+      code_blocks: false
+      tables: false
+
+  yamllint:
+    extends: 'default'
+    rules:
+      comments-indentation: 'disable'
+      comments:
+        min-spaces-from-content: 1
+      truthy:
+        check-keys: true
+      line-length:
+        max: 88
+        allow-non-breakable-inline-mappings: true
+
+tools:
+  black:
+    enabled: true
+
+  ruff:
+    enabled: true
+
+  prettier:
+    enabled: true
+
+  pydoclint:
+    enabled: true
+
+  markdownlint:
+    enabled: true
+
+  yamllint:
+    enabled: true
+
+  actionlint:
+    enabled: true
+
+  taplo:
+    enabled: true
+
+  gitleaks:
+    enabled: true
+
+  pytest:
+    enabled: true
+
+  shellcheck:
+    enabled: true
+
+  shfmt:
+    enabled: true

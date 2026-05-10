@@ -1,0 +1,13 @@
+[project]
+name = "ai-skills"
+version = "0.0.0"
+requires-python = ">=3.13"
+
+[dependency-groups]
+dev = [
+  "lintro>=0.62.1",
+  "pytest-cov>=7.0.0",
+  "pytest-timeout>=2.4.0",
+  "pytest-xdist>=3.8.0",
+  "pytest>=9.0.3",
+]

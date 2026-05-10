@@ -1,0 +1,34 @@
+---
+name: "Release: Auto Tag"
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - "CHANGELOG.md"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version to tag, for example 1.2.3"
+        required: true
+        type: string
+
+concurrency:
+  group: release-auto-tag-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  auto-tag:
+    # lgtm-ci owns tag/release creation; this repo only supplies trigger policy.
+    # yamllint disable-line rule:line-length
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-release-auto-tag.yml@53659b58930e03e0e332265fe7f3c42f52671259
+    with:
+      version: >-
+        ${{ github.event_name == 'workflow_dispatch'
+            && inputs.version
+            || '' }}
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+    permissions:
+      contents: write

@@ -6,6 +6,9 @@
 ### dirs
 htmlcov/
 
+### test / tooling output
+report.xml
+
 ### files (MacOS)
 .DS_Store
 

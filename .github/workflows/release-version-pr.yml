@@ -1,0 +1,26 @@
+---
+name: "Release: Create Version PR"
+
+"on":
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-version-pr-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  version-pr:
+    # lgtm-ci owns the release lifecycle; this repo stays a thin caller.
+    # yamllint disable-line rule:line-length
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-release-version-pr.yml@53659b58930e03e0e332265fe7f3c42f52671259
+    with:
+      max-bump: minor
+      ecosystems: python
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+    permissions:
+      contents: write
+      pull-requests: write
