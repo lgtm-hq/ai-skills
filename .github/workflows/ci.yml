@@ -35,6 +35,12 @@ jobs:
         shell: bash
         run: lintro chk
 
+      - name: Install ripgrep for validate.sh
+        shell: bash
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends ripgrep
+
       - name: Validate skill repository structure
         shell: bash
         run: bash scripts/validate.sh

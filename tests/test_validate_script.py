@@ -97,3 +97,49 @@ def test_validate_rejects_missing_agents_entry(
 
     assert result.returncode == 1
     assert "AGENTS.md missing skill entry for: example" in result.stdout
+
+
+def test_validate_accepts_agents_entry_with_regex_special_chars_in_skill_name(
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    """Accept AGENTS lines when skill names include ripgrep metacharacters."""
+    script_path = _copy_validate_script(repo_root=repo_root, tmp_path=tmp_path)
+    skill_dir = tmp_path / "skills" / "alpha+beta"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: alpha+beta\ndescription: Example skill.\n---\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "AGENTS.md").write_text(
+        "- `alpha+beta` - Example skill with plus in the id.\n",
+        encoding="utf-8",
+    )
+
+    result = _run_validate(script_path=script_path, cwd=tmp_path)
+
+    assert result.returncode == 0
+    assert "Validation passed." in result.stdout
+
+
+def test_validate_rejects_agents_entry_with_path_like_skill_name(
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    """Reject AGENTS.md list items whose skill id looks like a path traversal."""
+    script_path = _copy_validate_script(repo_root=repo_root, tmp_path=tmp_path)
+    skill_dir = tmp_path / "skills" / "safe-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: safe-skill\ndescription: Legitimate skill.\n---\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "AGENTS.md").write_text(
+        "- `safe-skill` - OK.\n- `../scripts` - Unsafe id.\n",
+        encoding="utf-8",
+    )
+
+    result = _run_validate(script_path=script_path, cwd=tmp_path)
+
+    assert result.returncode == 1
+    assert "AGENTS.md contains invalid skill name: ../scripts" in result.stdout

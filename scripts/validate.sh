@@ -52,6 +52,10 @@ for skill_file in skills/*/SKILL.md; do
 done
 
 if [[ -f "AGENTS.md" ]]; then
+	if ! command -v rg >/dev/null 2>&1; then
+		echo "ripgrep (rg) is required to validate AGENTS.md; please install it."
+		exit 1
+	fi
 	for dir in skills/*; do
 		[[ -d "$dir" ]] || continue
 		skill_name=$(basename "$dir")

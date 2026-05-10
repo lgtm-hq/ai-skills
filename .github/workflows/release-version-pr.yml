@@ -14,7 +14,7 @@ jobs:
   version-pr:
     # lgtm-ci owns the release lifecycle; this repo stays a thin caller.
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-release-version-pr.yml@d4fa64c56364982b2eb8d8efac73e89fb763c4a7
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-release-version-pr.yml@53659b58930e03e0e332265fe7f3c42f52671259
     with:
       max-bump: minor
       ecosystems: python
