@@ -1,6 +1,6 @@
 ---
 name: stand-general
-description: Global coding standards for all projects and languages. Use when writing any code. Covers linting with lintro, testing with coverage, semantic commits, PR creation, and code review with CodeRabbit.
+description: Global coding standards for all projects and languages. Use when writing any code. Covers linting with lintro, testing with coverage, semantic commits, PR creation, and code review with cr (CodeRabbit CLI).
 ---
 
 # Coding Standards
@@ -65,9 +65,9 @@ Commit rules:
 
 ## Code Review
 
-- Use CodeRabbit with `--prompt-only` flag
-- For uncommitted changes: `coderabbit --prompt-only -t uncommitted`
-- LIMIT: Maximum 3 CodeRabbit runs per change set
+- Use `cr` with `--prompt-only` flag
+- For uncommitted changes: `cr --prompt-only -t uncommitted`
+- LIMIT: Maximum 3 `cr` runs per change set
 
 ## Language-Specific
 

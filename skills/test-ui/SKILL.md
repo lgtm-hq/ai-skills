@@ -235,6 +235,7 @@ playwright-tests/
 
 ```typescript
 import { test, expect } from "../../fixtures/authFixtures";
+import { AppsDetailPage } from "../../pageObjects/AppsDetailPage";
 import { MyAppsPage } from "../../pageObjects/MyAppsPage";
 import { HandleNames } from "../../enums/handles";
 
@@ -246,7 +247,8 @@ test.describe("Feature Area", () => {
   });
 
   test("describes expected behavior", async ({ guest }) => {
-    // Arrange — already done in beforeEach
+    // Arrange — nav from beforeEach; page object for the detail view under test
+    const appsDetailPage = new AppsDetailPage(guest);
     // Act
     await appsDetailPage.doSomething();
     // Assert — use page object assertion methods

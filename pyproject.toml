@@ -13,6 +13,3 @@ dev = [
   "pytest-xdist>=3.8.0",
   "pytest>=9.0.3",
 ]
-
-[tool.bandit]
-skips = ["B101", "B404", "B603", "B607", "B108"]

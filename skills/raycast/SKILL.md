@@ -158,7 +158,7 @@ Raycast extensions don't have a standard test framework. For testable logic:
 ## Version Bumping
 
 - Patch (1.0.x): Bug fixes
-- Minor (1.x.0): New features, backwards compatible
+- Minor (1.x.0): New features, backward-compatible
 - Major (x.0.0): Breaking changes
 
 ## Constraints

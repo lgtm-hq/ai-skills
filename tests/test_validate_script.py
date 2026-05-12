@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
+import subprocess  # nosec B404 - tests only; run copied validate.sh via argv list without shell
 from pathlib import Path
 
 import pytest
@@ -25,9 +25,17 @@ def _copy_validate_script(
     repo_root: Path,
     tmp_path: Path,
 ) -> Path:
-    """Copy the validation script into a temporary repository."""
+    """Copy ``validate.sh`` into an isolated temp tree for tests.
+
+    Args:
+        repo_root: Path to the real repository root (source of ``validate.sh``).
+        tmp_path: Pytest temporary directory acting as fake repo root.
+
+    Returns:
+        Path to the copied ``validate.sh`` under ``tmp_path``.
+    """
     script_path = tmp_path / "scripts" / "validate.sh"
-    script_path.parent.mkdir()
+    script_path.parent.mkdir(parents=True, exist_ok=False)
     shutil.copy2(src=repo_root / "scripts" / "validate.sh", dst=script_path)
     logger.debug("Copied validate.sh to {}", script_path)
     return script_path
@@ -37,9 +45,18 @@ def _run_validate(
     script_path: Path,
     cwd: Path,
 ) -> subprocess.CompletedProcess[str]:
-    """Run the validation script in a temporary repository."""
+    """Run the validation script in a temporary repository.
+
+    Args:
+        script_path: Path to ``validate.sh`` to execute.
+        cwd: Working directory passed to the subprocess (fake repo root).
+
+    Returns:
+        The ``subprocess.CompletedProcess`` from invoking bash with captured
+        ``stdout`` and ``stderr`` (``text=True``).
+    """
     logger.debug("Running validate.sh cwd={} script={}", cwd, script_path)
-    return subprocess.run(
+    return subprocess.run(  # nosec B603 B607 - argv is fixed [bash, script_path]; test fixtures supply path, shell=False implicit
         ["bash", str(script_path)],
         cwd=cwd,
         check=False,

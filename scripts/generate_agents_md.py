@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate the ## Skills section of AGENTS.md from skills/*/SKILL.md frontmatter.
 
+Reads each skill's YAML frontmatter and rewrites the bullet list in AGENTS.md.
 Output lines match ``scripts/validate.sh`` expectations::
 
     - `skill-id`: Description text (`skills/skill-id/SKILL.md`)
@@ -14,7 +15,16 @@ from pathlib import Path
 
 
 def _parse_frontmatter_block(body: str) -> tuple[str, str]:
-    """Return (name, description) from YAML frontmatter *body* (without delimiters)."""
+    """Parse YAML frontmatter text into name and description.
+
+    Args:
+        body: Frontmatter content between ``---`` delimiters, excluding those
+            delimiters.
+
+    Returns:
+        A tuple ``(name, description)`` extracted from ``name:`` and
+        ``description:`` keys, including folded-block descriptions.
+    """
     name = ""
     description = ""
     lines = body.splitlines()
@@ -61,7 +71,22 @@ def _parse_frontmatter_block(body: str) -> tuple[str, str]:
 
 
 def _read_skill_meta(skill_md: Path) -> tuple[str, str]:
-    text = skill_md.read_text(encoding="utf-8")
+    """Load ``name`` and ``description`` from a skill's SKILL.md frontmatter.
+
+    Normalizes Windows and legacy Mac line endings to Unix newlines before
+    parsing so ``---`` delimiter detection is reliable.
+
+    Args:
+        skill_md: Path to ``SKILL.md`` under ``skills/<id>/``.
+
+    Returns:
+        The skill id (``name:`` value) and its description text.
+
+    Raises:
+        ValueError: If frontmatter delimiters or required keys are missing.
+    """
+    raw = skill_md.read_text(encoding="utf-8")
+    text = raw.replace("\r\n", "\n").replace("\r", "\n")
     if not text.startswith("---\n"):
         msg = f"Missing opening --- in {skill_md}"
         raise ValueError(msg)
@@ -78,6 +103,16 @@ def _read_skill_meta(skill_md: Path) -> tuple[str, str]:
 
 
 def _build_skills_section(repo_root: Path) -> tuple[str, int]:
+    """Build the markdown bullet list for every skill directory.
+
+    Args:
+        repo_root: Repository root path (parent of ``skills/``).
+
+    Returns:
+        A tuple ``(markdown_block, skill_count)`` where ``markdown_block`` is
+        newline-separated lines in AGENTS.md bullet form and ``skill_count`` is
+        the number of skills included.
+    """
     skills_root = repo_root / "skills"
     bullets: list[str] = []
     for d in sorted(skills_root.iterdir(), key=lambda p: p.name):
@@ -97,12 +132,20 @@ def _build_skills_section(repo_root: Path) -> tuple[str, int]:
 
 
 def main() -> None:
+    """Rewrite ``AGENTS.md`` in place: replace ## Skills section and total count.
+
+    Note:
+        Calls ``sys.exit(1)`` if ``AGENTS.md`` is missing required structure.
+    """
     repo_root = Path(__file__).resolve().parents[1]
     agents_path = repo_root / "AGENTS.md"
     text = agents_path.read_text(encoding="utf-8")
     sep = "## Skills\n"
     if sep not in text:
-        print("AGENTS.md must contain ## Skills", file=sys.stderr)
+        print(
+            "AGENTS.md must contain ## Skills",
+            file=sys.stderr,
+        )
         sys.exit(1)
     pre, post = text.split(sep, maxsplit=1)
     match_total = re.search(pattern=r"\nTotal skills:\s*\d+\s*\n", string=post)
