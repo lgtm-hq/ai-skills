@@ -9,7 +9,8 @@ Validate skill repository consistency.
 Checks:
   1. SKILL.md filename casing in skills/*/
   2. name + description keys in SKILL.md frontmatter
-  3. AGENTS.md entries match skills/ directories
+  3. AGENTS.md entries match skills/ directories (regenerate skills list via:
+     uv run python scripts/generate_agents_md.py)
 EOF
 	exit 0
 fi

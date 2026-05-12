@@ -63,7 +63,7 @@ CI runs `scripts/ci/verify-manifest-sync.py` on every PR. It validates:
 
 - pip tools in manifest.json against pyproject.toml
 - npm tools in manifest.json against package.json
-- binary/cargo/rustup tools in manifest.json against TOOL_VERSIONS in_tool_versions.py
+- binary/cargo/rustup tools in manifest.json against `TOOL_VERSIONS` in `lintro/_tool_versions.py`
 
 **PRs will fail if versions drift between these files.**
 
@@ -300,7 +300,18 @@ def parse_<tool>_output(output: str | None) -> list[<Tool>Issue]:
 ### 4. Parser `__init__.py` (`lintro/parsers/<tool>/__init__.py`)
 
 ```python
-"""<Tool> parser module."""
+"""<Tool> parser package.
+
+Exports issue types and the parse function so imports match ``skills/lintro-verify``.
+"""
+
+from lintro.parsers.<tool>.<tool>_issue import <Tool>Issue
+from lintro.parsers.<tool>.<tool>_parser import parse_<tool>_output
+
+__all__ = [
+    "<Tool>Issue",
+    "parse_<tool>_output",
+]
 ```
 
 ### 5. Sample Violation File (`test_samples/tools/<category>/<tool>/<tool>_violations.<ext>`)

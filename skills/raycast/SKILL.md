@@ -62,7 +62,7 @@ src/
 
 Each command is a separate entry point in `package.json`:
 
-```json
+```jsonc
 {
   "commands": [
     {

@@ -159,6 +159,8 @@ state files.
 
 ```typescript
 // fixtures/authFixtures.ts
+import path from "node:path";
+
 import { test as baseTest, Browser, Page } from "@playwright/test";
 
 const authFiles = {
@@ -442,7 +444,7 @@ async function setupDashboardForTestcase(
   await myAppsPage.navigation.openHandle(handleName);
   const appsDetailPage = new AppsDetailPage(guest);
   await appsDetailPage.fileUploadComponent.uploadFilesFromTestCase(
-    handle,
+    handleName,
     testcase,
   );
   await appsDetailPage.fileUploadComponent.submitFileUpload();

@@ -24,7 +24,7 @@ Use **`uv run lintro chk`** or **`uv run lintro fmt`**; do not run bundled tools
 - `lintro-verify`: Verify that a lintro tool implementation is complete and follows all project standards. Use after adding a new tool to lintro. (`skills/lintro-verify/SKILL.md`)
 - `pr`: Create pull requests with proper templates and metadata. Use when asked to create a PR, open a pull request, or submit changes for review. Auto-assign and auto-labeling handled by CI. (`skills/pr/SKILL.md`)
 - `raycast`: Raycast extension development standards. Use when writing or modifying Raycast extensions. Overrides default linting to use Raycast's toolchain (ray lint) instead of lintro. (`skills/raycast/SKILL.md`)
-- `rebase`: Rebase the current branch onto the latest main. Use when asked to rebase, sync with main, update branch, or pull latest changes. Fetches, rebases, and force-pushes with lease. (`skills/rebase/SKILL.md`)
+- `rebase`: Rebase the current branch onto the latest main. Use when asked to rebase, sync with main, update branch, or pull latest changes. Fetches and rebases onto latest main; does not push automatically. (`skills/rebase/SKILL.md`)
 - `reconcile`: Consolidate worktrees and clean up stale branches. Use when asked to reconcile, clean up worktrees, consolidate branches, or tidy up a project's git state. (`skills/reconcile/SKILL.md`)
 - `review`: Run CodeRabbit to review code changes. Use when asked to review code, get feedback, or analyze changes. Max 3 runs per change set. (`skills/review/SKILL.md`)
 - `scorecard`: Audit the OpenSSF Scorecard rating for py-lintro. Use when asked to check the scorecard, understand the rating, or find what's missing. Specific to github.com/lgtm-hq/py-lintro. (`skills/scorecard/SKILL.md`)
@@ -36,9 +36,9 @@ Use **`uv run lintro chk`** or **`uv run lintro fmt`**; do not run bundled tools
 - `test-api`: Playwright API testing best practices. Use when writing REST API tests with Playwright. Enforces Zod schema validation, client/fixture separation, and contract testing. (`skills/test-api/SKILL.md`)
 - `test-shell`: BATS shell script testing. Use when writing or running shell script tests. Covers setup/teardown, assertions, mocking, helper patterns, and coverage with kcov. (`skills/test-shell/SKILL.md`)
 - `test-ui`: Playwright E2E testing best practices. Use when writing browser tests, visual regression, or accessibility tests. Enforces user-facing locators, auto-waiting, Page Object Model, and project-specific QSF conventions. (`skills/test-ui/SKILL.md`)
-- `turbo-add`: Use this skill when adding a new theme family to turbo-themes (for example Nord), including defining token files, wiring theme exports, and integrating the new family into the package. See `skills/turbo-add/SKILL.md` for full implementation steps.
-- `turbo-test`: Use this skill to run the full turbo-themes build and test pipeline whenever a theme implementation needs validation before commit or PR. See `skills/turbo-test/SKILL.md` for the exact commands and expected checks.
-- `turbo-verify`: Use this skill to verify a theme implementation is complete and meets project standards, including completeness checks, naming consistency, and packaging readiness. See `skills/turbo-verify/SKILL.md` for the full verification checklist.
+- `turbo-add`: Guide for adding a new theme family to turbo-themes. Use when implementing Nord, Solarized, Gruvbox, Tokyo Night, One Dark, Ayu, Kanagawa, Everforest, Radix, or any new theme. (`skills/turbo-add/SKILL.md`)
+- `turbo-test`: Run the full turbo-themes build and test pipeline. Use when asked to build, test, lint, or validate the turbo-themes project. Includes example projects by default. (`skills/turbo-test/SKILL.md`)
+- `turbo-verify`: Verify that a theme implementation is complete and follows all project standards. Use after adding a new theme to turbo-themes. (`skills/turbo-verify/SKILL.md`)
 - `which-pr`: Report which PR is being worked on in the current conversation. Use when asked about the current PR context. (`skills/which-pr/SKILL.md`)
 
 Total skills: 30
