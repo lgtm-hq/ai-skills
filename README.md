@@ -21,20 +21,29 @@ agent’s config directory.
 ## Install (recommended)
 
 Use the [Vercel Labs `skills` CLI](https://github.com/vercel-labs/skills) to
-install into detected agents:
+install into detected agents. Prefer **[Bun](https://bun.sh)** and **`bunx`**
+(same idea as **`npx`** / **`pnpm dlx`** for other runtimes):
 
 ```bash
 # Latest from default branch
-npx skills add lgtm-hq/ai-skills -g --all
+bunx skills add lgtm-hq/ai-skills -g --all
 
 # Pinned to a release tag (example)
-npx skills add lgtm-hq/ai-skills@v0.1.0 -g --all
+bunx skills add lgtm-hq/ai-skills@v0.1.0 -g --all
 
 # Single agent (e.g. Cursor)
-npx skills add lgtm-hq/ai-skills -a cursor -g
+bunx skills add lgtm-hq/ai-skills -a cursor -g
 ```
 
-Update later with `npx skills update lgtm-hq/ai-skills` (see upstream CLI docs).
+**npm / pnpm equivalents** (same flags):
+
+```bash
+npx skills add lgtm-hq/ai-skills -g --all
+pnpm dlx skills add lgtm-hq/ai-skills -g --all
+```
+
+Update later with `bunx skills update lgtm-hq/ai-skills`, or `npx skills update …` /
+`pnpm dlx skills update …` (see upstream CLI docs).
 
 ## Community
 
@@ -67,7 +76,7 @@ flowchart LR
     SK["skills/**/SKILL.md"]
   end
   subgraph cli [skills CLI]
-    add["npx skills add …"]
+    add["bunx skills add …"]
   end
   subgraph dirs [Agent config]
     c["~/.claude/skills"]

@@ -21,7 +21,7 @@ body:
       label: Steps to reproduce
       description: Exact steps and observed output
       placeholder: |
-        1. Run: npx skills add lgtm-hq/ai-skills
+        1. Run: bunx skills add lgtm-hq/ai-skills (or npx / pnpm dlx)
         2. Open Codex
         3. See error ...
     validations:
