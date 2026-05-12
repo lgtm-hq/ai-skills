@@ -92,6 +92,10 @@ def _read_skill_meta(skill_md: Path) -> tuple[str, str]:
         raise ValueError(msg)
     end = text.find("\n---\n", 4)
     if end == -1:
+        alt = text.find("\n---", 4)
+        if alt != -1 and text[alt + 4 :].strip() == "":
+            end = alt
+    if end == -1:
         msg = f"Missing closing --- in {skill_md}"
         raise ValueError(msg)
     fm = text[4:end]

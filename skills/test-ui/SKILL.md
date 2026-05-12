@@ -10,13 +10,13 @@ project-specific conventions.
 
 ## Commands
 
-- `source ./bin/load_env.sh && npx playwright test` - Run all tests headless
-- `source ./bin/load_env.sh && npx playwright test --project=regression-tests` - Skip
+- `source ./bin/load_env.sh && bunx playwright test` - Run all tests headless
+- `source ./bin/load_env.sh && bunx playwright test --project=regression-tests` - Skip
   auth-setup
-- `bun run test` / `npx playwright test --ui` - Interactive UI mode
-- `npx playwright test --reporter=list` - Verbose terminal output
-- `npx playwright test --grep @smoke` - Run tagged tests
-- `npx playwright show-trace <trace.zip>` - Inspect failure traces
+- `bun run test` / `bunx playwright test --ui` - Interactive UI mode
+- `bunx playwright test --reporter=list` - Verbose terminal output
+- `bunx playwright test --grep '@smoke'` - Run tagged tests
+- `bunx playwright show-trace <trace.zip>` - Inspect failure traces
 
 ## Locators (Priority Order)
 

@@ -7,7 +7,6 @@ import subprocess  # nosec B404 - tests only; run copied validate.sh via argv li
 from pathlib import Path
 
 import pytest
-from assertpy import assert_that
 from loguru import logger
 
 
@@ -74,8 +73,8 @@ def test_validate_skips_when_skills_directory_is_missing(
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert_that(result.returncode).is_equal_to(0)
-    assert_that(result.stdout).contains("No skills/ directory")
+    assert result.returncode == 0
+    assert "No skills/ directory" in result.stdout
     logger.info(
         "[TEST] skills dir missing: rc={} (expect skip message in stdout)",
         result.returncode,
@@ -100,8 +99,8 @@ def test_validate_accepts_matching_skill_and_agents_entry(
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert_that(result.returncode).is_equal_to(0)
-    assert_that(result.stdout).contains("Validation passed.")
+    assert result.returncode == 0
+    assert "Validation passed." in result.stdout
     logger.info("[TEST] matching skill + AGENTS: rc={}", result.returncode)
 
 
@@ -121,10 +120,8 @@ def test_validate_rejects_missing_agents_entry(
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert_that(result.returncode).is_equal_to(1)
-    assert_that(result.stdout).contains(
-        "AGENTS.md missing skill entry for: example",
-    )
+    assert result.returncode == 1
+    assert "AGENTS.md missing skill entry for: example" in result.stdout
     logger.info("[TEST] missing AGENTS entry: rc={}", result.returncode)
 
 
@@ -147,8 +144,8 @@ def test_validate_accepts_agents_entry_with_regex_special_chars_in_skill_name(
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert_that(result.returncode).is_equal_to(0)
-    assert_that(result.stdout).contains("Validation passed.")
+    assert result.returncode == 0
+    assert "Validation passed." in result.stdout
     logger.info("[TEST] regex-special chars in skill id: rc={}", result.returncode)
 
 
@@ -171,8 +168,6 @@ def test_validate_rejects_agents_entry_with_path_like_skill_name(
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert_that(result.returncode).is_equal_to(1)
-    assert_that(result.stdout).contains(
-        "AGENTS.md contains invalid skill name: ../scripts",
-    )
+    assert result.returncode == 1
+    assert "AGENTS.md contains invalid skill name: ../scripts" in result.stdout
     logger.info("[TEST] path-like skill name rejected: rc={}", result.returncode)
