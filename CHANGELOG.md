@@ -11,7 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- community docs: `CONTRIBUTING.md`, `SUPPORT.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`
+- `.editorconfig` aligned with other LGTM-HQ repos (Markdown / YAML / JSON spacing)
+
 ### Changed
+
+- README: prefer **Bun** (`bunx`) for the `skills` CLI; document **npm** / **pnpm**
+  equivalents
+- README: drop hardcoded skill count; **SECURITY.md** lists both security contacts;
+  bug report repro steps show explicit `bunx` / `npx` / `pnpm dlx` commands
 
 ### Deprecated
 
