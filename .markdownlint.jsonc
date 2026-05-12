@@ -1,0 +1,9 @@
+{
+  // Matches enforce.line_length in .lintro-config.yaml (markdownlint-cli2 expects
+  // flat rule keys in .markdownlint*.jsonc, not the cli2 wrapper object).
+  "MD013": {
+    "line_length": 88,
+    "code_blocks": false,
+    "tables": false
+  }
+}

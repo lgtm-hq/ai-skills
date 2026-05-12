@@ -5,9 +5,14 @@ requires-python = ">=3.13"
 
 [dependency-groups]
 dev = [
+  "loguru>=0.7.3",
   "lintro>=0.62.1",
   "pytest-cov>=7.0.0",
   "pytest-timeout>=2.4.0",
   "pytest-xdist>=3.8.0",
   "pytest>=9.0.3",
 ]
+
+[tool.bandit]
+# B101 flags pytest's normal use of assert; tests here are pytest-only.
+skips = ["B101"]

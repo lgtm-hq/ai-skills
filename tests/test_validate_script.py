@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
+import subprocess  # nosec B404 - tests only; run copied validate.sh via argv list without shell
 from pathlib import Path
 
 import pytest
+from loguru import logger
 
 
 @pytest.fixture(scope="module")
@@ -23,10 +24,19 @@ def _copy_validate_script(
     repo_root: Path,
     tmp_path: Path,
 ) -> Path:
-    """Copy the validation script into a temporary repository."""
+    """Copy ``validate.sh`` into an isolated temp tree for tests.
+
+    Args:
+        repo_root: Path to the real repository root (source of ``validate.sh``).
+        tmp_path: Pytest temporary directory acting as fake repo root.
+
+    Returns:
+        Path to the copied ``validate.sh`` under ``tmp_path``.
+    """
     script_path = tmp_path / "scripts" / "validate.sh"
-    script_path.parent.mkdir()
-    shutil.copy2(repo_root / "scripts" / "validate.sh", script_path)
+    script_path.parent.mkdir(parents=True, exist_ok=False)
+    shutil.copy2(src=repo_root / "scripts" / "validate.sh", dst=script_path)
+    logger.debug("Copied validate.sh to {}", script_path)
     return script_path
 
 
@@ -34,8 +44,18 @@ def _run_validate(
     script_path: Path,
     cwd: Path,
 ) -> subprocess.CompletedProcess[str]:
-    """Run the validation script in a temporary repository."""
-    return subprocess.run(
+    """Run the validation script in a temporary repository.
+
+    Args:
+        script_path: Path to ``validate.sh`` to execute.
+        cwd: Working directory passed to the subprocess (fake repo root).
+
+    Returns:
+        The ``subprocess.CompletedProcess`` from invoking bash with captured
+        ``stdout`` and ``stderr`` (``text=True``).
+    """
+    logger.debug("Running validate.sh cwd={} script={}", cwd, script_path)
+    return subprocess.run(  # nosec B603 B607 - argv is fixed [bash, script_path]; test fixtures supply path, shell=False implicit
         ["bash", str(script_path)],
         cwd=cwd,
         check=False,
@@ -55,6 +75,10 @@ def test_validate_skips_when_skills_directory_is_missing(
 
     assert result.returncode == 0
     assert "No skills/ directory" in result.stdout
+    logger.info(
+        "[TEST] skills dir missing: rc={} (expect skip message in stdout)",
+        result.returncode,
+    )
 
 
 def test_validate_accepts_matching_skill_and_agents_entry(
@@ -77,6 +101,7 @@ def test_validate_accepts_matching_skill_and_agents_entry(
 
     assert result.returncode == 0
     assert "Validation passed." in result.stdout
+    logger.info("[TEST] matching skill + AGENTS: rc={}", result.returncode)
 
 
 def test_validate_rejects_missing_agents_entry(
@@ -97,6 +122,7 @@ def test_validate_rejects_missing_agents_entry(
 
     assert result.returncode == 1
     assert "AGENTS.md missing skill entry for: example" in result.stdout
+    logger.info("[TEST] missing AGENTS entry: rc={}", result.returncode)
 
 
 def test_validate_accepts_agents_entry_with_regex_special_chars_in_skill_name(
@@ -120,6 +146,7 @@ def test_validate_accepts_agents_entry_with_regex_special_chars_in_skill_name(
 
     assert result.returncode == 0
     assert "Validation passed." in result.stdout
+    logger.info("[TEST] regex-special chars in skill id: rc={}", result.returncode)
 
 
 def test_validate_rejects_agents_entry_with_path_like_skill_name(
@@ -143,3 +170,4 @@ def test_validate_rejects_agents_entry_with_path_like_skill_name(
 
     assert result.returncode == 1
     assert "AGENTS.md contains invalid skill name: ../scripts" in result.stdout
+    logger.info("[TEST] path-like skill name rejected: rc={}", result.returncode)

@@ -2,26 +2,42 @@
 # Lintro Configuration
 # https://github.com/lgtm-hq/py-lintro
 #
-# ai-skills is a markdown-focused repository with lightweight Python tests for
-# repository validation. Enable only tools relevant to those files.
+# All bundled tools are enabled; each tool no-ops or skips when it has no
+# matching files in this repository.
 
 enforce:
   line_length: 88
 
 execution:
   enabled_tools:
-    - black
-    - ruff
-    - prettier
-    - markdownlint
-    - yamllint
-    - pydoclint
     - actionlint
+    - astro-check
+    - bandit
+    - black
+    - cargo_audit
+    - cargo_deny
+    - clippy
+    - gitleaks
+    - hadolint
+    - markdownlint
+    - mypy
+    - osv_scanner
+    - oxfmt
+    - oxlint
+    - prettier
+    - pydoclint
+    - pytest
+    - ruff
+    - rustfmt
+    - semgrep
     - shellcheck
     - shfmt
+    - sqlfluff
+    - svelte-check
     - taplo
-    - gitleaks
-    - pytest
+    - tsc
+    - vue-tsc
+    - yamllint
   tool_order: 'priority'
   fail_fast: false
 
@@ -37,12 +53,6 @@ defaults:
         options:
           printWidth: 88
 
-  markdownlint:
-    MD013:
-      line_length: 88
-      code_blocks: false
-      tables: false
-
   yamllint:
     extends: 'default'
     rules:
@@ -56,10 +66,46 @@ defaults:
         allow-non-breakable-inline-mappings: true
 
 tools:
+  actionlint:
+    enabled: true
+
+  astro-check:
+    enabled: true
+
+  bandit:
+    enabled: true
+
   black:
     enabled: true
 
-  ruff:
+  cargo_audit:
+    enabled: true
+
+  cargo_deny:
+    enabled: true
+
+  clippy:
+    enabled: true
+
+  gitleaks:
+    enabled: true
+
+  hadolint:
+    enabled: true
+
+  markdownlint:
+    enabled: true
+
+  mypy:
+    enabled: true
+
+  osv_scanner:
+    enabled: true
+
+  oxfmt:
+    enabled: true
+
+  oxlint:
     enabled: true
 
   prettier:
@@ -68,26 +114,38 @@ tools:
   pydoclint:
     enabled: true
 
-  markdownlint:
-    enabled: true
-
-  yamllint:
-    enabled: true
-
-  actionlint:
-    enabled: true
-
-  taplo:
-    enabled: true
-
-  gitleaks:
-    enabled: true
-
   pytest:
+    enabled: true
+
+  ruff:
+    enabled: true
+
+  rustfmt:
+    enabled: true
+
+  semgrep:
     enabled: true
 
   shellcheck:
     enabled: true
 
   shfmt:
+    enabled: true
+
+  sqlfluff:
+    enabled: true
+
+  svelte-check:
+    enabled: true
+
+  taplo:
+    enabled: true
+
+  tsc:
+    enabled: true
+
+  vue-tsc:
+    enabled: true
+
+  yamllint:
     enabled: true

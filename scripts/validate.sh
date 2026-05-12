@@ -9,7 +9,8 @@ Validate skill repository consistency.
 Checks:
   1. SKILL.md filename casing in skills/*/
   2. name + description keys in SKILL.md frontmatter
-  3. AGENTS.md entries match skills/ directories
+  3. AGENTS.md entries match skills/ directories (regenerate skills list via:
+     uv run python scripts/generate_agents_md.py)
 EOF
 	exit 0
 fi
@@ -29,7 +30,8 @@ for dir in skills/*; do
 	fi
 	for entry in "$dir"/*; do
 		entry_name=$(basename "$entry")
-		if [[ "$entry_name" != "SKILL.md" && "${entry_name,,}" == "skill.md" ]]; then
+		entry_lower=$(printf '%s' "$entry_name" | tr '[:upper:]' '[:lower:]')
+		if [[ "$entry_name" != "SKILL.md" && "$entry_lower" == "skill.md" ]]; then
 			echo "Invalid skill filename casing: $entry"
 			errors=$((errors + 1))
 		fi
@@ -60,7 +62,7 @@ if [[ -f "AGENTS.md" ]]; then
 		[[ -d "$dir" ]] || continue
 		skill_name=$(basename "$dir")
 		escaped_skill_name=$(printf '%s' "$skill_name" | sed -E 's/[][(){}.^$*+?|\\]/\\&/g')
-		if ! rg --quiet -- "^[[:space:]]*[-*+][[:space:]]+\`$escaped_skill_name\`([[:space:]]|$)" AGENTS.md; then
+		if ! rg --quiet -- "^[[:space:]]*[-*+][[:space:]]+\`$escaped_skill_name\`([[:space:]:]|$)" AGENTS.md; then
 			echo "AGENTS.md missing skill entry for: $skill_name"
 			errors=$((errors + 1))
 		fi
