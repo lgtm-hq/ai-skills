@@ -13,7 +13,17 @@ is enabled for this repository, use the **Report a vulnerability** flow from the
 
 ### Email
 
-Send mail to [security@lgtm-hq.com](mailto:security@lgtm-hq.com) with:
+Send mail to **either** address (use whichever you can reach):
+
+- [security@lgtm-hq.com](mailto:security@lgtm-hq.com)
+- [turbocoder13@gmail.com](mailto:turbocoder13@gmail.com)
+
+An earlier security-policy draft used only the Gmail address
+([PR #9](https://github.com/lgtm-hq/ai-skills/pull/9), later folded into the docs work on
+[#11](https://github.com/lgtm-hq/ai-skills/pull/11)); **both** inbox names remain valid
+reporting paths for this repository.
+
+Include with your report:
 
 - A clear description of the issue and suspected impact
 - Steps to reproduce (proof-of-concept if possible)

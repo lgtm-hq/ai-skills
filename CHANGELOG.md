@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - README: prefer **Bun** (`bunx`) for the `skills` CLI; document **npm** / **pnpm**
   equivalents
+- README: drop hardcoded skill count; **SECURITY.md** lists both security contacts;
+  bug report repro steps show explicit `bunx` / `npx` / `pnpm dlx` commands
 
 ### Deprecated
 

@@ -54,7 +54,7 @@ Update later with `bunx skills update lgtm-hq/ai-skills`, or `npx skills update 
 
 ## Skill inventory
 
-See **[AGENTS.md](./AGENTS.md)** for the full list (**30** skills) with short
+See **[AGENTS.md](./AGENTS.md)** for the full list of skills with short
 descriptions and paths. Regenerate that index after skill changes (see
 `scripts/generate_agents_md.py` in CI).
 
