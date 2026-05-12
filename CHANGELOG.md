@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- community docs: `CONTRIBUTING.md`, `SUPPORT.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`
+- `.editorconfig` aligned with other LGTM-HQ repos (Markdown / YAML / JSON spacing)
+
 ### Changed
 
 ### Deprecated

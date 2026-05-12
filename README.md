@@ -36,6 +36,13 @@ npx skills add lgtm-hq/ai-skills -a cursor -g
 
 Update later with `npx skills update lgtm-hq/ai-skills` (see upstream CLI docs).
 
+## Community
+
+- [Contributing](./CONTRIBUTING.md)
+- [Support](./SUPPORT.md)
+- [Security policy](./SECURITY.md)
+- [Code of Conduct](./CODE_OF_CONDUCT.md)
+
 ## Skill inventory
 
 See **[AGENTS.md](./AGENTS.md)** for the full list (**30** skills) with short
@@ -75,7 +82,8 @@ flowchart LR
 
 ## Contributing (clone + check)
 
-For changes to skills, scripts, or tests:
+See **[CONTRIBUTING.md](./CONTRIBUTING.md)** for org policies, skill layout rules, and
+full PR expectations. Quick local loop:
 
 ```bash
 git clone https://github.com/lgtm-hq/ai-skills.git
@@ -84,6 +92,7 @@ uv sync
 uv run lintro fmt
 uv run lintro chk
 uv run lintro tst
+bash scripts/validate.sh
 ```
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) for PR titles
