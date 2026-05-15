@@ -12,7 +12,8 @@ jobs:
     permissions:
       contents: read
       packages: read
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-quality.yml@main
+    # Pin until lgtm-ci #147 + #160 are on main (docker reusable + Lintro Quality Checks name)
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-quality.yml@95b4ce2ef52eb6fd9322765d18535f3c04e95ec3
 
   validate:
     name: Validate skill repository structure
