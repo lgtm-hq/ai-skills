@@ -1,39 +1,31 @@
 ---
 name: CI
 
-"on":
+on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
 
-permissions:
-  contents: read
-
 jobs:
-  quality:
-    name: Lintro Quality Checks
+  lintro:
+    permissions:
+      contents: read
+      packages: read
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-quality.yml@main
+
+  validate:
+    name: Validate skill repository structure
+    needs: lintro
     runs-on: ubuntu-latest
-    container:
-      # Reuse the lgtm-ci lintro image instead of vendoring shared CI scripts.
-      # yamllint disable-line rule:line-length
-      image: ghcr.io/lgtm-hq/py-lintro@sha256:506e003cfb40f61d8b9f914f68fec199b8d2d0b2b4b8746f70a40ea0cf271fb3
-      options: --user 0
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
-        # yamllint disable-line rule:line-length
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-
-      - name: Add lintro to PATH
-        shell: bash
-        run: echo "/app/.venv/bin" >> "$GITHUB_PATH"
-
-      - name: Run lintro quality checks
-        shell: bash
-        run: lintro chk
 
       - name: Install ripgrep for validate.sh
         shell: bash
