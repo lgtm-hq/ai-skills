@@ -1,6 +1,7 @@
-node_modules/
-.lintro/
-.lintro/*
+# Exclude generated lintro reports from linting
 .lintro/**
+**/.lintro/**
+
+node_modules/
 .git
 __pycache__
