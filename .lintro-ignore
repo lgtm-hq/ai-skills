@@ -1,7 +1,14 @@
-# Exclude generated lintro reports from linting
-.lintro/**
-**/.lintro/**
+# Ignore test_samples directory and build artifacts from all linting/formatting
 
-node_modules/
-.git
+test_samples/
+build
+dist
+node_modules
+.venv
+venv
+env
+# Claude Code project memory and config (not source code)
+.claude
+
 __pycache__
+.lintro/*
