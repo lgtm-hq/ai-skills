@@ -30,3 +30,4 @@ jobs:
       tooling-ref: "b4f2df1506004eacddb6b303f235cf568050ff0e"
     permissions:
       contents: read
+      pull-requests: write
