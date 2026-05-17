@@ -17,7 +17,7 @@ jobs:
     container:
       # Reuse the lgtm-ci lintro image instead of vendoring shared CI scripts.
       # yamllint disable-line rule:line-length
-      image: ghcr.io/lgtm-hq/py-lintro@sha256:506e003cfb40f61d8b9f914f68fec199b8d2d0b2b4b8746f70a40ea0cf271fb3
+      image: ghcr.io/lgtm-hq/py-lintro@sha256:9835baef95ee5161239cc25e596bd512143d4297442199782af833b14d07cd02
       options: --user 0
 
     steps:
