@@ -123,7 +123,7 @@ SHAs to a commit that exists on GitHub (`repos/lgtm-hq/lgtm-ci/commits/<sha>`).
 
 **Baseline note:** [`lgtm-ci#138`](https://github.com/lgtm-hq/lgtm-ci/pull/138)
 is merged; the current caller pins match `lgtm-hq/lgtm-ci` **`main`** at
-`7a841708a04853ff21c9874a556ce279d1668f5a` (re-verify when bumping).
+`79444626c1b3afa4d959b5840b4b5310a46a4095` (re-verify when bumping).
 
 ## License
 
