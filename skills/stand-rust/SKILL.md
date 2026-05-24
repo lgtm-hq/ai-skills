@@ -20,8 +20,7 @@ Standards for Rust code.
 - Use `/lint` for formatting and linting — lintro runs `rustfmt`, `clippy`,
   `cargo_audit`, and `cargo_deny` as configured
 - Treat clippy warnings as errors in CI (`-D warnings`)
-- Set `edition` explicitly in `Cargo.toml`; customize formatting via `rustfmt.toml`
-  where needed
+- Customize formatting via `rustfmt.toml` where needed
 
 ## Error Handling
 

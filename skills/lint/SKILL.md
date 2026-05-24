@@ -1,19 +1,22 @@
 ---
 name: lint
 description: >-
-  Run linting and formatting with lintro. Use `uv run lintro chk` for checks and
-  `uv run lintro fmt` for formatting. Do not run bundled native tools directly
-  unless another skill explicitly overrides (e.g. raycast).
+  Run linting and formatting. Prefer `uv run lintro chk` for checks and
+  `uv run lintro fmt` for formatting when lintro is available; fall back to native
+  tools only when lintro is unavailable or another skill explicitly overrides
+  (e.g. raycast).
 ---
 
 # Lint
 
 ## Tooling
 
-All linting and formatting MUST go through [lintro](https://github.com/lgtm-hq/py-lintro).
-Do not invoke bundled native tools directly (ruff, black, clippy, rustfmt, eslint,
-bandit, etc.) unless another skill in this repository explicitly documents an
-override (for example, `raycast` uses `ray lint`).
+Prefer [lintro](https://github.com/lgtm-hq/py-lintro) for linting and formatting.
+When available, use `uv run lintro chk` and `uv run lintro fmt`.
+
+If lintro is unavailable, fall back to the language's native bundled tools (ruff,
+black, clippy, rustfmt, eslint, bandit, etc.). Another skill in this repository
+may also explicitly document an override (for example, `raycast` uses `ray lint`).
 
 ## Commands
 
@@ -37,8 +40,10 @@ override (for example, `raycast` uses `ray lint`).
 When asked to lint or format code:
 
 1. Run `uv run lintro fmt` FIRST to auto-fix formatting issues across the ENTIRE
-   codebase
-2. Run `uv run lintro chk` to check for remaining issues
-3. Manually fix any issues found — do not leave issues unfixed
-4. Re-run `uv run lintro chk` to verify all fixes
-5. Only as a last resort, add ignore comments WITH justification
+   codebase (when lintro is available)
+2. Run `uv run lintro chk` to check for remaining issues (when lintro is available)
+3. If lintro is unavailable, use native tooling for the language and still aim for
+   zero issues
+4. Manually fix any issues found — do not leave issues unfixed
+5. Re-run the check command to verify all fixes
+6. Only as a last resort, add ignore comments WITH justification
