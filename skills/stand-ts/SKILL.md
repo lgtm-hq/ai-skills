@@ -86,7 +86,7 @@ Standards for TypeScript and JavaScript code.
 
 ## Linting
 
-See `/lint` for linting tool preferences and workflow.
+See `/lint` for linting and formatting workflow.
 
 ## Testing
 

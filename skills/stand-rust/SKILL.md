@@ -17,10 +17,11 @@ Standards for Rust code.
 
 ## Toolchain
 
-- `cargo fmt` for formatting (enforced via `rustfmt.toml` where customization is
-  needed)
-- `cargo clippy` for linting — treat warnings as errors in CI (`-D warnings`)
-- See `/lint` for lintro integration when available
+- Use `/lint` for formatting and linting — lintro runs `rustfmt`, `clippy`,
+  `cargo_audit`, and `cargo_deny` as configured
+- Treat clippy warnings as errors in CI (`-D warnings`)
+- Set `edition` explicitly in `Cargo.toml`; customize formatting via `rustfmt.toml`
+  where needed
 
 ## Error Handling
 
@@ -116,7 +117,8 @@ mod tests {
 
 - Keep the dependency tree minimal — every dependency is an audit and supply chain
   surface
-- Run `cargo audit` to check for known vulnerabilities
+- Run vulnerability scanning via lintro (`uv run lintro chk` includes `cargo_audit`
+  and `cargo_deny`)
 - Pin versions in workspace `Cargo.toml` for multi-crate workspaces
 - Prefer well-maintained crates with active maintainers and good documentation
 
@@ -130,4 +132,4 @@ mod tests {
 
 ## Linting
 
-See `/lint` for linting tool preferences and workflow.
+See `/lint` for linting and formatting workflow.

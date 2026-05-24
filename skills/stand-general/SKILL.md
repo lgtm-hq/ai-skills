@@ -9,7 +9,7 @@ Global standards that apply to all projects and languages.
 
 ## Linting
 
-See `/lint` for linting tool preferences and workflow.
+See `/lint` for linting and formatting workflow.
 
 ## Single Source of Truth
 

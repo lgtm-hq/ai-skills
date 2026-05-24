@@ -90,7 +90,7 @@ def function_with_docstring(
 
 ## Linting
 
-See `/lint` for linting tool preferences and workflow.
+See `/lint` for linting and formatting workflow.
 
 ## Ignoring Issues
 
