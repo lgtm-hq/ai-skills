@@ -19,7 +19,7 @@ Use **`uv run lintro chk`** or **`uv run lintro fmt`**; do not run bundled tools
 - `design`: Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics. (`skills/design/SKILL.md`)
 - `issue`: Create GitHub issues with proper formatting, labels, and AI implementation prompts. Use when asked to create an issue, report a bug, or request a feature. (`skills/issue/SKILL.md`)
 - `jira`: Generate Jira-style ticket descriptions. Use when the user says "/jira", "jira ticket", or "give me a Jira ticket". (`skills/jira/SKILL.md`)
-- `lint`: Run linting and formatting with lintro. Use when asked to lint, format, or check code quality. Commands: lintro fmt, lintro chk, lintro tst. (`skills/lint/SKILL.md`)
+- `lint`: Run linting and formatting. Prefer lintro when available; fall back to native tools otherwise. Use when asked to lint, format, or check code quality. (`skills/lint/SKILL.md`)
 - `lintro-add`: Guide for adding new linting/formatting tools to lintro. Use when implementing shellcheck, shfmt, sqlfluff, taplo, semgrep, gitleaks, or any new tool plugin. (`skills/lintro-add/SKILL.md`)
 - `lintro-verify`: Verify that a lintro tool implementation is complete and follows all project standards. Use after adding a new tool to lintro. (`skills/lintro-verify/SKILL.md`)
 - `pr`: Create pull requests with proper templates and metadata. Use when asked to create a PR, open a pull request, or submit changes for review. Auto-assign and auto-labeling handled by CI. (`skills/pr/SKILL.md`)
@@ -29,9 +29,10 @@ Use **`uv run lintro chk`** or **`uv run lintro fmt`**; do not run bundled tools
 - `review`: Run CodeRabbit to review code changes. Use when asked to review code, get feedback, or analyze changes. Max 3 runs per change set. (`skills/review/SKILL.md`)
 - `scorecard`: Audit the OpenSSF Scorecard rating for py-lintro. Use when asked to check the scorecard, understand the rating, or find what's missing. Specific to github.com/lgtm-hq/py-lintro. (`skills/scorecard/SKILL.md`)
 - `stand-ci`: CI/CD and GitHub Actions guidelines. Use when writing workflows or Actions. Shell script code must be in dedicated .sh or .py files. Actions must be pinned to SHAs, not versions. (`skills/stand-ci/SKILL.md`)
-- `stand-general`: Global coding standards for all projects and languages. Use when writing any code. Covers linting with lintro, testing with coverage, semantic commits, PR creation, and code review with CodeRabbit. (`skills/stand-general/SKILL.md`)
+- `stand-general`: Global coding standards for all projects and languages. Use when writing any code. Covers linting with lintro, testing with coverage, semantic commits, PR creation, and code review with cr (CodeRabbit CLI). (`skills/stand-general/SKILL.md`)
 - `stand-py`: Python >= 3.11 coding standards. Use when writing Python code. Requires type hints, return types, Google-style docstrings, trailing commas, explicit kwargs, StrEnum with auto(), dataclasses, pytest-style tests. (`skills/stand-py/SKILL.md`)
-- `stand-ts`: TypeScript and JavaScript standards. Use when writing TS/JS code. Prefer bun over npm for package management. (`skills/stand-ts/SKILL.md`)
+- `stand-rust`: Rust coding standards. Use when writing Rust code. Covers edition, error handling with thiserror/anyhow, unsafe policy, type patterns, testing, documentation, and dependency management. (`skills/stand-rust/SKILL.md`)
+- `stand-ts`: TypeScript and JavaScript standards. Use when writing TS/JS code. Covers strict mode, type patterns, error handling, imports, naming, testing, React conventions, and package management with bun. (`skills/stand-ts/SKILL.md`)
 - `test`: Run tests with coverage reporting. Auto-detects test frameworks (Vitest, Playwright, RSpec, pytest, Jest, BATS, etc.) and runs appropriate test commands. Use when asked to run tests, check coverage, or validate code. (`skills/test/SKILL.md`)
 - `test-api`: Playwright API testing best practices. Use when writing REST API tests with Playwright. Enforces Zod schema validation, client/fixture separation, and contract testing. (`skills/test-api/SKILL.md`)
 - `test-shell`: BATS shell script testing. Use when writing or running shell script tests. Covers setup/teardown, assertions, mocking, helper patterns, and coverage with kcov. (`skills/test-shell/SKILL.md`)
@@ -41,6 +42,6 @@ Use **`uv run lintro chk`** or **`uv run lintro fmt`**; do not run bundled tools
 - `turbo-verify`: Verify that a theme implementation is complete and follows all project standards. Use after adding a new theme to turbo-themes. (`skills/turbo-verify/SKILL.md`)
 - `which-pr`: Report which PR is being worked on in the current conversation. Use when asked about the current PR context. (`skills/which-pr/SKILL.md`)
 
-Total skills: 30
+Total skills: 31
 
 <!-- markdownlint-enable MD013 -->
