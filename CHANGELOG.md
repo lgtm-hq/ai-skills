@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.1.2] - 2026-05-24
+
+### Features
+
+- **skills**: review stand-* skills, add Rust, centralize linting (#20) (80f7f63)
+
+### Other Changes
+
+- **deps**: update digest (#17) (75486ca)
+- align reusable lgtm-ci workflows (#15) (dfa5fec)
+- **deps**: update ghcr.io/lgtm-hq/py-lintro digest (#5) (3e49605)
+
 ## [0.1.1] - 2026-05-12
 
 ### Bug Fixes
@@ -68,7 +80,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/lgtm-hq/ai-skills/releases/tag/v0.1.0
 [#1]: https://github.com/lgtm-hq/ai-skills/pull/1
