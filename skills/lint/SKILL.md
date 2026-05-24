@@ -1,13 +1,19 @@
 ---
 name: lint
-description: "Run linting and formatting with lintro. Use when asked to lint, format, or check code quality. Commands: lintro fmt, lintro chk, lintro tst."
+description: >-
+  Run linting and formatting. Prefer lintro when available; fall back to native
+  tools otherwise. Use when asked to lint, format, or check code quality.
 ---
 
 # Lint
 
-Run linting commands using lintro.
+## Tool Preference
 
-## Commands
+Prefer [lintro](https://github.com/lgtm-hq/py-lintro) over native tools when
+available. If lintro is not installed, use the language's native tooling directly
+(ruff, clippy, eslint, etc.).
+
+## Commands (lintro)
 
 - `uv run lintro fmt` - Format code
 - `uv run lintro chk` - Check code for issues
@@ -15,16 +21,15 @@ Run linting commands using lintro.
 
 ## Rules
 
-- All linting should be done with lintro only
-- Native tools (ruff, black, mypy, etc.) should NOT be used directly
-- Linting with lintro should have zero issues before proceeding
+- Linting must produce **zero issues** before proceeding
 - **Fix ALL issues** - whether they were introduced in the current session or
   pre-existing
-- **Ignoring issues is a LAST resort** - only use `# noqa`, `# type: ignore`, `# nosec`,
-  `# yamllint disable-line`, etc. when there is no reasonable way to fix the issue
+- **Ignoring issues is a LAST resort** - only use `# noqa`, `# type: ignore`,
+  `# nosec`, `# yamllint disable-line`, etc. when there is no reasonable way to
+  fix the issue
 - **Justification required for ignores** - any ignore comment MUST include an
-  explanation of why the ignore is necessary (e.g., `# nosec B604 - not a subprocess
-call, just a dataclass field named 'shell'`)
+  explanation of why the ignore is necessary (e.g., `# nosec B604 - not a
+  subprocess call, just a dataclass field named 'shell'`)
 
 ## Usage
 

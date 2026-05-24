@@ -9,9 +9,7 @@ Global standards that apply to all projects and languages.
 
 ## Linting
 
-- All linting MUST be done with `lintro`
-- Available commands: `lintro fmt`, `lintro chk`, `lintro tst`
-- Native tools should NOT be used directly
+See `/lint` for linting tool preferences and workflow.
 
 ## Single Source of Truth
 
@@ -68,10 +66,3 @@ Commit rules:
 - Use `cr` with `--prompt-only` flag
 - For uncommitted changes: `cr --prompt-only -t uncommitted`
 - LIMIT: Maximum 3 `cr` runs per change set
-
-## Language-Specific
-
-See also:
-
-- `/stand-py` - Python >= 3.11 standards
-- `/stand-ts` - TypeScript/JavaScript standards

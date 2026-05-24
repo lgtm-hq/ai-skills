@@ -90,8 +90,7 @@ def function_with_docstring(
 
 ## Linting
 
-- Use `lintro` for all linting (not native tools)
-- Code must pass `lintro chk` with zero issues
+See `/lint` for linting tool preferences and workflow.
 
 ## Ignoring Issues
 
