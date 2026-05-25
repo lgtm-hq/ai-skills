@@ -75,8 +75,10 @@ Every component must include:
 - Semantic HTML elements (`<nav>`, `<main>`, `<article>`, not `<div>` soup)
 - `aria-label` on interactive elements without visible text (icon-only buttons, etc.)
 - Color contrast ratio >= 4.5:1 for body text, >= 3:1 for large text (WCAG AA)
-- Keyboard navigation support (`tabindex`, visible focus styles, no mouse-only
-  interactions)
+- Keyboard navigation support: use `tabindex="0"` for focusable elements in natural tab
+  order; use `tabindex="-1"` only when programmatic focus is needed (e.g., modal traps).
+  Never use positive `tabindex` values—they break predictable focus order (WCAG 2.4.3).
+  Always pair with visible focus styles and avoid mouse-only interactions.
 - `prefers-reduced-motion` media query wrapping all animations
 - `alt` text on all images; decorative images use `alt=""`
 
@@ -92,9 +94,10 @@ Every component must include:
 
 ## Before Submitting
 
-1. Run through an accessibility audit: `bunx axe-core` or manual check against the list
-   above
-2. Test at 320px, 768px, and 1280px viewport widths
+1. Run through an accessibility audit: `bunx @axe-core/cli <url>` (or `npx axe-cli
+   <url>`) or manual check against the list above
+2. Test at 640px, 768px, and 1024px viewport widths (matching sm/md/lg breakpoints);
+   optionally add 320px for mobile minimum
 3. Verify no hardcoded color values outside CSS variables
 4. Confirm `prefers-reduced-motion` is respected
 5. Verify font loading — no FOUT/FOIT without fallback
