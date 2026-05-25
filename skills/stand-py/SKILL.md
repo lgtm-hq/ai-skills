@@ -96,6 +96,14 @@ See `/lint` for linting and formatting workflow.
 
 See `/lint` for ignore policy (Rules section).
 
+Python-specific ignore style uses a preceding-line comment (not inline nosec style
+used by non-Python tools in `/lint`):
+
+```python
+# Ignore: External API returns dynamic structure
+data: Any = api.fetch()  # type: ignore[no-untyped-call]
+```
+
 Additional Python-specific note: docstrings are required even for tests — no
 exceptions.
 

@@ -12,7 +12,7 @@ Pre-commit workflow and commit guidelines.
 Before making ANY commit:
 
 1. Run the `/lint` workflow — all checks must pass with zero issues (abort if any
-   issues remain)
+   issues remain). See `/lint` — full check, no `--tools` filtering.
 2. All tests must pass (`lintro tst`)
 3. Where applicable, Docker builds pass
 
@@ -71,7 +71,8 @@ should be added):
 
 When asked to commit:
 
-1. Run the `/lint` workflow — abort if any issues remain
+1. Run the `/lint` workflow — abort if any issues remain (see `/lint` — full check,
+   no `--tools` filtering)
    - Raycast extensions: use the `raycast` skill (`ray lint`) instead of lintro
    - Other projects without lintro: use the appropriate lint command from `/lint`
 2. Run tests - abort if any failures:

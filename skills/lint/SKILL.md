@@ -26,6 +26,9 @@ may also explicitly document an override (for example, `raycast` uses `ray lint`
 
 ## Rules
 
+- **CRITICAL: NEVER run `lintro chk --tools ...` (targeted/filtered checks).** Always run
+  the full `uv run lintro chk` without `--tools`. Filtered runs silently skip tools and
+  miss issues.
 - Linting must produce **zero issues** before proceeding
 - **Fix ALL issues** — whether introduced in the current session or pre-existing
 - **Ignoring issues is a LAST resort** — only use `# noqa`, `# type: ignore`,
