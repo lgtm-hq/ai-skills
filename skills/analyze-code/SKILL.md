@@ -52,7 +52,9 @@ Use ripgrep and manual inspection for structural issues:
 
 ```bash
 # Long functions (heuristic: functions with many lines — inspect top hits)
-rg -n '^(async )?def |^function |^fn ' -t py -t rust -t ts -t js
+rg -n '^\s*(async\s+)?def\s+\w+' -t py
+rg -n '^\s*(pub(\([^)]*\))?\s+)?(async\s+)?(unsafe\s+)?(const\s+)?fn\s+\w+' -t rust
+rg -n '^\s*(export\s+)?(default\s+)?function\s+\w+' -t ts -t js
 
 # Dead code / unused imports (lint tools often catch these; supplement with:)
 rg -n '# (noqa|type: ignore|allow dead_code)'  # existing suppressions worth reviewing
