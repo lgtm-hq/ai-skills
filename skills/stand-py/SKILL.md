@@ -94,14 +94,10 @@ See `/lint` for linting and formatting workflow.
 
 ## Ignoring Issues
 
-- Ignoring issues is NOT permitted unless absolutely justified as a last resort
-- Docstrings are required even for tests - no exceptions
-- When an ignore IS necessary, add a comment explaining why:
+See `/lint` for ignore policy (Rules section).
 
-  ```python
-  # Ignore: External API returns dynamic structure
-  data: Any = api.fetch()  # type: ignore[no-untyped-call]
-  ```
+Additional Python-specific note: docstrings are required even for tests — no
+exceptions.
 
 ## Testing (Pytest)
 

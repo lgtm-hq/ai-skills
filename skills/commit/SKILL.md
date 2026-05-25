@@ -9,13 +9,11 @@ Pre-commit workflow and commit guidelines.
 
 ## Pre-commit Checklist
 
-Before making ANY commit, ensure:
+Before making ANY commit:
 
-1. All linting passes (`lintro chk` returns zero issues)
-   - **CRITICAL**: Run the FULL check without `--tools` filtering
-   - Do NOT run targeted checks like `lintro chk --tools ruff,yamllint`
-   - The full check ensures all tools run, catching issues that targeted checks miss
-2. All tests pass (`lintro tst` succeeds)
+1. Run the `/lint` workflow — all checks must pass with zero issues (abort if any
+   issues remain)
+2. All tests must pass (`lintro tst`)
 3. Where applicable, Docker builds pass
 
 ## Commit Requirements
@@ -73,10 +71,9 @@ should be added):
 
 When asked to commit:
 
-1. Run lint check - abort if any issues:
-   - Projects with lintro: `lintro chk` (full, no --tools flag)
-   - Raycast extensions: `ray lint`
-   - Other projects: use appropriate lint command
+1. Run the `/lint` workflow — abort if any issues remain
+   - Raycast extensions: use the `raycast` skill (`ray lint`) instead of lintro
+   - Other projects without lintro: use the appropriate lint command from `/lint`
 2. Run tests - abort if any failures:
    - Projects with lintro: `lintro tst`
    - Raycast extensions: `ray test`
