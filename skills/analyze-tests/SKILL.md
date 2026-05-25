@@ -43,7 +43,7 @@ rg -n '@pytest\.mark\.skip|pytest\.skip\(' --type py
 
 Flag tests that don't validate real behavior.
 
-### 3. Find missing parameterization
+### 3. Find missing parametrization
 
 Detect copy-paste test patterns with similar names:
 
@@ -108,7 +108,7 @@ without tests.
 ## Reference — Problem Areas
 
 - "Nothing burger" tests—tests that pass trivially or don't validate real behavior
-- Missing parameterization where similar cases are tested with copy-paste
+- Missing parametrization where similar cases are tested with copy-paste
 - Overly complex test code that's hard to maintain
 - Large test files that should be split into logical groupings
 

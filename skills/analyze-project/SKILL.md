@@ -30,6 +30,7 @@ Inspect automation and pipeline coverage:
 ```bash
 ls -la .github/workflows/ 2>/dev/null
 rg -l 'lint|test|build|deploy' .github/workflows/
+rg -n --hidden "uses:.*@[0-9a-f]{40}\b" .github/workflows || echo "No SHA-pinned actions found"
 ```
 
 Verify lint, test, and deploy stages exist; check for pinned action SHAs and reproducible
