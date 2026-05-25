@@ -40,7 +40,7 @@ rg -n 'shell\s*=\s*True' --type py
 rg -n '(execute|query)\s*\(\s*f["\x27]|\.format\s*\(' --type py
 
 # Dependency vulnerabilities
-uv pip audit               # Python with uv
+uv run pip-audit           # Python with uv (pip-audit in dev deps)
 bun audit                    # JavaScript/TypeScript with bun
 ```
 
@@ -52,7 +52,7 @@ Use ripgrep and manual inspection for structural issues:
 
 ```bash
 # Long functions (heuristic: functions with many lines — inspect top hits)
-rg -n '^(async )?def |^function |^fn ' --type-add 'py:glob:*.py' -t py -t rs -t ts -t js
+rg -n '^(async )?def |^function |^fn ' -t py -t rust -t ts -t js
 
 # Dead code / unused imports (lint tools often catch these; supplement with:)
 rg -n '# (noqa|type: ignore|allow dead_code)'  # existing suppressions worth reviewing

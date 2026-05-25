@@ -29,7 +29,7 @@ Inspect automation and pipeline coverage:
 
 ```bash
 ls -la .github/workflows/ 2>/dev/null
-rg -l 'lint|test|build|deploy' .github/workflows/ 2>/dev/null
+rg -l 'lint|test|build|deploy' .github/workflows/
 ```
 
 Verify lint, test, and deploy stages exist; check for pinned action SHAs and reproducible
@@ -41,7 +41,7 @@ Confirm lock files and manifest consistency:
 
 ```bash
 ls -1 *lock* uv.lock bun.lockb Cargo.lock package-lock.json poetry.lock Pipfile.lock 2>/dev/null
-rg -n 'version|dependencies' pyproject.toml package.json Cargo.toml 2>/dev/null | head -30
+rg -n 'version|dependencies' pyproject.toml package.json Cargo.toml | head -30
 ```
 
 Flag missing lock files, unpinned versions, or stale dependency patterns.
@@ -53,7 +53,7 @@ Assess onboarding and API documentation:
 ```bash
 test -f README.md && head -80 README.md
 find . -maxdepth 2 \( -name '*.md' -o -name 'docs' -type d \) | head -20
-rg -l 'TODO|FIXME|TBD' README.md docs/ 2>/dev/null
+rg -l 'TODO|FIXME|TBD' README.md docs/
 ```
 
 Check for setup instructions, contribution guide, and documented public APIs.
@@ -78,10 +78,10 @@ Assess module boundaries (adapt to language):
 rg -n '^from |^import ' --type py | head -50
 
 # TypeScript/JavaScript cross-imports
-rg -n "^import .* from ['\"]\.\./" --type ts --type tsx --type js 2>/dev/null | head -50
+rg -n "^import .* from ['\"]\.\./" -t ts -t js | head -50
 
 # Rust crate modules
-rg -n '^mod |^pub mod ' --type rust 2>/dev/null | head -30
+rg -n '^mod |^pub mod ' -t rust | head -30
 ```
 
 Look for deep cross-package imports, god modules, and circular import chains.
