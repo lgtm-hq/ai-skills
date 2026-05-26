@@ -96,12 +96,13 @@ See `/lint` for linting and formatting workflow.
 
 See `/lint` for ignore policy (Rules section).
 
-Python-specific: use a preceding-line `# nosec` comment to silence Bandit (see `/lint`
-for other tool ignore configurations):
+Python-specific: Bandit requires an **inline** `# nosec` or `# nosec BXXX - reason`
+on the same line as the flagged statement (preceding-line `# nosec` is silently
+ignored by Bandit). See `/lint` for other tool ignore configurations (e.g. mypy
+may use a preceding-line comment plus inline `# type: ignore`):
 
 ```python
-# nosec B603 - fixed argv list; no shell
-subprocess.run(["validate.sh"])
+subprocess.run(["validate.sh"])  # nosec B603 - fixed argv list; no shell
 ```
 
 Additional Python-specific note: docstrings are required even for tests — no
