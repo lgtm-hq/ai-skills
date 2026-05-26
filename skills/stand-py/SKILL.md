@@ -94,14 +94,19 @@ See `/lint` for linting and formatting workflow.
 
 ## Ignoring Issues
 
-- Ignoring issues is NOT permitted unless absolutely justified as a last resort
-- Docstrings are required even for tests - no exceptions
-- When an ignore IS necessary, add a comment explaining why:
+See `/lint` for ignore policy (Rules section).
 
-  ```python
-  # Ignore: External API returns dynamic structure
-  data: Any = api.fetch()  # type: ignore[no-untyped-call]
-  ```
+Python-specific: Bandit requires an **inline** `# nosec` or `# nosec BXXX - reason`
+on the same line as the flagged statement (preceding-line `# nosec` is silently
+ignored by Bandit). See `/lint` for other tool ignore configurations (e.g. mypy
+may use a preceding-line comment plus inline `# type: ignore`):
+
+```python
+subprocess.run(["validate.sh"])  # nosec B603 - fixed argv list; no shell
+```
+
+Additional Python-specific note: docstrings are required even for tests — no
+exceptions.
 
 ## Testing (Pytest)
 
