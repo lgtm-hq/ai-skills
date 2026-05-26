@@ -96,8 +96,8 @@ See `/lint` for linting and formatting workflow.
 
 See `/lint` for ignore policy (Rules section).
 
-Python-specific ignore style uses a preceding-line comment (not inline nosec style
-used by non-Python tools in `/lint`):
+Python-specific: use a preceding-line `# nosec` comment to silence Bandit (see `/lint`
+for other tool ignore configurations):
 
 ```python
 # Ignore: External API returns dynamic structure
