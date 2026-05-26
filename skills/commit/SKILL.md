@@ -13,7 +13,7 @@ Before making ANY commit:
 
 1. Run the `/lint` workflow — all checks must pass with zero issues (abort if any
    issues remain). See `/lint` — full check, no `--tools` filtering.
-2. All tests must pass (`lintro tst`)
+2. All tests must pass (`uv run lintro tst`)
 3. Where applicable, Docker builds pass
 
 ## Commit Requirements
@@ -76,7 +76,7 @@ When asked to commit:
    - Raycast extensions: use the `raycast` skill (`ray lint`) instead of lintro
    - Other projects without lintro: use the appropriate lint command from `/lint`
 2. Run tests - abort if any failures:
-   - Projects with lintro: `lintro tst`
+   - Projects with lintro: `uv run lintro tst`
    - Raycast extensions: `ray test`
    - Other projects: use appropriate test command
    - When authoring or modifying a Raycast extension, use the `raycast` skill for
