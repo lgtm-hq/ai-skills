@@ -100,8 +100,8 @@ Python-specific: use a preceding-line `# nosec` comment to silence Bandit (see `
 for other tool ignore configurations):
 
 ```python
-# Ignore: External API returns dynamic structure
-data: Any = api.fetch()  # type: ignore[no-untyped-call]
+# nosec B603 - fixed argv list; no shell
+subprocess.run(["validate.sh"])
 ```
 
 Additional Python-specific note: docstrings are required even for tests — no
