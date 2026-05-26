@@ -5,9 +5,80 @@ description: Code-level quality analysis. Use when asked to review code for smel
 
 # Code Analysis (Zoom In)
 
-Perform a code-level quality analysis of this project. Evaluate:
+Perform a code-level quality analysis of this project. Follow the procedural workflow
+below; use the rubric sections as reference when interpreting findings.
 
-## Implementation Quality
+## Usage
+
+When asked to analyze code quality:
+
+### 1. Static analysis
+
+Run project-appropriate static checks (skip tools not present in the repo):
+
+```bash
+uv run lintro chk          # Python/JS/TS/YAML/etc. when lintro is configured
+bunx tsc --noEmit          # TypeScript projects with tsconfig
+cargo clippy -- -D warnings  # Rust projects
+semgrep --config=auto .    # Security/quality patterns (install if missing)
+```
+
+Record every finding with file path and line number.
+
+### 2. Security scan
+
+Search for common vulnerability patterns:
+
+```bash
+# Hardcoded secrets (adjust paths as needed)
+rg -n '(api[_-]?key|secret|password|token)\s*=\s*["\x27][^"\x27]+["\x27]' --glob '!*.{lock,sum}'
+
+# Dangerous subprocess usage
+rg -n 'shell\s*=\s*True' --type py
+
+# SQL injection risk (string interpolation in queries)
+rg -n '(execute|query)\s*\(\s*f["\x27]|\.format\s*\(' --type py
+
+# Dependency vulnerabilities
+uv run pip-audit           # Python with uv (pip-audit in dev deps)
+bun audit                    # JavaScript/TypeScript with bun
+```
+
+Cross-check results against the Security Best Practices rubric below.
+
+### 3. Code smell detection
+
+Use ripgrep and manual inspection for structural issues:
+
+```bash
+# Long functions (heuristic: functions with many lines — inspect top hits)
+rg -n -U '^\s*(@\w+.*\n\s*)*(async\s+)?def\s+\w+' -t py
+rg -n '^\s*(pub(\([^)]*\))?\s+)?(async\s+)?(unsafe\s+)?(const\s+)?fn\s+\w+' -t rust
+rg -n '^\s*(export\s+)?(default\s+)?(async\s+)?function\s+\w+' -t ts -t js
+rg -n '^\s*(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s+)?\(' -t ts -t js
+
+# Dead code / unused imports (lint tools often catch these; supplement with:)
+rg -n '# (noqa|type: ignore|allow dead_code)'  # existing suppressions worth reviewing
+rg -n 'TODO|FIXME|HACK|XXX'                    # deferred cleanup
+```
+
+Evaluate hits against the Code Smells rubric (long methods, dead code, duplication,
+magic numbers, etc.).
+
+### 4. Rate and report findings
+
+For each issue, assign severity:
+
+- **Critical** — security vulnerabilities, data loss risk, broken auth, exploitable injection
+- **Should Fix** — bugs, missing error handling, significant smells, vulnerable dependencies
+- **Nice to Have** — style, minor duplication, documentation gaps
+
+Prioritize actionable feedback. Include file paths, line numbers, and a concrete fix
+suggestion for each finding.
+
+---
+
+## Reference — Implementation Quality
 
 - Best practices adherence for the language/framework used
 - Scalability and performance considerations
@@ -18,7 +89,7 @@ Perform a code-level quality analysis of this project. Evaluate:
 - Dependency health—outdated, redundant, or vulnerable dependencies
 - Logging/observability—can issues be diagnosed in production?
 
-## Code Smells
+## Reference — Code Smells
 
 - Long methods/functions that do too much
 - God classes or modules with too many responsibilities
@@ -31,7 +102,7 @@ Perform a code-level quality analysis of this project. Evaluate:
 - Duplicated logic that violates DRY
 - Inappropriate intimacy—modules tightly coupled to each other's internals
 
-## Security Best Practices
+## Reference — Security Best Practices
 
 - OWASP Top 10 exposure: injection (SQL, command, XSS), broken auth, SSRF, etc.
 - Secrets management—no hardcoded credentials, tokens, or API keys in source
@@ -42,7 +113,7 @@ Perform a code-level quality analysis of this project. Evaluate:
 - Secure defaults—are features opt-in safe (e.g., CORS, CSP, cookie flags)?
 - Sensitive data handling—PII/secrets not leaked in logs, errors, or responses
 
-## Testing
+## Reference — Testing (code-level)
 
 - Test quality—flag any "nothing burger" tests that don't meaningfully validate behavior
 - Use of parameterization where appropriate
@@ -50,8 +121,4 @@ Perform a code-level quality analysis of this project. Evaluate:
 - Are tests isolated and deterministic?
 - Do tests cover the right layer (unit vs integration vs e2e)?
 
-## Output Format
-
-Rate severity of issues as: **Critical** | **Should Fix** | **Nice to Have**
-
-Prioritize actionable feedback over observations.
+For deeper test-suite analysis, use the `analyze-tests` skill.

@@ -7,6 +7,16 @@ description: Run CodeRabbit to review code changes. Use when asked to review cod
 
 Run CodeRabbit to review code changes.
 
+## Relationship to analyze-* skills
+
+The `analyze-code`, `analyze-project`, and `analyze-tests` skills are for
+**manual or agent-driven pre-review checks**—they run concrete commands (lintro,
+ripgrep, coverage, etc.) and produce structured findings before you open a PR.
+
+This `review` skill uses **CodeRabbit** for automated diff review. Do not duplicate
+full analyze rubrics here; use analyze-* skills when you need deep, command-backed
+analysis of the whole codebase or test suite.
+
 ## Commands
 
 - `cr -h` - Show CodeRabbit help
