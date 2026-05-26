@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.1.4] - 2026-05-26
+
+### Features
+
+- **skills**: deduplicate testing guidance across test, stand-py, and stand-ts (#31) (b0344c5)
+
 ## [0.1.3] - 2026-05-26
 
 ### Features
@@ -90,7 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.0...v0.1.1
