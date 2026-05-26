@@ -51,14 +51,14 @@ When asked to run tests:
 
 For how to write tests, delegate to the appropriate skill:
 
-| Stack / tool                   | Skill         |
-| ------------------------------ | ------------- |
-| Python (pytest)                | `/stand-py`   |
+| Stack / tool                        | Skill         |
+| ----------------------------------- | ------------- |
+| Python (pytest)                     | `/stand-py`   |
 | TypeScript/JavaScript (Vitest/Jest) | `/stand-ts`   |
-| Rust (`cargo test`)            | `/stand-rust` |
-| Shell (BATS)                   | `/test-shell` |
-| Playwright E2E                 | `/test-ui`    |
-| Playwright API                 | `/test-api`   |
+| Rust (`cargo test`)                 | `/stand-rust` |
+| Shell (BATS)                        | `/test-shell` |
+| Playwright E2E                      | `/test-ui`    |
+| Playwright API                      | `/test-api`   |
 
 For other frameworks (RSpec, Go), follow project conventions and the patterns detected
 above.
