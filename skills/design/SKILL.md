@@ -94,10 +94,16 @@ Every component must include:
 
 ## Before Submitting
 
-1. Run through an accessibility audit: `bunx @axe-core/cli <url>` (or `npx axe-cli
-   <url>`) or manual check against the list above
+1. Run through an accessibility audit: `npx @axe-core/cli <url>` or manual check
+   against the list above
 2. Test at 640px, 768px, and 1024px viewport widths (matching sm/md/lg breakpoints);
    optionally add 320px for mobile minimum
 3. Verify no hardcoded color values outside CSS variables
 4. Confirm `prefers-reduced-motion` is respected
-5. Verify font loading — no FOUT/FOIT without fallback
+5. Verify font loading: each `@font-face` sets `font-display: swap` (or another
+   explicit value); pages define a fallback stack ending with a generic family (e.g.,
+   `system-ui, Helvetica, Arial, sans-serif`). Under 3G throttling, computed
+   `font-family` must be a fallback within 1s and the webfont must replace it within
+   5s. Test manually (DevTools network throttling) or with automation (e.g., Puppeteer
+   asserting computed `font-family` and timing) to confirm no prolonged invisible text
+   (FOIT)
