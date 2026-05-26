@@ -33,8 +33,7 @@ checking for:
 - Check `package.json` scripts for project-specific test commands
 - For shell tests, use `/test-shell` for detailed BATS guidance
 - Coverage and test-requirement policies: see `/stand-general`
-- `/stand-general` requires a coverage report on every test run; that is stricter than
-  the previous "when possible" wording in this skill
+- The `/stand-general` rule requires a coverage report on every test run.
 
 ## Usage
 
@@ -55,7 +54,7 @@ For how to write tests, delegate to the appropriate skill:
 | Stack / tool                   | Skill         |
 | ------------------------------ | ------------- |
 | Python (pytest)                | `/stand-py`   |
-| TypeScript/JavaScript (Vitest) | `/stand-ts`   |
+| TypeScript/JavaScript (Vitest/Jest) | `/stand-ts`   |
 | Rust (`cargo test`)            | `/stand-rust` |
 | Shell (BATS)                   | `/test-shell` |
 | Playwright E2E                 | `/test-ui`    |
