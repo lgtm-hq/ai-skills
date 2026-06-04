@@ -1,6 +1,6 @@
 ---
 name: raycast
-description: Raycast extension development standards. Use when writing or modifying Raycast extensions. Run lintro first, then Raycast's toolchain (ray lint) which takes precedence for extension-specific rules.
+description: Raycast extension development standards. Use when writing or modifying Raycast extensions. Run lintro first, then Raycast's toolchain (npm run lint) which takes precedence for extension-specific rules.
 ---
 
 # Raycast Extension Development
