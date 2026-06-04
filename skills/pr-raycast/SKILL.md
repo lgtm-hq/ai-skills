@@ -129,7 +129,7 @@ Do **not** use `gh pr create --fill`. Title: `Extension Name: Brief description`
 Add separately after opening:
 
 1. **File breakdown** — table by category (impl, tests, images, config, docs) with counts
-2. **How to test** — prerequisites, `npm run dev`, **sample data URL**, smoke-test steps
+2. **How to test** — prerequisites, `bun run dev`, **sample data URL**, smoke-test steps
 
 Reviewers need sample data or credentials to test — always provide one.
 

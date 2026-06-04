@@ -29,7 +29,8 @@ Overrides global lint/commit defaults in extension directories.
 uv run lintro fmt && uv run lintro chk
 
 # 2. extensions/<name>/ — required before commit
-npm run lint && npm run fix-lint   # if needed, then re-lint
+npm run lint
+npm run fix-lint && npm run lint   # only if lint failed
 npm run build                      # distribution build; CI uses npm
 bun run dev                        # local dev only
 ```
