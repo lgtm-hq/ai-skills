@@ -10,7 +10,7 @@ import pytest
 from loguru import logger
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="module")  # type: ignore[untyped-decorator]  # pytest stubs lack ParamSpec for fixtures
 def repo_root() -> Path:
     """Return the absolute path to the repository root (parent of ``tests/``).
 
