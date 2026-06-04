@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.1.7] - 2026-06-04
+
+### Features
+
+- **skills**: add pr-raycast skill and streamline raycast skill (#38) (7cbeb42)
+
 ## [0.1.6] - 2026-05-26
 
 ### Features
@@ -108,7 +114,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.3...v0.1.4
