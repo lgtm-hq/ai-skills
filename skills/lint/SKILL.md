@@ -3,7 +3,7 @@ name: lint
 description: >-
   Run linting and formatting. Prefer `uv run lintro chk` for checks and
   `uv run lintro fmt` for formatting when lintro is available; fall back to native
-  tools only when lintro is unavailable or another skill explicitly overrides
+  tools only when lintro is unavailable or another skill documents a follow-up pass
   (e.g. raycast).
 ---
 
@@ -15,8 +15,9 @@ Prefer [lintro](https://github.com/lgtm-hq/py-lintro) for linting and formatting
 When available, use `uv run lintro chk` and `uv run lintro fmt`.
 
 If lintro is unavailable, fall back to the language's native bundled tools (ruff,
-black, clippy, rustfmt, eslint, bandit, etc.). Another skill in this repository
-may also explicitly document an override (for example, `raycast` uses `ray lint`).
+black, clippy, rustfmt, eslint, bandit, etc.). Another skill may document an
+additional pass after lintro (for example, `raycast` runs `npm run lint` after
+lintro — Raycast rules take precedence for extension-specific checks).
 
 ## Commands
 
