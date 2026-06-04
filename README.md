@@ -25,11 +25,11 @@ install into detected agents. Prefer **[Bun](https://bun.sh)** and **`bunx`**
 (same idea as **`npx`** / **`pnpm dlx`** for other runtimes):
 
 ```bash
-# Latest from default branch
+# Latest from default branch (all skills, all detected agents)
 bunx skills add lgtm-hq/ai-skills -g --all
 
 # Pinned to a release tag (example)
-bunx skills add lgtm-hq/ai-skills@v0.1.0 -g --all
+bunx skills add lgtm-hq/ai-skills@v0.1.7 -g --all
 
 # Single agent (e.g. Cursor)
 bunx skills add lgtm-hq/ai-skills -a cursor -g
@@ -42,8 +42,48 @@ npx skills add lgtm-hq/ai-skills -g --all
 pnpm dlx skills add lgtm-hq/ai-skills -g --all
 ```
 
-Update later with `bunx skills update lgtm-hq/ai-skills`, or `npx skills update …` /
-`pnpm dlx skills update …` (see upstream CLI docs).
+### Selective install
+
+Install only the skills you need (names match `skills/<name>/` in this repo; see
+**[AGENTS.md](./AGENTS.md)**):
+
+```bash
+# List available skills without installing
+bunx skills add lgtm-hq/ai-skills -l
+
+# Install specific skills globally
+bunx skills add lgtm-hq/ai-skills -g --skill lint commit branch -y
+
+# Pin a subset to a release tag
+bunx skills add lgtm-hq/ai-skills@v0.1.7 -g --skill lint test -y
+```
+
+### Update installed skills
+
+The CLI updates by **skill name** or **scope**, not by package slug (`update
+lgtm-hq/ai-skills` does not match installed skills).
+
+```bash
+# Update all globally installed skills from their recorded source
+bunx skills update -g
+
+# Update only skills you have installed (by name)
+bunx skills update lint commit -g
+
+# npm / pnpm equivalents
+npx skills update -g
+pnpm dlx skills update -g
+```
+
+To move everything to a specific release, reinstall with a tag (replaces symlinks for
+that install):
+
+```bash
+bunx skills add lgtm-hq/ai-skills@v0.1.7 -g --all
+```
+
+List or remove installs with `bunx skills ls -g` and `bunx skills remove <name> -g`.
+See the [upstream CLI docs](https://github.com/vercel-labs/skills) for more flags.
 
 ## Community
 
