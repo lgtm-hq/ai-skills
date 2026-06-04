@@ -1,249 +1,101 @@
 ---
 name: raycast
-description: Raycast extension development standards. Use when writing or modifying Raycast extensions. Overrides default linting to use Raycast's toolchain (ray lint) instead of lintro.
+description: Raycast extension development standards. Use when writing or modifying Raycast extensions. Run lintro first, then Raycast's toolchain (ray lint) which takes precedence for extension-specific rules.
 ---
 
 # Raycast Extension Development
 
-Standards for developing Raycast extensions. **These override the global `standards`
-skill when working in Raycast extension directories.**
+## Scope
+
+Use when **writing or modifying** a Raycast extension. To **open or prepare a PR** to
+[raycast/extensions](https://github.com/raycast/extensions), use **`pr-raycast`** instead.
+
+Overrides global lint/commit defaults in extension directories.
+
+## Official resources
+
+- [Prepare for Store](https://developers.raycast.com/basics/prepare-an-extension-for-store)
+- [Screenshots](https://developers.raycast.com/basics/prepare-an-extension-for-store#screenshots)
+- [Icon Maker](https://icon.ray.so/)
+- [Publish](https://developers.raycast.com/basics/publish-an-extension)
+- [Extension Guidelines](https://manual.raycast.com/extensions-guidelines)
 
 ## Linting & Formatting
 
-**IMPORTANT:** Do NOT use `lintro` for Raycast extensions. Use Raycast's native
-toolchain:
+**Order:** lintro first → Raycast last. Raycast wins on conflicts.
 
 ```bash
-# Check for issues
-bun run lint        # or: ray lint
+# 1. Repo root (when lintro is configured)
+uv run lintro fmt && uv run lintro chk
 
-# Auto-fix issues
-bun run fix-lint    # or: ray lint --fix
-
-# Build extension
-bun run build       # or: ray build -e dist
-
-# Development mode
-bun run dev         # or: ray develop
+# 2. extensions/<name>/ — required before commit
+npm run lint && npm run fix-lint   # if needed, then re-lint
+npm run build                      # distribution build; CI uses npm
+bun run dev                        # local dev only
 ```
 
-Raycast uses:
-
-- ESLint with `@raycast/eslint-config`
-- Prettier for formatting
-- TypeScript strict mode
+Prettier: `printWidth: 120`, `singleQuote: false`. ESLint: `@raycast/eslint-config`.
 
 ## Package Management
 
-- Authoritative policy: split by context
-  - Local development: use `bun` (`bun install`, `bun run <script>`)
-  - CI/Store submission validation: use `npm run build` and `npm run lint` to match
-    Raycast repository expectations
+- Local dev: `bun install`, `bun run <script>`
+- CI/store validation: `npm run lint`, `npm run build`
 
 ## Project Structure
 
-Follow modular architecture with small, focused files:
-
 ```text
 src/
-├── <command>.tsx           # One file per command
-├── components/             # Reusable React components
-│   └── <component>.tsx
-├── hooks/                  # Custom React hooks
-│   └── use-<name>.ts
-├── lib/                    # Utility modules
-│   ├── <feature>.ts
-│   └── validation.ts
+├── <command>.tsx
+├── components/
+├── hooks/
+├── lib/
 └── types/
-    └── index.ts            # Shared TypeScript types
 ```
 
-## Commands
+One command file per `package.json` commands entry. Extract testable logic to `lib/`.
+Vitest optional; manual test via `bun run dev`.
 
-Each command is a separate entry point in `package.json`:
+## Code patterns
 
-```jsonc
-{
-  "commands": [
-    {
-      "name": "index", // Matches src/index.tsx
-      "title": "Command Title",
-      "description": "What it does",
-      "mode": "view" // or "no-view" for background
-    }
-  ]
-}
-```
-
-## API Patterns
-
-### File Selection
-
-```typescript
-import { getSelectedFinderItems } from "@raycast/api";
-
-const items = await getSelectedFinderItems();
-const paths = items.map((item) => item.path);
-```
-
-### Toast Notifications
-
-```typescript
-import { showToast, Toast } from "@raycast/api";
-
-// Success
-await showToast({ style: Toast.Style.Success, title: "Done" });
-
-// Error
-await showToast({
-  style: Toast.Style.Failure,
-  title: "Error",
-  message: details,
-});
-
-// Loading
-await showToast({ style: Toast.Style.Animated, title: "Working..." });
-```
-
-### Confirmation Dialogs
-
-```typescript
-import { confirmAlert, Alert } from "@raycast/api";
-
-const confirmed = await confirmAlert({
-  title: "Delete Item?",
-  message: "This cannot be undone",
-  primaryAction: {
-    title: "Delete",
-    style: Alert.ActionStyle.Destructive,
-  },
-});
-```
-
-### Local Storage
-
-```typescript
-import { LocalStorage } from "@raycast/api";
-
-await LocalStorage.setItem("key", JSON.stringify(data));
-const raw = await LocalStorage.getItem<string>("key");
-const data = raw ? JSON.parse(raw) : defaultValue;
-```
-
-### Cached State (persists across invocations)
-
-```typescript
-import { useCachedState } from "@raycast/utils";
-
-const [value, setValue] = useCachedState<boolean>("key", false);
-```
-
-## Contributing to Existing Extensions
-
-When contributing to extensions you don't own:
-
-1. **Add yourself to contributors** in `package.json`
-2. **Update CHANGELOG.md** with `{PR_MERGE_DATE}` placeholder
-3. **Run lint and build** before committing
-4. **Create PR** to `raycast/extensions` repo
-
-## Testing
-
-Raycast extensions don't have a standard test framework. For testable logic:
-
-1. Extract pure functions to `lib/` modules
-2. Test with Vitest if needed (add as devDependency)
-3. Manual testing via `bun run dev`
-
-## Version Bumping
-
-- Patch (1.0.x): Bug fixes
-- Minor (1.x.0): New features, backward-compatible
-- Major (x.0.0): Breaking changes
+- `getPreferenceValues<Preferences.<Command>>()` — never manual `Preferences` interfaces
+- `trash()` for user file deletion; `fs/promises` only (no sync fs, no AppleScript)
+- `execFile` with arg arrays — no shell string interpolation for paths
 
 ## Constraints
 
-- Max 12 keywords in `package.json`
-- Max filename length: 255 characters (macOS)
-- Avoid synchronous file operations (use `fs/promises`)
-- Don't use AppleScript for file operations (security risk)
+- Max 12 keywords; MIT license; US English UI strings
+- Max filename length 255 (macOS)
 
-## Store Submission / PR Readiness Checklist
+## Store readiness checklist
 
-Before opening a PR to `raycast/extensions`, verify every item below.
+Verify before asking to open a PR (full workflow in **`pr-raycast`**).
 
-### Package.json
+### package.json
 
-- Required fields: `name`, `title`, `description`, `icon`, `author`, `platforms`,
-  `categories`, `license` (must be `"MIT"`)
-- `commands` array with `name`, `title`, `description`, `mode` for each command
-- Command titles in Title Case (Apple Style Guide)
-- Required scripts: `build`, `dev`, `lint`, `fix-lint`, `publish`
-- `publish` script: `npx @raycast/api@latest publish`
-- Max 12 keywords
-- No manual `Preferences` interfaces — use auto-generated types from `raycast-env.d.ts`
+- Fields: `name`, `title`, `description`, `icon`, `author`, `platforms`, `categories`,
+  `license: MIT`
+- Scripts: `build`, `dev`, `lint`, `fix-lint`, `publish` (`npx @raycast/api@latest publish`)
+- Command titles: Title Case (Apple Style Guide)
+- `package-lock.json` committed; no bun/yarn/pnpm lockfiles
 
-### Build & Lint
+### Assets
 
-- `npm run build` passes (CI/Store submission validation)
-- `npm run lint` passes (CI/Store submission validation)
-- Prettier config: `printWidth: 120`, `singleQuote: false`
+**Icon**
+([guide](https://developers.raycast.com/basics/prepare-an-extension-for-store#extension-icon),
+[Icon Maker](https://icon.ray.so/))
 
-### Lock Files
+- 512×512 PNG in `assets/`; readable on light and dark UI; not default Raycast icon
 
-- `package-lock.json` must exist for CI/Store submission
-- No `bun.lock`, `bun.lockb`, `yarn.lock`, or `pnpm-lock.yaml` committed
-- Root `.gitignore` of `raycast/extensions` already blocks non-npm lockfiles
+**Screenshots** ([specs](https://developers.raycast.com/basics/prepare-an-extension-for-store#screenshots))
 
-### Icon
+- `metadata/{extension-name}-{N}.png`, 2000×1250 PNG, max 6 (≥3 recommended)
+- Window Capture + **Save to Metadata** in dev mode; one theme; no sensitive data
 
-- 512x512 PNG in `assets/`
-- Works on both light and dark backgrounds
-- Not the default Raycast icon
-- Referenced in `package.json` `icon` field
+### Docs
 
-### Screenshots
+- `CHANGELOG.md`: top entry uses `{PR_MERGE_DATE}`; accurate features only
+- `README.md`: required if setup needed; README media in `media/`, not `metadata/`
 
-- Located in `metadata/` directory
-- Named `{extension-name}-{N}.png` (e.g., `renaming-1.png`)
-- Dimensions: 2000x1250 PNG (16:10 landscape)
-- Maximum 6 screenshots
-- Consistent background and appearance across all screenshots
-- No sensitive data visible
-- Don't mix light and dark themes
+## Contributing to extensions you don't own
 
-### CHANGELOG.md
-
-- Exists at extension root
-- New version entry uses `{PR_MERGE_DATE}` as the date placeholder (never hardcode
-  dates)
-- For updates to existing extensions: add NEW entries at the top, never modify existing
-  entries
-- Entries must accurately reflect implemented features (no phantom features)
-
-### README.md
-
-- Required if extension needs setup instructions (API keys, auth, etc.)
-- Documents only features that actually exist in the codebase
-- Examples are consistent with actual behavior
-- Media files referenced in README go in a `media/` folder (not `metadata/`)
-
-### Code Quality
-
-- Use `trash()` instead of `unlink()` for file deletion
-- Use `fs/promises` (async), not synchronous `fs` operations
-- No AppleScript for file operations (security risk)
-- US English only in all user-facing strings
-- No custom Preferences interfaces (use auto-generated from `raycast-env.d.ts`)
-- No unused files in `assets/` directory
-
-### PR Submission
-
-- PR title format: `Extension Name: Brief description`
-- Include a screencast or screenshot in PR description
-- Label: `extension fix / improvement` for updates, `new extension` for new extensions
-- Greptile bot auto-checks: CHANGELOG date format, Preferences interfaces, Prettier
-  config
-- Human reviewers check: screenshot consistency, changelog entries, visual expression
-- Respond to review feedback promptly — 14 days no activity marks PR stale, 21 days
-  auto-closes
+Add yourself to `contributors` in `package.json`; update `CHANGELOG.md`.
