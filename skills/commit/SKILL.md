@@ -73,7 +73,8 @@ When asked to commit:
 
 1. Run the `/lint` workflow — abort if any issues remain (see `/lint` — full check,
    no `--tools` filtering)
-   - Raycast extensions: use the `raycast` skill (`ray lint`) instead of lintro
+   - Raycast extensions: run `uv run lintro fmt/chk` first, then `npm run lint` per
+     the `raycast` skill (Raycast rules take precedence)
    - Other projects without lintro: use the appropriate lint command from `/lint`
 2. Run tests - abort if any failures:
    - Projects with lintro: `uv run lintro tst`
