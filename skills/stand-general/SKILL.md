@@ -1,6 +1,6 @@
 ---
 name: stand-general
-description: Global coding standards for all projects and languages. Use when writing any code. Covers linting with lintro, testing with coverage, semantic commits, PR creation, and code review with cr (CodeRabbit CLI).
+description: Global coding standards for all projects and languages. Use when writing any code. Covers linting with lintro, testing with coverage, semantic commits, PR creation, and pre-push AI review with coderabbit and greptile CLIs.
 ---
 
 # Coding Standards
@@ -26,4 +26,26 @@ Applies to versions, paths, URLs, schema constants, and configuration.
 - Testing: see `/test`
 - Commits: see `/commit`
 - Pull requests: see `/pr`
-- Code review: see `/review`
+- Pre-push AI review (CodeRabbit): see `/coderabbit`
+- Pre-push AI review (Greptile): see `/greptile`
+
+## Pre-push review workflow
+
+CLI review mirrors CI and catches issues before slow CI completes. Default: run
+**both** Greptile and CodeRabbit when CI uses both.
+
+**Short flow:**
+
+```text
+/commit → /greptile → /coderabbit → /pr
+```
+
+**Explicit flow:**
+
+```text
+/lint → /test → /commit → /greptile → /coderabbit → /pr
+```
+
+Run greptile and coderabbit in parallel when possible. Fix findings, then optional
+verify pass. Do not re-run either CLI on unchanged code. CI remains the merge-time
+confirmation.

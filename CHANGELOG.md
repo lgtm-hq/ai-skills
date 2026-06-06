@@ -11,11 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **skills**: add `greptile` skill for Greptile CLI pre-push review
+
 ### Changed
+
+- **skills**: rename `review` to `coderabbit`; update CLI flags to `--agent`
+- **skills**: document dual pre-push workflow (`/greptile` + `/coderabbit`) in
+  `stand-general` and `pr-raycast`
 
 ### Deprecated
 
+- **`review` skill name** — use `/coderabbit` and `/greptile` instead
+
 ### Removed
+
+- **skills**: remove `review` skill directory (replaced by `coderabbit`)
 
 ### Fixed
 
