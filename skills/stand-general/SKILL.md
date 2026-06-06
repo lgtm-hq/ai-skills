@@ -37,15 +37,15 @@ CLI review mirrors CI and catches issues before slow CI completes. Default: run
 **Short flow:**
 
 ```text
-/commit → /greptile → /coderabbit → /pr
+/commit → [/greptile ‖ /coderabbit] → /pr
 ```
 
 **Explicit flow:**
 
 ```text
-/lint → /test → /commit → /greptile → /coderabbit → /pr
+/lint → /test → /commit → [/greptile ‖ /coderabbit] → /pr
 ```
 
-Run greptile and coderabbit in parallel when possible. Fix findings, then optional
+`‖` means run greptile and coderabbit in parallel when possible. Fix findings, then optional
 verify pass. Do not re-run either CLI on unchanged code. CI remains the merge-time
 confirmation.

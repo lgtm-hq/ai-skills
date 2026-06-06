@@ -27,7 +27,7 @@ duplicate full analyze rubrics here.
 Default pre-push flow when CI runs both tools:
 
 ```text
-/commit → /greptile → /coderabbit → /pr
+/commit → [/greptile ‖ /coderabbit] → /pr
 ```
 
 Run **greptile** and **coderabbit** in parallel when possible. Do not re-run on
@@ -38,8 +38,8 @@ unchanged code.
 - `cr -h` / `coderabbit --help` — Show CodeRabbit help
 - `coderabbit review --agent --type committed --base main` — Full branch diff against
   main (default for agents; matches CI intent)
-- `coderabbit review --agent --type uncommitted` — Uncommitted/staged only (quick spot
-  check)
+- `coderabbit review --agent --type uncommitted` — Uncommitted (staged + unstaged);
+  quick spot check
 - `coderabbit doctor` — Verify install, auth, and Git repo readiness
 - `coderabbit review findings` — Replay findings from the last local review
 
@@ -66,7 +66,7 @@ When asked to run CodeRabbit or as part of pre-push review:
 5. Track run count (max 2–3 per change set)
 
 Note: `-t committed` with `--base main` reviews the full branch diff. `-t uncommitted`
-only sees unstaged changes, which is empty after a commit.
+includes staged and unstaged changes (empty after a full commit with a clean tree).
 
 ## References
 

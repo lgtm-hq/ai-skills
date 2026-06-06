@@ -27,10 +27,10 @@ full analyze rubrics here.
 Default pre-push flow when CI runs both tools:
 
 ```text
-/commit → /greptile → /coderabbit → /pr
+/commit → [/greptile ‖ /coderabbit] → /pr
 ```
 
-Run **greptile** and **coderabbit** in parallel when possible. Greptile is typically
+Run **greptile** and **coderabbit** in parallel (`‖`) when possible. Greptile is typically
 faster (~1 min). Do not re-run on unchanged code.
 
 ## Prerequisites
