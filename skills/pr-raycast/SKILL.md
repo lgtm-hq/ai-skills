@@ -15,13 +15,14 @@ generic `gh pr create` mechanics, use **`pr`**.
 
 ## Related skills
 
-| Skill     | Role                                              |
-| --------- | ------------------------------------------------- |
-| `raycast` | Lint order, store checklist, code patterns        |
-| `lint`    | `uv run lintro fmt/chk` (first pass)              |
-| `commit`  | Signed semantic commits, history restructuring    |
-| `rebase`  | Sync onto `upstream/main`                         |
-| `review`  | CodeRabbit (max 3 runs)                           |
+| Skill        | Role                                              |
+| ------------ | ------------------------------------------------- |
+| `raycast`    | Lint order, store checklist, code patterns        |
+| `lint`       | `uv run lintro fmt/chk` (first pass)              |
+| `commit`     | Signed semantic commits, history restructuring    |
+| `rebase`     | Sync onto `upstream/main`                         |
+| `greptile`   | Pre-push Greptile CLI (max 2 runs)                |
+| `coderabbit` | Pre-push CodeRabbit CLI (max 2–3 runs)            |
 
 ## Checklist
 
@@ -30,7 +31,8 @@ generic `gh pr create` mechanics, use **`pr`**.
 - [ ] Validate: lintro + npm run lint/build/validate (all pass)
 - [ ] Commits: signed, logical groups (see commit skill)
 - [ ] Store checklist: raycast skill (icon, screenshots, CHANGELOG, lockfile)
-- [ ] CodeRabbit: ≤3 runs; fix or document skips
+- [ ] Greptile CLI: ≤2 runs; fix or document skips
+- [ ] CodeRabbit CLI: ≤3 runs per change set; fix or document skips
 - [ ] Manual smoke test: bun run dev
 - [ ] Push fork → open PR → post breakdown + how-to-test comments
 ```
@@ -74,11 +76,14 @@ rg 'interface Preferences' src/                                    # none
 git ls-files package-lock.json 'bun.lock*' yarn.lock pnpm-lock.yaml
 ```
 
-**Common Greptile flags:** manual Preferences types, shell/`AppleScript` file ops,
+**Common Greptile findings:** manual Preferences types, shell/`AppleScript` file ops,
 `unlink()` on user files, ungated debug logs, inaccurate CHANGELOG, icon invisible on
 dark UI.
 
-**CodeRabbit:** `coderabbit --prompt-only -t committed --base main` (max 3 runs).
+**Greptile CLI:** `greptile review -b main --agent` (max 2 runs).
+
+**CodeRabbit CLI:** `coderabbit review --agent --type committed --base main` (max
+2–3 runs per change set). Run parallel with Greptile when possible.
 
 ## 4. Open PR
 
