@@ -19,13 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **skills**: document dual pre-push workflow (`/greptile` + `/coderabbit`) in
   `stand-general` and `pr-raycast`
 
-### Deprecated
-
-- **`review` skill name** — use `/coderabbit` and `/greptile` instead
-
 ### Removed
 
-- **skills**: remove `review` skill directory (replaced by `coderabbit`)
+- **skills**: remove `review` skill directory — use `/coderabbit` and `/greptile`
+  instead
 
 ### Fixed
 

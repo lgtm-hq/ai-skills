@@ -22,7 +22,7 @@ generic `gh pr create` mechanics, use **`pr`**.
 | `commit`     | Signed semantic commits, history restructuring    |
 | `rebase`     | Sync onto `upstream/main`                         |
 | `greptile`   | Pre-push Greptile CLI (max 2 runs)                |
-| `coderabbit` | Pre-push CodeRabbit CLI (max 2-3 runs)            |
+| `coderabbit` | Pre-push CodeRabbit CLI (max 2–3 runs)            |
 
 ## Checklist
 
@@ -32,7 +32,7 @@ generic `gh pr create` mechanics, use **`pr`**.
 - [ ] Commits: signed, logical groups (see commit skill)
 - [ ] Store checklist: raycast skill (icon, screenshots, CHANGELOG, lockfile)
 - [ ] Greptile CLI: ≤2 runs; fix or document skips
-- [ ] CodeRabbit CLI: ≤3 runs; fix or document skips
+- [ ] CodeRabbit CLI: ≤3 runs per change set; fix or document skips
 - [ ] Manual smoke test: bun run dev
 - [ ] Push fork → open PR → post breakdown + how-to-test comments
 ```
@@ -82,8 +82,8 @@ dark UI.
 
 **Greptile CLI:** `greptile review -b main --agent` (max 2 runs).
 
-**CodeRabbit CLI:** `coderabbit review --agent --type committed --base main` (max 3
-runs). Run parallel with Greptile when possible.
+**CodeRabbit CLI:** `coderabbit review --agent --type committed --base main` (max
+2–3 runs per change set). Run parallel with Greptile when possible.
 
 ## 4. Open PR
 
