@@ -76,7 +76,7 @@ rg 'interface Preferences' src/                                    # none
 git ls-files package-lock.json 'bun.lock*' yarn.lock pnpm-lock.yaml
 ```
 
-**Common Greptile flags:** manual Preferences types, shell/`AppleScript` file ops,
+**Common Greptile findings:** manual Preferences types, shell/`AppleScript` file ops,
 `unlink()` on user files, ungated debug logs, inaccurate CHANGELOG, icon invisible on
 dark UI.
 
