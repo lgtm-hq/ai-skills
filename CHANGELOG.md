@@ -11,24 +11,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **skills**: add `greptile` skill for Greptile CLI pre-push review
-- **skills**: add `coderabbit` skill — replaces `review` with rewritten CodeRabbit
-  CLI docs (`--agent` instead of deprecated `--prompt-only`; `doctor`, `findings`,
-  committed vs uncommitted scope)
-
 ### Changed
 
-- **skills**: document dual pre-push workflow (`/greptile` + `/coderabbit`) in
-  `stand-general` and `pr-raycast`
+### Deprecated
 
 ### Removed
-
-- **skills**: remove `review` skill — not backward-compatible; invoke `/coderabbit`
-  and `/greptile` instead
 
 ### Fixed
 
 ### Security
+
+## [0.1.8] - 2026-06-06
+
+### Features
+
+- **skills**: split review into coderabbit and greptile skills (#42) (9172968)
+
+### Documentation
+
+- **readme**: fix skills update and document selective install (#40) (84c36c3)
+
+### Previously Unreleased
+
+- **skills**: add `greptile` skill for Greptile CLI pre-push review
+- **skills**: add `coderabbit` skill — replaces `review` with rewritten CodeRabbit
+  CLI docs (`--agent` instead of deprecated `--prompt-only`; `doctor`, `findings`,
+  committed vs uncommitted scope)
+- **skills**: document dual pre-push workflow (`/greptile` + `/coderabbit`) in
+  `stand-general` and `pr-raycast`
+- **skills**: remove `review` skill — not backward-compatible; invoke `/coderabbit`
+  and `/greptile` instead
 
 ## [0.1.7] - 2026-06-04
 
@@ -123,7 +135,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.4...v0.1.5
