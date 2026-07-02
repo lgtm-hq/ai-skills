@@ -77,7 +77,9 @@ sub-agent runs until exit conditions are met or a human blocker is found.
 
 ## Phase 2 — Main loop
 
-Repeat until exit conditions (Phase 5) or a blocker:
+Repeat until exit conditions (Phase 5) or a blocker. Track loop iterations and elapsed
+time; **stop and report** if more than 20 iterations or 6 hours pass without reaching
+exit conditions (avoids unbounded token/API cost on flaky CI or re-triggering bots).
 
 ### Step A — Wait for CI
 
@@ -85,8 +87,9 @@ Repeat until exit conditions (Phase 5) or a blocker:
 gh pr checks <number> --repo <owner/repo>
 ```
 
-If any check is `pending` or `in_progress`, wait and re-poll. **Do not push** during
-this window.
+If any check is `pending` or `in_progress`, wait and re-poll. **Re-poll every 60
+seconds; after five consecutive pending polls, double the interval up to 5 minutes.**
+**Do not push** during this window.
 
 ### Step B — Merge conflicts
 
@@ -177,13 +180,16 @@ git push origin HEAD
 
 Stop the loop and report if:
 
-- `REVIEW_REQUIRED` or branch protection needs a human approval you cannot grant.
 - Merge conflicts you cannot resolve safely.
 - CI failures outside PR scope or requiring workflow changes.
 - Missing credentials / permissions.
 - Ambiguous product or design decisions.
 
 Do not approve the PR to unblock it.
+
+Do **not** stop solely because `REVIEW_REQUIRED` or branch protection needs human
+approval — that is expected. When all other Phase 5 exit conditions are met, exit
+successfully and note pending approval in the final report.
 
 ## Phase 5 — Exit conditions
 
