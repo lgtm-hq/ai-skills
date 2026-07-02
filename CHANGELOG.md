@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.1.9] - 2026-07-02
+
+### Features
+
+- **skills**: add babysit-pr skill for autonomous PR shepherding (#48) (26f74bb)
+
+### Other Changes
+
+- **deps**: update digest (#45) (512bfb6)
+
 ## [0.1.8] - 2026-06-06
 
 ### Features
@@ -135,7 +145,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.5...v0.1.6
