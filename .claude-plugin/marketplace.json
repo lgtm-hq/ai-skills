@@ -1,0 +1,71 @@
+{
+  "plugins": [
+    {
+      "name": "Git & PR Workflow",
+      "source": "./",
+      "skills": [
+        "./skills/branch",
+        "./skills/commit",
+        "./skills/rebase",
+        "./skills/pr",
+        "./skills/reconcile",
+        "./skills/issue"
+      ]
+    },
+    {
+      "name": "Pre-Push Review",
+      "source": "./",
+      "skills": [
+        "./skills/lint",
+        "./skills/test",
+        "./skills/greptile",
+        "./skills/coderabbit"
+      ]
+    },
+    {
+      "name": "Standards",
+      "source": "./",
+      "skills": [
+        "./skills/stand-general",
+        "./skills/stand-py",
+        "./skills/stand-ts",
+        "./skills/stand-rust",
+        "./skills/stand-ci"
+      ]
+    },
+    {
+      "name": "Raycast",
+      "source": "./",
+      "skills": [
+        "./skills/raycast",
+        "./skills/pr-raycast"
+      ]
+    },
+    {
+      "name": "Analysis",
+      "source": "./",
+      "skills": [
+        "./skills/analyze-code",
+        "./skills/analyze-project",
+        "./skills/analyze-tests"
+      ]
+    },
+    {
+      "name": "Agents",
+      "source": "./",
+      "skills": [
+        "./skills/babysit-pr",
+        "./skills/which-pr"
+      ]
+    },
+    {
+      "name": "Testing",
+      "source": "./",
+      "skills": [
+        "./skills/test-api",
+        "./skills/test-ui",
+        "./skills/test-shell"
+      ]
+    }
+  ]
+}
