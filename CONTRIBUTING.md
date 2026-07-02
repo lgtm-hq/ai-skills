@@ -79,6 +79,7 @@ flowchart LR
     x["~/.codex/skills …"]
   end
   BY --> MP
+  SK --> BY
   MP --> add
   add --> c
   add --> u
