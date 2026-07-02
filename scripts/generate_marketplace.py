@@ -16,10 +16,63 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+
+@dataclass(frozen=True)
+class BundleGroup:
+    """One named installer group from ``bundles.yaml``."""
+
+    name: str
+    skills: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BundlesDocument:
+    """Validated bundle configuration covering every skill exactly once."""
+
+    groups: dict[str, BundleGroup]
+    ungrouped: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class MarketplacePlugin:
+    """One plugin entry written to ``marketplace.json``."""
+
+    name: str
+    source: str
+    skills: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable mapping for this plugin.
+
+        Returns:
+            Plugin object suitable for ``json.dumps``.
+        """
+        return {
+            "name": self.name,
+            "source": self.source,
+            "skills": list(self.skills),
+        }
+
+
+@dataclass(frozen=True)
+class MarketplaceManifest:
+    """Top-level marketplace manifest object."""
+
+    plugins: tuple[MarketplacePlugin, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable mapping for the manifest.
+
+        Returns:
+            Manifest object suitable for ``json.dumps``.
+        """
+        return {"plugins": [plugin.to_dict() for plugin in self.plugins]}
 
 
 def _repo_root() -> Path:
@@ -48,43 +101,88 @@ def _discover_skill_names(*, repo_root: Path) -> set[str]:
     return names
 
 
-def _load_bundles(*, repo_root: Path) -> dict[str, Any]:
+def _parse_bundle_group(*, group_id: str, group: object) -> BundleGroup:
+    """Parse one bundle group mapping from YAML.
+
+    Args:
+        group_id: Key under ``groups`` in ``bundles.yaml``.
+        group: Raw YAML value for the group.
+
+    Returns:
+        Parsed bundle group.
+
+    Raises:
+        TypeError: If the group structure is invalid.
+        ValueError: If required fields are missing or malformed.
+    """
+    if not isinstance(group, dict):
+        msg = f"Group {group_id!r} must be a mapping"
+        raise TypeError(msg)
+    display_name = group.get("name")
+    skills = group.get("skills")
+    if not display_name or not isinstance(display_name, str):
+        msg = f"Group {group_id!r} must have a string 'name'"
+        raise TypeError(msg)
+    if not isinstance(skills, list):
+        msg = f"Group {group_id!r} must have a 'skills' list"
+        raise TypeError(msg)
+    parsed_skills: list[str] = []
+    for skill_name in skills:
+        if not isinstance(skill_name, str):
+            msg = f"Group {group_id!r} has a non-string skill entry"
+            raise TypeError(msg)
+        parsed_skills.append(skill_name)
+    return BundleGroup(name=display_name, skills=tuple(parsed_skills))
+
+
+def _load_bundles(*, repo_root: Path) -> BundlesDocument:
     """Load and parse ``bundles.yaml``.
 
     Args:
         repo_root: Repository root path.
 
     Returns:
-        Parsed YAML mapping with ``groups`` and ``ungrouped`` keys.
+        Parsed bundle document.
 
     Raises:
-        ValueError: If the file structure is invalid.
+        TypeError: If the file structure is invalid.
     """
     bundles_path = repo_root / "bundles.yaml"
     data = yaml.safe_load(bundles_path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         msg = "bundles.yaml must be a mapping"
         raise TypeError(msg)
-    if "groups" not in data or not isinstance(data["groups"], dict):
+    raw_groups = data.get("groups")
+    if not isinstance(raw_groups, dict):
         msg = "bundles.yaml must contain a 'groups' mapping"
         raise TypeError(msg)
-    ungrouped = data.get("ungrouped", [])
-    if not isinstance(ungrouped, list):
+    groups = {
+        group_id: _parse_bundle_group(group_id=group_id, group=group)
+        for group_id, group in raw_groups.items()
+    }
+    raw_ungrouped = data.get("ungrouped", [])
+    if not isinstance(raw_ungrouped, list):
         msg = "bundles.yaml 'ungrouped' must be a list"
         raise TypeError(msg)
-    return data
+    ungrouped: list[str] = []
+    for skill_name in raw_ungrouped:
+        if not isinstance(skill_name, str):
+            msg = "ungrouped entries must be strings"
+            raise TypeError(msg)
+        ungrouped.append(skill_name)
+    return BundlesDocument(groups=groups, ungrouped=tuple(ungrouped))
 
 
 def _validate_bundles(
     *,
     repo_root: Path,
-    bundles: dict[str, Any],
+    bundles: BundlesDocument,
 ) -> None:
     """Ensure ``bundles.yaml`` covers every skill exactly once.
 
     Args:
         repo_root: Repository root path.
-        bundles: Parsed bundles YAML.
+        bundles: Parsed bundle document.
 
     Raises:
         ValueError: On missing, duplicate, or unknown skill references.
@@ -92,22 +190,8 @@ def _validate_bundles(
     discovered = _discover_skill_names(repo_root=repo_root)
     assigned: dict[str, str] = {}
 
-    for group_id, group in bundles["groups"].items():
-        if not isinstance(group, dict):
-            msg = f"Group {group_id!r} must be a mapping"
-            raise TypeError(msg)
-        display_name = group.get("name")
-        skills = group.get("skills")
-        if not display_name or not isinstance(display_name, str):
-            msg = f"Group {group_id!r} must have a string 'name'"
-            raise TypeError(msg)
-        if not isinstance(skills, list):
-            msg = f"Group {group_id!r} must have a 'skills' list"
-            raise TypeError(msg)
-        for skill_name in skills:
-            if not isinstance(skill_name, str):
-                msg = f"Group {group_id!r} has a non-string skill entry"
-                raise TypeError(msg)
+    for group_id, group in bundles.groups.items():
+        for skill_name in group.skills:
             if skill_name in assigned:
                 msg = (
                     f"Skill {skill_name!r} is listed in both "
@@ -116,11 +200,7 @@ def _validate_bundles(
                 raise ValueError(msg)
             assigned[skill_name] = group_id
 
-    ungrouped = bundles.get("ungrouped", [])
-    for skill_name in ungrouped:
-        if not isinstance(skill_name, str):
-            msg = "ungrouped entries must be strings"
-            raise TypeError(msg)
+    for skill_name in bundles.ungrouped:
         if skill_name in assigned:
             msg = f"Skill {skill_name!r} is both grouped and ungrouped"
             raise ValueError(msg)
@@ -139,29 +219,27 @@ def _validate_bundles(
         raise ValueError(msg)
 
 
-def _build_marketplace(*, bundles: dict[str, Any]) -> dict[str, Any]:
-    """Build the marketplace manifest JSON object.
+def _build_marketplace(*, bundles: BundlesDocument) -> MarketplaceManifest:
+    """Build the marketplace manifest object.
 
     Args:
-        bundles: Parsed bundles YAML.
+        bundles: Parsed bundle document.
 
     Returns:
-        Mapping suitable for ``json.dumps`` to ``marketplace.json``.
+        Marketplace manifest ready for JSON serialization.
     """
-    plugins: list[dict[str, Any]] = []
-    for group in bundles["groups"].values():
-        skill_paths = [f"./skills/{name}" for name in group["skills"]]
-        plugins.append(
-            {
-                "name": group["name"],
-                "source": "./",
-                "skills": skill_paths,
-            },
+    plugins = tuple(
+        MarketplacePlugin(
+            name=group.name,
+            source="./",
+            skills=tuple(f"./skills/{name}" for name in group.skills),
         )
-    return {"plugins": plugins}
+        for group in bundles.groups.values()
+    )
+    return MarketplaceManifest(plugins=plugins)
 
 
-def _render_marketplace(*, manifest: dict[str, Any]) -> str:
+def _render_marketplace(*, manifest: MarketplaceManifest) -> str:
     """Serialize manifest JSON with a stable trailing newline.
 
     Args:
@@ -170,7 +248,7 @@ def _render_marketplace(*, manifest: dict[str, Any]) -> str:
     Returns:
         UTF-8 JSON text ending with a newline.
     """
-    return json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"
+    return json.dumps(manifest.to_dict(), indent=2, ensure_ascii=False) + "\n"
 
 
 def generate_marketplace(*, repo_root: Path) -> str:

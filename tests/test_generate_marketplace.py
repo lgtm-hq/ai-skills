@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -33,6 +34,7 @@ def _load_generate_marketplace_module() -> ModuleType:
         msg = f"Module spec for {path} has no loader"
         raise RuntimeError(msg)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     loader.exec_module(module)
     return module
 
