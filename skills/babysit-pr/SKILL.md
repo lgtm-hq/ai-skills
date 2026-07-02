@@ -61,7 +61,8 @@ Do not duplicate their full workflows here — read and follow them at commit ti
    ```
 
    Match `headRefName` to a worktree path. If none exists, use the current git root
-   when on the PR branch; warn if the branch differs.
+   only when it matches the resolved PR branch. Otherwise stop and ask for the
+   correct worktree before continuing.
 
 4. **Snapshot** before looping: PR URL, branch, worktree path, latest commit SHA,
    check summary, open review threads.
@@ -96,14 +97,16 @@ seconds; after five consecutive pending polls, double the interval up to 5 minut
 If `mergeable` is `CONFLICTING`, resolve intelligently in the worktree preserving branch
 intent. If intents conflict, stop and report — do not guess.
 
-If the branch is behind base and failures look unrelated, merge or rebase onto latest
-base per repo convention (prefer merge when unsure).
+If the branch is behind base and failures look unrelated, merge onto latest base per
+repo convention. Only rebase/cherry-pick if the user explicitly approves rewriting
+history.
 
 ### Step C — Fix CI failures
 
 For each failing GitHub Actions check:
 
-1. Get run logs via `gh run view <run_id> --log` or `gh pr checks --json`.
+1. Get check status via `gh pr checks --json`; fetch logs separately with
+   `gh run view <run_id> --log`.
 2. Fix failures **within PR scope** in the worktree.
 3. Run project tests if applicable (`/test` skill or repo convention).
 4. Lint gate → commit (follow `commit` skill) → push.
