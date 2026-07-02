@@ -139,25 +139,33 @@ like review threads.
 When reading GitHub API output, fetch only comment bodies and locations needed — do not
 load entire JSON payloads into context.
 
-### Step E — CodeRabbit rate limit
+### Step E — CodeRabbit review cycle (mandatory)
 
-Find the latest CodeRabbit summary comment dynamically (search PR issue comments for
-`coderabbitai` + rate limit / review summary wording):
+CodeRabbit is not done when its GitHub check says "Review completed" on an **older**
+commit. The babysit loop must cover the **current PR head**.
 
-```bash
-gh api repos/<owner>/<repo>/issues/<number>/comments \
-  --jq '.[] | select(.user.login | test("coderabbit"; "i")) | {id, created_at, body}'
-```
+1. Record the latest commit SHA (`gh pr view --json headRefOid`).
+2. Find the latest CodeRabbit issue comment:
 
-If rate-limited:
+   ```bash
+   gh api repos/<owner>/<repo>/issues/<number>/comments \
+     --jq '.[] | select(.user.login | test("coderabbit"; "i")) | {id, created_at, body}'
+   ```
 
-1. Parse the reset/wait time from the comment body when present.
-2. **If local commits are ready to push**: wait until after reset, then push (Step A
-   first).
-3. **If nothing to push**: post `@coderabbitai review` (or `please review` per repo
-   convention) after reset.
-4. Do not burn CodeRabbit CLI runs during babysit — CI/bot comments are the source of
+3. **Rate-limited** (`Review limit reached` / `Next review available in`):
+   - Parse the wait time from the comment body.
+   - **Sleep until after reset** — poll every 2–5 minutes; do not exit early.
+   - After reset:
+     - **If unpushed commits**: Step A → push → return to loop.
+     - **If nothing to push**: post `@coderabbitai please review` on the PR, then wait
+       for CodeRabbit to respond and triage any new threads (Step D).
+4. **Not rate-limited but head unreviewed** (latest CodeRabbit summary/walkthrough
+   comment is **older** than the current head commit, or only a rate-limit comment
+   exists): post `@coderabbitai please review`, then wait and triage.
+5. Do not burn CodeRabbit CLI runs during babysit — PR bot comments are the source of
    truth.
+6. Repeat Step E after every push until CodeRabbit has reviewed the current head and
+   all resulting threads are triaged.
 
 ### Step F — Re-check and repeat
 
@@ -197,6 +205,9 @@ Done when **all** are true:
 
 - All required CI checks green (or only allowed skips like `REVIEW_REQUIRED`).
 - No unresolved actionable Greptile/CodeRabbit/Bugbot threads (fixed or replied).
+- **CodeRabbit has reviewed the current head** — summary/walkthrough or inline review
+  on the latest commit, with all threads triaged; not merely a stale green check or an
+  outstanding rate-limit window without `@coderabbitai please review`.
 - No unpushed local commits.
 - Branch mergeable (no conflicts).
 
