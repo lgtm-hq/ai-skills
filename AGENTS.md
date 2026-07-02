@@ -15,6 +15,7 @@ unavailable or a skill here explicitly overrides that preference.
 - `analyze-code`: Code-level quality analysis. Use when asked to review code for smells, security issues, implementation quality, or test coverage. (`skills/analyze-code/SKILL.md`)
 - `analyze-project`: High-level project analysis. Use when asked to analyze, review, or evaluate a project's architecture, structure, and overall health. (`skills/analyze-project/SKILL.md`)
 - `analyze-tests`: Test suite analysis. Use when asked to analyze, review, or evaluate a project's tests for quality, coverage gaps, and best practices. (`skills/analyze-tests/SKILL.md`)
+- `babysit-pr`: Autonomously drive an open PR to merge-ready state by triaging Greptile and CodeRabbit review comments, fixing CI failures, handling CodeRabbit rate limits, and looping until checks are green with no unresolved actionable threads. Use when asked to babysit a PR, shepherd a PR, or keep a PR merge-ready until review/CI cycles complete. (`skills/babysit-pr/SKILL.md`)
 - `branch`: Start work on a new branch or worktree. Use when asked to start a new branch, new worktree, begin work on a feature/fix, or start fresh. Supports issue numbers and plain descriptions. (`skills/branch/SKILL.md`)
 - `coderabbit`: Run CodeRabbit CLI for pre-push AI diff review. Use when asked for CodeRabbit, cr review, or as part of the default dual pre-push workflow with greptile. Max 2-3 runs per change set. (`skills/coderabbit/SKILL.md`)
 - `commit`: Pre-commit workflow and commit guidelines. Use when asked to commit changes. Requires passing lint and tests, signed commits, semantic prefixes, imperative mood. (`skills/commit/SKILL.md`)
@@ -46,6 +47,6 @@ unavailable or a skill here explicitly overrides that preference.
 - `turbo-verify`: Verify that a theme implementation is complete and follows all project standards. Use after adding a new theme to turbo-themes. (`skills/turbo-verify/SKILL.md`)
 - `which-pr`: Report which PR is being worked on in the current conversation. Use when asked about the current PR context. (`skills/which-pr/SKILL.md`)
 
-Total skills: 33
+Total skills: 34
 
 <!-- markdownlint-enable MD013 -->
