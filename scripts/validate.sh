@@ -86,7 +86,10 @@ else
 fi
 
 if [[ -f "bundles.yaml" ]]; then
-  if ! uv run python scripts/generate_marketplace.py --check; then
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "uv is required to validate bundles/marketplace; please install it."
+    errors=$((errors + 1))
+  elif ! uv run python scripts/generate_marketplace.py --check; then
     errors=$((errors + 1))
   fi
 else

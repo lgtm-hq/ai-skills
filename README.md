@@ -107,7 +107,7 @@ skills/<name>/SKILL.md          # Canonical skill definitions
 bundles.yaml                    # Installer group source of truth
 .claude-plugin/marketplace.json # Generated grouped picker manifest
 AGENTS.md                       # Human- and agent-readable skill index
-scripts/validate.sh             # Frontmatter, AGENTS, and bundles checks
+scripts/validate.sh             # Frontmatter, AGENTS, bundles, and marketplace checks
 tests/                          # Pytest wraps for scripts
 .github/workflows/              # CI + org reusable workflows
 ```

@@ -37,7 +37,7 @@ def _load_generate_marketplace_module() -> ModuleType:
     return module
 
 
-def _write_skill(repo_root: Path, skill_id: str) -> None:
+def _write_skill(*, repo_root: Path, skill_id: str) -> None:
     """Create a minimal skill directory for tests.
 
     Args:
@@ -52,7 +52,7 @@ def _write_skill(repo_root: Path, skill_id: str) -> None:
     )
 
 
-def _write_bundles(repo_root: Path, body: str) -> None:
+def _write_bundles(*, repo_root: Path, body: str) -> None:
     """Write ``bundles.yaml`` in a fake repository root.
 
     Args:
@@ -66,11 +66,11 @@ def test_generate_marketplace_builds_plugin_groups(tmp_path: Path) -> None:
     """Grouped skills become named plugins with ./skills/<id> paths."""
 
     mod = _load_generate_marketplace_module()
-    _write_skill(tmp_path, "alpha")
-    _write_skill(tmp_path, "beta")
+    _write_skill(repo_root=tmp_path, skill_id="alpha")
+    _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(
-        tmp_path,
-        """
+        repo_root=tmp_path,
+        body="""
 groups:
   core:
     name: Core Workflow
@@ -99,10 +99,10 @@ def test_validate_bundles_rejects_missing_skill(tmp_path: Path) -> None:
     """Every skill directory must appear in bundles.yaml."""
 
     mod = _load_generate_marketplace_module()
-    _write_skill(tmp_path, "only-one")
+    _write_skill(repo_root=tmp_path, skill_id="only-one")
     _write_bundles(
-        tmp_path,
-        """
+        repo_root=tmp_path,
+        body="""
 groups:
   core:
     name: Core
@@ -119,10 +119,10 @@ def test_validate_bundles_rejects_duplicate_assignment(tmp_path: Path) -> None:
     """A skill cannot appear in two groups."""
 
     mod = _load_generate_marketplace_module()
-    _write_skill(tmp_path, "dup")
+    _write_skill(repo_root=tmp_path, skill_id="dup")
     _write_bundles(
-        tmp_path,
-        """
+        repo_root=tmp_path,
+        body="""
 groups:
   one:
     name: One

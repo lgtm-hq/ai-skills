@@ -31,7 +31,7 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def _discover_skill_names(repo_root: Path) -> set[str]:
+def _discover_skill_names(*, repo_root: Path) -> set[str]:
     """List skill directory names under ``skills/``.
 
     Args:
@@ -48,7 +48,7 @@ def _discover_skill_names(repo_root: Path) -> set[str]:
     return names
 
 
-def _load_bundles(repo_root: Path) -> dict[str, Any]:
+def _load_bundles(*, repo_root: Path) -> dict[str, Any]:
     """Load and parse ``bundles.yaml``.
 
     Args:
@@ -64,14 +64,14 @@ def _load_bundles(repo_root: Path) -> dict[str, Any]:
     data = yaml.safe_load(bundles_path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         msg = "bundles.yaml must be a mapping"
-        raise ValueError(msg)
+        raise TypeError(msg)
     if "groups" not in data or not isinstance(data["groups"], dict):
         msg = "bundles.yaml must contain a 'groups' mapping"
-        raise ValueError(msg)
+        raise TypeError(msg)
     ungrouped = data.get("ungrouped", [])
     if not isinstance(ungrouped, list):
         msg = "bundles.yaml 'ungrouped' must be a list"
-        raise ValueError(msg)
+        raise TypeError(msg)
     return data
 
 
@@ -95,19 +95,19 @@ def _validate_bundles(
     for group_id, group in bundles["groups"].items():
         if not isinstance(group, dict):
             msg = f"Group {group_id!r} must be a mapping"
-            raise ValueError(msg)
+            raise TypeError(msg)
         display_name = group.get("name")
         skills = group.get("skills")
         if not display_name or not isinstance(display_name, str):
             msg = f"Group {group_id!r} must have a string 'name'"
-            raise ValueError(msg)
+            raise TypeError(msg)
         if not isinstance(skills, list):
             msg = f"Group {group_id!r} must have a 'skills' list"
-            raise ValueError(msg)
+            raise TypeError(msg)
         for skill_name in skills:
             if not isinstance(skill_name, str):
                 msg = f"Group {group_id!r} has a non-string skill entry"
-                raise ValueError(msg)
+                raise TypeError(msg)
             if skill_name in assigned:
                 msg = (
                     f"Skill {skill_name!r} is listed in both "
@@ -120,7 +120,7 @@ def _validate_bundles(
     for skill_name in ungrouped:
         if not isinstance(skill_name, str):
             msg = "ungrouped entries must be strings"
-            raise ValueError(msg)
+            raise TypeError(msg)
         if skill_name in assigned:
             msg = f"Skill {skill_name!r} is both grouped and ungrouped"
             raise ValueError(msg)
@@ -139,7 +139,7 @@ def _validate_bundles(
         raise ValueError(msg)
 
 
-def _build_marketplace(bundles: dict[str, Any]) -> dict[str, Any]:
+def _build_marketplace(*, bundles: dict[str, Any]) -> dict[str, Any]:
     """Build the marketplace manifest JSON object.
 
     Args:
@@ -161,7 +161,7 @@ def _build_marketplace(bundles: dict[str, Any]) -> dict[str, Any]:
     return {"plugins": plugins}
 
 
-def _render_marketplace(manifest: dict[str, Any]) -> str:
+def _render_marketplace(*, manifest: dict[str, Any]) -> str:
     """Serialize manifest JSON with a stable trailing newline.
 
     Args:

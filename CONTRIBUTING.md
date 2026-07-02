@@ -78,7 +78,6 @@ flowchart LR
     u["~/.cursor/skills"]
     x["~/.codex/skills …"]
   end
-  SK --> add
   BY --> MP
   MP --> add
   add --> c
