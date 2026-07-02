@@ -1,0 +1,72 @@
+---
+# Source of truth for skill installer groups (.claude-plugin/marketplace.json).
+# Regenerate: uv run python scripts/generate_marketplace.py
+#
+# Every skills/<name>/ directory must appear exactly once — in a group or
+# ungrouped.
+
+groups:
+  git-pr:
+    name: Git & PR Workflow
+    skills:
+      - branch
+      - commit
+      - rebase
+      - pr
+      - reconcile
+      - issue
+
+  pre-push:
+    name: Pre-Push Review
+    skills:
+      - lint
+      - test
+      - greptile
+      - coderabbit
+
+  standards:
+    name: Standards
+    skills:
+      - stand-general
+      - stand-py
+      - stand-ts
+      - stand-rust
+      - stand-ci
+
+  raycast:
+    name: Raycast
+    skills:
+      - raycast
+      - pr-raycast
+
+  analysis:
+    name: Analysis
+    skills:
+      - analyze-code
+      - analyze-project
+      - analyze-tests
+
+  agents:
+    name: Agents
+    skills:
+      - babysit-pr
+      - which-pr
+
+  testing:
+    name: Testing
+    skills:
+      - test-api
+      - test-ui
+      - test-shell
+
+# Skills intentionally omitted from named groups (installer's "Other" bucket).
+ungrouped:
+  - design
+  - jira
+  - lintro-add
+  - lintro-verify
+  - dashboard-redesign
+  - scorecard
+  - turbo-add
+  - turbo-test
+  - turbo-verify

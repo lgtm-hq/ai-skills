@@ -25,7 +25,7 @@ jobs:
     uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@fc73b3ab8342a24597c12d137d6ff7fca84b9fe2
     with:
       name: Validate skill repository structure
-      setup-commands: bash scripts/install-ripgrep.sh
+      setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/validate.sh
       tooling-ref: "fc73b3ab8342a24597c12d137d6ff7fca84b9fe2"
     permissions:

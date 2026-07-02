@@ -11,6 +11,8 @@ Checks:
   2. name + description keys in SKILL.md frontmatter
   3. AGENTS.md entries match skills/ directories (regenerate skills list via:
      uv run python scripts/generate_agents_md.py)
+  4. bundles.yaml covers all skills and marketplace.json is in sync (regenerate via:
+     uv run python scripts/generate_marketplace.py)
 EOF
   exit 0
 fi
@@ -81,6 +83,17 @@ if [[ -f "AGENTS.md" ]]; then
   done < <(rg --no-filename "^[[:space:]]*[-*+][[:space:]]+\`[^\`]+\`" AGENTS.md | sed -E "s/^[[:space:]]*[-*+][[:space:]]+\`([^\`]+)\`.*/\1/")
 else
   echo "AGENTS.md not found. Skipping AGENTS consistency checks."
+fi
+
+if [[ -f "bundles.yaml" ]]; then
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "uv is required to validate bundles/marketplace; please install it."
+    errors=$((errors + 1))
+  elif ! uv run python scripts/generate_marketplace.py --check; then
+    errors=$((errors + 1))
+  fi
+else
+  echo "bundles.yaml not found. Skipping marketplace consistency checks."
 fi
 
 if [[ "$errors" -gt 0 ]]; then
