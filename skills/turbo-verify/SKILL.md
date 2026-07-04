@@ -7,354 +7,160 @@ description:
 
 # Verify Theme Implementation
 
-Use this skill to verify that a theme implementation is complete and follows all
-turbo-themes standards.
+Verify that a theme implementation is complete and follows all turbo-themes
+standards. When asked to verify a theme (e.g., `/turbo-verify rose-pine`), run
+through the sections below. The `turbo-add` skill holds the full add-time file map
+and discovery approach — this skill checks the result.
 
-## Usage
+## 1. Discover Touchpoints (do this first)
 
-When asked to verify a theme (e.g., `/turbo-verify rose-pine`), run through all
-checklist items below.
+Do not trust a memorized file inventory. Compare the new theme's footprint against
+a known-complete theme's footprint:
 
----
+```bash
+# Pick a known-good variant id from src/themes/registry.ts (e.g. rose-pine-moon)
+rg -l 'rose-pine-moon' --hidden -g '!node_modules' -g '!dist' | sort > /tmp/ref.txt
+rg -l '<new-variant-id>'  --hidden -g '!node_modules' -g '!dist' | sort > /tmp/new.txt
+diff /tmp/ref.txt /tmp/new.txt
 
-## 1. Core Implementation
+# Family-level touchpoints (type unions, family maps, vendor metadata)
+diff <(rg -l "'rose-pine'" src/ packages/ apps/ scripts/ | sort) \
+     <(rg -l "'<theme>'"   src/ packages/ apps/ scripts/ | sort)
+```
 
-### Theme Pack Definition
+Every file present only in the reference list is a likely missing touchpoint.
+Exclude files that auto-derive from core (imports from
+`@lgtm-hq/turbo-themes-core/tokens`) and generated artifacts (rebuild instead).
 
-- [ ] `src/themes/packs/<theme>.synced.ts` or `<theme>.ts` exists
-- [ ] Exports a `ThemePackage` object with:
-  - `id` - theme family identifier (lowercase)
-  - `name` - display name
-  - `homepage` - theme homepage URL
-  - `license` - (recommended) license metadata with `spdx`, `url`, `copyright`
-  - `source` - (recommended for synced) source metadata with `package`, `version`,
-    `repository`
-  - `flavors` - array of theme variants
-- [ ] Each flavor has:
-  - `id` - unique identifier (lowercase with hyphens)
-  - `label` - full display name (e.g., "Catppuccin Mocha", "Gruvbox Dark Hard",
-    "Solarized Light")
-  - `vendor` - matches theme family
-  - `appearance` - 'light' or 'dark'
-  - `tokens` - complete token object with all required groups
-- [ ] No `iconUrl` in flavor definitions (icons resolved via `VENDOR_ICON_MAP` in
-      theme-mapper.ts)
+## 2. Core Implementation
+
+### Theme Pack (`src/themes/packs/<theme>.synced.ts` or `<theme>.ts`)
+
+- [ ] Exports a `ThemePackage` with `id`, `name`, `homepage`, `license`
+      (spdx/url/copyright, recommended), `source` (package/version/repository,
+      recommended for synced), and `flavors`
+- [ ] Each flavor has `id` (lowercase-hyphenated), `label` (full display name,
+      e.g. "Gruvbox Dark Hard"), `vendor` (matches family), `appearance`
+      (`light`/`dark`), and complete `tokens`
+- [ ] No `iconUrl` in flavor definitions (icons resolve via `VENDOR_ICON_MAP`)
 
 ### Required Token Groups
 
-- [ ] `background` - base, surface, overlay
-- [ ] `text` - primary, secondary, inverse
-- [ ] `brand` - primary
-- [ ] `state` - info, success, warning, danger
-- [ ] `border` - default
-- [ ] `accent` - link
-- [ ] `typography` - fonts (sans, mono), webFonts
-- [ ] `content` - heading (h1-h6), body, link, selection, blockquote, codeInline,
+- [ ] `background` — base, surface, overlay
+- [ ] `text` — primary, secondary, inverse
+- [ ] `brand` — primary
+- [ ] `state` — info, success, warning, danger
+- [ ] `border` — default
+- [ ] `accent` — link
+- [ ] `typography` — fonts (sans, mono), webFonts
+- [ ] `content` — heading (h1-h6), body, link, selection, blockquote, codeInline,
       codeBlock, table
 
-### Theme Registry
+### Registry, Tokens, Icons
 
-- [ ] Theme imported in `src/themes/registry.ts`
-- [ ] Theme flavors spread into `allFlavors` array
+- [ ] Theme imported in `src/themes/registry.ts`, flavors spread into `allFlavors`
+- [ ] W3C token JSON per variant in `schema/tokens/themes/<variant-id>.tokens.json`
+      (`$value`/`$type` format, `$schema` →
+      `../../turbo-themes.schema.json#/$defs/ThemeFile`)
+- [ ] PNG icon per variant in `assets/img/<variant-id>.png` (typically 24x24)
 
-### W3C Design Token Files
+## 3. Theme Selector Package
 
-- [ ] JSON file exists for each variant in
-      `schema/tokens/themes/<variant-id>.tokens.json`
-- [ ] Files use W3C Design Tokens format (`$value`, `$type`)
-- [ ] `$schema` points to `../../turbo-themes.schema.json#/$defs/ThemeFile`
+- [ ] `ThemeFamily` type union includes the family
+      (`packages/theme-selector/src/types.ts`)
+- [ ] `THEME_FAMILIES` has name + description
+      (`packages/theme-selector/src/constants.ts`)
+- [ ] `VENDOR_FAMILY_MAP` and `VENDOR_ICON_MAP` updated; `FLAVOR_DESCRIPTIONS`
+      has an entry per variant (`packages/theme-selector/src/theme-mapper.ts`)
 
-### Theme Icons
+## 4. Site Integration
 
-- [ ] PNG icon exists for each variant in `assets/img/<variant-id>.png`
-- [ ] Icons are appropriately sized (typically 24x24)
+`apps/site/src/data/theme-meta.ts` is the **single source of truth** for the
+site. `BaseLayout.astro` and `ThemeDropdown.astro` are data-driven from it —
+never hand-edit theme lists in those files.
 
----
+- [ ] Theme group in `themeGroups` (id, displayName, flavors)
+- [ ] All variants in `themeNames` with short labels (e.g., "Mocha" — shorter
+      than the token `label`)
+- [ ] All variants in `themeIcons` with icon filenames
+- [ ] `validThemeIds` auto-derives — verify the count matches the expected total
+- [ ] `ThemeDropdown.astro` and `BaseLayout.astro` still import from
+      `theme-meta.ts` (no hardcoded theme arrays crept back in)
+- [ ] Theme family in the `themes.astro` sidebar (header with icon/name/count,
+      button per variant) and in its JS `themeNames` object
+- [ ] Hero preview strip buttons added in `index.astro`
 
-## 2. Theme Selector Package
+## 5. Build Pipeline
 
-### Types (`packages/theme-selector/src/types.ts`)
+- [ ] If synced: script in `theme:sync` (package.json), output path is
+      `src/themes/packs/` (NOT `packages/core/...`), version read from
+      `node_modules/<pkg>/package.json` into `source.version`, and the build
+      succeeds from a clean state (delete the `.synced.ts` file, run
+      `bun run build`, confirm it regenerates)
+- [ ] `vendorMeta` in `scripts/prepare-style-dictionary.mjs` has correct
+      name/homepage; generated `tokens.json` files show them
+- [ ] Generated assets rebuilt and committed — discover them with
+      `git status` after `bun run build` (theme-selector JS bundles,
+      `tokens.json` in core/python/swift trees)
 
-- [ ] Theme family added to `ThemeFamily` type union
+## 6. Examples
 
-### Constants (`packages/theme-selector/src/constants.ts`)
+Use the section-1 diff to enumerate example files. Then confirm, per hit:
 
-- [ ] Theme added to `THEME_FAMILIES` with:
-  - `name` - display name
-  - `description` - short description
+- [ ] Web examples: new variants in `<select>` options and
+      `VALID_THEMES`/`LIGHT_THEMES`/`THEMES` arrays (FOUC and main scripts)
+- [ ] Files that import from `@lgtm-hq/turbo-themes-core/tokens` were NOT
+      hand-edited (they auto-update)
+- [ ] Swift example: `ThemeId.swift` enum cases, `ThemeRegistry.swift`
+      `ThemeDefinition` palettes, `ThemeRegistryTests.swift` counts, labels, and
+      raw values
 
-### Theme Mapper (`packages/theme-selector/src/theme-mapper.ts`)
-
-- [ ] Theme added to `VENDOR_FAMILY_MAP`
-- [ ] Theme added to `VENDOR_ICON_MAP` (string or AppearanceIcons object)
-- [ ] Optionally: descriptions added to `FLAVOR_DESCRIPTIONS`
-
----
-
-## 3. Site Integration
-
-### Theme Metadata (`apps/site/src/data/theme-meta.ts`)
-
-This is the **single source of truth** for the site. Both `ThemeDropdown.astro`
-and `BaseLayout.astro` are data-driven from this file.
-
-- [ ] Theme group added to `themeGroups` array with `id`, `displayName`, and `flavors`
-- [ ] All variants added to `themeNames` with short display labels (e.g., "Mocha", "Dark
-      Hard" — shorter than the token `label` field)
-- [ ] All variants added to `themeIcons` with icon filenames
-- [ ] `validThemeIds` is auto-derived (verify count matches expected total)
-
-### Theme Dropdown (`apps/site/src/components/ThemeDropdown.astro`)
-
-- [ ] Imports from `theme-meta.ts` (data-driven, no hardcoded theme buttons)
-- [ ] Theme appears in dropdown under correct group when rendered
-
-### Theme Explorer (`apps/site/src/pages/themes.astro`)
-
-- [ ] Theme family added to sidebar with:
-  - Family header with icon, name, and count
-  - Button for each variant with color dot
-- [ ] Theme variants added to JavaScript `themeNames` object
-
-### Base Layout (`apps/site/src/layouts/BaseLayout.astro`)
-
-- [ ] Imports `validThemeIds` from `theme-meta.ts` (data-driven, no hardcoded
-      VALID_THEMES)
-- [ ] Uses `define:vars` to pass `validThemeIds` to inline script
-
-### Index Page (`apps/site/src/pages/index.astro`)
-
-- [ ] Theme added to hero preview strip buttons (alongside Bulma, Catppuccin, etc.)
-
----
-
-## 4. Build Verification
-
-Run these commands and verify success:
+## 7. Build Verification
 
 ```bash
-# Linting passes (run first for fast failure)
-uv run lintro chk
-# Expected: 0 issues
-
-# Core build passes
-bun run build
-# Expected: "Build complete!" with theme count including new themes
-
-# Example projects build
-bun run examples:build
-# Expected: All example projects (react, vue, bootstrap, tailwind) build successfully
-
-# Unit tests pass
-bun run test
-# Expected: All tests pass (no failures)
-
-# Example E2E tests pass
-bun run examples:test
-# Expected: All example E2E tests pass
-
-# Site builds
-cd apps/site && bun run build
-# Expected: No errors
+uv run lintro chk          # Expected: 0 issues (run first for fast failure)
+bun run build              # Expected: "Build complete!" with new theme count
+bun run examples:build     # Expected: all example projects build
+bun run test               # Expected: all unit tests pass
+bun run examples:test      # Expected: all example E2E tests pass
+cd apps/site && bun run build   # Expected: no errors
 ```
 
-**Note on Visual Regression Tests**: If E2E visual regression tests fail after adding
-themes
-to the hero preview strip, this is expected. Visual snapshots are generated on Linux CI.
-Use the `maintenance-generate-snapshots.yml` workflow to regenerate them:
-Actions → Maintenance: Generate Playwright Snapshots → Run workflow
+**Visual regression note**: if E2E visual tests fail after adding themes to the
+hero strip, that is expected — snapshots are generated on Linux CI. Run the
+`maintenance-generate-snapshots.yml` workflow (Actions → Maintenance: Generate
+Playwright Snapshots → Run workflow).
 
----
+## 8. Functional Testing
 
-## 4.5 Build Pipeline Verification
+- [ ] Theme appears in the header dropdown under the correct family group
+- [ ] Selecting it updates page styling; header shows the correct icon and short
+      label (not the id or full name)
+- [ ] Theme persists across refresh and page navigation (no revert to default)
+- [ ] Explorer page: family in sidebar, all variants selectable, palette and live
+      preview render per variant
+- [ ] CSS file generated per variant; CSS variables set when applied
 
-### Sync Script Integration (if using sync script)
+## Quick Fix Reference
 
-- [ ] Sync script added to `theme:sync` in package.json
-- [ ] Sync script output path is `src/themes/packs/` (NOT
-      `packages/core/src/themes/packs/`)
-- [ ] Sync script reads version from `node_modules/<package>/package.json`
-- [ ] `source.version` field is populated in generated ThemePackage
-- [ ] Build succeeds from clean state (test: delete `.synced.ts` file and run build)
-- [ ] Generated `.synced.ts` file is created during build
-
-### Style Dictionary Metadata (`scripts/prepare-style-dictionary.mjs`)
-
-- [ ] Theme added to `vendorMeta` object with correct `name` and `homepage`
-- [ ] Generated `tokens.json` files show correct metadata for theme
-
-### Generated Assets
-
-After all changes, verify these files are committed:
-
-- [ ] `assets/js/theme-selector.js` - bundled with new theme support
-- [ ] `assets/js/theme-selector.js.map`
-- [ ] `assets/js/theme-selector.min.js`
-- [ ] `packages/core/src/themes/tokens.json`
-- [ ] `python/src/turbo_themes/tokens.json`
-- [ ] `swift/Sources/TurboThemes/Resources/tokens.json`
-
-### Flavor Descriptions
-
-- [ ] All variants have entries in `FLAVOR_DESCRIPTIONS` in theme-mapper.ts
-
----
-
-## 4.6 Example Files Verification
-
-### Web Examples (hardcoded theme lists)
-
-- [ ] `examples/html-vanilla/index.html` - `<select>` options and `VALID_THEMES` array
-- [ ] `examples/bootstrap/index.html` - `<select>`, `VALID_THEMES`, and `lightThemes`
-- [ ] `examples/react/index.html` - `VALID_THEMES` in FOUC script
-- [ ] `examples/vue/index.html` - `VALID_THEMES` in FOUC script
-- [ ] `examples/tailwind/index.html` - `<select>` options and `VALID_THEMES` array
-- [ ] `examples/jekyll/_layouts/default.html` - `<select>`, FOUC `VALID_THEMES`, main
-      `VALID_THEMES`
-- [ ] `examples/stackblitz/html-vanilla/index.html` - `<select>` and `VALID_THEMES`
-- [ ] `examples/stackblitz/bootstrap/index.html` - `<select>` options
-- [ ] `examples/stackblitz/bootstrap/src/main.js` - `VALID_THEMES` and `LIGHT_THEMES`
-- [ ] `examples/stackblitz/tailwind/index.html` - `<select>` options
-- [ ] `examples/stackblitz/tailwind/src/main.js` - `VALID_THEMES`
-- [ ] `examples/stackblitz/react/src/App.tsx` - `THEMES` array
-- [ ] `examples/stackblitz/vue/src/App.vue` - `THEMES` array
-
-**Note:** These files auto-update from core and do NOT need manual changes:
-
-- `examples/react/src/hooks/useTheme.ts`
-- `examples/vue/src/composables/useTheme.ts`
-- `examples/bootstrap/src/main.ts`
-
-### Swift Example (`examples/swift-swiftui/`)
-
-- [ ] `Sources/TurboThemes/ThemeId.swift` - enum cases for all variants
-- [ ] `Sources/TurboThemes/ThemeRegistry.swift` - `ThemeDefinition` with palette for
-      each variant
-- [ ] `Tests/.../ThemeRegistryTests.swift` - expected count matches total themes
-- [ ] `Tests/.../ThemeRegistryTests.swift` - `expectedLabels` includes all variants
-- [ ] `Tests/.../ThemeRegistryTests.swift` - `testThemeIdRawValues` includes all
-      variants
-
----
-
-## 5. Functional Testing
-
-### Theme Selection
-
-- [ ] Theme appears in header dropdown under correct family group
-- [ ] Selecting theme updates page styling correctly
-- [ ] Header shows correct icon when theme selected
-- [ ] Header shows correct short label when theme selected (not ID or full name)
-
-### Theme Persistence
-
-- [ ] Selected theme persists after page refresh
-- [ ] Selected theme persists when navigating to other pages
-- [ ] Theme doesn't revert to default unexpectedly
-
-### Theme Explorer Page
-
-- [ ] Theme family appears in sidebar
-- [ ] All variants selectable
-- [ ] Color palette displays correctly for each variant
-- [ ] Live preview updates when variant selected
-
-### CSS Generation
-
-- [ ] CSS file generated for each variant in build output
-- [ ] CSS variables set correctly when theme applied
-
----
-
-## 6. Common Issues Checklist
-
-- [ ] **No "theme reverts" bug**: Variants in `VALID_THEMES` (BaseLayout.astro)
-- [ ] **Correct label in header**: Variants in `themeNames` (BaseLayout.astro)
-- [ ] **Icon displays**: Variants in `themeIcons` (BaseLayout.astro) and files exist
-- [ ] **In correct dropdown group**: `VENDOR_FAMILY_MAP` mapping correct
-- [ ] **Theme count accurate**: Count in themes.astro sidebar matches variants
-- [ ] **Tests not broken**: Any hardcoded theme arrays in tests updated
-- [ ] **Examples updated**: All hardcoded theme lists in `examples/` include new
-      variants
-- [ ] **Swift example updated**: ThemeId enum, ThemeRegistry, and tests updated
-
----
-
-## 7. Verification Commands
-
-```bash
-# Check theme appears in build summary
-bun run build 2>&1 | grep "Total themes"
-
-# Check CSS files generated
-ls -la dist/themes/<theme>*.css
-
-# Check icons exist
-ls -la assets/img/<theme>*.png
-
-# Check JSON token files
-ls -la schema/tokens/themes/<theme>*.tokens.json
-
-# Check theme-selector package exports theme family
-grep "<theme>" packages/theme-selector/src/types.ts
-grep "<theme>" packages/theme-selector/src/constants.ts
-grep "<theme>" packages/theme-selector/src/theme-mapper.ts
-
-# Check site integration
-grep "<theme>" apps/site/src/components/ThemeDropdown.astro
-grep "<theme>" apps/site/src/pages/themes.astro
-grep "<theme>" apps/site/src/layouts/BaseLayout.astro
-
-# Check vendorMeta in prepare-style-dictionary.mjs
-grep "<theme>" scripts/prepare-style-dictionary.mjs
-
-# Check theme:sync includes the sync script (if applicable)
-grep "sync-<theme>" package.json
-
-# Verify build works from clean state (if using sync script)
-rm -f src/themes/packs/<theme>.synced.ts && bun run build
-
-# Check FLAVOR_DESCRIPTIONS
-grep "<theme>" packages/theme-selector/src/theme-mapper.ts | grep -i description
-
-# Check license/source metadata in theme pack
-grep -A3 "license:" src/themes/packs/<theme>.ts
-grep -A4 "source:" src/themes/packs/<theme>.ts
-
-# Verify sync script output path (should be src/themes/packs/, not packages/core/...)
-grep "outPath" scripts/sync-<theme>.mjs
-
-# Check hero preview strip
-grep "<theme>" apps/site/src/pages/index.astro | grep "button"
-
-# Check theme-meta.ts (single source of truth for site)
-grep "<theme>" apps/site/src/data/theme-meta.ts
-
-# Check example files have the theme
-grep "<theme>" examples/html-vanilla/index.html
-grep "<theme>" examples/bootstrap/index.html
-grep "<theme>" examples/react/index.html
-grep "<theme>" examples/tailwind/index.html
-grep "<theme>" examples/jekyll/_layouts/default.html
-grep "<theme>" examples/stackblitz/html-vanilla/index.html
-grep "<theme>" examples/stackblitz/bootstrap/index.html
-grep "<theme>" examples/stackblitz/bootstrap/src/main.js
-grep "<theme>" examples/stackblitz/tailwind/index.html
-grep "<theme>" examples/stackblitz/tailwind/src/main.js
-grep "<theme>" examples/stackblitz/react/src/App.tsx
-grep "<theme>" examples/stackblitz/vue/src/App.vue
-
-# Check Swift example
-grep "<theme>" examples/swift-swiftui/Sources/TurboThemes/ThemeId.swift
-grep "<theme>" examples/swift-swiftui/Sources/TurboThemes/ThemeRegistry.swift
-grep "<theme>" examples/swift-swiftui/Tests/TurboThemesTests/ThemeRegistryTests.swift
-```
-
----
+| Issue                         | Solution                                              |
+| ----------------------------- | ----------------------------------------------------- |
+| Theme reverts on navigation   | Add variants to `themeGroups` in theme-meta.ts        |
+| Wrong/missing header label    | Fix `themeNames` in theme-meta.ts                     |
+| Missing icon                  | Fix `themeIcons` in theme-meta.ts + add PNG           |
+| Theme in wrong group          | Fix `VENDOR_FAMILY_MAP` in theme-mapper.ts            |
+| Theme not appearing           | Check `ThemeFamily` type, `THEME_FAMILIES` constant   |
+| Tests fail on theme order     | Use `data-theme-id` lookups, not array indices        |
+| Bundle too large              | Increase budget in bundle-size.test.ts                |
+| CI "Cannot find module"       | Add sync script to `theme:sync` in package.json       |
+| tokens.json wrong metadata    | Add to `vendorMeta` in prepare-style-dictionary.mjs   |
+| Generated assets outdated     | Run `bun run build` and commit generated files        |
+| Missing descriptions          | Add to `FLAVOR_DESCRIPTIONS` in theme-mapper.ts       |
+| Sync writes to wrong path     | Change outPath to `src/themes/packs/`                 |
+| Visual regression fails       | Run `maintenance-generate-snapshots.yml` workflow     |
+| Missing from examples/Swift   | Re-run the section-1 diff and fill the gaps           |
 
 ## Review Output Format
-
-After reviewing, provide a summary:
 
 ```text
 ## Theme Review: <theme_name>
@@ -362,46 +168,17 @@ After reviewing, provide a summary:
 ### Status: PASS / FAIL / PARTIAL
 
 ### Checklist Summary
+- Discovery diff: clean / N missing files
 - Core Implementation: X/Y items
 - Theme Selector Package: X/Y items
 - Site Integration: X/Y items
+- Build Pipeline & Examples: X/Y items
 - Build Verification: X/Y items
 - Functional Testing: X/Y items
 
 ### Missing Items
-1. [item description]
-2. [item description]
+1. [item]
 
 ### Recommendations
 1. [recommendation]
-2. [recommendation]
 ```
-
----
-
-## Quick Fix Reference
-
-| Issue                       | Solution                                            |
-| --------------------------- | --------------------------------------------------- |
-| Theme reverts on navigation | Add to `VALID_THEMES` in BaseLayout.astro           |
-| Wrong/missing label         | Add to `themeNames` in BaseLayout.astro             |
-| Missing icon                | Add to `themeIcons` in BaseLayout.astro + add PNG   |
-| Theme in wrong group        | Fix `VENDOR_FAMILY_MAP` in theme-mapper.ts          |
-| Theme not appearing         | Check ThemeFamily type, THEME_FAMILIES constant     |
-| Build fails                 | Check TypeScript syntax, imports                    |
-| Tests fail                  | Update assertions to use `data-theme-id` lookups    |
-| Bundle too large            | Increase budget in bundle-size.test.ts              |
-| CI "Cannot find module"     | Add sync script to `theme:sync` in package.json     |
-| tokens.json wrong metadata  | Add to `vendorMeta` in prepare-style-dictionary.mjs |
-| Generated assets outdated   | Run `bun run build` and commit generated files      |
-| Missing descriptions        | Add to `FLAVOR_DESCRIPTIONS` in theme-mapper.ts     |
-| Missing license/source      | Add `license` and `source` to ThemePackage          |
-| Sync writes to wrong path   | Change outPath to `src/themes/packs/`               |
-| Missing version in source   | Read from `node_modules/<pkg>/package.json`         |
-| Visual regression fails     | Run `maintenance-generate-snapshots.yml` workflow   |
-| Missing from hero strip     | Add buttons to index.astro hero preview section     |
-| Missing from examples       | Update ~16 example files with hardcoded theme lists |
-| Missing from Swift example  | Add to ThemeId.swift, ThemeRegistry.swift, tests    |
-| Theme not in site dropdown  | Add to `themeGroups` in theme-meta.ts               |
-| Wrong label in site header  | Fix `themeNames` in theme-meta.ts                   |
-| Missing icon in site header | Fix `themeIcons` in theme-meta.ts + add PNG         |
