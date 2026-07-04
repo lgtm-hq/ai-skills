@@ -50,8 +50,11 @@ const baseFixtures = Object.fromEntries(
       const storageState = path.join(__dirname, "../.auth", fileName);
       const context = await browser.newContext({ storageState });
       const page = await context.newPage();
-      await use(page);
-      await context.close();
+      try {
+        await use(page);
+      } finally {
+        await context.close();
+      }
     },
   ]),
 );

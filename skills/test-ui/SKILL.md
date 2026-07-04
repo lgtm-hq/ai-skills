@@ -106,10 +106,10 @@ export default class BasePage {
 export default class DetailPage extends BasePage {
   public fileUploadComponent = new FileUpload(this.page);
 
-  readonly errorLabel: Locator = this.page.locator(".notifications");
+  readonly errorLabel: Locator = this.page.getByRole("alert");
 
   async assertError(message?: string): Promise<void> {
-    await expect(this.errorLabel).toBeVisible({ timeout: 90000 });
+    await expect(this.errorLabel).toBeVisible();
     if (message) await expect(this.errorLabel).toHaveText(message);
   }
 }
@@ -185,8 +185,9 @@ await page.route("**/api/user", (route) => {
 // Simulate failures
 await page.route("**/*.css", (route) => route.abort("failed"));
 
-// Cleanup after test
+// Cleanup after test — unroute every mock you registered
 await page.unroute("**/api/user");
+await page.unroute("**/*.css");
 ```
 
 ## Checklist
