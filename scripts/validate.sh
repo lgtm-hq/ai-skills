@@ -8,7 +8,9 @@ Validate skill repository consistency.
 
 Checks:
   1. SKILL.md filename casing in skills/*/
-  2. name + description keys in SKILL.md frontmatter
+  2. SKILL.md frontmatter values (YAML mapping; non-empty name/description
+     strings; description <= 1024 chars; name matches directory) via:
+     uv run python scripts/validate_skills.py
   3. AGENTS.md entries match skills/ directories (regenerate skills list via:
      uv run python scripts/generate_agents_md.py)
   4. bundles.yaml covers all skills and marketplace.json is in sync (regenerate via:
@@ -40,20 +42,13 @@ for dir in skills/*; do
   done
 done
 
-for skill_file in skills/*/SKILL.md; do
-  [[ -f "$skill_file" ]] || continue
-  if ! awk '
-		BEGIN { in_fm=0; start=0; has_name=0; has_desc=0; has_end=0 }
-		NR==1 && $0=="---" { in_fm=1; start=1; next }
-		in_fm && $0=="---" { in_fm=0; has_end=1; exit }
-		in_fm && $0 ~ /^name:[[:space:]]*/ { has_name=1 }
-		in_fm && $0 ~ /^description:[[:space:]]*/ { has_desc=1 }
-		END { if (!(start && has_end && has_name && has_desc)) exit 1 }
-	' "$skill_file"; then
-    echo "Missing frontmatter name/description in $skill_file"
-    errors=$((errors + 1))
-  fi
-done
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+if ! command -v uv >/dev/null 2>&1; then
+  echo "uv is required to validate SKILL.md frontmatter; please install it."
+  errors=$((errors + 1))
+elif ! uv run python "$script_dir/validate_skills.py"; then
+  errors=$((errors + 1))
+fi
 
 if [[ -f "AGENTS.md" ]]; then
   if ! command -v rg >/dev/null 2>&1; then
