@@ -41,7 +41,11 @@ Do NOT write theme packs from a template or trust a memorized file list. Instead
    rg -l "'rose-pine'" src/ packages/ apps/ scripts/
    ```
 
-3. Verify with the current repo, not this skill: if a file in the grep output is
+3. Also check root-level registrations the greps can miss because they do not
+   mention variant ids: the `theme:sync` script wiring in `package.json` and
+   size limits in `test/integration/bundle-size.test.ts`.
+
+4. Verify with the current repo, not this skill: if a file in the grep output is
    generated (check for a "generated" header or a `build`/`theme:sync` script that
    writes it), update the source and rebuild instead of hand-editing.
 
@@ -153,7 +157,7 @@ cd apps/site && bun run dev     # Visual check
 3. **Tests fail on theme order**: use `data-theme-id` attribute lookups, not
    array indices
 4. **Bundle size test fails**: increase the budget in bundle-size.test.ts
-5. **CI "Cannot find module './packs/<theme>.synced.js'"**: sync script missing
+5. **CI `Cannot find module './packs/<theme>.synced.js'`**: sync script missing
    from `theme:sync` in package.json
 6. **tokens.json shows wrong name/homepage**: missing from `vendorMeta` in
    prepare-style-dictionary.mjs
