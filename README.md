@@ -62,8 +62,12 @@ the sha256 of its `SKILL.md`, attested with GitHub build provenance:
 ```bash
 gh release download v0.1.10 -R lgtm-hq/ai-skills -p skills-manifest.json
 gh attestation verify skills-manifest.json -R lgtm-hq/ai-skills
-shasum -a 256 ~/.claude/skills/<name>/SKILL.md  # compare against the manifest
+shasum -a 256 <install-dir>/<name>/SKILL.md  # compare against the manifest
 ```
+
+Use your agent's install directory for `<install-dir>` — for example
+`~/.claude/skills` for Claude Code, or the equivalent skills directory for
+Cursor, Codex, or other agents.
 
 ### Bundles
 
