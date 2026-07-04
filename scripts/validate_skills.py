@@ -78,8 +78,7 @@ def _validate_string_field(
         return None, [f"{skill_md}: missing '{field}' in frontmatter"]
     if not isinstance(value, str):
         return None, [
-            f"{skill_md}: '{field}' must be a string, "
-            f"got {type(value).__name__}",
+            f"{skill_md}: '{field}' must be a string, got {type(value).__name__}",
         ]
     if not value.strip():
         return None, [f"{skill_md}: '{field}' must be a non-empty string"]

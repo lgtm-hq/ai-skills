@@ -119,7 +119,7 @@ def test_max_length_description_passes(tmp_path: Path) -> None:
     assert violations == []
 
 
-@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize(
     ("content", "expected_fragment"),
     [
         pytest.param(
