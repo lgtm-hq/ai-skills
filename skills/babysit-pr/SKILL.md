@@ -72,11 +72,13 @@ Do not duplicate their full workflows here — read and follow them at commit ti
 Babysitting is long-running. After Phase 0, if the agent supports background sub-agents
 (e.g. Claude Code's general-purpose agent run in the background), launch one and pass it
 the resolved PR metadata, worktree path, hard rules, and this skill's main loop (Phase 2
-onward). The parent agent returns immediately with the sub-agent link and handoff
-snapshot. The sub-agent runs until exit conditions are met or a human blocker is found.
+onward). In that mode, the parent agent returns immediately with the sub-agent link and
+handoff snapshot. The sub-agent runs until exit conditions are met or a human blocker is
+found.
 
-**Portability note:** on agents without background sub-agents, skip the handoff and run
-the main loop (Phase 2 onward) inline in the current session instead.
+**Portability note:** on agents without background sub-agents, skip the handoff,
+tell the user the babysitting loop will occupy the current session, and run the
+main loop (Phase 2 onward) inline instead.
 
 ## Phase 2 — Main loop
 
