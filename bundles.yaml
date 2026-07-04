@@ -57,6 +57,7 @@ groups:
     skills:
       - test-api
       - test-ui
+      - test-ui-qsf
       - test-shell
 
 # Skills intentionally omitted from named groups (installer's "Other" bucket).

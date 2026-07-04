@@ -41,12 +41,13 @@ unavailable or a skill here explicitly overrides that preference.
 - `test`: Run tests with coverage reporting. Auto-detects test frameworks (Vitest, Playwright, RSpec, pytest, Jest, BATS, etc.) and runs appropriate test commands. Use when asked to run tests, check coverage, or validate code. (`skills/test/SKILL.md`)
 - `test-api`: Playwright API testing best practices. Use when writing REST API tests with Playwright. Enforces Zod schema validation, client/fixture separation, and contract testing. (`skills/test-api/SKILL.md`)
 - `test-shell`: BATS shell script testing. Use when writing or running shell script tests. Covers setup/teardown, assertions, mocking, helper patterns, and coverage with kcov. (`skills/test-shell/SKILL.md`)
-- `test-ui`: Playwright E2E testing best practices. Use when writing browser tests, visual regression, or accessibility tests. Enforces user-facing locators, auto-waiting, Page Object Model, and project-specific QSF conventions. (`skills/test-ui/SKILL.md`)
+- `test-ui`: Playwright E2E testing best practices. Use when writing browser tests, visual regression, or accessibility tests in any project. Enforces user-facing locators, auto-waiting, web-first assertions, and Page Object Model. (`skills/test-ui/SKILL.md`)
+- `test-ui-qsf`: QSF project conventions for the Playwright E2E suite. Use when working in the QSF playwright-tests directory (authFixtures, ___ping-* handles, data-test-label test IDs, .auth storage states) — not for generic Playwright advice. (`skills/test-ui-qsf/SKILL.md`)
 - `turbo-add`: Guide for adding a new theme family to turbo-themes. Use when implementing Nord, Solarized, Gruvbox, Tokyo Night, One Dark, Ayu, Kanagawa, Everforest, Radix, or any new theme. (`skills/turbo-add/SKILL.md`)
 - `turbo-test`: Run the full turbo-themes build and test pipeline. Use when asked to build, test, lint, or validate the turbo-themes project. Includes example projects by default. (`skills/turbo-test/SKILL.md`)
 - `turbo-verify`: Verify that a theme implementation is complete and follows all project standards. Use after adding a new theme to turbo-themes. (`skills/turbo-verify/SKILL.md`)
 - `which-pr`: Report which PR is being worked on in the current conversation. Use when asked about the current PR context. (`skills/which-pr/SKILL.md`)
 
-Total skills: 34
+Total skills: 35
 
 <!-- markdownlint-enable MD013 -->
