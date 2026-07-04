@@ -17,5 +17,7 @@ if [[ -z "${ASSET:-}" || ! -f "${ASSET}" ]]; then
 fi
 
 echo "Uploading ${ASSET} to release ${TAG}..."
-gh release upload "${TAG}" "${ASSET}" --clobber
+# No --clobber: a published manifest must never be silently replaced. If a
+# rerun needs to re-upload, a human must delete the stale asset first.
+gh release upload "${TAG}" "${ASSET}"
 echo "Uploaded ${ASSET} to ${TAG}."
