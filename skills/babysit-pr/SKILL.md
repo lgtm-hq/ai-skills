@@ -67,14 +67,16 @@ Do not duplicate their full workflows here — read and follow them at commit ti
 4. **Snapshot** before looping: PR URL, branch, worktree path, latest commit SHA,
    check summary, open review threads.
 
-## Phase 1 — Launch background sub-agent
+## Phase 1 — Launch background sub-agent (if supported)
 
-Babysitting is long-running. After Phase 0, launch a **`generalPurpose`** sub-agent with
-`run_in_background: true`. Pass the resolved PR metadata, worktree path, hard rules, and
-this skill's main loop (Phase 2 onward).
+Babysitting is long-running. After Phase 0, if the agent supports background sub-agents
+(e.g. Claude Code's general-purpose agent run in the background), launch one and pass it
+the resolved PR metadata, worktree path, hard rules, and this skill's main loop (Phase 2
+onward). The parent agent returns immediately with the sub-agent link and handoff
+snapshot. The sub-agent runs until exit conditions are met or a human blocker is found.
 
-The parent agent returns immediately with the sub-agent link and handoff snapshot. The
-sub-agent runs until exit conditions are met or a human blocker is found.
+**Portability note:** on agents without background sub-agents, skip the handoff and run
+the main loop (Phase 2 onward) inline in the current session instead.
 
 ## Phase 2 — Main loop
 
@@ -108,7 +110,7 @@ For each failing GitHub Actions check:
 1. Get check status via `gh pr checks --json`; fetch logs separately with
    `gh run view <run_id> --log`.
 2. Fix failures **within PR scope** in the worktree.
-3. Run project tests if applicable (`/test` skill or repo convention).
+3. Run project tests if applicable (follow the `test` skill or repo convention).
 4. Lint gate → commit (follow `commit` skill) → push.
 5. Return to Step A.
 

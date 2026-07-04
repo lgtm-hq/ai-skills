@@ -21,13 +21,13 @@ Applies to versions, paths, URLs, schema constants, and configuration.
 
 ## Cross-cutting References
 
-- Linting and formatting: see `/lint`
-- Ignoring lint issues: see `/lint` (Rules section)
-- Testing: see `/test`
-- Commits: see `/commit`
-- Pull requests: see `/pr`
-- Pre-push AI review (CodeRabbit): see `/coderabbit`
-- Pre-push AI review (Greptile): see `/greptile`
+- Linting and formatting: follow the `lint` skill
+- Ignoring lint issues: follow the `lint` skill (Rules section)
+- Testing: follow the `test` skill
+- Commits: follow the `commit` skill
+- Pull requests: follow the `pr` skill
+- Pre-push AI review (CodeRabbit): follow the `coderabbit` skill
+- Pre-push AI review (Greptile): follow the `greptile` skill
 
 ## Pre-push review workflow
 
@@ -37,14 +37,16 @@ CLI review mirrors CI and catches issues before slow CI completes. Default: run
 **Short flow:**
 
 ```text
-/commit → [/greptile ‖ /coderabbit] → /pr
+commit → [greptile ‖ coderabbit] → pr
 ```
 
 **Explicit flow:**
 
 ```text
-/lint → /test → /commit → [/greptile ‖ /coderabbit] → /pr
+lint → test → commit → [greptile ‖ coderabbit] → pr
 ```
+
+Each step names the skill to follow.
 
 `‖` means run greptile and coderabbit in parallel when possible. Fix findings, then optional
 verify pass. Do not re-run either CLI on unchanged code. CI remains the merge-time

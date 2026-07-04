@@ -18,17 +18,19 @@ The `analyze-code`, `analyze-project`, and `analyze-tests` skills are for
 **manual or agent-driven pre-review checks**—they run concrete commands (lintro,
 ripgrep, coverage, etc.) and produce structured findings before you open a PR.
 
-This skill uses **CodeRabbit CLI** for external AI diff review. Run `/lint` and
-`/test` (or `/commit`, which includes them) before invoking CodeRabbit. Do not
-duplicate full analyze rubrics here.
+This skill uses **CodeRabbit CLI** for external AI diff review. Follow the `lint` and
+`test` skills (or the `commit` skill, which includes them) before invoking CodeRabbit.
+Do not duplicate full analyze rubrics here.
 
 ## Relationship to greptile
 
 Default pre-push flow when CI runs both tools:
 
 ```text
-/commit → [/greptile ‖ /coderabbit] → /pr
+commit → [greptile ‖ coderabbit] → pr
 ```
+
+Each step names the skill to follow.
 
 Run **greptile** and **coderabbit** in parallel when possible. Do not re-run on
 unchanged code.
@@ -59,7 +61,8 @@ unchanged code.
 
 When asked to run CodeRabbit or as part of pre-push review:
 
-1. Ensure lint and tests pass (`/commit` checklist or explicit `/lint` `/test`)
+1. Ensure lint and tests pass (the `commit` skill's checklist, or the `lint` and
+   `test` skills explicitly)
 2. Run `coderabbit review --agent --type committed --base main` (background if needed)
 3. Analyze findings; address critical/major issues
 4. After fixes, run one verification pass if CodeRabbit had findings

@@ -61,6 +61,27 @@ bash scripts/validate.sh
 Skills are consumed by multiple agents; prefer **clear descriptions**, stable naming,
 and **minimal required context** in each `SKILL.md`.
 
+## Agent portability and cross-skill references
+
+Skills are installed into multiple agents (Claude Code, Cursor, Codex, …), so skill
+bodies must not assume one agent's features or tool names.
+
+- **Cross-skill references:** reference other skills by backticked name in portable
+  phrasing — e.g. "follow the `lint` skill", "see the `stand-general` skill" — never
+  slash form ("see `/lint`"). Slash invocation is a Claude Code concept; other agents
+  read `/lint` as opaque text. The backticked name keeps references greppable.
+- **User-typed invocations are the exception:** keep the `/name` form only when
+  describing something the **user** types, e.g. usage examples like
+  "`/branch 123` — branch from issue #123" or "when the user invokes `/commit`".
+- **Agent-specific tool names:** do not name agent-specific tools
+  (e.g. `AskUserQuestion`, sub-agent types) as requirements. Describe the capability
+  instead ("ask the user to confirm — use a structured question tool if available").
+- **Marking agent-specific behavior:** if a step truly depends on one agent's
+  capability (e.g. background sub-agents), phrase it as capability-conditional
+  ("if the agent supports X, …") and provide an inline fallback so other agents can
+  still complete the skill. Cite a specific agent only as an example ("e.g. Claude
+  Code's …"), never as the only path.
+
 ## Architecture
 
 ```mermaid
