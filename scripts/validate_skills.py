@@ -101,7 +101,11 @@ def _validate_upstream(
                 f"{skill_md}: 'upstream.{field}' must be a non-empty string",
             )
     repo = upstream.get("repo")
-    if isinstance(repo, str) and repo.strip() and not UPSTREAM_REPO_PATTERN.match(repo):
+    if (
+        isinstance(repo, str)
+        and repo.strip()
+        and (not UPSTREAM_REPO_PATTERN.match(repo) or ".." in repo)
+    ):
         violations.append(
             f"{skill_md}: 'upstream.repo' must match 'owner/name', got {repo!r}",
         )

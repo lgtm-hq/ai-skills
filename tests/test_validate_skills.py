@@ -377,6 +377,11 @@ def test_upstream_block_missing_workflow_is_rejected(tmp_path: Path) -> None:
             id="repo-extra-path-segment",
         ),
         pytest.param(
+            "upstream:\n  repo: ../evil\n  path: p\n  version: '1'\n",
+            "'upstream.repo' must match 'owner/name'",
+            id="repo-parent-traversal",
+        ),
+        pytest.param(
             "upstream:\n  repo: a/b\n  path: /etc/passwd\n  version: '1'\n",
             "'upstream.path' must be a relative path",
             id="absolute-path",
