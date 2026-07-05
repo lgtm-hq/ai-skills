@@ -1,0 +1,71 @@
+---
+name: "Release: Skills Manifest"
+
+"on":
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach the manifest to"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-manifest-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  manifest:
+    name: Attach skills integrity manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Upload the manifest asset to the release.
+      contents: write
+      # Sign and store the provenance attestation.
+      id-token: write
+      attestations: write
+    env:
+      RELEASE_TAG: >-
+        ${{ github.event_name == 'workflow_dispatch'
+            && inputs.tag
+            || github.event.release.tag_name }}
+
+    steps:
+      - name: Harden runner
+        # Pinned to SHA for supply chain security
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5  # v2.19.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout release tag
+        # Pinned to SHA for supply chain security
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - name: Generate skills manifest
+        run: >-
+          python3 scripts/generate_skills_manifest.py
+          --output skills-manifest.json
+
+      - name: Attest build provenance
+        # Pinned to SHA for supply chain security
+        # yamllint disable-line rule:line-length
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        with:
+          subject-path: skills-manifest.json
+
+      - name: Upload manifest to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ env.RELEASE_TAG }}
+          ASSET: skills-manifest.json
+        run: bash scripts/upload-release-asset.sh

@@ -21,11 +21,16 @@ other agents from one catalog.
 ## Quickstart
 
 Use the [Vercel Labs `skills` CLI](https://github.com/vercel-labs/skills). Prefer
-**[Bun](https://bun.sh)** and **`bunx`** (same idea as **`npx`** / **`pnpm dlx`**):
+**[Bun](https://bun.sh)** and **`bunx`** (same idea as **`npx`** / **`pnpm dlx`**).
+
+**Install pinned to a release tag** (recommended — reproducible, reviewable):
 
 ```bash
-bunx skills add lgtm-hq/ai-skills -g
+bunx skills add lgtm-hq/ai-skills@v0.1.10 -g
 ```
+
+Replace `v0.1.10` with the newest tag from the
+[releases page](https://github.com/lgtm-hq/ai-skills/releases/latest).
 
 The installer shows a **grouped checkbox picker** — pick workflow bundles, toggle
 individual skills, then choose which agents to install into (Cursor, Claude, Codex,
@@ -34,9 +39,35 @@ and others).
 **npm / pnpm equivalents:**
 
 ```bash
-npx skills add lgtm-hq/ai-skills -g
-pnpm dlx skills add lgtm-hq/ai-skills -g
+npx skills add lgtm-hq/ai-skills@v0.1.10 -g
+pnpm dlx skills add lgtm-hq/ai-skills@v0.1.10 -g
 ```
+
+### Track latest (unpinned)
+
+```bash
+bunx skills add lgtm-hq/ai-skills -g
+```
+
+**Caveat:** without a tag, this installs whatever is on the moving `main` branch
+at install time, and later updates pull unreviewed-by-you changes. Skills are
+instructions your agents execute, so prefer the tag-pinned install above and bump
+tags deliberately.
+
+### Verify a release (integrity manifest)
+
+Every release ships a `skills-manifest.json` asset mapping each skill name to
+the sha256 of its `SKILL.md`, attested with GitHub build provenance:
+
+```bash
+gh release download v0.1.10 -R lgtm-hq/ai-skills -p skills-manifest.json
+gh attestation verify skills-manifest.json -R lgtm-hq/ai-skills
+shasum -a 256 <install-dir>/<name>/SKILL.md  # compare against the manifest
+```
+
+Use your agent's install directory for `<install-dir>` — for example
+`~/.claude/skills` for Claude Code, or the equivalent skills directory for
+Cursor, Codex, or other agents.
 
 ### Bundles
 
@@ -58,11 +89,8 @@ See **[AGENTS.md](./AGENTS.md)** for the full skill index with descriptions.
 Power users and CI can skip the interactive picker:
 
 ```bash
-# All skills, all detected agents
-bunx skills add lgtm-hq/ai-skills -g --all
-
-# Pin to a release tag
-bunx skills add lgtm-hq/ai-skills@v0.1.9 -g --all
+# All skills, all detected agents, pinned to a release tag
+bunx skills add lgtm-hq/ai-skills@v0.1.10 -g --all
 
 # Specific skills only
 bunx skills add lgtm-hq/ai-skills -g --skill lint commit greptile -y
@@ -87,7 +115,7 @@ bunx skills update lint commit -g
 To move everything to a specific release, reinstall with a tag:
 
 ```bash
-bunx skills add lgtm-hq/ai-skills@v0.1.9 -g --all
+bunx skills add lgtm-hq/ai-skills@v0.1.10 -g --all
 ```
 
 List or remove installs with `bunx skills ls -g` and `bunx skills remove <name> -g`.

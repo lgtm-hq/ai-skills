@@ -30,6 +30,10 @@ lintro — Raycast rules take precedence for extension-specific checks).
 - **CRITICAL: NEVER run `lintro chk --tools ...` (targeted/filtered checks).** Always run
   the full `uv run lintro chk` without `--tools`. Filtered runs silently skip tools and
   miss issues.
+  - **Exception:** single-tool runs (`--tools <tool>`) are permitted only when
+    developing or verifying that specific lintro tool (the `/lintro-add` and
+    `/lintro-verify` workflows). Even then, a full `uv run lintro chk` is still
+    required before committing.
 - Linting must produce **zero issues** before proceeding
 - **Fix ALL issues** — whether introduced in the current session or pre-existing
 - **Ignoring issues is a LAST resort** — only use `# noqa`, `# type: ignore`,

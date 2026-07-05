@@ -17,7 +17,7 @@ Standards for Rust code.
 
 ## Toolchain
 
-- Use `/lint` for formatting and linting — lintro runs `rustfmt`, `clippy`,
+- Follow the `lint` skill for formatting and linting — lintro runs `rustfmt`, `clippy`,
   `cargo_audit`, and `cargo_deny` as configured
 - Treat clippy warnings as errors in CI (`-D warnings`)
 - Customize formatting via `rustfmt.toml` where needed
@@ -131,4 +131,4 @@ mod tests {
 
 ## Linting
 
-See `/lint` for linting and formatting workflow.
+Follow the `lint` skill for linting and formatting workflow.

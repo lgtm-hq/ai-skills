@@ -90,15 +90,15 @@ def function_with_docstring(
 
 ## Linting
 
-See `/lint` for linting and formatting workflow.
+Follow the `lint` skill for linting and formatting workflow.
 
 ## Ignoring Issues
 
-See `/lint` for ignore policy (Rules section).
+Follow the `lint` skill for ignore policy (Rules section).
 
 Python-specific: Bandit requires an **inline** `# nosec` or `# nosec BXXX - reason`
 on the same line as the flagged statement (preceding-line `# nosec` is silently
-ignored by Bandit). See `/lint` for other tool ignore configurations (e.g. mypy
+ignored by Bandit). See the `lint` skill for other tool ignore configurations (e.g. mypy
 may use a preceding-line comment plus inline `# type: ignore`):
 
 ```python
