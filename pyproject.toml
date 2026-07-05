@@ -13,6 +13,9 @@ dev = [
   "pytest-xdist>=3.8.0",
   "pytest>=9.0.3",
   "pyyaml>=6.0.2",
+  # validate.sh requires the rg binary; the wheel ships it so pytest is
+  # self-contained on CI runners without system ripgrep.
+  "ripgrep>=15.1.0",
 ]
 
 [tool.bandit]
