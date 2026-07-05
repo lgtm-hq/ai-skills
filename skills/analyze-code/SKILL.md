@@ -62,7 +62,7 @@ rg -n '# (noqa|type: ignore|allow dead_code)'  # existing suppressions worth rev
 rg -n 'TODO|FIXME|HACK|XXX'                    # deferred cleanup
 
 # Cross-file duplication (same pattern in 3+ files with minor variations)
-bunx jscpd --min-tokens 50 src/    # or semgrep pattern rules for known idioms
+bunx jscpd --min-tokens 50 .       # or replace `.` with the repo's actual source roots
 ```
 
 Evaluate hits against the Code Smells rubric (long methods, dead code, duplication,
@@ -124,7 +124,9 @@ of the target language's constructs:
 - Copy-pasted logic across 3+ files that should be a shared helper
 - Nested if/else unwrapping where dedicated syntax exists (`let-else`, `?`, `.ok_or()`)
 
-For per-language remediation, see the `stand-py` and `stand-rust` skills.
+For per-language remediation, see the relevant language-standard skills (for example
+`stand-py`, `stand-rust`, and `stand-ts`) and ensure the finding names the concrete
+idiom to use.
 
 ## Reference — Security Best Practices
 
