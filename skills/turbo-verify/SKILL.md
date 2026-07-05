@@ -24,9 +24,15 @@ rg -l '<new-variant-id>'  --hidden -g '!node_modules' -g '!dist' | sort > /tmp/n
 diff /tmp/ref.txt /tmp/new.txt
 
 # Family-level touchpoints (type unions, family maps, vendor metadata)
-diff <(rg -l "'rose-pine'" src/ packages/ apps/ scripts/ | sort) \
-     <(rg -l "'<theme>'"   src/ packages/ apps/ scripts/ | sort)
+diff <(rg -l 'rose-pine' src/ packages/ apps/ scripts/ | sort) \
+     <(rg -l '<theme>'   src/ packages/ apps/ scripts/ | sort)
 ```
+
+Also verify root-level registrations the greps can miss because they do not
+mention variant ids:
+
+- [ ] `theme:sync` script wiring in `package.json`
+- [ ] Size limits in `test/integration/bundle-size.test.ts`
 
 Every file present only in the reference list is a likely missing touchpoint.
 Exclude files that auto-derive from core (imports from
