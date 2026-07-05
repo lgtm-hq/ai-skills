@@ -132,6 +132,10 @@ skills cover general style but not every smell above. Examples:
 - `os.path` vs `pathlib` → standardize on `pathlib.Path` (Python)
 - Nested unwrap chains → `let-else`, `?`, `.ok_or()` (Rust)
 - Defensive flag-and-break → early return or expression-based flow
+- Over-cloning → prefer `&str` / borrows over owned `String` parameters (Rust)
+- Hand-rolled utility → name the stdlib module or ecosystem crate/function to use
+- Copy-pasted logic → name the shared module or helper to extract into (see
+  duplication section above)
 
 For general language style, see `stand-py`, `stand-rust`, and `stand-ts`.
 
