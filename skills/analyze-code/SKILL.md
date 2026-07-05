@@ -60,10 +60,14 @@ rg -n '^\s*(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s+)?\(' -t ts -t js
 # Dead code / unused imports (lint tools often catch these; supplement with:)
 rg -n '# (noqa|type: ignore|allow dead_code)'  # existing suppressions worth reviewing
 rg -n 'TODO|FIXME|HACK|XXX'                    # deferred cleanup
+
+# Cross-file duplication (same pattern in 3+ files with minor variations)
+bunx jscpd --min-tokens 50 src/    # or semgrep pattern rules for known idioms
 ```
 
 Evaluate hits against the Code Smells rubric (long methods, dead code, duplication,
-magic numbers, etc.).
+magic numbers, etc.). Duplication findings must name the files involved, the shared
+pattern, and a suggested extraction point.
 
 ### 4. Rate and report findings
 
@@ -76,6 +80,9 @@ For each issue, assign severity:
 Prioritize actionable feedback. Include file paths, line numbers, and a concrete fix
 suggestion for each finding.
 
+Cadence: run codebase-wide every ~20 PRs or monthly; prioritize cross-file duplication,
+then idiom upgrades, then style polish; file findings via the `issue` skill.
+
 ---
 
 ## Reference — Implementation Quality
@@ -87,6 +94,7 @@ suggestion for each finding.
 - Concurrency/async correctness—race conditions, deadlocks, proper cleanup
 - Type safety—is the type system leveraged well or worked around with `any`/casts?
 - Dependency health—outdated, redundant, or vulnerable dependencies
+- Hand-rolled utilities that duplicate existing stdlib/crate/package functionality
 - Logging/observability—can issues be diagnosed in production?
 
 ## Reference — Code Smells
@@ -101,6 +109,22 @@ suggestion for each finding.
 - Magic numbers and hardcoded strings that should be constants
 - Duplicated logic that violates DRY
 - Inappropriate intimacy—modules tightly coupled to each other's internals
+
+### LLM-Typical Idiomatic Smells
+
+Code that compiles and passes linters but uses generic cross-language patterns instead
+of the target language's constructs:
+
+- Manual loops where built-ins exist (`any()`, `all()`, `.find()`, `.get()`,
+  `.collect()`)
+- Defensive flag-and-break variables instead of expression-based flow
+- Over-cloning or owned `String` parameters to dodge borrow reasoning (Rust)
+- `os.path` mixed with `pathlib` in one codebase (Python)
+- Hand-rolled utilities duplicating stdlib/ecosystem solutions
+- Copy-pasted logic across 3+ files that should be a shared helper
+- Nested if/else unwrapping where dedicated syntax exists (`let-else`, `?`, `.ok_or()`)
+
+For per-language remediation, see the `stand-py` and `stand-rust` skills.
 
 ## Reference — Security Best Practices
 
