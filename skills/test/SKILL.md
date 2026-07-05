@@ -31,9 +31,9 @@ checking for:
 ## Rules
 
 - Check `package.json` scripts for project-specific test commands
-- For shell tests, use `/test-shell` for detailed BATS guidance
-- Coverage and test-requirement policies: see `/stand-general`
-- The `/stand-general` rule requires a coverage report on every test run.
+- For shell tests, follow the `test-shell` skill for detailed BATS guidance
+- Run tests with coverage enabled and include a coverage report in every test run
+  (this skill owns the coverage policy)
 
 ## Usage
 
@@ -45,20 +45,20 @@ When asked to run tests:
    - Check `package.json` for test scripts
    - Run the appropriate command for each framework
 3. **Review coverage reports**
-4. **Ensure test coverage for new/modified code** (see `/stand-general`)
+4. **Ensure test coverage for new/modified code**
 
 ## Writing Tests
 
 For how to write tests, delegate to the appropriate skill:
 
-| Stack / tool                        | Skill         |
-| ----------------------------------- | ------------- |
-| Python (pytest)                     | `/stand-py`   |
-| TypeScript/JavaScript (Vitest/Jest) | `/stand-ts`   |
-| Rust (`cargo test`)                 | `/stand-rust` |
-| Shell (BATS)                        | `/test-shell` |
-| Playwright E2E                      | `/test-ui`    |
-| Playwright API                      | `/test-api`   |
+| Stack / tool                        | Skill        |
+| ----------------------------------- | ------------ |
+| Python (pytest)                     | `stand-py`   |
+| TypeScript/JavaScript (Vitest/Jest) | `stand-ts`   |
+| Rust (`cargo test`)                 | `stand-rust` |
+| Shell (BATS)                        | `test-shell` |
+| Playwright E2E                      | `test-ui`    |
+| Playwright API                      | `test-api`   |
 
 For other frameworks (RSpec, Go), follow project conventions and the patterns detected
 above.

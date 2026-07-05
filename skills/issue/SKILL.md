@@ -97,7 +97,7 @@ For issues that involve code changes, add a comment with an AI implementation pr
 ````markdown
 ## AI Implementation Prompt
 
-Use this prompt in a new Claude Code session to implement this feature:
+Use this prompt in a new agent session to implement this feature:
 
 \```
 [Concise implementation instructions including:]
