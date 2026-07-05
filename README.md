@@ -138,9 +138,11 @@ unless an agent you rely on is listed.
 **Retired skills are not pruned on upgrade.** `bunx skills update -g` and tagged
 reinstall (`bunx skills add lgtm-hq/ai-skills@vX.Y.Z -g --all`) refresh skills present
 in the release, but do **not** remove skills you installed earlier that were since
-dropped from the catalog. Known retirements: `review`
-([#42](https://github.com/lgtm-hq/ai-skills/issues/42)) and `dashboard-redesign`
-([#55](https://github.com/lgtm-hq/ai-skills/issues/55)). After upgrading, check the
+dropped from the catalog. Known retirements: `review` (split into `coderabbit` +
+`greptile`, [#42](https://github.com/lgtm-hq/ai-skills/issues/42)) and
+`dashboard-redesign` (retired,
+[#55](https://github.com/lgtm-hq/ai-skills/issues/55)); the removal records live in
+the CHANGELOG's **Removed** sections. After upgrading, check the
 **Removed** sections in the [CHANGELOG](./CHANGELOG.md), compare `bunx skills ls -g`
 against [AGENTS.md](./AGENTS.md), and remove orphans manually:
 
