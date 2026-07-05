@@ -81,12 +81,12 @@ Standards for TypeScript and JavaScript code.
 
 ## Formatting Rules
 
-- More than 1 arg/param requires a trailing comma (consistent with `/stand-py`)
+- More than 1 arg/param requires a trailing comma (consistent with the `stand-py` skill)
 - Be explicit with named arguments in object parameters when more than 1 property
 
 ## Linting
 
-See `/lint` for linting and formatting workflow.
+Follow the `lint` skill for linting and formatting workflow.
 
 ## Testing
 

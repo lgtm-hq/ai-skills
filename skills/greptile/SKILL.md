@@ -18,17 +18,19 @@ The `analyze-code`, `analyze-project`, and `analyze-tests` skills are for
 **manual or agent-driven pre-review checks**—they run concrete commands (lintro,
 ripgrep, coverage, etc.) and produce structured findings before you open a PR.
 
-This skill uses **Greptile CLI** for external AI branch review. Run `/lint` and
-`/test` (or `/commit`, which includes them) before invoking Greptile. Do not duplicate
-full analyze rubrics here.
+This skill uses **Greptile CLI** for external AI branch review. Follow the `lint` and
+`test` skills (or the `commit` skill, which includes them) before invoking Greptile.
+Do not duplicate full analyze rubrics here.
 
 ## Relationship to coderabbit
 
 Default pre-push flow when CI runs both tools:
 
 ```text
-/commit → [/greptile ‖ /coderabbit] → /pr
+commit → [greptile ‖ coderabbit] → pr
 ```
+
+Each step names the skill to follow.
 
 Run **greptile** and **coderabbit** in parallel (`‖`) when possible. Greptile is typically
 faster (~1 min). Do not re-run on unchanged code.

@@ -11,8 +11,8 @@ Pre-commit workflow and commit guidelines.
 
 Before making ANY commit:
 
-1. Run the `/lint` workflow — all checks must pass with zero issues (abort if any
-   issues remain). See `/lint` — full check, no `--tools` filtering.
+1. Run the `lint` skill's workflow — all checks must pass with zero issues (abort if
+   any issues remain). Follow the `lint` skill — full check, no `--tools` filtering.
 2. All tests must pass (`uv run lintro tst`)
 3. Where applicable, Docker builds pass
 
@@ -71,14 +71,17 @@ should be added):
 
 When asked to commit:
 
-1. Run the `/lint` workflow — abort if any issues remain (see `/lint` — full check,
-   no `--tools` filtering)
+1. Run the `lint` skill's workflow — abort if any issues remain (follow the `lint`
+   skill — full check, no `--tools` filtering)
    - Raycast extensions: run `uv run lintro fmt/chk` first, then `npm run lint` per
      the `raycast` skill (Raycast rules take precedence)
-   - Other projects without lintro: use the appropriate lint command from `/lint`
+   - Other projects without lintro: use the appropriate lint command from the
+     `lint` skill
 2. Run tests - abort if any failures:
    - Projects with lintro: `uv run lintro tst`
-   - Raycast extensions: `ray test`
+   - Raycast extensions: run Vitest if the extension has tests configured (`bun test`
+     or the extension's test script); otherwise manual smoke test via `bun run dev`
+     (see the `raycast` skill)
    - Other projects: use appropriate test command
    - When authoring or modifying a Raycast extension, use the `raycast` skill for
      toolchain-specific guidance
