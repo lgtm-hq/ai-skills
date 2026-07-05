@@ -110,10 +110,9 @@ def _validate_upstream(
             f"{skill_md}: 'upstream.repo' must match 'owner/name', got {repo!r}",
         )
     path = upstream.get("path")
-    if (
-        isinstance(path, str)
-        and path.strip()
-        and (path.startswith("/") or ".." in path.split("/"))
+    stripped_path = path.strip() if isinstance(path, str) else ""
+    if stripped_path and (
+        stripped_path.startswith("/") or ".." in stripped_path.split("/")
     ):
         violations.append(
             f"{skill_md}: 'upstream.path' must be a relative path without "

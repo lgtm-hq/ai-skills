@@ -391,6 +391,11 @@ def test_upstream_block_missing_workflow_is_rejected(tmp_path: Path) -> None:
             "'upstream.path' must be a relative path",
             id="parent-traversal-path",
         ),
+        pytest.param(
+            "upstream:\n  repo: a/b\n  path: '  /SKILL.md'\n  version: '1'\n",
+            "'upstream.path' must be a relative path",
+            id="whitespace-padded-absolute-path",
+        ),
     ],
 )
 def test_malformed_upstream_block_is_rejected(
