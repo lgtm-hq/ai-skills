@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **ci**: track upstream `anthropics/claude-code` frontend-design drift (#18):
+  weekly `upstream-drift` workflow runs `scripts/check_upstream_drift.py`
+  (normalized body compare, idempotent tracking issue); `upstream` provenance
+  block in `skills/design/SKILL.md` frontmatter; `validate_skills.py` now
+  validates `upstream` blocks and requires the tracking workflow for skills
+  that declare one
+
 ### Changed
 
 ### Deprecated

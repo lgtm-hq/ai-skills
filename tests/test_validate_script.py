@@ -16,7 +16,7 @@ def _copy_validate_script(
     repo_root: Path,
     tmp_path: Path,
 ) -> Path:
-    """Copy ``validate.sh`` and its Python helper into an isolated temp tree.
+    """Copy ``validate.sh`` and its Python helpers into an isolated temp tree.
 
     Args:
         repo_root: Path to the real repository root (source of ``validate.sh``).
@@ -28,10 +28,11 @@ def _copy_validate_script(
     script_path = tmp_path / "scripts" / "validate.sh"
     script_path.parent.mkdir(parents=True, exist_ok=False)
     shutil.copy2(src=repo_root / "scripts" / "validate.sh", dst=script_path)
-    shutil.copy2(
-        src=repo_root / "scripts" / "validate_skills.py",
-        dst=script_path.parent / "validate_skills.py",
-    )
+    for helper in ("validate_skills.py", "skill_frontmatter.py"):
+        shutil.copy2(
+            src=repo_root / "scripts" / helper,
+            dst=script_path.parent / helper,
+        )
     logger.debug("Copied validate.sh to {}", script_path)
     return script_path
 

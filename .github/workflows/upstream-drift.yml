@@ -1,0 +1,52 @@
+---
+name: "Upstream Drift"
+
+"on":
+  schedule:
+    # Weekly, Mondays at 06:00 UTC.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-drift-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: Check upstream skill drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Open or update the drift tracking issue.
+      issues: write
+    steps:
+      - name: Harden runner
+        # Pinned to SHA for supply chain security
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5  # v2.19.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        # Pinned to SHA for supply chain security
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        # Pinned to SHA for supply chain security
+        # yamllint disable-line rule:line-length
+        uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3  # v8.3.0
+
+      - name: Check upstream drift and file tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: >-
+          uv run python scripts/check_upstream_drift.py --file-issue
+          --github-repo "$GITHUB_REPO"
