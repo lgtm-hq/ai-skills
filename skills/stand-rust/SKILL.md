@@ -38,6 +38,18 @@ Standards for Rust code.
   ```
 
 - Implement `std::fmt::Display` for all custom error types
+- `.unwrap_or_default()`/`.unwrap_or()` over trivial-arm matches:
+
+  ```rust
+  // Don't
+  let count = match maybe_count {
+      Some(n) => n,
+      None => 0,
+  };
+
+  // Do
+  let count = maybe_count.unwrap_or(0);
+  ```
 
 ## Type Patterns
 
@@ -126,6 +138,51 @@ mod tests {
 - Prefer `impl` blocks over free functions for associated behavior
 - Use the builder pattern for types with many optional fields
 - Prefer iterators and combinators over manual loops where readability permits
+- `let-else` over nested `if let` pyramids:
+
+  ```rust
+  // Don't
+  if let Some(user) = lookup(id) {
+      if let Some(email) = user.email {
+          send(email);
+      }
+  }
+
+  // Do
+  let Some(user) = lookup(id) else { return };
+  let Some(email) = user.email else { return };
+  send(email);
+  ```
+
+- `.find()`/`.position()`/`.any()` over manual index loops:
+
+  ```rust
+  // Don't
+  let mut idx = None;
+  for (i, item) in items.iter().enumerate() {
+      if item.id == target {
+          idx = Some(i);
+          break;
+      }
+  }
+
+  // Do
+  let idx = items.iter().position(|item| item.id == target);
+  ```
+
+- `matches!()` for pattern booleans:
+
+  ```rust
+  // Don't
+  let is_ready = match state {
+      State::Ready => true,
+      _ => false,
+  };
+
+  // Do
+  let is_ready = matches!(state, State::Ready);
+  ```
+
 - Use `#[must_use]` on functions whose return value should not be ignored
 - Prefer `From`/`Into` implementations over ad-hoc conversion methods
 
