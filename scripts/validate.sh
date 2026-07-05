@@ -15,6 +15,8 @@ Checks:
      uv run python scripts/generate_agents_md.py)
   4. bundles.yaml covers all skills and marketplace.json is in sync (regenerate via:
      uv run python scripts/generate_marketplace.py)
+  5. skills-manifest generator is deterministic (two runs produce identical
+     output; see scripts/generate_skills_manifest.py)
 EOF
   exit 0
 fi
@@ -89,6 +91,28 @@ if [[ -f "bundles.yaml" ]]; then
   fi
 else
   echo "bundles.yaml not found. Skipping marketplace consistency checks."
+fi
+
+if [[ ! -f "scripts/generate_skills_manifest.py" ]]; then
+  echo "scripts/generate_skills_manifest.py not found. Skipping manifest checks."
+elif command -v python3 >/dev/null 2>&1; then
+  manifest_tmp_dir=$(mktemp -d)
+  trap 'rm -rf "$manifest_tmp_dir"' EXIT
+  if python3 scripts/generate_skills_manifest.py \
+    --output "$manifest_tmp_dir/first.json" >/dev/null &&
+    python3 scripts/generate_skills_manifest.py \
+      --output "$manifest_tmp_dir/second.json" >/dev/null; then
+    if ! diff -u "$manifest_tmp_dir/first.json" "$manifest_tmp_dir/second.json"; then
+      echo "skills-manifest generator output is not deterministic."
+      errors=$((errors + 1))
+    fi
+  else
+    echo "skills-manifest generator failed to run."
+    errors=$((errors + 1))
+  fi
+else
+  echo "python3 is required to validate the skills-manifest generator."
+  errors=$((errors + 1))
 fi
 
 if [[ "$errors" -gt 0 ]]; then
