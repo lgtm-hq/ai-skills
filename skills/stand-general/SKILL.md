@@ -19,6 +19,38 @@ Applies to versions, paths, URLs, schema constants, and configuration.
 - Hand-maintained mirrors of canonical sources rot silently. The cost of a small
   generator is always lower than the cost of recurring drift bugs.
 
+## Before You Write
+
+Before implementing utility logic (file traversal, string parsing, config lookup,
+error wrapping), search the codebase for an existing implementation.
+
+- Found a close match? Import or extend it instead of reimplementing.
+- Same pattern already in 2+ files? Extract it to a shared module before adding
+  a third instance.
+- Duplication accumulates one compliant PR at a time — prevent it at writing time
+  rather than relying on later audits.
+
+## Pre-Implementation
+
+Answer three questions before creating a new file, module, or significant function:
+
+1. **Does this logic already exist?** Search first; reuse beats rewrite.
+2. **Is this the right module?** An existing module growing too large is a signal
+   to refactor it, not to create a parallel module beside it.
+3. **Will this create duplication later?** If similar future cases are foreseeable,
+   put the logic in a shared location from the start.
+
+## Architectural Awareness
+
+When adding a module or significant function:
+
+- Confirm it fits the layer it lives in, and that its dependency direction matches
+  the existing architecture.
+- Every new dependency arrow between modules must be intentional — never a
+  side effect of convenient imports.
+- A module growing past ~300–400 lines is a signal to split it along
+  responsibility boundaries.
+
 ## Cross-cutting References
 
 - Linting and formatting: follow the `lint` skill
