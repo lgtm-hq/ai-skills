@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **design**: sync `skills/design/SKILL.md` body with the rewritten upstream
+  `anthropics/claude-code` frontend-design skill v1.1.0 (studio-brief framing,
+  two-pass plan/critique process, writing-for-design section); refreshed the
+  skill description to match the new intent and regenerated `AGENTS.md` (#82)
+
 ### Deprecated
 
 ### Removed
