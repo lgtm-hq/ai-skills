@@ -92,8 +92,8 @@ checksum :: proc(data: []byte) -> u32 { ... }
 // Don't — caller cannot control allocation
 clone_name :: proc(s: string) -> string { return strings.clone(s) }
 
-// Do
-clone_name :: proc(s: string, allocator := context.allocator) -> string {
+// Do — caller controls allocation; allocator errors propagate
+clone_name :: proc(s: string, allocator := context.allocator) -> (string, mem.Allocator_Error) {
     return strings.clone(s, allocator)
 }
 ```
