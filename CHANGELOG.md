@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.1.15] - 2026-07-05
+
+### Bug Fixes
+
+- **ci**: add pr-auto-assign workflow (#77) (21c7a11)
+
+### Documentation
+
+- **readme**: document install limitations and retired-skill cleanup (#79) (6ce33f8)
+
 ## [0.1.14] - 2026-07-05
 
 ### Features
@@ -211,7 +221,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.14...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.15...HEAD
+[0.1.15]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.11...v0.1.12
