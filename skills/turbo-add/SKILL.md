@@ -38,7 +38,7 @@ Do NOT write theme packs from a template or trust a memorized file list. Instead
    rg -l 'rose-pine-moon' --hidden -g '!node_modules' -g '!dist'
 
    # Family-level touchpoints (type unions, family maps, vendor metadata)
-   rg -l "'rose-pine'" src/ packages/ apps/ scripts/
+   rg -l 'rose-pine' src/ packages/ apps/ scripts/
    ```
 
 3. Also check root-level registrations the greps can miss because they do not

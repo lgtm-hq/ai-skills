@@ -138,12 +138,12 @@ Can be combined: `ToolType.LINTER | ToolType.FORMATTER`
 
 ## Verification Checklist
 
-- [ ] `lintro tools` shows the new tool
-- [ ] `lintro check --tools <tool> .` runs without error — single-tool runs are
+- [ ] `uv run lintro tools` shows the new tool
+- [ ] `uv run lintro check --tools <tool> .` runs without error — single-tool runs are
       normally banned by the `lint` skill; this is the explicit sanctioned
       exception for verifying a tool under development. Still finish with a full
       `uv run lintro chk`.
-- [ ] `lintro doctor` shows the tool with correct version (no "No cmd defined")
+- [ ] `uv run lintro doctor` shows the tool with correct version (no "No cmd defined")
 - [ ] Tool detects violations in the sample file
 - [ ] Parser unit tests pass: `pytest tests/unit/parsers/test_<tool>_parser.py -v`
 - [ ] Plugin unit tests pass: `pytest tests/unit/tools/<tool>/ -v`

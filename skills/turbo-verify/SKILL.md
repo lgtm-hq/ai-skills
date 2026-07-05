@@ -151,7 +151,7 @@ Playwright Snapshots → Run workflow).
 | Theme in wrong group          | Fix `VENDOR_FAMILY_MAP` in theme-mapper.ts            |
 | Theme not appearing           | Check `ThemeFamily` type, `THEME_FAMILIES` constant   |
 | Tests fail on theme order     | Use `data-theme-id` lookups, not array indices        |
-| Bundle too large              | Increase budget in bundle-size.test.ts                |
+| Bundle too large              | Inspect generated asset diff first; raise budget in bundle-size.test.ts only if intentional |
 | CI "Cannot find module"       | Add sync script to `theme:sync` in package.json       |
 | tokens.json wrong metadata    | Add to `vendorMeta` in prepare-style-dictionary.mjs   |
 | Generated assets outdated     | Run `bun run build` and commit generated files        |
