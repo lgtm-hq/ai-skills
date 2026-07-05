@@ -32,8 +32,8 @@ checking for:
 
 - Check `package.json` scripts for project-specific test commands
 - For shell tests, follow the `test-shell` skill for detailed BATS guidance
-- Coverage and test-requirement policies: follow the `stand-general` skill
-- The `stand-general` skill's rule requires a coverage report on every test run.
+- Run tests with coverage enabled and include a coverage report in every test run
+  (this skill owns the coverage policy)
 
 ## Usage
 
@@ -45,7 +45,7 @@ When asked to run tests:
    - Check `package.json` for test scripts
    - Run the appropriate command for each framework
 3. **Review coverage reports**
-4. **Ensure test coverage for new/modified code** (follow the `stand-general` skill)
+4. **Ensure test coverage for new/modified code**
 
 ## Writing Tests
 

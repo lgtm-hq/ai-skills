@@ -64,6 +64,7 @@
       "skills": [
         "./skills/test-api",
         "./skills/test-ui",
+        "./skills/test-ui-qsf",
         "./skills/test-shell"
       ]
     }

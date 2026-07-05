@@ -79,7 +79,9 @@ When asked to commit:
      `lint` skill
 2. Run tests - abort if any failures:
    - Projects with lintro: `uv run lintro tst`
-   - Raycast extensions: `ray test`
+   - Raycast extensions: run Vitest if the extension has tests configured (`bun test`
+     or the extension's test script); otherwise manual smoke test via `bun run dev`
+     (see the `raycast` skill)
    - Other projects: use appropriate test command
    - When authoring or modifying a Raycast extension, use the `raycast` skill for
      toolchain-specific guidance

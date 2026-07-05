@@ -23,6 +23,8 @@ document:
   **`.claude-plugin/marketplace.json`** with `uv run python scripts/generate_marketplace.py`.
 - **No secrets:** do not add API keys, tokens, or environment-specific paths in skill
   bodies or examples.
+- **No project-session context dumps:** one-off session notes for a single project do
+  not belong in the catalog ([#55](https://github.com/lgtm-hq/ai-skills/issues/55)).
 
 ## Local development
 
