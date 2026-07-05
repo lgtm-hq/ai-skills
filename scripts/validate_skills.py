@@ -27,41 +27,12 @@ import sys
 from pathlib import Path
 
 import yaml
+from skill_frontmatter import split_frontmatter
 
 DESCRIPTION_MAX_LENGTH = 1024
 DRIFT_WORKFLOW_PATH = Path(".github/workflows/upstream-drift.yml")
 UPSTREAM_REPO_PATTERN = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 UPSTREAM_REQUIRED_FIELDS = ("repo", "path", "version")
-
-
-def _extract_frontmatter(
-    text: str,
-) -> str | None:
-    """Extract the YAML frontmatter block from a SKILL.md document.
-
-    Windows (CRLF) and legacy Mac (CR) line endings are normalized to
-    Unix newlines before delimiter detection so ``---`` matching is
-    reliable. A closing ``---`` at end-of-file without a trailing
-    newline is accepted.
-
-    Args:
-        text: Full SKILL.md file content.
-
-    Returns:
-        The frontmatter text between the ``---`` delimiters (excluding
-        the delimiters), or ``None`` if either delimiter is missing.
-    """
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    if not normalized.startswith("---\n"):
-        return None
-    end = normalized.find("\n---\n", 4)
-    if end == -1:
-        alt = normalized.find("\n---", 4)
-        if alt != -1 and normalized[alt + 4 :].strip() == "":
-            end = alt
-    if end == -1:
-        return None
-    return normalized[4:end]
 
 
 def _validate_string_field(
@@ -119,8 +90,7 @@ def _validate_upstream(
     upstream = frontmatter["upstream"]
     if not isinstance(upstream, dict):
         return [
-            f"{skill_md}: 'upstream' must be a mapping, "
-            f"got {type(upstream).__name__}",
+            f"{skill_md}: 'upstream' must be a mapping, got {type(upstream).__name__}",
         ]
     violations: list[str] = []
     for field in UPSTREAM_REQUIRED_FIELDS:
@@ -161,11 +131,11 @@ def validate_skill(
         text = skill_md.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         return [f"{skill_md}: cannot read file: {exc}"]
-    body = _extract_frontmatter(text=text)
-    if body is None:
+    frontmatter_text, _ = split_frontmatter(text)
+    if frontmatter_text is None:
         return [f"{skill_md}: missing opening/closing --- frontmatter delimiters"]
     try:
-        frontmatter = yaml.safe_load(body)
+        frontmatter = yaml.safe_load(frontmatter_text)
     except yaml.YAMLError as exc:
         return [f"{skill_md}: frontmatter is not valid YAML: {exc}"]
     if not isinstance(frontmatter, dict):

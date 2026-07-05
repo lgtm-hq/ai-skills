@@ -119,7 +119,7 @@ def test_max_length_description_passes(tmp_path: Path) -> None:
     assert violations == []
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
     ("content", "expected_fragment"),
     [
         pytest.param(
@@ -338,7 +338,7 @@ def test_upstream_block_missing_workflow_is_rejected(tmp_path: Path) -> None:
     ]
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
     ("upstream_yaml", "expected_fragment"),
     [
         pytest.param(
@@ -389,8 +389,7 @@ def test_malformed_upstream_block_is_rejected(
         tmp_path=tmp_path,
         dir_name="example",
         content=(
-            "---\nname: example\ndescription: Example skill.\n"
-            f"{upstream_yaml}---\n"
+            f"---\nname: example\ndescription: Example skill.\n{upstream_yaml}---\n"
         ),
     )
     _write_drift_workflow(tmp_path=tmp_path)

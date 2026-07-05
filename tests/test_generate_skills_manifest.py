@@ -155,7 +155,7 @@ def test_check_passes_for_fresh_manifest(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
     "mutation",
     [
         pytest.param("edit-skill", id="skill-content-drift"),
