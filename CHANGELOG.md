@@ -17,7 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **skills**: retire dashboard-redesign skill (finished-project context dump) (#55)
+
 ### Fixed
+
+- **skills**: resolve five cross-skill contradictions (#54): remove `test`'s dangling
+  `/stand-general` coverage-report claim (coverage rule now owned inline by `test`);
+  replace `lintro-add`'s banned `verify-manifest-sync.py` references with the
+  `generate-tool-versions.py --check` pattern per `stand-ci`; add explicit
+  tool-development exception to `lint`'s `--tools` ban (covers `lintro-add` /
+  `lintro-verify` workflows); point `turbo-verify` and `turbo-add` stale
+  BaseLayout.astro fix advice at data-driven `theme-meta.ts`; align `commit`'s Raycast
+  test guidance with `raycast` (Vitest optional, `bun run dev` smoke test, drop
+  `ray test`)
 
 ### Security
 
