@@ -19,7 +19,6 @@ unavailable or a skill here explicitly overrides that preference.
 - `branch`: Start work on a new branch or worktree. Use when asked to start a new branch, new worktree, begin work on a feature/fix, or start fresh. Supports issue numbers and plain descriptions. (`skills/branch/SKILL.md`)
 - `coderabbit`: Run CodeRabbit CLI for pre-push AI diff review. Use when asked for CodeRabbit, cr review, or as part of the default dual pre-push workflow with greptile. Max 2-3 runs per change set. (`skills/coderabbit/SKILL.md`)
 - `commit`: Pre-commit workflow and commit guidelines. Use when asked to commit changes. Requires passing lint and tests, signed commits, semantic prefixes, imperative mood. (`skills/commit/SKILL.md`)
-- `dashboard-redesign`: Dashboard Redesign — Design vision and implementation guide for the Flowscout SPA dashboard. Use when working on the dashboard restructure, to reload the agreed-upon design direction, tab structure, and remaining tasks. (`skills/dashboard-redesign/SKILL.md`)
 - `design`: Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics. (`skills/design/SKILL.md`)
 - `greptile`: Run Greptile CLI for pre-push AI branch review. Use when asked for Greptile review, raycast/extensions pre-PR checks, or as part of the default dual pre-push workflow with coderabbit. Max 2 runs per change set. (`skills/greptile/SKILL.md`)
 - `issue`: Create GitHub issues with proper formatting, labels, and AI implementation prompts. Use when asked to create an issue, report a bug, or request a feature. (`skills/issue/SKILL.md`)
@@ -47,6 +46,6 @@ unavailable or a skill here explicitly overrides that preference.
 - `turbo-verify`: Verify that a theme implementation is complete and follows all project standards. Use after adding a new theme to turbo-themes. (`skills/turbo-verify/SKILL.md`)
 - `which-pr`: Report which PR is being worked on in the current conversation. Use when asked about the current PR context. (`skills/which-pr/SKILL.md`)
 
-Total skills: 34
+Total skills: 33
 
 <!-- markdownlint-enable MD013 -->

@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **skills**: retire dashboard-redesign skill (finished-project context dump) (#55)
+
 ### Fixed
 
 - **skills**: resolve five cross-skill contradictions (#54): remove `test`'s dangling
