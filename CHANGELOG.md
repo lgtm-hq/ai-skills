@@ -11,13 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **ci**: track upstream `anthropics/claude-code` frontend-design drift (#18):
-  weekly `upstream-drift` workflow runs `scripts/check_upstream_drift.py`
-  (normalized body compare, idempotent tracking issue); `upstream` provenance
-  block in `skills/design/SKILL.md` frontmatter; `validate_skills.py` now
-  validates `upstream` blocks and requires the tracking workflow for skills
-  that declare one
-
 ### Changed
 
 ### Deprecated
@@ -27,6 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.1.16] - 2026-07-05
+
+### Features
+
+- **ci**: track upstream frontend-design drift (#81) (09a39a6)
+
+### Previously Unreleased
+
+- **ci**: track upstream `anthropics/claude-code` frontend-design drift (#18):
+  weekly `upstream-drift` workflow runs `scripts/check_upstream_drift.py`
+  (normalized body compare, idempotent tracking issue); `upstream` provenance
+  block in `skills/design/SKILL.md` frontmatter; `validate_skills.py` now
+  validates `upstream` blocks and requires the tracking workflow for skills
+  that declare one
 
 ## [0.1.15] - 2026-07-05
 
@@ -228,7 +236,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.15...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.16...HEAD
+[0.1.16]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.12...v0.1.13
