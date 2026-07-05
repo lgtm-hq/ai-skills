@@ -212,7 +212,7 @@ def test_validate_accepts_crlf_skill_file(
 def test_validate_frontmatter_uses_cwd_skills_not_script_location(
     tmp_path: Path,
 ) -> None:
-    """Frontmatter validation must use the caller's cwd ``skills/``, not the script's."""
+    """Frontmatter checks must use cwd ``skills/``, not the script tree."""
     repo_copy = tmp_path / "repo"
     other_cwd = tmp_path / "other"
     script_path = _copy_validate_script(repo_root=REPO_ROOT, tmp_path=repo_copy)
