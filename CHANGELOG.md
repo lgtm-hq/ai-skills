@@ -11,10 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **skills**: add `stand-odin` Odin coding standards skill — idiomatic `or_else`
-  / `or_return` error handling, allocator discipline, naming conventions, and
-  `core:testing` guidance as compact Don't/Do pairs (#36)
-
 ### Changed
 
 ### Deprecated
@@ -24,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.1.14] - 2026-07-05
+
+### Features
+
+- **stand-odin**: add Odin coding standards skill (#78) (456e4e4)
+
+### Previously Unreleased
+
+- **skills**: add `stand-odin` Odin coding standards skill — idiomatic `or_else`
+  / `or_return` error handling, allocator discipline, naming conventions, and
+  `core:testing` guidance as compact Don't/Do pairs (#36)
 
 ## [0.1.13] - 2026-07-05
 
@@ -203,7 +211,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.13...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.10...v0.1.11
