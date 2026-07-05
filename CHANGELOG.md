@@ -17,10 +17,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- **skills**: retire dashboard-redesign skill (finished-project context dump) (#55)
-
 ### Fixed
 
+### Security
+
+## [0.1.11] - 2026-07-05
+
+### Features
+
+- **analyze-code**: add LLM-typical idiom smells and duplication scan (#72) (67884cd)
+- **security**: add release integrity manifest, pinned-install guidance, and skill content policy (#63) (5c448cd)
+- **skills**: mark Claude-only skills and portable cross-refs (#65) (d37b99f)
+
+### Bug Fixes
+
+- **skills**: resolve cross-skill contradictions (#62) (6eb7e73)
+- **validate**: validate frontmatter values via Python --check gate (#64) (1da014f)
+
+### Other Changes
+
+- **repo**: gitignore skills-CLI artifacts and re-lock version (#61) (2585c48)
+- **skills**: slim project-locked mega-skills (lintro-add, turbo-add, turbo-verify, test-ui) (#66) (6371d57)
+- **skills**: retire dashboard-redesign skill (#60) (998416c)
+
+### Previously Unreleased
+
+- **skills**: retire dashboard-redesign skill (finished-project context dump) (#55)
 - **skills**: resolve five cross-skill contradictions (#54): remove `test`'s dangling
   `/stand-general` coverage-report claim (coverage rule now owned inline by `test`);
   replace `lintro-add`'s banned `verify-manifest-sync.py` references with the
@@ -30,8 +52,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   BaseLayout.astro fix advice at data-driven `theme-meta.ts`; align `commit`'s Raycast
   test guidance with `raycast` (Vitest optional, `bun run dev` smoke test, drop
   `ray test`)
-
-### Security
 
 ## [0.1.10] - 2026-07-02
 
@@ -163,7 +183,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.7...v0.1.8
