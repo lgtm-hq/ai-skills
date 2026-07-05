@@ -30,6 +30,7 @@
         "./skills/stand-py",
         "./skills/stand-ts",
         "./skills/stand-rust",
+        "./skills/stand-odin",
         "./skills/stand-ci"
       ]
     },

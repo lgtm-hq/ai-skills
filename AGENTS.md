@@ -34,6 +34,7 @@ unavailable or a skill here explicitly overrides that preference.
 - `scorecard`: Audit the OpenSSF Scorecard rating for py-lintro. Use when asked to check the scorecard, understand the rating, or find what's missing. Specific to github.com/lgtm-hq/py-lintro. (`skills/scorecard/SKILL.md`)
 - `stand-ci`: CI/CD and GitHub Actions guidelines. Use when writing workflows or Actions. Shell script code must be in dedicated .sh or .py files. Actions must be pinned to SHAs, not versions. (`skills/stand-ci/SKILL.md`)
 - `stand-general`: Global coding standards for all projects and languages. Use when writing any code. Covers linting with lintro, testing with coverage, semantic commits, PR creation, and pre-push AI review with coderabbit and greptile CLIs. (`skills/stand-general/SKILL.md`)
+- `stand-odin`: Odin coding standards. Use when writing Odin code. Covers idiomatic error handling with or_else and or_return, memory/allocator patterns, attributes, naming and API conventions, and testing with core:testing. (`skills/stand-odin/SKILL.md`)
 - `stand-py`: Python >= 3.11 coding standards. Use when writing Python code. Requires type hints, return types, Google-style docstrings, trailing commas, explicit kwargs, StrEnum with auto(), dataclasses, pytest-style tests. (`skills/stand-py/SKILL.md`)
 - `stand-rust`: Rust coding standards. Use when writing Rust code. Covers edition, error handling with thiserror/anyhow, unsafe policy, type patterns, testing, documentation, and dependency management. (`skills/stand-rust/SKILL.md`)
 - `stand-ts`: TypeScript and JavaScript standards. Use when writing TS/JS code. Covers strict mode, type patterns, error handling, imports, naming, testing, React conventions, and package management with bun. (`skills/stand-ts/SKILL.md`)
@@ -47,6 +48,6 @@ unavailable or a skill here explicitly overrides that preference.
 - `turbo-verify`: Verify that a theme implementation is complete and follows all project standards. Use after adding a new theme to turbo-themes. (`skills/turbo-verify/SKILL.md`)
 - `which-pr`: Report which PR is being worked on in the current conversation. Use when asked about the current PR context. (`skills/which-pr/SKILL.md`)
 
-Total skills: 34
+Total skills: 35
 
 <!-- markdownlint-enable MD013 -->
