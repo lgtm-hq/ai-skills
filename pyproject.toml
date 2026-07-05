@@ -13,8 +13,11 @@ dev = [
   "pytest-xdist>=3.8.0",
   "pytest>=9.0.3",
   "pyyaml>=6.0.2",
+  "assertpy>=1.1",
+  "mypy>=2.1.0",
 ]
 
 [tool.bandit]
-# B101 flags pytest's normal use of assert; tests here are pytest-only.
-skips = ["B101"]
+# B101 (assert usage) stays enabled: tests assert via assertpy (#88), so any
+# bare `assert` statement anywhere in the repo is a lint failure by design.
+skips = []

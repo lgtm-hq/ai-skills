@@ -19,6 +19,8 @@ Checks:
      uv run python scripts/generate_marketplace.py)
   5. skills-manifest generator is deterministic (two runs produce identical
      output; see scripts/generate_skills_manifest.py)
+  6. Test assertions use assertpy (no bare `assert` statements in tests/;
+     use assert_that(...) — pytest.raises contexts remain as-is)
 EOF
   exit 0
 fi
@@ -115,6 +117,20 @@ elif command -v python3 >/dev/null 2>&1; then
 else
   echo "python3 is required to validate the skills-manifest generator."
   errors=$((errors + 1))
+fi
+
+if [[ -d "tests" ]]; then
+  # Owner standard (#88): all test assertions use assertpy, never bare
+  # `assert`. A bare assert statement always starts a line, so this grep is
+  # reliable; pytest.raises/approx idioms are not assert statements and
+  # never match.
+  if bare_asserts=$(grep -rEn '^[[:space:]]*assert[[:space:]]' tests/ --include='*.py'); then
+    echo "Bare assert statements found in tests/ (use assertpy assert_that):"
+    echo "$bare_asserts"
+    errors=$((errors + 1))
+  fi
+else
+  echo "tests/ directory not found. Skipping assertpy assertion checks."
 fi
 
 if [[ "$errors" -gt 0 ]]; then

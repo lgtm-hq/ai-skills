@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from assertpy import assert_that
 from skill_frontmatter import split_frontmatter
 
 
@@ -49,8 +50,8 @@ def test_split_frontmatter_extracts_block(
     """Frontmatter and body are split with normalized line endings."""
     frontmatter, body = split_frontmatter(text)
 
-    assert frontmatter == expected_frontmatter
-    assert body == expected_body
+    assert_that(frontmatter).is_equal_to(expected_frontmatter)
+    assert_that(body).is_equal_to(expected_body)
 
 
 @pytest.mark.parametrize(
@@ -68,13 +69,13 @@ def test_split_frontmatter_incomplete_block_returns_none(
     """Documents without a complete frontmatter block yield None."""
     frontmatter, body = split_frontmatter(text)
 
-    assert frontmatter is None
-    assert body == text.replace("\r\n", "\n").replace("\r", "\n")
+    assert_that(frontmatter).is_none()
+    assert_that(body).is_equal_to(text.replace("\r\n", "\n").replace("\r", "\n"))
 
 
 def test_split_frontmatter_empty_frontmatter_is_not_none() -> None:
     """An empty frontmatter block is the empty string, not None."""
     frontmatter, body = split_frontmatter("---\n\n---\nbody\n")
 
-    assert frontmatter == ""
-    assert body == "body\n"
+    assert_that(frontmatter).is_empty()
+    assert_that(body).is_equal_to("body\n")

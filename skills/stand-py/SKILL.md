@@ -195,6 +195,20 @@ exceptions.
 - Leverage `conftest.py` for shared fixtures
 - Use fixtures for reusable setup/teardown
 - Use `@pytest.mark.parametrize` to reduce duplication
+- ALWAYS use `assertpy` for assertions — never bare `assert` statements.
+  Keep `pytest.raises` for exception contexts (assertpy does not replace it)
+
+```python
+# Don't
+assert result.count == 3
+assert "drift" in output
+
+# Do
+from assertpy import assert_that
+
+assert_that(result.count).is_equal_to(3)
+assert_that(output).contains("drift")
+```
 
 ```python
 # WRONG
