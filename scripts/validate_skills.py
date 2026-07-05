@@ -164,16 +164,17 @@ def validate_skills_tree(
 
 
 def main() -> int:
-    """Validate frontmatter values for all skills under the repo's ``skills/``.
+    """Validate frontmatter values for all skills under a skills root.
 
-    The skills root is resolved relative to this script's location so the
-    validator works regardless of the caller's current directory.
+    When invoked from ``validate.sh``, the skills root is passed explicitly
+    so frontmatter checks use the same cwd-relative tree as the shell checks.
+    When run directly, defaults to ``skills`` in the current directory.
 
     Returns:
         Process exit code: ``0`` when all skills are valid, ``1`` when
-        any violation is found or ``skills/`` is missing.
+        any violation is found or the skills root is missing.
     """
-    skills_root = Path(__file__).resolve().parent.parent / "skills"
+    skills_root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("skills")
     if not skills_root.is_dir():
         print(f"Skills directory not found: {skills_root}", file=sys.stderr)
         return 1

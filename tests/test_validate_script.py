@@ -209,6 +209,43 @@ def test_validate_accepts_crlf_skill_file(
     logger.info("[TEST] CRLF skill file accepted: rc={}", result.returncode)
 
 
+def test_validate_frontmatter_uses_cwd_skills_not_script_location(
+    tmp_path: Path,
+) -> None:
+    """Frontmatter validation must use the caller's cwd ``skills/``, not the script's."""
+    repo_copy = tmp_path / "repo"
+    other_cwd = tmp_path / "other"
+    script_path = _copy_validate_script(repo_root=REPO_ROOT, tmp_path=repo_copy)
+
+    good_skill = repo_copy / "skills" / "example"
+    good_skill.mkdir(parents=True)
+    (good_skill / "SKILL.md").write_text(
+        "---\nname: example\ndescription: Valid skill.\n---\n",
+        encoding="utf-8",
+    )
+    (repo_copy / "AGENTS.md").write_text(
+        "- `example` - Valid skill.\n", encoding="utf-8"
+    )
+
+    bad_skill = other_cwd / "skills" / "example"
+    bad_skill.mkdir(parents=True)
+    (bad_skill / "SKILL.md").write_text(
+        "---\nname: example\ndescription:\n  - not\n  - a\n  - string\n---\n",
+        encoding="utf-8",
+    )
+    (other_cwd / "AGENTS.md").write_text(
+        "- `example` - Listed but invalid frontmatter.\n", encoding="utf-8"
+    )
+
+    result = _run_validate(script_path=script_path, cwd=other_cwd)
+
+    assert result.returncode == 1
+    assert "'description' must be a string, got list" in result.stdout
+    logger.info(
+        "[TEST] cwd skills tree used for frontmatter: rc={}", result.returncode
+    )
+
+
 def test_validate_rejects_agents_entry_with_path_like_skill_name(
     tmp_path: Path,
 ) -> None:

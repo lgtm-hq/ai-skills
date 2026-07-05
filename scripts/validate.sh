@@ -46,7 +46,7 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 if ! command -v uv >/dev/null 2>&1; then
   echo "uv is required to validate SKILL.md frontmatter; please install it."
   errors=$((errors + 1))
-elif ! uv run python "$script_dir/validate_skills.py"; then
+elif ! uv run python "$script_dir/validate_skills.py" skills; then
   errors=$((errors + 1))
 fi
 
