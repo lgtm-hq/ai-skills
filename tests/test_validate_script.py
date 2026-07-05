@@ -241,9 +241,7 @@ def test_validate_frontmatter_uses_cwd_skills_not_script_location(
 
     assert result.returncode == 1
     assert "'description' must be a string, got list" in result.stdout
-    logger.info(
-        "[TEST] cwd skills tree used for frontmatter: rc={}", result.returncode
-    )
+    logger.info("[TEST] cwd skills tree used for frontmatter: rc={}", result.returncode)
 
 
 def test_validate_rejects_agents_entry_with_path_like_skill_name(
