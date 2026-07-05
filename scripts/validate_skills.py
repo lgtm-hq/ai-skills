@@ -72,8 +72,9 @@ def _validate_upstream(
     """Validate an optional ``upstream`` provenance block.
 
     When present, ``upstream`` must be a mapping with non-empty string
-    ``repo`` (matching ``owner/name``), ``path``, and ``version``
-    fields. When ``repo_root`` is provided, the upstream-drift tracking
+    ``repo`` (matching ``owner/name``), ``path`` (relative, no ``..``
+    segments — mirroring the drift checker's fetch safety rules), and
+    ``version`` fields. When ``repo_root`` is provided, the upstream-drift tracking
     workflow must also exist so tracked skills cannot silently drift.
 
     Args:
@@ -103,6 +104,16 @@ def _validate_upstream(
     if isinstance(repo, str) and repo.strip() and not UPSTREAM_REPO_PATTERN.match(repo):
         violations.append(
             f"{skill_md}: 'upstream.repo' must match 'owner/name', got {repo!r}",
+        )
+    path = upstream.get("path")
+    if (
+        isinstance(path, str)
+        and path.strip()
+        and (path.startswith("/") or ".." in path.split("/"))
+    ):
+        violations.append(
+            f"{skill_md}: 'upstream.path' must be a relative path without "
+            f"'..' segments, got {path!r}",
         )
     if repo_root is not None and not (repo_root / DRIFT_WORKFLOW_PATH).is_file():
         violations.append(

@@ -6,7 +6,7 @@ import pytest
 from skill_frontmatter import split_frontmatter
 
 
-@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize(
     ("text", "expected_frontmatter", "expected_body"),
     [
         pytest.param(
@@ -53,7 +53,7 @@ def test_split_frontmatter_extracts_block(
     assert body == expected_body
 
 
-@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize(
     "text",
     [
         pytest.param("# No frontmatter\n", id="no-opening-fence"),

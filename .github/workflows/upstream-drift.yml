@@ -46,4 +46,7 @@ jobs:
       - name: Check upstream drift and file tracking issue
         env:
           GH_TOKEN: ${{ github.token }}
-        run: uv run python scripts/check_upstream_drift.py --file-issue
+          GITHUB_REPO: ${{ github.repository }}
+        run: >-
+          uv run python scripts/check_upstream_drift.py --file-issue
+          --github-repo "$GITHUB_REPO"

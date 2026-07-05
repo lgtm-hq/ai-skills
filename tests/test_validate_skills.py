@@ -119,7 +119,7 @@ def test_max_length_description_passes(tmp_path: Path) -> None:
     assert violations == []
 
 
-@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize(
     ("content", "expected_fragment"),
     [
         pytest.param(
@@ -338,7 +338,7 @@ def test_upstream_block_missing_workflow_is_rejected(tmp_path: Path) -> None:
     ]
 
 
-@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize(
     ("upstream_yaml", "expected_fragment"),
     [
         pytest.param(
@@ -375,6 +375,16 @@ def test_upstream_block_missing_workflow_is_rejected(tmp_path: Path) -> None:
             "upstream:\n  repo: a/b/c\n  path: p\n  version: '1'\n",
             "'upstream.repo' must match 'owner/name'",
             id="repo-extra-path-segment",
+        ),
+        pytest.param(
+            "upstream:\n  repo: a/b\n  path: /etc/passwd\n  version: '1'\n",
+            "'upstream.path' must be a relative path",
+            id="absolute-path",
+        ),
+        pytest.param(
+            "upstream:\n  repo: a/b\n  path: ../SKILL.md\n  version: '1'\n",
+            "'upstream.path' must be a relative path",
+            id="parent-traversal-path",
         ),
     ],
 )
