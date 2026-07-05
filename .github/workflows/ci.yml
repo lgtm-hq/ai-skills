@@ -28,7 +28,12 @@ jobs:
       test-path: tests
       tooling-ref: "fc73b3ab8342a24597c12d137d6ff7fca84b9fe2"
     permissions:
-      contents: read
+      # contents/pages write are required at compile time by the reusable
+      # workflow's publish job (skipped here: publish-results defaults to
+      # false). Each called job still runs with only its own declared
+      # subset; the test job itself declares contents: read.
+      contents: write
+      pages: write
       pull-requests: write
 
   validate:
