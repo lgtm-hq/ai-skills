@@ -103,7 +103,7 @@ Stashes: 5 (all on merged branches)
 
 ### Phase 4 — Confirm
 
-Ask the user to confirm the plan using `AskUserQuestion`:
+Ask the user to confirm the plan (use a structured question tool if available):
 
 - Which branches to keep vs delete
 - Whether to remove separate clones
