@@ -124,9 +124,16 @@ of the target language's constructs:
 - Copy-pasted logic across 3+ files that should be a shared helper
 - Nested if/else unwrapping where dedicated syntax exists (`let-else`, `?`, `.ok_or()`)
 
-For per-language remediation, see the relevant language-standard skills (for example
-`stand-py`, `stand-rust`, and `stand-ts`) and ensure the finding names the concrete
-idiom to use.
+When filing idiom findings, name the preferred replacement directly — language-standard
+skills cover general style but not every smell above. Examples:
+
+- Manual loop → `any()` / `all()` (Python), `.find()` / `.some()` (JS/TS), iterator
+  chains with `.collect()` (Rust)
+- `os.path` vs `pathlib` → standardize on `pathlib.Path` (Python)
+- Nested unwrap chains → `let-else`, `?`, `.ok_or()` (Rust)
+- Defensive flag-and-break → early return or expression-based flow
+
+For general language style, see `stand-py`, `stand-rust`, and `stand-ts`.
 
 ## Reference — Security Best Practices
 
