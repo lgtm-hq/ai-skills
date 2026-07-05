@@ -563,10 +563,11 @@ cd apps/site && bun run dev
 
 ## Common Gotchas
 
-1. **Theme reverts on page navigation**: Forgot to add variants to `VALID_THEMES` in
-   BaseLayout.astro
-2. **Wrong label in header**: Forgot to add to `themeNames` mapping in BaseLayout.astro
-3. **No icon showing**: Forgot to add to `themeIcons` mapping or icon file missing
+1. **Theme reverts on page navigation**: Forgot to add variants to `themeGroups` in
+   theme-meta.ts (`validThemeIds` is derived from it)
+2. **Wrong label in header**: Forgot to add to `themeNames` mapping in theme-meta.ts
+3. **No icon showing**: Forgot to add to `themeIcons` mapping in theme-meta.ts or icon
+   file missing
 4. **Theme not in dropdown**: Forgot to add to `VENDOR_FAMILY_MAP` in theme-mapper.ts
 5. **Theme in wrong family group**: `VENDOR_FAMILY_MAP` mapping is incorrect
 6. **Tests fail with theme order**: Update test assertions to use `data-theme-id`

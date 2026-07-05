@@ -59,13 +59,14 @@ For external tools (not bundled Python packages), versions must be consistent ac
 5. **`renovate.json`** - Must have custom managers to update BOTH \_tool_versions.py AND
    manifest.json
 
-CI runs `scripts/ci/verify-manifest-sync.py` on every PR. It validates:
+CI runs `python3 scripts/ci/generate-tool-versions.py --check` on every PR (a single
+generator with `--check`, per `/stand-ci` — no verify-sync scripts). It regenerates the
+derived version artifacts from `package.json`, `pyproject.toml`, and `TOOL_VERSIONS` in
+`lintro/_tool_versions.py`, and exits 1 with a unified diff if `manifest.json` or
+`lintro/_generated_versions.py` have drifted.
 
-- pip tools in manifest.json against pyproject.toml
-- npm tools in manifest.json against package.json
-- binary/cargo/rustup tools in manifest.json against `TOOL_VERSIONS` in `lintro/_tool_versions.py`
-
-**PRs will fail if versions drift between these files.**
+**PRs will fail if versions drift between these files.** Run the generator locally
+(without `--check`) to rewrite the derived files.
 
 Example for npm tool:
 
@@ -722,7 +723,7 @@ After adding the tool:
 - [ ] Coverage >80% on new code: `pytest --cov=lintro/parsers/<tool>
 --cov=lintro/tools/definitions/<tool>`
 - [ ] No linting errors: `lintro fmt && lintro chk`
-- [ ] Manifest sync passes: `python3 scripts/ci/verify-manifest-sync.py`
+- [ ] Version artifacts in sync: `python3 scripts/ci/generate-tool-versions.py --check`
 - [ ] Tool added to `Dockerfile` verification step (both root and non-root)
 - [ ] Tool added to `Dockerfile.tools` verification step
 - [ ] Tool added to `install-tools.sh` (external tools only)

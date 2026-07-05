@@ -268,9 +268,10 @@ After all changes, verify these files are committed:
 
 ## 6. Common Issues Checklist
 
-- [ ] **No "theme reverts" bug**: Variants in `VALID_THEMES` (BaseLayout.astro)
-- [ ] **Correct label in header**: Variants in `themeNames` (BaseLayout.astro)
-- [ ] **Icon displays**: Variants in `themeIcons` (BaseLayout.astro) and files exist
+- [ ] **No "theme reverts" bug**: Variants in `themeGroups` (theme-meta.ts;
+      `validThemeIds` is derived)
+- [ ] **Correct label in header**: Variants in `themeNames` (theme-meta.ts)
+- [ ] **Icon displays**: Variants in `themeIcons` (theme-meta.ts) and files exist
 - [ ] **In correct dropdown group**: `VENDOR_FAMILY_MAP` mapping correct
 - [ ] **Theme count accurate**: Count in themes.astro sidebar matches variants
 - [ ] **Tests not broken**: Any hardcoded theme arrays in tests updated
@@ -383,9 +384,9 @@ After reviewing, provide a summary:
 
 | Issue                       | Solution                                            |
 | --------------------------- | --------------------------------------------------- |
-| Theme reverts on navigation | Add to `VALID_THEMES` in BaseLayout.astro           |
-| Wrong/missing label         | Add to `themeNames` in BaseLayout.astro             |
-| Missing icon                | Add to `themeIcons` in BaseLayout.astro + add PNG   |
+| Theme reverts on navigation | Add flavors to `themeGroups` in theme-meta.ts       |
+| Wrong/missing label         | Add to `themeNames` in theme-meta.ts                |
+| Missing icon                | Add to `themeIcons` in theme-meta.ts + add PNG      |
 | Theme in wrong group        | Fix `VENDOR_FAMILY_MAP` in theme-mapper.ts          |
 | Theme not appearing         | Check ThemeFamily type, THEME_FAMILIES constant     |
 | Build fails                 | Check TypeScript syntax, imports                    |
@@ -402,6 +403,3 @@ After reviewing, provide a summary:
 | Missing from hero strip     | Add buttons to index.astro hero preview section     |
 | Missing from examples       | Update ~16 example files with hardcoded theme lists |
 | Missing from Swift example  | Add to ThemeId.swift, ThemeRegistry.swift, tests    |
-| Theme not in site dropdown  | Add to `themeGroups` in theme-meta.ts               |
-| Wrong label in site header  | Fix `themeNames` in theme-meta.ts                   |
-| Missing icon in site header | Fix `themeIcons` in theme-meta.ts + add PNG         |
