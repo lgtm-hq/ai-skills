@@ -38,7 +38,7 @@ Standards for Rust code.
   ```
 
 - Implement `std::fmt::Display` for all custom error types
-- `.unwrap_or_default()`/`.unwrap_or()` over trivial-arm matches:
+- Non-panicking `.unwrap_or_default()`/`.unwrap_or()` over trivial-arm matches:
 
   ```rust
   // Don't
