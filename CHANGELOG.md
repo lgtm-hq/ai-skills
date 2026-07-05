@@ -25,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.1.12] - 2026-07-05
+
+### Features
+
+- **skills**: add idiom don't/do pairs to stand-py and stand-rust (#80) (50d2544)
+
+### Other Changes
+
+- **deps**: bump msgpack to 1.2.1 (Dependabot high: OOB read) (#75) (fab0052)
+
 ## [0.1.11] - 2026-07-05
 
 ### Features
@@ -187,7 +197,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.8...v0.1.9

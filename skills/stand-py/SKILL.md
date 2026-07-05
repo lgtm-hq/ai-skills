@@ -59,6 +59,86 @@ def function_with_docstring(
 - String Enums should use `StrEnum` with `auto()`
 - Use `auto()` with all Enums where it makes sense
 
+## Idioms
+
+Prefer Python-native constructs over verbose cross-language patterns.
+
+- `any()`/`all()` over flag-and-break loops:
+
+  ```python
+  # Don't
+  found = False
+  for p in paths:
+      if p.exists():
+          found = True
+          break
+
+  # Do
+  found = any(p.exists() for p in paths)
+  ```
+
+- `dict.get()` over key-in checks:
+
+  ```python
+  # Don't
+  if name in registry:
+      return registry[name]
+  return None
+
+  # Do
+  return registry.get(name)
+  ```
+
+- `pathlib` over `os.path` — never mix the two in one codebase:
+
+  ```python
+  # Don't
+  root = os.path.dirname(os.path.dirname(os.path.dirname(path)))
+
+  # Do
+  root = Path(path).parents[2]
+  ```
+
+- Truthiness over length checks:
+
+  ```python
+  # Don't
+  if len(items) == 0:
+      ...
+
+  # Do
+  if not items:
+      ...
+  ```
+
+- Comprehensions over loop-append for simple transforms:
+
+  ```python
+  # Don't
+  names = []
+  for user in users:
+      names.append(user.name)
+
+  # Do
+  names = [user.name for user in users]
+  ```
+
+- Direct boolean returns:
+
+  ```python
+  # Don't
+  if count > limit:
+      return True
+  return False
+
+  # Do
+  return count > limit
+  ```
+
+- `contextlib.suppress(SomeError)` over a `try`/`except SomeError: pass` block
+- Reach for `itertools`/`functools` (`chain`, `pairwise`, `cache`, `reduce`) when
+  they replace hand-rolled loop logic
+
 ## Formatting Rules
 
 - More than 1 arg/param requires a trailing comma:
