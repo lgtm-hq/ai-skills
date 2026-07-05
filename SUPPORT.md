@@ -17,6 +17,8 @@ steps.
 global skills, or `bunx skills update lint -g` for named skills). The package slug
 form (`skills update lgtm-hq/ai-skills`) is not supported by the current CLI — see
 [README](./README.md) and [issue #22](https://github.com/lgtm-hq/ai-skills/issues/22).
+For partial `--all` install failures and cleaning up retired skills after an upgrade,
+see [Known limitations](./README.md#known-limitations) in the README.
 
 [skills-cli]: https://github.com/vercel-labs/skills
 
