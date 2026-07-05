@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **skills**: add `stand-odin` Odin coding standards skill — idiomatic `or_else`
+  / `or_return` error handling, allocator discipline, naming conventions, and
+  `core:testing` guidance as compact Don't/Do pairs (#36)
+
 ### Changed
 
 ### Deprecated
