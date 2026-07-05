@@ -121,6 +121,34 @@ bunx skills add lgtm-hq/ai-skills@v0.1.10 -g --all
 List or remove installs with `bunx skills ls -g` and `bunx skills remove <name> -g`.
 See the [upstream CLI docs](https://github.com/vercel-labs/skills) for more flags.
 
+### Known limitations
+
+**Partial agent failures on `--all` installs.** A global `--all` install targets
+every detected agent, and some agents do not support global skill installation.
+The run can end with per-agent errors such as:
+
+```text
+✗ coderabbit → PromptScript: PromptScript does not support global skill installation
+```
+
+These are per-agent failures, not a failed install — every other agent in the
+summary was still updated. Read the summary line by line; failures are informational
+unless an agent you rely on is listed.
+
+**Retired skills are not pruned on upgrade.** `bunx skills update -g` and tagged
+reinstall (`bunx skills add lgtm-hq/ai-skills@vX.Y.Z -g --all`) refresh skills present
+in the release, but do **not** remove skills you installed earlier that were since
+dropped from the catalog. Known retirements: `review`
+([#42](https://github.com/lgtm-hq/ai-skills/issues/42)) and `dashboard-redesign`
+([#55](https://github.com/lgtm-hq/ai-skills/issues/55)). After upgrading, check the
+**Removed** sections in the [CHANGELOG](./CHANGELOG.md), compare `bunx skills ls -g`
+against [AGENTS.md](./AGENTS.md), and remove orphans manually:
+
+```bash
+bunx skills remove review -g -y
+bunx skills remove dashboard-redesign -g -y
+```
+
 ## Community
 
 - [Contributing](./CONTRIBUTING.md)
