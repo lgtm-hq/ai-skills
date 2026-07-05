@@ -7,6 +7,10 @@ description: >-
   React components, HTML/CSS layouts, or when styling/beautifying any web UI).
   Generates creative, polished code and UI design that avoids generic AI aesthetics.
 license: Complete terms in LICENSE.txt
+upstream:
+  repo: anthropics/claude-code
+  path: plugins/frontend-design/skills/frontend-design/SKILL.md
+  version: "1.1.0"
 ---
 
 # Design
