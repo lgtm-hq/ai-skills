@@ -8,6 +8,16 @@ description: High-level project analysis. Use when asked to analyze, review, or 
 Perform a high-level analysis of this project. Follow the procedural workflow below;
 use the rubric sections as reference when interpreting findings.
 
+## Ground rules
+
+- Reproduce before reporting — read the actual files and run the tooling; never assert
+  a finding based on file names, directory shapes, or vibes alone.
+- Verify catalog-like claims mechanically — if a claim implies "all N of X", script the
+  check rather than eyeballing a sample.
+- Mark anything you couldn't verify as "unverified"; never guess or extrapolate.
+- This is an assessment only: no code changes, no pushes, no triggering workflows or
+  releases.
+
 ## Usage
 
 When asked to analyze project health:
@@ -34,7 +44,10 @@ rg -n --hidden "uses:.*@[0-9a-f]{40}\b" .github/workflows || echo "No SHA-pinned
 ```
 
 Verify lint, test, and deploy stages exist; check for pinned action SHAs and reproducible
-builds.
+builds. Then go beyond presence: is CI validating what actually matters, or just
+linting? Look for conditional skips (`if: ... == ''`, path filters that silently
+no-op a job) and for test suites that exist in the repo but never run in any
+workflow — CI claiming a check happens is not the same as it executing.
 
 ### 3. Dependency health
 
@@ -87,7 +100,44 @@ rg -n '^mod |^pub mod ' -t rust | head -30
 
 Look for deep cross-package imports, god modules, and circular import chains.
 
-### 7. Rate and report findings
+### 7. Backlog, PR state, and release discipline
+
+Check the project against its own tracking, not just its code:
+
+```bash
+gh pr list --state open
+gh issue list --state open
+gh pr list --state merged --limit 20
+```
+
+Check for: stale or conflicting open PRs; issues claimed as done that are not actually
+done in the code (verify by reading the code, not by trusting labels or comments);
+merge history vs. stated milestones; lockfile version vs. manifest version drift;
+CHANGELOG entries vs. `git log`; git tags vs. published releases.
+
+### 8. Dead surface
+
+Find things that look wired up but aren't — verify by reference, not by name:
+
+- Workflows that silently skip themselves (conditional gates on paths/branches that
+  never match)
+- Scripts in the repo that no workflow, README, or Makefile ever calls
+- Modules or components with zero references (`rg` for imports/usages of the symbol,
+  not just its existence)
+- Stale committed artifacts (build output, generated files checked in as source)
+- Orphaned docs/content unreachable from any nav, index, or README link
+
+### 9. Product-quality scorecard
+
+Build one row per area of the codebase — the full catalog, not a sample. Columns:
+
+| Area | Correctness risk (low/med/high) | Test coverage (y/partial/none) | Consistency (ok/drifts) | Staleness / dead-code flags | Action |
+| ---- | -------------------------------- | ------------------------------- | ------------------------ | ---------------------------- | ------ |
+
+Sort worst-first. Follow with the distribution across risk levels, the top 5-10
+highest-risk areas, and any repo-wide patterns the scorecard reveals.
+
+### 10. Rate and report findings
 
 For each issue, assign severity:
 
@@ -95,7 +145,15 @@ For each issue, assign severity:
 - **Should Fix** — poor docs, hardcoded config, unclear boundaries, missing tests in CI
 - **Nice to Have** — naming inconsistencies, missing ADRs, UX polish
 
-Prioritize actionable feedback. Include specific paths and suggested improvements.
+Output contract: lead with a TLDR verdict, then findings with `file:line` references,
+then the scorecard and its summary, and end with **one** prioritized fix list ordered
+by impact — not one list per section.
+
+### Full audit
+
+For a complete audit rather than a zoom-out-only pass, follow this skill with
+analyze-code and analyze-tests, then merge all three sets of findings into the single
+prioritized fix list described above.
 
 ---
 
