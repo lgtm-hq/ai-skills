@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.1.17] - 2026-07-06
+
+### Changed
+
+- **deps**: update digest (#46) (6bfd56d)
+- **deps**: update actions/checkout to v7.0.0 (major) (#74) (3fde4ea)
+
+### Fixed
+
+- **ci**: grant release failure-reporting permissions to callers (#99) (3faa362)
+- **ci**: repin lgtm-ci and adopt release fixes (#98) (85de1e2)
+
 ## [0.1.16] - 2026-07-05
 
 ### Features
@@ -236,7 +248,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.16...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.17...HEAD
+[0.1.17]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.13...v0.1.14
