@@ -80,7 +80,7 @@ rg -n '\$\{\{\s*github\.(event|head_ref)' .github/workflows/
 rg -n 'pull_request_target' .github/workflows/
 
 # Actions pinned to a tag/branch instead of a commit SHA
-rg -n 'uses:\s*[^@]+@(?!\w{40})' .github/workflows/
+rg -n -P 'uses:\s*[^@]+@(?![0-9a-fA-F]{40}\b)' .github/workflows/
 
 # Write-scoped token permissions
 rg -n 'permissions:' -A 3 .github/workflows/
