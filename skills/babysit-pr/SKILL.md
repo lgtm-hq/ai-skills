@@ -3,9 +3,10 @@ name: babysit-pr
 description: >-
   Autonomously drive an open PR to merge-ready state by triaging Greptile and
   CodeRabbit review comments, fixing CI failures, handling CodeRabbit rate limits,
-  and looping until checks are green with no unresolved actionable threads. Use when
-  asked to babysit a PR, shepherd a PR, or keep a PR merge-ready until review/CI
-  cycles complete.
+  and looping until checks are green with no unresolved actionable threads. With
+  the --merge flag, also merge the PR(s) once binding merge-queue conditions are
+  met. Use when asked to babysit a PR, shepherd a PR, or keep a PR merge-ready
+  until review/CI cycles complete.
 disable-model-invocation: true
 ---
 
@@ -21,10 +22,16 @@ Examples:
 - `/babysit-pr on #1034`
 - `Babysit PR #1034 until merge-ready`
 - `Babysit this PR` (resolve from current branch)
+- `/babysit-pr --merge #124 #125 #126` (shepherd **and** merge, in queue order)
+
+One babysitter for many PRs beats one babysitter per PR — they share a single
+CodeRabbit rate limit, so a single session drains the queue without multiplying
+review-limit stalls.
 
 ## Hard rules
 
-1. **Never approve or merge** the PR — only the human owner does that.
+1. **Never approve** the PR. **Never merge unless invoked with `--merge`** — the flag
+   is the explicit authorization to merge; without it, only the human owner merges.
 2. **Lint before every commit** — read and follow the `lint` skill (`uv run lintro fmt`
    then `uv run lintro chk`, zero issues). Do not use `--tools` filtering.
 3. **Never push while CI is pending or running** on the PR head.
@@ -220,6 +227,64 @@ Done when **all** are true:
 
 `REVIEW_REQUIRED` alone is **not** a loop blocker — note it in the final report.
 
+## Merging (only with `--merge`)
+
+Skip this entire section unless invoked with `--merge`. Without the flag, exit at
+Phase 5 and let the human owner merge.
+
+### Per-PR gate
+
+Before merging any single PR:
+
+- **Phase 5 exit conditions met** for that PR.
+- **Bot reviewed the CURRENT head** — if the head moved since the last CodeRabbit
+  review, re-request (`@coderabbitai please review`) and wait before merging.
+- **Re-check PR state immediately before merge** — an already-merged PR is a normal
+  outcome, not an error; re-baseline the queue and move on.
+
+Merge command:
+
+```bash
+gh pr merge <n> --squash --admin --delete-branch
+```
+
+The PR author cannot self-approve; `--admin` bypasses the review requirement **only** —
+the checks are genuinely green (they are not being skipped or forced).
+
+### Queue discipline
+
+- **Single merger** — before starting, verify no other session is draining the same
+  queue. One merger at a time.
+- **Strictly sequential** — after each merge, wait for **all** post-merge runs on
+  `main` to finish before merging the next PR.
+- **A `main` run fails post-merge → STOP and report.** No fix-forward; the queue halts
+  until a human decides.
+- **Order by conflict** — merge docs/config-only PRs first, wide-touch refactors last,
+  to minimize rebases.
+- Under strict up-to-date-branch policies, use `gh pr update-branch <n>` to bring each
+  PR current before its turn.
+
+### Releases
+
+- Expect **auto version PRs** to appear after merges.
+- If the repo convention is **1 PR = 1 release**, merge the release PR and wait for its
+  runs before moving to the next change PR.
+- **Never touch publish gates** (PyPI environment approval, etc.) — those are human
+  gates. Stop and report.
+
+### Failure signatures
+
+- **`CANCELLED`** = a duplicate/superseded run; only `FAILURE` / `TIMED_OUT` are
+  genuine failures.
+- **Stale merge ref** (setup fails on infra added to `main` after the PR was created)
+  → `gh pr update-branch`; reruns of the old ref fail deterministically.
+- **Pages "Multiple artifacts named github-pages"** → delete the run's `github-pages`
+  artifacts via the API, then rerun; partial reruns re-hit this forever.
+- **Registry "manifest unknown" on partial reruns** (a cleanup job deleted the
+  run-scoped tags) → rerun the **entire** run, not just the failed job.
+- **Signing locked ("failed to write commit object")** → park with ~20-minute probes,
+  resume on unlock, and report the blocker once (not on every probe).
+
 ## Phase 6 — Final report
 
 Return a concise summary:
@@ -232,6 +297,7 @@ Return a concise summary:
 | Commits pushed | list (short) |
 | Threads handled | fixed / replied N/A |
 | Merge-ready? | yes/no + why |
+| PRs merged | list (or n/a without `--merge`) |
 | Human blockers | approval, decisions, etc. |
 
 ## Notes
