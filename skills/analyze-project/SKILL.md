@@ -110,6 +110,9 @@ gh issue list --state open
 gh pr list --state merged --limit 20
 ```
 
+If `gh` is unavailable or unauthenticated, mark these GitHub-backed checks as
+"unverified" per the ground rules and continue the assessment.
+
 Check for: stale or conflicting open PRs; issues claimed as done that are not actually
 done in the code (verify by reading the code, not by trusting labels or comments);
 merge history vs. stated milestones; lockfile version vs. manifest version drift;
