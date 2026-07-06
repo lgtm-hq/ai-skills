@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.1.20] - 2026-07-06
+
+### Added
+
+- **babysit-pr**: add --merge flag for merge-queue shepherding (#108) (53ed625)
+
 ## [0.1.19] - 2026-07-06
 
 ### Added
@@ -268,7 +274,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.19...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.20...HEAD
+[0.1.20]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.16...v0.1.17
