@@ -33,3 +33,6 @@ jobs:
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
     permissions:
       contents: write
+      # report-release-failure job: read run metadata, file failure issues.
+      actions: read
+      issues: write
