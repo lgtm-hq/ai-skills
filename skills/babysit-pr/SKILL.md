@@ -245,11 +245,20 @@ Before merging any single PR:
 Merge command:
 
 ```bash
-gh pr merge <n> --squash --admin --delete-branch
+gh pr merge <n> --squash --delete-branch
 ```
 
-The PR author cannot self-approve; `--admin` bypasses the review requirement **only** —
-the checks are genuinely green (they are not being skipped or forced).
+The PR author cannot self-approve, and repos with a native GitHub merge queue must
+enter it through this normal path — do not add `--admin` by default. `--admin` uses
+administrator privileges against the **whole** merge requirement set (reviews,
+required checks, queue enrollment, blocked/behind state), not the review requirement
+alone, so using it as a shortcut can skip queue enrollment or mask a genuine failure.
+
+Only fall back to `--admin` when the sole blocker is the self-approval restriction
+**and** the Per-PR gate above has already independently confirmed checks are green,
+the head is current, and `mergeStateStatus` shows no queue- or currency-related block.
+If `mergeStateStatus` reports `BEHIND` or a queue-specific block, resolve that first
+(see Queue discipline) — never reach for `--admin` to push through it.
 
 ### Queue discipline
 
