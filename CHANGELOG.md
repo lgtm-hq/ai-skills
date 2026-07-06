@@ -11,13 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **ci**: track upstream `anthropics/claude-code` frontend-design drift (#18):
-  weekly `upstream-drift` workflow runs `scripts/check_upstream_drift.py`
-  (normalized body compare, idempotent tracking issue); `upstream` provenance
-  block in `skills/design/SKILL.md` frontmatter; `validate_skills.py` now
-  validates `upstream` blocks and requires the tracking workflow for skills
-  that declare one
-
 ### Changed
 
 - **design**: sync `skills/design/SKILL.md` body with the rewritten upstream
@@ -32,6 +25,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.1.17] - 2026-07-06
+
+### Changed
+
+- **deps**: update digest (#46) (6bfd56d)
+- **deps**: update actions/checkout to v7.0.0 (major) (#74) (3fde4ea)
+
+### Fixed
+
+- **ci**: grant release failure-reporting permissions to callers (#99) (3faa362)
+- **ci**: repin lgtm-ci and adopt release fixes (#98) (85de1e2)
+
+## [0.1.16] - 2026-07-05
+
+### Features
+
+- **ci**: track upstream frontend-design drift (#81) (09a39a6)
+
+### Previously Unreleased
+
+- **ci**: track upstream `anthropics/claude-code` frontend-design drift (#18):
+  weekly `upstream-drift` workflow runs `scripts/check_upstream_drift.py`
+  (normalized body compare, idempotent tracking issue); `upstream` provenance
+  block in `skills/design/SKILL.md` frontmatter; `validate_skills.py` now
+  validates `upstream` blocks and requires the tracking workflow for skills
+  that declare one
 
 ## [0.1.15] - 2026-07-05
 
@@ -233,7 +253,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.15...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.17...HEAD
+[0.1.17]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.16...v0.1.17
+[0.1.16]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.12...v0.1.13
