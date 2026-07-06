@@ -13,11 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **design**: sync `skills/design/SKILL.md` body with the rewritten upstream
-  `anthropics/claude-code` frontend-design skill v1.1.0 (studio-brief framing,
-  two-pass plan/critique process, writing-for-design section); refreshed the
-  skill description to match the new intent and regenerated `AGENTS.md` (#82)
-
 ### Deprecated
 
 ### Removed
@@ -25,6 +20,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.1.19] - 2026-07-06
+
+### Added
+
+- **analyze-project**: add ground rules, backlog/dead-surface checks, scorecard (#107) (fa81383)
+
+## [0.1.18] - 2026-07-06
+
+### Added
+
+- **analyze-code**: add ground rules, repo-shape table, and supply-chain checks (#106) (9a5e1a4)
+
+### Changed
+
+- **design**: sync with upstream frontend-design (#92) (cf53536)
+- **design**: sync `skills/design/SKILL.md` body with the rewritten upstream
+  `anthropics/claude-code` frontend-design skill v1.1.0 (studio-brief framing,
+  two-pass plan/critique process, writing-for-design section); refreshed the
+  skill description to match the new intent and regenerated `AGENTS.md` (#82)
 
 ## [0.1.17] - 2026-07-06
 
@@ -253,7 +268,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.17...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.19...HEAD
+[0.1.19]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.18...v0.1.19
+[0.1.18]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.14...v0.1.15
