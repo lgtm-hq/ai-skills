@@ -56,6 +56,7 @@
       "source": "./",
       "skills": [
         "./skills/babysit-pr",
+        "./skills/implement-issues",
         "./skills/which-pr"
       ]
     },
