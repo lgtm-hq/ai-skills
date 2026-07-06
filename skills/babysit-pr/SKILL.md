@@ -249,16 +249,14 @@ gh pr merge <n> --squash --delete-branch
 ```
 
 The PR author cannot self-approve, and repos with a native GitHub merge queue must
-enter it through this normal path — do not add `--admin` by default. `--admin` uses
+enter it through this normal path — **never use `--admin`**. `--admin` uses
 administrator privileges against the **whole** merge requirement set (reviews,
-required checks, queue enrollment, blocked/behind state), not the review requirement
-alone, so using it as a shortcut can skip queue enrollment or mask a genuine failure.
+required checks, queue enrollment, blocked/behind state), not just the review
+requirement, so it can skip queue enrollment or mask a genuine failure.
 
-Only fall back to `--admin` when the sole blocker is the self-approval restriction
-**and** the Per-PR gate above has already independently confirmed checks are green,
-the head is current, and `mergeStateStatus` shows no queue- or currency-related block.
-If `mergeStateStatus` reports `BEHIND` or a queue-specific block, resolve that first
-(see Queue discipline) — never reach for `--admin` to push through it.
+If the merge command fails **solely** because of the self-approval restriction, that
+is a human blocker: stop and report it (see Phase 4) so the human owner reviews and
+merges — do not reach for `--admin` to push past branch protection.
 
 ### Queue discipline
 
