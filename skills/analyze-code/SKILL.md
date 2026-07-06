@@ -8,6 +8,28 @@ description: Code-level quality analysis. Use when asked to review code for smel
 Perform a code-level quality analysis of this project. Follow the procedural workflow
 below; use the rubric sections as reference when interpreting findings.
 
+## Ground Rules
+
+- Assessment only: no code changes, pushes, workflow/release triggers
+- No side effects: no installs/config edits/machine mutation; no paid API calls
+  (mock or skip); dry-run or mock anything that publishes/deploys; verify commands
+  exist and are spelled correctly, not their effect
+- Reproduce before reporting: every finding needs repro or concrete trace, a
+  file:line reference, and a concrete fix
+- Probe validation gaps: construct an invalid state locally, check tooling/CI catches
+  it
+
+## Repo Shape
+
+Emphasize different risk categories depending on what the repo is:
+
+| Shape | Emphasize |
+| --- | --- |
+| App/service | authZ per route (ownership on account-scoped routes), auth token lifecycle (expiry/single-use/timing/enumeration), quota races, SSRF in fetchers/ingestion, prompt injection from untrusted content reaching an LLM, SQLi, CORS/rate limits |
+| CI library/actions | script injection (untrusted context in `run:`), SHA pinning, egress, permission ceilings — a bad action ships unsafe CI to every consumer |
+| Content/docs site | XSS (`set:html` / `innerHTML`, export paths), command validity in guides, currency of claims, link rot |
+| Package index/tap | artifact checksum re-verification vs upstream, update-automation payload trust (dispatch payload -> file rewrite = RCE surface), version freshness |
+
 ## Usage
 
 When asked to analyze code quality:
@@ -46,7 +68,30 @@ bun audit                    # JavaScript/TypeScript with bun
 
 Cross-check results against the Security Best Practices rubric below.
 
-### 3. Code smell detection
+### 3. Workflow & supply-chain security
+
+Search for CI/CD and supply-chain risk patterns:
+
+```bash
+# Untrusted GitHub context interpolated directly into a run: block
+rg -n '\$\{\{\s*github\.(event|head_ref)' .github/workflows/
+
+# pull_request_target usage (runs with write-scoped secrets against untrusted code)
+rg -n 'pull_request_target' .github/workflows/
+
+# Actions pinned to a tag/branch instead of a commit SHA
+rg -n 'uses:\s*[^@]+@(?!\w{40})' .github/workflows/
+
+# Write-scoped token permissions
+rg -n 'permissions:' -A 3 .github/workflows/
+```
+
+Prose checks (no single command catches these — inspect manually): injection via PR
+titles/branches/bodies flowing into a shell step, cache poisoning between workflow
+runs, and whether release automation can be triggered from a non-release commit or
+by an untrusted actor.
+
+### 4. Code smell detection
 
 Use ripgrep and manual inspection for structural issues:
 
@@ -69,7 +114,10 @@ Evaluate hits against the Code Smells rubric (long methods, dead code, duplicati
 magic numbers, etc.). Duplication findings must name the files involved, the shared
 pattern, and a suggested extraction point.
 
-### 4. Rate and report findings
+### 5. Rate and report findings
+
+Lead with a TLDR verdict (one or two sentences: is this codebase in good shape,
+needs attention, or has critical issues).
 
 For each issue, assign severity:
 
@@ -77,8 +125,10 @@ For each issue, assign severity:
 - **Should Fix** — bugs, missing error handling, significant smells, vulnerable dependencies
 - **Nice to Have** — style, minor duplication, documentation gaps
 
-Prioritize actionable feedback. Include file paths, line numbers, and a concrete fix
-suggestion for each finding.
+Include file paths, line numbers, and a concrete fix suggestion for each finding. End
+with a prioritized fix list ordered by impact. When this analysis runs as part of a
+full audit alongside `analyze-project`, merge into that skill's single fix list
+instead of reporting a separate one.
 
 Cadence: run codebase-wide every ~20 PRs or monthly; prioritize cross-file duplication,
 then idiom upgrades, then style polish; file findings via the `issue` skill.
