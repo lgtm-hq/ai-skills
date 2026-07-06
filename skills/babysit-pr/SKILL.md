@@ -232,9 +232,22 @@ Done when **all** are true:
 Skip this entire section unless invoked with `--merge`. Without the flag, exit at
 Phase 5 and let the human owner merge.
 
-### Per-PR gate
+### Capability check (first)
 
-Before merging any single PR:
+Before the first merge, detect what the repository provides:
+
+- **Merge queue / auto-merge enabled?** — `gh repo view --json autoMergeAllowed`,
+  ruleset inspection (`gh api repos/<owner>/<repo>/rulesets`), or a note in the repo's
+  `CLAUDE.md`.
+- **Conversation resolution required?** — branch protection / ruleset settings.
+
+If the repo has a merge queue or auto-merge, use **queue-aware mode**. Otherwise fall
+back to **manual serial mode**. The per-PR gate, release handling, failure signatures,
+and signing-park behavior below apply to **both** modes.
+
+### Per-PR gate (both modes)
+
+Before merging (or enqueuing) any single PR:
 
 - **Phase 5 exit conditions met** for that PR.
 - **Bot reviewed the CURRENT head** — if the head moved since the last CodeRabbit
@@ -242,23 +255,40 @@ Before merging any single PR:
 - **Re-check PR state immediately before merge** — an already-merged PR is a normal
   outcome, not an error; re-baseline the queue and move on.
 
+**Never use `--admin`** in either mode. `--admin` uses administrator privileges
+against the **whole** merge requirement set (reviews, required checks, queue
+enrollment, blocked/behind state), not just the review requirement, so it can skip
+queue enrollment or mask a genuine failure.
+
+If the merge command fails **solely** because of the self-approval restriction, that
+is a human blocker: stop and report it (see Phase 4) so the human owner reviews and
+merges — do not reach for `--admin` to push past branch protection.
+
+### Queue-aware mode (primary, when available)
+
+Per PR: resolve all review threads (fix or refute — Step D unchanged), get checks
+green, then enqueue and observe:
+
+```bash
+gh pr merge <n> --auto --squash --delete-branch
+```
+
+The platform serializes merges, rebases each PR, merges when its turn comes, and
+blocks on unresolved threads. Do **not** re-implement that machinery: no manual
+main-green waiting between merges, no single-merger lock, no hand-rolled ordering.
+Thread resolution is the irreducible judgment step and stays with the babysitter;
+the mechanical serialization belongs to the platform. Keep observing until each
+enqueued PR actually merges (or is ejected from the queue — then triage why).
+
+### Manual serial mode (fallback — no merge queue / auto-merge)
+
 Merge command:
 
 ```bash
 gh pr merge <n> --squash --delete-branch
 ```
 
-The PR author cannot self-approve, and repos with a native GitHub merge queue must
-enter it through this normal path — **never use `--admin`**. `--admin` uses
-administrator privileges against the **whole** merge requirement set (reviews,
-required checks, queue enrollment, blocked/behind state), not just the review
-requirement, so it can skip queue enrollment or mask a genuine failure.
-
-If the merge command fails **solely** because of the self-approval restriction, that
-is a human blocker: stop and report it (see Phase 4) so the human owner reviews and
-merges — do not reach for `--admin` to push past branch protection.
-
-### Queue discipline
+Queue discipline (this mode only):
 
 - **Single merger** — before starting, verify no other session is draining the same
   queue. One merger at a time.
@@ -271,7 +301,7 @@ merges — do not reach for `--admin` to push past branch protection.
 - Under strict up-to-date-branch policies, use `gh pr update-branch <n>` to bring each
   PR current before its turn.
 
-### Releases
+### Releases (both modes)
 
 - Expect **auto version PRs** to appear after merges.
 - If the repo convention is **1 PR = 1 release**, merge the release PR and wait for its
@@ -279,7 +309,7 @@ merges — do not reach for `--admin` to push past branch protection.
 - **Never touch publish gates** (PyPI environment approval, etc.) — those are human
   gates. Stop and report.
 
-### Failure signatures
+### Failure signatures (both modes)
 
 - **`CANCELLED`** = a duplicate/superseded run; only `FAILURE` / `TIMED_OUT` are
   genuine failures.
