@@ -51,6 +51,7 @@ groups:
     name: Agents
     skills:
       - babysit-pr
+      - implement-issues
       - which-pr
 
   testing:
