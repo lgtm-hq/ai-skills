@@ -74,16 +74,16 @@ Search for CI/CD and supply-chain risk patterns:
 
 ```bash
 # Untrusted GitHub context interpolated directly into a run: block
-rg -n '\$\{\{\s*github\.(event|head_ref)' .github/workflows/
+rg -n '\$\{\{\s*github\.(event|head_ref)' .github/workflows/ .github/actions/ action.yml action.yaml
 
 # pull_request_target usage (runs with write-scoped secrets against untrusted code)
-rg -n 'pull_request_target' .github/workflows/
+rg -n 'pull_request_target' .github/workflows/ .github/actions/ action.yml action.yaml
 
 # Actions pinned to a tag/branch instead of a commit SHA
-rg -n -P 'uses:\s*[^@]+@(?![0-9a-fA-F]{40}\b)' .github/workflows/
+rg -n -P 'uses:\s*[^@]+@(?![0-9a-fA-F]{40}\b)' .github/workflows/ .github/actions/ action.yml action.yaml
 
 # Write-scoped token permissions
-rg -n 'permissions:' -A 3 .github/workflows/
+rg -n 'permissions:' -A 3 .github/workflows/ .github/actions/ action.yml action.yaml
 ```
 
 Prose checks (no single command catches these — inspect manually): injection via PR
@@ -125,7 +125,8 @@ For each issue, assign severity:
 - **Should Fix** — bugs, missing error handling, significant smells, vulnerable dependencies
 - **Nice to Have** — style, minor duplication, documentation gaps
 
-Include file paths, line numbers, and a concrete fix suggestion for each finding. End
+Include file paths, line numbers, concrete repro/trace evidence, and a concrete fix
+suggestion for each finding. End
 with a prioritized fix list ordered by impact. When this analysis runs as part of a
 full audit alongside `analyze-project`, merge into that skill's single fix list
 instead of reporting a separate one.
