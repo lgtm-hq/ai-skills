@@ -11,13 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **docs**: generate the README skills section from bundles.yaml with hyperlinked SKILL.md entries (scripts/generate_readme.py, wired into scripts/validate.sh)
+- **release**: auto-bump README release-tag pins in the version PR (scripts/update-readme-version.sh via version-update-script)
+
 ### Changed
+
+- **docs**: revamp README — bundle sections with per-skill links, collapsible install variants and known limitations, unpinned-install warning callout
 
 ### Deprecated
 
 ### Removed
 
 ### Fixed
+
+- **docs**: sync README bundles with bundles.yaml (stand-odin, implement-issues, test-ui-qsf were missing) and refresh stale v0.1.10 install pins
 
 ### Security
 
