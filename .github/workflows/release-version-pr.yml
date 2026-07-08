@@ -18,6 +18,8 @@ jobs:
     with:
       max-bump: patch
       ecosystems: python
+      # Keeps README install examples pinned to the release being cut.
+      version-update-script: scripts/update-readme-version.sh
       auto-merge: true
       tooling-ref: "17483d234808cb3a2019afdff0dea29593f24a05"
     secrets:
