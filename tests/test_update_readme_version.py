@@ -79,13 +79,30 @@ def test_rejects_missing_next_version(tmp_path: Path) -> None:
     assert_that(result.stderr).contains("NEXT_VERSION is required")
 
 
+def test_accepts_v_prefixed_next_version(tmp_path: Path) -> None:
+    """A leading v on NEXT_VERSION is stripped, not rejected."""
+
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "bunx skills add lgtm-hq/ai-skills@v0.1.10 -g\n",
+        encoding="utf-8",
+    )
+
+    result = _run(args=[str(readme)], env_version="v2.3.4")
+
+    assert_that(result.returncode).is_equal_to(0)
+    assert_that(readme.read_text(encoding="utf-8")).contains(
+        "lgtm-hq/ai-skills@v2.3.4",
+    )
+
+
 def test_rejects_malformed_next_version(tmp_path: Path) -> None:
     """A NEXT_VERSION that is not X.Y.Z is rejected."""
 
     readme = tmp_path / "README.md"
     readme.write_text("x\n", encoding="utf-8")
 
-    result = _run(args=[str(readme)], env_version="v1.2.3")
+    result = _run(args=[str(readme)], env_version="1.2")
 
     assert_that(result.returncode).is_not_equal_to(0)
     assert_that(result.stderr).contains("must be X.Y.Z")

@@ -22,11 +22,13 @@ repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 readme_path="${1:-${repo_root}/README.md}"
 
 if [[ -z "${NEXT_VERSION:-}" ]]; then
-  echo "NEXT_VERSION is required (semver without v prefix, e.g. 0.1.23)." >&2
+  echo "NEXT_VERSION is required (semver, e.g. 0.1.23)." >&2
   exit 1
 fi
-if [[ ! "${NEXT_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "NEXT_VERSION must be X.Y.Z (got: '${NEXT_VERSION}')." >&2
+# lgtm-ci emits a bare X.Y.Z; tolerate a v prefix in case that ever changes.
+next_version="${NEXT_VERSION#v}"
+if [[ ! "${next_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "NEXT_VERSION must be X.Y.Z or vX.Y.Z (got: '${NEXT_VERSION}')." >&2
   exit 1
 fi
 if [[ ! -f "${readme_path}" ]]; then
@@ -36,8 +38,8 @@ fi
 
 # -i.bak keeps BSD (macOS) and GNU sed compatible.
 sed -E -i.bak \
-  -e "s|(lgtm-hq/ai-skills@v)[0-9]+\.[0-9]+\.[0-9]+|\1${NEXT_VERSION}|g" \
-  -e "s|(gh release download v)[0-9]+\.[0-9]+\.[0-9]+|\1${NEXT_VERSION}|g" \
+  -e "s|(lgtm-hq/ai-skills@v)[0-9]+\.[0-9]+\.[0-9]+|\1${next_version}|g" \
+  -e "s|(gh release download v)[0-9]+\.[0-9]+\.[0-9]+|\1${next_version}|g" \
   "${readme_path}"
 rm -f "${readme_path}.bak"
-echo "Pinned README install examples to v${NEXT_VERSION}."
+echo "Pinned README install examples to v${next_version}."
