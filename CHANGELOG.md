@@ -11,12 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **docs**: generate the README skills section from bundles.yaml with hyperlinked SKILL.md entries (scripts/generate_readme.py, wired into scripts/validate.sh)
-- **release**: auto-bump README release-tag pins in the version PR (scripts/update-readme-version.sh via version-update-script)
-
 ### Changed
-
-- **docs**: revamp README — bundle sections with per-skill links, collapsible install variants and known limitations, unpinned-install warning callout
 
 ### Deprecated
 
@@ -24,9 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **docs**: sync README bundles with bundles.yaml (stand-odin, implement-issues, test-ui-qsf were missing) and refresh stale v0.1.10 install pins
-
 ### Security
+
+## [0.1.23] - 2026-07-08
+
+### Added
+
+- **readme**: revamp README with generated skills section and pin drift guards (#118) (f1e88ef)
+- **docs**: generate the README skills section from bundles.yaml with hyperlinked SKILL.md entries (scripts/generate_readme.py, wired into scripts/validate.sh)
+- **release**: auto-bump README release-tag pins in the version PR (scripts/update-readme-version.sh via version-update-script)
+
+### Changed
+
+- **docs**: revamp README — bundle sections with per-skill links, collapsible install variants and known limitations, unpinned-install warning callout
+
+### Fixed
+
+- **docs**: sync README bundles with bundles.yaml (stand-odin, implement-issues, test-ui-qsf were missing) and refresh stale v0.1.10 install pins
 
 ## [0.1.22] - 2026-07-06
 
@@ -293,7 +302,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.22...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.23...HEAD
+[0.1.23]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.19...v0.1.20
