@@ -21,6 +21,9 @@ document:
 - **Installer groups:** assign each skill to a bundle in **`bundles.yaml`** (or list it
   under `ungrouped` for the installer's "Other" bucket). Regenerate
   **`.claude-plugin/marketplace.json`** with `uv run python scripts/generate_marketplace.py`.
+- **README skills section:** the `## Skills` section of `README.md` and its
+  release-tag pins are generated from `bundles.yaml`, SKILL.md frontmatter, and
+  `pyproject.toml`. Regenerate with `uv run python scripts/generate_readme.py`.
 - **No secrets:** do not add API keys, tokens, or environment-specific paths in skill
   bodies or examples.
 - **No project-session context dumps:** one-off session notes for a single project do
@@ -46,6 +49,7 @@ When you add or move skills, also run:
 ```bash
 uv run python scripts/generate_agents_md.py
 uv run python scripts/generate_marketplace.py
+uv run python scripts/generate_readme.py
 bash scripts/validate.sh
 ```
 
