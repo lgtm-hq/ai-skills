@@ -190,8 +190,7 @@ def test_check_fails_on_drift(
 
     assert_that(exit_code).is_equal_to(1)
     captured = capsys.readouterr()
-    assert_that(captured.err).contains("Manifest is stale")
-    assert_that(captured.err).contains("---")
+    assert_that(captured.err).contains("Manifest is stale", "---")
 
 
 def test_check_fails_when_manifest_missing(tmp_path: Path) -> None:

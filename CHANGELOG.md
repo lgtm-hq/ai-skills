@@ -11,17 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **ci**: run the pytest suite in CI via lgtm-ci `reusable-test-python.yml` (#95)
-- **ci**: lgtm-ci adoption audit script (`scripts/audit_lgtm_ci_adoption.py`)
-  and adoption plan (`docs/lgtm-ci-adoption.md`) for #90 — inventory and
-  classification only; adoption lands in follow-up PRs
-- **skills**: codify the lint-ignore policy (#89): `lint` Rules now require
-  root-cause fixes first, narrowest single-line ignores with an inline
-  `- reason` justification, and documented exceptions for blanket/file-level
-  ignores; `stand-py` Ignoring Issues aligned with a Don't/Do pair; new
-  `scripts/check_suppressions.py` (run by `scripts/validate.sh`) rejects
-  suppression markers lacking a justification
-
 ### Changed
 
 - **tests**: adopt assertpy for all test assertions; add `assertpy` dev
@@ -35,6 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.1.24] - 2026-07-09
+
+### Added
+
+- **ci**: run pytest suite via CI (#97) (c3cf40b)
+
+### Changed
+
+- **lint**: codify root-cause-first ignore policy (#93) (2d7b4bd)
+- **ci**: add lgtm-ci adoption audit and plan (#94) (3740e19)
+- **deps**: update astral-sh/setup-uv to v8.3.2 (#117) (62cc9b7)
 
 ## [0.1.23] - 2026-07-08
 
@@ -317,7 +318,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.23...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.24...HEAD
+[0.1.24]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.20...v0.1.21
