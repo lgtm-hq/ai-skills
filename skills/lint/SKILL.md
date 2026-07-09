@@ -36,12 +36,16 @@ lintro — Raycast rules take precedence for extension-specific checks).
     required before committing.
 - Linting must produce **zero issues** before proceeding
 - **Fix ALL issues** — whether introduced in the current session or pre-existing
-- **Ignoring issues is a LAST resort** — only use `# noqa`, `# type: ignore`,
-  `# nosec`, `# yamllint disable-line`, etc. when there is no reasonable way to
-  fix the issue
-- **Justification required for ignores** — any ignore comment MUST include an
-  explanation of why the ignore is necessary (e.g., `# nosec B604 - not a
-  subprocess call, just a dataclass field named 'shell'`)
+- **Ignore policy** — suppressing a finding is not a fix:
+  1. **Fix the root cause first.** `# noqa`, `# type: ignore`, `# nosec`,
+     `# nosemgrep`, `# yamllint disable-line`, etc. are a LAST resort, only
+     when there is no reasonable fix.
+  2. **If suppression is genuinely required**, use the narrowest possible
+     ignore — specific rule code, single line — WITH an inline justification
+     comment (`# nosec B603 - fixed argv list, no shell`). Unjustified
+     ignores are rejected.
+  3. **Blanket or file-level ignores** (whole-file disables, config-wide
+     excludes) require a documented exception (e.g. in `CONTRIBUTING.md`).
 
 ## Usage
 

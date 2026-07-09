@@ -174,7 +174,10 @@ Follow the `lint` skill for linting and formatting workflow.
 
 ## Ignoring Issues
 
-Follow the `lint` skill for ignore policy (Rules section).
+Follow the `lint` skill ignore policy (Rules section): fix the root cause
+first; if suppression is genuinely required, use the narrowest possible ignore
+(specific rule code, single line) with an inline justification; blanket or
+file-level ignores require a documented exception.
 
 Python-specific: Bandit requires an **inline** `# nosec` or `# nosec BXXX - reason`
 on the same line as the flagged statement (preceding-line `# nosec` is silently
@@ -182,6 +185,10 @@ ignored by Bandit). See the `lint` skill for other tool ignore configurations (e
 may use a preceding-line comment plus inline `# type: ignore`):
 
 ```python
+# Don't - blanket, unjustified ignore
+subprocess.run(["validate.sh"])  # nosec
+
+# Do - narrowest code, inline justification
 subprocess.run(["validate.sh"])  # nosec B603 - fixed argv list; no shell
 ```
 

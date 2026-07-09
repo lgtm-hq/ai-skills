@@ -21,7 +21,10 @@ Checks:
      (regenerate via: uv run python scripts/generate_readme.py)
   6. skills-manifest generator is deterministic (two runs produce identical
      output; see scripts/generate_skills_manifest.py)
-  6. Test assertions use assertpy (no bare `assert` statements in tests/;
+  7. lint-suppression comments in Python files carry an inline '- reason'
+     justification (lint skill ignore policy) via:
+     uv run python scripts/check_suppressions.py
+  8. Test assertions use assertpy (no bare `assert` statements in tests/;
      use assert_that(...) — pytest.raises contexts remain as-is)
 EOF
   exit 0
@@ -56,6 +59,12 @@ if ! command -v uv >/dev/null 2>&1; then
   errors=$((errors + 1))
 elif ! uv run python "$script_dir/validate_skills.py" skills; then
   errors=$((errors + 1))
+fi
+
+if command -v uv >/dev/null 2>&1; then
+  if ! uv run python "$script_dir/check_suppressions.py"; then
+    errors=$((errors + 1))
+  fi
 fi
 
 if [[ -f "AGENTS.md" ]]; then
