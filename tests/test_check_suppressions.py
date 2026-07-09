@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from assertpy import assert_that
 from check_suppressions import find_unjustified_suppressions
 from loguru import logger
 
@@ -49,8 +50,8 @@ def test_unjustified_marker_is_flagged(
 
         violations = find_unjustified_suppressions(root=root)
 
-        assert len(violations) == 1, marker
-        assert "module.py:1" in violations[0]
+        assert_that(violations).described_as(marker).is_length(1)
+        assert_that(violations[0]).contains("module.py:1")
         logger.info("[TEST] bare marker flagged: {}", violations[0])
 
 
@@ -62,7 +63,7 @@ def test_specific_code_without_reason_is_flagged(
 
     violations = find_unjustified_suppressions(root=root)
 
-    assert len(violations) == 1
+    assert_that(violations).is_length(1)
     logger.info("[TEST] code without reason flagged: {}", violations[0])
 
 
@@ -83,7 +84,7 @@ def test_justified_suppression_passes(
 
         violations = find_unjustified_suppressions(root=root)
 
-        assert violations == [], line
+        assert_that(violations).described_as(line).is_empty()
         logger.info("[TEST] justified suppression accepted: {}", line)
 
 
@@ -95,7 +96,7 @@ def test_dash_before_marker_does_not_count_as_reason(
 
     violations = find_unjustified_suppressions(root=root)
 
-    assert len(violations) == 1
+    assert_that(violations).is_length(1)
     logger.info("[TEST] pre-marker dash rejected: {}", violations[0])
 
 
@@ -110,7 +111,7 @@ def test_reason_before_later_marker_is_flagged(
 
     violations = find_unjustified_suppressions(root=root)
 
-    assert len(violations) == 1
+    assert_that(violations).is_length(1)
     logger.info(
         "[TEST] later bare marker flagged: {}",
         violations[0],
@@ -125,7 +126,7 @@ def test_lines_without_markers_pass(
 
     violations = find_unjustified_suppressions(root=root)
 
-    assert violations == []
+    assert_that(violations).is_empty()
     logger.info("[TEST] plain code passes")
 
 
@@ -139,7 +140,7 @@ def test_skip_dirs_are_not_scanned(
 
     violations = find_unjustified_suppressions(root=tmp_path)
 
-    assert violations == []
+    assert_that(violations).is_empty()
     logger.info("[TEST] skip dirs excluded from scan")
 
 
@@ -147,5 +148,5 @@ def test_current_repository_tree_passes() -> None:
     """The real repository must satisfy its own suppression policy."""
     violations = find_unjustified_suppressions(root=REPO_ROOT)
 
-    assert violations == []
+    assert_that(violations).is_empty()
     logger.info("[TEST] repository tree clean of unjustified suppressions")
