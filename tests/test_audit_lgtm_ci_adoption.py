@@ -192,8 +192,20 @@ def test_main_no_pins_errors(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """main() exits 2 when no lgtm-ci callers exist."""
-    tmp_path.mkdir(exist_ok=True)
     code = audit.main(argv=["--workflows-dir", str(tmp_path)])
     err = capsys.readouterr().err
     assert code == 2
     assert "no lgtm-ci" in err
+
+
+def test_main_mixed_pins_errors(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """main() exits non-zero when local callers pin mixed SHAs."""
+    _write_workflow(tmp_path, "ci.yml", "reusable-quality.yml", SHA_A)
+    _write_workflow(tmp_path, "ci-old.yml", "reusable-quality.yml", SHA_B)
+    code = audit.main(argv=["--workflows-dir", str(tmp_path)])
+    err = capsys.readouterr().err
+    assert code != 0
+    assert "mixed" in err

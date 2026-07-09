@@ -101,7 +101,7 @@ def list_available_workflows(
     Raises:
         RuntimeError: If the ``gh api`` call fails.
     """
-    result = subprocess.run(  # noqa: S603 # nosec B603 B607 - fixed gh argv
+    result = subprocess.run(  # noqa: S603, S607 # nosec B603 B607 - fixed gh argv
         [
             "gh",
             "api",
