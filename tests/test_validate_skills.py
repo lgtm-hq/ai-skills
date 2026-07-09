@@ -7,6 +7,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from assertpy import assert_that
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -72,7 +73,7 @@ def test_valid_skill_passes(tmp_path: Path) -> None:
 
     violations = mod.validate_skill(skill_md=skill_md)
 
-    assert violations == []
+    assert_that(violations).is_empty()
 
 
 def test_crlf_skill_passes(tmp_path: Path) -> None:
@@ -87,7 +88,7 @@ def test_crlf_skill_passes(tmp_path: Path) -> None:
 
     violations = mod.validate_skill(skill_md=skill_md)
 
-    assert violations == []
+    assert_that(violations).is_empty()
 
 
 def test_one_char_description_passes(tmp_path: Path) -> None:
@@ -101,7 +102,7 @@ def test_one_char_description_passes(tmp_path: Path) -> None:
 
     violations = mod.validate_skill(skill_md=skill_md)
 
-    assert violations == []
+    assert_that(violations).is_empty()
 
 
 def test_max_length_description_passes(tmp_path: Path) -> None:
@@ -116,7 +117,7 @@ def test_max_length_description_passes(tmp_path: Path) -> None:
 
     violations = mod.validate_skill(skill_md=skill_md)
 
-    assert violations == []
+    assert_that(violations).is_empty()
 
 
 @pytest.mark.parametrize(
@@ -194,9 +195,9 @@ def test_invalid_frontmatter_is_rejected(
 
     violations = mod.validate_skill(skill_md=skill_md)
 
-    assert len(violations) >= 1
-    assert any(expected_fragment in v for v in violations)
-    assert all(str(skill_md) in v for v in violations)
+    assert_that(violations).is_not_empty()
+    assert_that(any(expected_fragment in v for v in violations)).is_true()
+    assert_that(all(str(skill_md) in v for v in violations)).is_true()
 
 
 def test_overlong_description_is_rejected(tmp_path: Path) -> None:
@@ -211,10 +212,12 @@ def test_overlong_description_is_rejected(tmp_path: Path) -> None:
 
     violations = mod.validate_skill(skill_md=skill_md)
 
-    assert violations == [
-        f"{skill_md}: 'description' is 1025 characters, "
-        "exceeds the 1024-character limit",
-    ]
+    assert_that(violations).is_equal_to(
+        [
+            f"{skill_md}: 'description' is 1025 characters, "
+            "exceeds the 1024-character limit",
+        ]
+    )
 
 
 def test_name_directory_mismatch_is_rejected(tmp_path: Path) -> None:
@@ -228,9 +231,11 @@ def test_name_directory_mismatch_is_rejected(tmp_path: Path) -> None:
 
     violations = mod.validate_skill(skill_md=skill_md)
 
-    assert violations == [
-        f"{skill_md}: 'name' 'bar' does not match directory name 'foo'",
-    ]
+    assert_that(violations).is_equal_to(
+        [
+            f"{skill_md}: 'name' 'bar' does not match directory name 'foo'",
+        ]
+    )
 
 
 def test_validate_skills_tree_collects_all_violations(tmp_path: Path) -> None:
@@ -249,9 +254,11 @@ def test_validate_skills_tree_collects_all_violations(tmp_path: Path) -> None:
 
     violations = mod.validate_skills_tree(skills_root=tmp_path / "skills")
 
-    assert len(violations) == 2
-    assert any("'description' must be a string" in v for v in violations)
-    assert any("does not match directory name" in v for v in violations)
+    assert_that(violations).is_length(2)
+    assert_that(
+        any("'description' must be a string" in v for v in violations)
+    ).is_true()
+    assert_that(any("does not match directory name" in v for v in violations)).is_true()
 
 
 def test_validate_skills_tree_passes_on_real_repo() -> None:
@@ -260,7 +267,7 @@ def test_validate_skills_tree_passes_on_real_repo() -> None:
 
     violations = mod.validate_skills_tree(skills_root=REPO_ROOT / "skills")
 
-    assert violations == []
+    assert_that(violations).is_empty()
 
 
 UPSTREAM_SKILL = (
@@ -302,7 +309,7 @@ def test_upstream_block_with_workflow_passes(tmp_path: Path) -> None:
 
     violations = mod.validate_skill(skill_md=skill_md, repo_root=tmp_path)
 
-    assert violations == []
+    assert_that(violations).is_empty()
 
 
 def test_upstream_block_without_repo_root_skips_workflow_check(
@@ -318,7 +325,7 @@ def test_upstream_block_without_repo_root_skips_workflow_check(
 
     violations = mod.validate_skill(skill_md=skill_md)
 
-    assert violations == []
+    assert_that(violations).is_empty()
 
 
 def test_upstream_block_missing_workflow_is_rejected(tmp_path: Path) -> None:
@@ -332,10 +339,12 @@ def test_upstream_block_missing_workflow_is_rejected(tmp_path: Path) -> None:
 
     violations = mod.validate_skill(skill_md=skill_md, repo_root=tmp_path)
 
-    assert violations == [
-        f"{skill_md}: declares 'upstream' but the drift tracking workflow "
-        ".github/workflows/upstream-drift.yml is missing",
-    ]
+    assert_that(violations).is_equal_to(
+        [
+            f"{skill_md}: declares 'upstream' but the drift tracking workflow "
+            ".github/workflows/upstream-drift.yml is missing",
+        ]
+    )
 
 
 @pytest.mark.parametrize(
@@ -416,9 +425,9 @@ def test_malformed_upstream_block_is_rejected(
 
     violations = mod.validate_skill(skill_md=skill_md, repo_root=tmp_path)
 
-    assert len(violations) >= 1
-    assert any(expected_fragment in v for v in violations)
-    assert all(str(skill_md) in v for v in violations)
+    assert_that(violations).is_not_empty()
+    assert_that(any(expected_fragment in v for v in violations)).is_true()
+    assert_that(all(str(skill_md) in v for v in violations)).is_true()
 
 
 def test_validate_skills_tree_checks_upstream_workflow(tmp_path: Path) -> None:
@@ -432,5 +441,5 @@ def test_validate_skills_tree_checks_upstream_workflow(tmp_path: Path) -> None:
 
     violations = mod.validate_skills_tree(skills_root=tmp_path / "skills")
 
-    assert len(violations) == 1
-    assert "drift tracking workflow" in violations[0]
+    assert_that(violations).is_length(1)
+    assert_that(violations[0]).contains("drift tracking workflow")

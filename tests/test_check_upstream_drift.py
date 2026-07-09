@@ -13,6 +13,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from assertpy import assert_that
 from upstream_drift import compare, discovery, fetch, issues
 from upstream_drift.drift_result import DriftResult
 
@@ -86,17 +87,17 @@ def test_normalize_body_strips_frontmatter_and_whitespace() -> None:
     """Frontmatter, CRLF endings, and trailing whitespace are normalized."""
     text = "---\r\nname: a\r\n---\r\n\r\n# Title  \r\nline\t\r\n\r\n\r\n"
 
-    assert compare.normalize_body(text=text) == "# Title\nline\n"
+    assert_that(compare.normalize_body(text=text)).is_equal_to("# Title\nline\n")
 
 
 def test_normalize_body_without_frontmatter_keeps_content() -> None:
     """Documents without frontmatter are normalized whole."""
-    assert compare.normalize_body(text="# Title \n\n") == "# Title\n"
+    assert_that(compare.normalize_body(text="# Title \n\n")).is_equal_to("# Title\n")
 
 
 def test_normalize_body_blank_document_is_empty() -> None:
     """A blank document normalizes to the empty string."""
-    assert compare.normalize_body(text="---\nname: a\n---\n\n\n") == ""
+    assert_that(compare.normalize_body(text="---\nname: a\n---\n\n\n")).is_empty()
 
 
 def test_frontmatter_only_differences_are_not_drift(
@@ -122,9 +123,9 @@ def test_frontmatter_only_differences_are_not_drift(
 
     drift = compare.check_skill_drift(skill=skill)
 
-    assert skill.skill_md == skill_md
-    assert drift.drifted is False
-    assert drift.diff == ""
+    assert_that(skill.skill_md).is_equal_to(skill_md)
+    assert_that(drift.drifted).is_false()
+    assert_that(drift.diff).is_empty()
 
 
 def test_body_differences_are_drift(
@@ -146,9 +147,9 @@ def test_body_differences_are_drift(
 
     drift = compare.check_skill_drift(skill=skill)
 
-    assert drift.drifted is True
-    assert "+Rewritten upstream." in drift.diff
-    assert "-Shared content." in drift.diff
+    assert_that(drift.drifted).is_true()
+    assert_that(drift.diff).contains("+Rewritten upstream.")
+    assert_that(drift.diff).contains("-Shared content.")
 
 
 def test_find_tracked_skills_ignores_untracked(tmp_path: Path) -> None:
@@ -166,9 +167,9 @@ def test_find_tracked_skills_ignores_untracked(tmp_path: Path) -> None:
 
     tracked = discovery.find_tracked_skills(skills_root=tmp_path / "skills")
 
-    assert [skill.name for skill in tracked] == ["tracked"]
-    assert tracked[0].repo == "anthropics/claude-code"
-    assert tracked[0].version == "1.1.0"
+    assert_that([skill.name for skill in tracked]).is_equal_to(["tracked"])
+    assert_that(tracked[0].repo).is_equal_to("anthropics/claude-code")
+    assert_that(tracked[0].version).is_equal_to("1.1.0")
 
 
 def test_find_tracked_skills_rejects_malformed_upstream(tmp_path: Path) -> None:
@@ -203,8 +204,10 @@ def test_issue_title_is_deterministic(tmp_path: Path) -> None:
 
     title = issues._issue_title(skill=skill)
 
-    assert title == issues._issue_title(skill=skill)
-    assert title == "chore(example): upstream drift detected in anthropics/claude-code"
+    assert_that(title).is_equal_to(issues._issue_title(skill=skill))
+    assert_that(title).is_equal_to(
+        "chore(example): upstream drift detected in anthropics/claude-code"
+    )
 
 
 def test_issue_body_truncates_long_diffs(tmp_path: Path) -> None:
@@ -220,9 +223,9 @@ def test_issue_body_truncates_long_diffs(tmp_path: Path) -> None:
 
     body = issues._issue_body(result=result)
 
-    assert "diff truncated" in body
-    assert f"+line {issues.MAX_ISSUE_DIFF_LINES - 1}" in body
-    assert f"+line {issues.MAX_ISSUE_DIFF_LINES}" not in body
+    assert_that(body).contains("diff truncated")
+    assert_that(body).contains(f"+line {issues.MAX_ISSUE_DIFF_LINES - 1}")
+    assert_that(body).does_not_contain(f"+line {issues.MAX_ISSUE_DIFF_LINES}")
 
 
 def test_file_tracking_issue_updates_existing(
@@ -251,8 +254,8 @@ def test_file_tracking_issue_updates_existing(
 
     action = issues.file_tracking_issue(result=result, github_repo="o/r")
 
-    assert action == "updated existing tracking issue #42"
-    assert calls[1][:3] == ["issue", "edit", "42"]
+    assert_that(action).is_equal_to("updated existing tracking issue #42")
+    assert_that(calls[1][:3]).is_equal_to(["issue", "edit", "42"])
 
 
 def test_file_tracking_issue_creates_when_absent(
@@ -280,8 +283,10 @@ def test_file_tracking_issue_creates_when_absent(
 
     action = issues.file_tracking_issue(result=result, github_repo="o/r")
 
-    assert action == "created tracking issue https://github.com/o/r/issues/43"
-    assert calls[1][:2] == ["issue", "create"]
+    assert_that(action).is_equal_to(
+        "created tracking issue https://github.com/o/r/issues/43"
+    )
+    assert_that(calls[1][:2]).is_equal_to(["issue", "create"])
 
 
 def test_main_reports_drift_in_check_mode(
@@ -305,9 +310,9 @@ def test_main_reports_drift_in_check_mode(
     code = cli.main(argv=["--skills-root", str(tmp_path / "skills")])
 
     captured = capsys.readouterr()
-    assert code == 1
-    assert "example: DRIFT" in captured.out
-    assert "--- diff for example ---" in captured.out
+    assert_that(code).is_equal_to(1)
+    assert_that(captured.out).contains("example: DRIFT")
+    assert_that(captured.out).contains("--- diff for example ---")
 
 
 def test_main_passes_when_in_sync(
@@ -331,8 +336,8 @@ def test_main_passes_when_in_sync(
     code = cli.main(argv=["--skills-root", str(tmp_path / "skills")])
 
     captured = capsys.readouterr()
-    assert code == 0
-    assert "example: in sync" in captured.out
+    assert_that(code).is_equal_to(0)
+    assert_that(captured.out).contains("example: in sync")
 
 
 def test_main_passes_with_no_tracked_skills(
@@ -350,8 +355,8 @@ def test_main_passes_with_no_tracked_skills(
     code = cli.main(argv=["--skills-root", str(tmp_path / "skills")])
 
     captured = capsys.readouterr()
-    assert code == 0
-    assert "No skills declare an 'upstream'" in captured.out
+    assert_that(code).is_equal_to(0)
+    assert_that(captured.out).contains("No skills declare an 'upstream'")
 
 
 def test_main_errors_on_missing_skills_root(tmp_path: Path) -> None:
@@ -360,4 +365,4 @@ def test_main_errors_on_missing_skills_root(tmp_path: Path) -> None:
 
     code = cli.main(argv=["--skills-root", str(tmp_path / "nope")])
 
-    assert code == 2
+    assert_that(code).is_equal_to(2)

@@ -9,6 +9,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from assertpy import assert_that
 
 
 def _load_generate_marketplace_module() -> ModuleType:
@@ -86,15 +87,17 @@ ungrouped:
     rendered = mod.generate_marketplace(repo_root=tmp_path)
     manifest = json.loads(rendered)
 
-    assert manifest == {
-        "plugins": [
-            {
-                "name": "Core Workflow",
-                "source": "./",
-                "skills": ["./skills/alpha"],
-            },
-        ],
-    }
+    assert_that(manifest).is_equal_to(
+        {
+            "plugins": [
+                {
+                    "name": "Core Workflow",
+                    "source": "./",
+                    "skills": ["./skills/alpha"],
+                },
+            ],
+        }
+    )
 
 
 def test_validate_bundles_rejects_missing_skill(tmp_path: Path) -> None:

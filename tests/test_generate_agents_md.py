@@ -6,6 +6,8 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+from assertpy import assert_that
+
 
 def _load_generate_agents_md_module() -> ModuleType:
     """Load ``generate_agents_md`` from the scripts directory (not a package).
@@ -46,8 +48,8 @@ def test_read_skill_meta_accepts_crlf_skill_file(tmp_path: Path) -> None:
 
     skill_id, description = mod._read_skill_meta(skill_md=skill_md)
 
-    assert skill_id == "example"
-    assert description == "Example skill."
+    assert_that(skill_id).is_equal_to("example")
+    assert_that(description).is_equal_to("Example skill.")
 
 
 def test_read_skill_meta_accepts_eof_closing_delimiter(tmp_path: Path) -> None:
@@ -62,5 +64,5 @@ def test_read_skill_meta_accepts_eof_closing_delimiter(tmp_path: Path) -> None:
 
     skill_id, description = mod._read_skill_meta(skill_md=skill_md)
 
-    assert skill_id == "eofskill"
-    assert description == "Ends at closing fence."
+    assert_that(skill_id).is_equal_to("eofskill")
+    assert_that(description).is_equal_to("Ends at closing fence.")

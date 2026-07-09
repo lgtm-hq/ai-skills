@@ -7,6 +7,7 @@ import shutil
 import subprocess  # nosec B404 - tests only; run copied validate.sh via argv list without shell
 from pathlib import Path
 
+from assertpy import assert_that
 from loguru import logger
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -78,8 +79,8 @@ def test_validate_skips_when_skills_directory_is_missing(
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert result.returncode == 0
-    assert "No skills/ directory" in result.stdout
+    assert_that(result.returncode).is_equal_to(0)
+    assert_that(result.stdout).contains("No skills/ directory")
     logger.info(
         "[TEST] skills dir missing: rc={} (expect skip message in stdout)",
         result.returncode,
@@ -103,8 +104,8 @@ def test_validate_accepts_matching_skill_and_agents_entry(
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert result.returncode == 0
-    assert "Validation passed." in result.stdout
+    assert_that(result.returncode).is_equal_to(0)
+    assert_that(result.stdout).contains("Validation passed.")
     logger.info("[TEST] matching skill + AGENTS: rc={}", result.returncode)
 
 
@@ -123,8 +124,8 @@ def test_validate_rejects_missing_agents_entry(
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert result.returncode == 1
-    assert "AGENTS.md missing skill entry for: example" in result.stdout
+    assert_that(result.returncode).is_equal_to(1)
+    assert_that(result.stdout).contains("AGENTS.md missing skill entry for: example")
     logger.info("[TEST] missing AGENTS entry: rc={}", result.returncode)
 
 
@@ -146,8 +147,8 @@ def test_validate_accepts_agents_entry_with_regex_special_chars_in_skill_name(
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert result.returncode == 0
-    assert "Validation passed." in result.stdout
+    assert_that(result.returncode).is_equal_to(0)
+    assert_that(result.stdout).contains("Validation passed.")
     logger.info("[TEST] regex-special chars in skill id: rc={}", result.returncode)
 
 
@@ -166,8 +167,8 @@ def test_validate_rejects_name_directory_mismatch(
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert result.returncode == 1
-    assert "does not match directory name 'foo'" in result.stdout
+    assert_that(result.returncode).is_equal_to(1)
+    assert_that(result.stdout).contains("does not match directory name 'foo'")
     logger.info("[TEST] name/dir mismatch rejected: rc={}", result.returncode)
 
 
@@ -188,8 +189,8 @@ def test_validate_rejects_list_valued_description(
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert result.returncode == 1
-    assert "'description' must be a string, got list" in result.stdout
+    assert_that(result.returncode).is_equal_to(1)
+    assert_that(result.stdout).contains("'description' must be a string, got list")
     logger.info("[TEST] list-valued description rejected: rc={}", result.returncode)
 
 
@@ -209,8 +210,8 @@ def test_validate_accepts_crlf_skill_file(
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert result.returncode == 0
-    assert "Validation passed." in result.stdout
+    assert_that(result.returncode).is_equal_to(0)
+    assert_that(result.stdout).contains("Validation passed.")
     logger.info("[TEST] CRLF skill file accepted: rc={}", result.returncode)
 
 
@@ -244,8 +245,8 @@ def test_validate_frontmatter_uses_cwd_skills_not_script_location(
 
     result = _run_validate(script_path=script_path, cwd=other_cwd)
 
-    assert result.returncode == 1
-    assert "'description' must be a string, got list" in result.stdout
+    assert_that(result.returncode).is_equal_to(1)
+    assert_that(result.stdout).contains("'description' must be a string, got list")
     logger.info("[TEST] cwd skills tree used for frontmatter: rc={}", result.returncode)
 
 
@@ -267,6 +268,8 @@ def test_validate_rejects_agents_entry_with_path_like_skill_name(
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert result.returncode == 1
-    assert "AGENTS.md contains invalid skill name: ../scripts" in result.stdout
+    assert_that(result.returncode).is_equal_to(1)
+    assert_that(result.stdout).contains(
+        "AGENTS.md contains invalid skill name: ../scripts"
+    )
     logger.info("[TEST] path-like skill name rejected: rc={}", result.returncode)

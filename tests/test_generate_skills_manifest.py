@@ -10,6 +10,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from assertpy import assert_that
 
 
 def _load_generate_skills_manifest_module() -> ModuleType:
@@ -72,10 +73,12 @@ def test_compute_manifest_hashes_match_sha256_of_file_bytes(
 
     manifest = mod._compute_manifest(repo_root=tmp_path)
 
-    assert manifest == {
-        "alpha": hashlib.sha256(alpha.read_bytes()).hexdigest(),
-        "beta": hashlib.sha256(beta.read_bytes()).hexdigest(),
-    }
+    assert_that(manifest).is_equal_to(
+        {
+            "alpha": hashlib.sha256(alpha.read_bytes()).hexdigest(),
+            "beta": hashlib.sha256(beta.read_bytes()).hexdigest(),
+        }
+    )
 
 
 def test_compute_manifest_skips_non_skill_entries(tmp_path: Path) -> None:
@@ -88,7 +91,7 @@ def test_compute_manifest_skips_non_skill_entries(tmp_path: Path) -> None:
 
     manifest = mod._compute_manifest(repo_root=tmp_path)
 
-    assert sorted(manifest) == ["alpha"]
+    assert_that(sorted(manifest)).is_equal_to(["alpha"])
 
 
 def test_compute_manifest_requires_skills_directory(tmp_path: Path) -> None:
@@ -108,9 +111,9 @@ def test_render_manifest_is_sorted_with_trailing_newline(
     mod = _load_generate_skills_manifest_module()
     rendered = mod._render_manifest(manifest={"zeta": "00", "alpha": "11"})
 
-    assert rendered.endswith("\n")
-    assert not rendered.endswith("\n\n")
-    assert list(json.loads(rendered)) == ["alpha", "zeta"]
+    assert_that(rendered).ends_with("\n")
+    assert_that(rendered.endswith("\n\n")).is_false()
+    assert_that(list(json.loads(rendered))).is_equal_to(["alpha", "zeta"])
 
 
 def test_generator_is_deterministic_across_runs(tmp_path: Path) -> None:
@@ -129,9 +132,9 @@ def test_generator_is_deterministic_across_runs(tmp_path: Path) -> None:
         ["--repo-root", str(tmp_path), "--output", str(second)],
     )
 
-    assert exit_first == 0
-    assert exit_second == 0
-    assert first.read_bytes() == second.read_bytes()
+    assert_that(exit_first).is_equal_to(0)
+    assert_that(exit_second).is_equal_to(0)
+    assert_that(first.read_bytes()).is_equal_to(second.read_bytes())
 
 
 def test_check_passes_for_fresh_manifest(tmp_path: Path) -> None:
@@ -141,18 +144,16 @@ def test_check_passes_for_fresh_manifest(tmp_path: Path) -> None:
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     manifest_path = tmp_path / "skills-manifest.json"
 
-    assert (
+    assert_that(
         mod.main(
             ["--repo-root", str(tmp_path), "--output", str(manifest_path)],
         )
-        == 0
-    )
-    assert (
+    ).is_equal_to(0)
+    assert_that(
         mod.main(
             ["--repo-root", str(tmp_path), "--check", str(manifest_path)],
         )
-        == 0
-    )
+    ).is_equal_to(0)
 
 
 @pytest.mark.parametrize(
@@ -172,12 +173,11 @@ def test_check_fails_on_drift(
     mod = _load_generate_skills_manifest_module()
     skill_file = _write_skill(repo_root=tmp_path, skill_id="alpha")
     manifest_path = tmp_path / "skills-manifest.json"
-    assert (
+    assert_that(
         mod.main(
             ["--repo-root", str(tmp_path), "--output", str(manifest_path)],
         )
-        == 0
-    )
+    ).is_equal_to(0)
 
     if mutation == "edit-skill":
         skill_file.write_text("---\nname: alpha\n---\nchanged\n", encoding="utf-8")
@@ -188,10 +188,9 @@ def test_check_fails_on_drift(
         ["--repo-root", str(tmp_path), "--check", str(manifest_path)],
     )
 
-    assert exit_code == 1
+    assert_that(exit_code).is_equal_to(1)
     captured = capsys.readouterr()
-    assert "Manifest is stale" in captured.err
-    assert "---" in captured.err
+    assert_that(captured.err).contains("Manifest is stale", "---")
 
 
 def test_check_fails_when_manifest_missing(tmp_path: Path) -> None:
@@ -204,4 +203,4 @@ def test_check_fails_when_manifest_missing(tmp_path: Path) -> None:
         ["--repo-root", str(tmp_path), "--check", str(tmp_path / "missing.json")],
     )
 
-    assert exit_code == 1
+    assert_that(exit_code).is_equal_to(1)

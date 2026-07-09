@@ -11,6 +11,7 @@ import subprocess  # nosec B404 - only CompletedProcess is constructed
 from pathlib import Path
 
 import pytest
+from assertpy import assert_that
 
 import audit_lgtm_ci_adoption as audit
 
@@ -72,10 +73,12 @@ def test_find_pins_collects_names_and_shas(tmp_path: Path) -> None:
     _write_workflow(tmp_path, "ci.yml", "reusable-quality.yml", SHA_A)
     _write_workflow(tmp_path, "tag.yml", "reusable-release-auto-tag.yml", SHA_A)
     pins = audit.find_lgtm_ci_pins(workflows_dir=tmp_path)
-    assert pins == {
-        "reusable-quality.yml": {SHA_A},
-        "reusable-release-auto-tag.yml": {SHA_A},
-    }
+    assert_that(pins).is_equal_to(
+        {
+            "reusable-quality.yml": {SHA_A},
+            "reusable-release-auto-tag.yml": {SHA_A},
+        },
+    )
 
 
 def test_find_pins_empty_dir(tmp_path: Path) -> None:
@@ -84,7 +87,7 @@ def test_find_pins_empty_dir(tmp_path: Path) -> None:
         "jobs: {}\n",
         encoding="utf-8",
     )
-    assert audit.find_lgtm_ci_pins(workflows_dir=tmp_path) == {}
+    assert_that(audit.find_lgtm_ci_pins(workflows_dir=tmp_path)).is_equal_to({})
 
 
 def test_find_pins_preserves_duplicate_name_mixed_shas(tmp_path: Path) -> None:
@@ -92,7 +95,7 @@ def test_find_pins_preserves_duplicate_name_mixed_shas(tmp_path: Path) -> None:
     _write_workflow(tmp_path, "ci.yml", "reusable-quality.yml", SHA_A)
     _write_workflow(tmp_path, "ci-old.yml", "reusable-quality.yml", SHA_B)
     pins = audit.find_lgtm_ci_pins(workflows_dir=tmp_path)
-    assert pins == {"reusable-quality.yml": {SHA_A, SHA_B}}
+    assert_that(pins).is_equal_to({"reusable-quality.yml": {SHA_A, SHA_B}})
     with pytest.raises(ValueError, match="mixed"):
         audit.resolve_pinned_ref(pins=pins)
 
@@ -101,7 +104,7 @@ def test_find_pins_reads_yaml_extension(tmp_path: Path) -> None:
     """Workflow files ending in .yaml are scanned like .yml."""
     _write_workflow(tmp_path, "ci.yaml", "reusable-quality.yml", SHA_A)
     pins = audit.find_lgtm_ci_pins(workflows_dir=tmp_path)
-    assert pins == {"reusable-quality.yml": {SHA_A}}
+    assert_that(pins).is_equal_to({"reusable-quality.yml": {SHA_A}})
 
 
 def test_resolve_pinned_ref_single() -> None:
@@ -109,7 +112,7 @@ def test_resolve_pinned_ref_single() -> None:
     ref = audit.resolve_pinned_ref(
         pins={"a.yml": {SHA_A}, "b.yml": {SHA_A}},
     )
-    assert ref == SHA_A
+    assert_that(ref).is_equal_to(SHA_A)
 
 
 def test_resolve_pinned_ref_rejects_empty_and_mixed() -> None:
@@ -139,7 +142,9 @@ def test_list_available_filters_reusable(
         ),
     )
     available = audit.list_available_workflows(ref=SHA_A)
-    assert available == ["reusable-codeql.yml", "reusable-validate.yml"]
+    assert_that(available).is_equal_to(
+        ["reusable-codeql.yml", "reusable-validate.yml"],
+    )
 
 
 def test_list_available_gh_failure(
@@ -161,10 +166,10 @@ def test_build_report_sections_and_counts() -> None:
         available=["reusable-a.yml", "reusable-b.yml", "reusable-c.yml"],
         called={"reusable-b.yml"},
     )
-    assert "Adopted (1):" in report
-    assert "  reusable-b.yml" in report
-    assert "Available, unadopted (2):" in report
-    assert "1/3 available reusable workflows adopted" in report
+    assert_that(report).contains("Adopted (1):")
+    assert_that(report).contains("  reusable-b.yml")
+    assert_that(report).contains("Available, unadopted (2):")
+    assert_that(report).contains("1/3 available reusable workflows adopted")
 
 
 def test_main_end_to_end(
@@ -181,10 +186,10 @@ def test_main_end_to_end(
     )
     code = audit.main(argv=["--workflows-dir", str(tmp_path)])
     out = capsys.readouterr().out
-    assert code == 0
-    assert f"lgtm-ci pinned ref: {SHA_A}" in out
-    assert "Adopted (1):" in out
-    assert "Available, unadopted (1):" in out
+    assert_that(code).is_equal_to(0)
+    assert_that(out).contains(f"lgtm-ci pinned ref: {SHA_A}")
+    assert_that(out).contains("Adopted (1):")
+    assert_that(out).contains("Available, unadopted (1):")
 
 
 def test_main_no_pins_errors(
@@ -194,8 +199,8 @@ def test_main_no_pins_errors(
     """main() exits 2 when no lgtm-ci callers exist."""
     code = audit.main(argv=["--workflows-dir", str(tmp_path)])
     err = capsys.readouterr().err
-    assert code == 2
-    assert "no lgtm-ci" in err
+    assert_that(code).is_equal_to(2)
+    assert_that(err).contains("no lgtm-ci")
 
 
 def test_main_mixed_pins_errors(
@@ -207,5 +212,5 @@ def test_main_mixed_pins_errors(
     _write_workflow(tmp_path, "ci-old.yml", "reusable-quality.yml", SHA_B)
     code = audit.main(argv=["--workflows-dir", str(tmp_path)])
     err = capsys.readouterr().err
-    assert code != 0
-    assert "mixed" in err
+    assert_that(code).is_not_equal_to(0)
+    assert_that(err).contains("mixed")
