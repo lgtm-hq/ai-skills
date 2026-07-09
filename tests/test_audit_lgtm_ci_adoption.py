@@ -73,8 +73,8 @@ def test_find_pins_collects_names_and_shas(tmp_path: Path) -> None:
     _write_workflow(tmp_path, "tag.yml", "reusable-release-auto-tag.yml", SHA_A)
     pins = audit.find_lgtm_ci_pins(workflows_dir=tmp_path)
     assert pins == {
-        "reusable-quality.yml": SHA_A,
-        "reusable-release-auto-tag.yml": SHA_A,
+        "reusable-quality.yml": {SHA_A},
+        "reusable-release-auto-tag.yml": {SHA_A},
     }
 
 
@@ -87,10 +87,27 @@ def test_find_pins_empty_dir(tmp_path: Path) -> None:
     assert audit.find_lgtm_ci_pins(workflows_dir=tmp_path) == {}
 
 
+def test_find_pins_preserves_duplicate_name_mixed_shas(tmp_path: Path) -> None:
+    """Same workflow name at two SHAs keeps both refs for mixed detection."""
+    _write_workflow(tmp_path, "ci.yml", "reusable-quality.yml", SHA_A)
+    _write_workflow(tmp_path, "ci-old.yml", "reusable-quality.yml", SHA_B)
+    pins = audit.find_lgtm_ci_pins(workflows_dir=tmp_path)
+    assert pins == {"reusable-quality.yml": {SHA_A, SHA_B}}
+    with pytest.raises(ValueError, match="mixed"):
+        audit.resolve_pinned_ref(pins=pins)
+
+
+def test_find_pins_reads_yaml_extension(tmp_path: Path) -> None:
+    """Workflow files ending in .yaml are scanned like .yml."""
+    _write_workflow(tmp_path, "ci.yaml", "reusable-quality.yml", SHA_A)
+    pins = audit.find_lgtm_ci_pins(workflows_dir=tmp_path)
+    assert pins == {"reusable-quality.yml": {SHA_A}}
+
+
 def test_resolve_pinned_ref_single() -> None:
     """A single common SHA resolves cleanly."""
     ref = audit.resolve_pinned_ref(
-        pins={"a.yml": SHA_A, "b.yml": SHA_A},
+        pins={"a.yml": {SHA_A}, "b.yml": {SHA_A}},
     )
     assert ref == SHA_A
 
@@ -101,7 +118,7 @@ def test_resolve_pinned_ref_rejects_empty_and_mixed() -> None:
         audit.resolve_pinned_ref(pins={})
     with pytest.raises(ValueError, match="mixed"):
         audit.resolve_pinned_ref(
-            pins={"a.yml": SHA_A, "b.yml": SHA_B},
+            pins={"a.yml": {SHA_A}, "b.yml": {SHA_B}},
         )
 
 

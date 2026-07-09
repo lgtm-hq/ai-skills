@@ -36,7 +36,7 @@ _USES_RE = re.compile(
 
 def find_lgtm_ci_pins(
     workflows_dir: Path,
-) -> dict[str, str]:
+) -> dict[str, set[str]]:
     """Find lgtm-ci reusable-workflow calls in local workflow files.
 
     Args:
@@ -44,23 +44,30 @@ def find_lgtm_ci_pins(
             YAML files (typically ``.github/workflows``).
 
     Returns:
-        Mapping of called lgtm-ci workflow file name to the 40-char SHA
-        it is pinned at.
+        Mapping of called lgtm-ci workflow file name to the set of
+        40-char SHAs it is pinned at across all callers. Multiple SHAs
+        for one name are preserved so mixed pins are not collapsed.
     """
-    pins: dict[str, str] = {}
-    for path in sorted(workflows_dir.glob("*.yml")):
+    pins: dict[str, set[str]] = {}
+    workflow_paths = sorted(
+        {
+            *workflows_dir.glob("*.yml"),
+            *workflows_dir.glob("*.yaml"),
+        },
+    )
+    for path in workflow_paths:
         for match in _USES_RE.finditer(path.read_text(encoding="utf-8")):
-            pins[match.group("name")] = match.group("ref")
+            pins.setdefault(match.group("name"), set()).add(match.group("ref"))
     return pins
 
 
 def resolve_pinned_ref(
-    pins: dict[str, str],
+    pins: dict[str, set[str]],
 ) -> str:
     """Resolve the single SHA this repository pins lgtm-ci at.
 
     Args:
-        pins: Mapping of workflow name to pinned SHA, as returned by
+        pins: Mapping of workflow name to pinned SHA set, as returned by
             :func:`find_lgtm_ci_pins`.
 
     Returns:
@@ -70,7 +77,7 @@ def resolve_pinned_ref(
         ValueError: If no lgtm-ci calls were found, or if callers pin
             more than one distinct SHA.
     """
-    refs = sorted(set(pins.values()))
+    refs = sorted({ref for ref_set in pins.values() for ref in ref_set})
     if not refs:
         msg = "no lgtm-ci reusable-workflow calls found"
         raise ValueError(msg)
