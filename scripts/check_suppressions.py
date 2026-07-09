@@ -8,9 +8,11 @@ line, e.g.::
 
     subprocess.run(["validate.sh"])  # nosec B603 - fixed argv list
 
-The heuristic is cheap by design: after the first marker on a line
+The heuristic is cheap by design: after the last marker on a line
 there must be ``- <text>`` (a dash surrounded by whitespace, then a
-reason). One trailing reason covers multiple markers on the same line.
+reason). One trailing reason after the final marker covers every
+marker on that line; a reason between markers does not justify a
+later bare suppression.
 
 Prints one line per violation (including the file path and line
 number) and exits 1 on any violation.
@@ -80,10 +82,11 @@ def find_unjustified_suppressions(
             violations.append(f"{relative}: cannot read file: {exc}")
             continue
         for line_number, line in enumerate(text.splitlines(), start=1):
-            match = MARKER_PATTERN.search(line)
-            if match is None:
+            matches = list(MARKER_PATTERN.finditer(line))
+            if not matches:
                 continue
-            if REASON_PATTERN.search(line, match.end()) is None:
+            last_match = matches[-1]
+            if REASON_PATTERN.search(line, last_match.end()) is None:
                 violations.append(
                     f"{relative}:{line_number}: suppression without inline "
                     f"'- reason' justification: {line.strip()}",

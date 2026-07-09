@@ -99,6 +99,24 @@ def test_dash_before_marker_does_not_count_as_reason(
     logger.info("[TEST] pre-marker dash rejected: {}", violations[0])
 
 
+def test_reason_before_later_marker_is_flagged(
+    tmp_path: Path,
+) -> None:
+    """Reject a justified marker followed by a bare later suppression."""
+    root = _write_module(
+        tmp_path=tmp_path,
+        line=f"x = call()  {NOSEC} B603 - fixed argv  {NOQA}: E501",
+    )
+
+    violations = find_unjustified_suppressions(root=root)
+
+    assert len(violations) == 1
+    logger.info(
+        "[TEST] later bare marker flagged: {}",
+        violations[0],
+    )
+
+
 def test_lines_without_markers_pass(
     tmp_path: Path,
 ) -> None:
