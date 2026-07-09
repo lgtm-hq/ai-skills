@@ -14,15 +14,20 @@ jobs:
   version-pr:
     # lgtm-ci owns the release lifecycle; this repo stays a thin caller.
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-release-version-pr.yml@fc73b3ab8342a24597c12d137d6ff7fca84b9fe2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-release-version-pr.yml@17483d234808cb3a2019afdff0dea29593f24a05
     with:
       max-bump: patch
       ecosystems: python
+      # Keeps README install examples pinned to the release being cut.
+      version-update-script: scripts/update-readme-version.sh
       auto-merge: true
-      tooling-ref: "fc73b3ab8342a24597c12d137d6ff7fca84b9fe2"
+      tooling-ref: "17483d234808cb3a2019afdff0dea29593f24a05"
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
     permissions:
       contents: write
       pull-requests: write
+      # report-release-failure job: read run metadata, file failure issues.
+      actions: read
+      issues: write

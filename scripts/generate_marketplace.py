@@ -29,6 +29,7 @@ class BundleGroup:
 
     name: str
     skills: tuple[str, ...]
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -126,13 +127,21 @@ def _parse_bundle_group(*, group_id: str, group: object) -> BundleGroup:
     if not isinstance(skills, list):
         msg = f"Group {group_id!r} must have a 'skills' list"
         raise TypeError(msg)
+    description = group.get("description", "")
+    if not isinstance(description, str):
+        msg = f"Group {group_id!r} 'description' must be a string"
+        raise TypeError(msg)
     parsed_skills: list[str] = []
     for skill_name in skills:
         if not isinstance(skill_name, str):
             msg = f"Group {group_id!r} has a non-string skill entry"
             raise TypeError(msg)
         parsed_skills.append(skill_name)
-    return BundleGroup(name=display_name, skills=tuple(parsed_skills))
+    return BundleGroup(
+        name=display_name,
+        skills=tuple(parsed_skills),
+        description=description,
+    )
 
 
 def _load_bundles(*, repo_root: Path) -> BundlesDocument:
@@ -251,6 +260,23 @@ def _render_marketplace(*, manifest: MarketplaceManifest) -> str:
     return json.dumps(manifest.to_dict(), indent=2, ensure_ascii=False) + "\n"
 
 
+def load_validated_bundles(*, repo_root: Path) -> BundlesDocument:
+    """Load ``bundles.yaml`` and validate full, duplicate-free skill coverage.
+
+    Shared by the marketplace and README generators so both read the same
+    validated view of ``bundles.yaml``.
+
+    Args:
+        repo_root: Repository root path.
+
+    Returns:
+        Parsed and validated bundle document.
+    """
+    bundles = _load_bundles(repo_root=repo_root)
+    _validate_bundles(repo_root=repo_root, bundles=bundles)
+    return bundles
+
+
 def generate_marketplace(*, repo_root: Path) -> str:
     """Validate bundles and return rendered ``marketplace.json`` content.
 
@@ -260,8 +286,7 @@ def generate_marketplace(*, repo_root: Path) -> str:
     Returns:
         Rendered JSON for ``.claude-plugin/marketplace.json``.
     """
-    bundles = _load_bundles(repo_root=repo_root)
-    _validate_bundles(repo_root=repo_root, bundles=bundles)
+    bundles = load_validated_bundles(repo_root=repo_root)
     manifest = _build_marketplace(bundles=bundles)
     return _render_marketplace(manifest=manifest)
 
