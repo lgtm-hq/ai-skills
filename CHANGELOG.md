@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **skills**: codify the lint-ignore policy (#89): `lint` Rules now require
+  root-cause fixes first, narrowest single-line ignores with an inline
+  `- reason` justification, and documented exceptions for blanket/file-level
+  ignores; `stand-py` Ignoring Issues aligned with a Don't/Do pair; new
+  `scripts/check_suppressions.py` (run by `scripts/validate.sh`) rejects
+  suppression markers lacking a justification
+
 ### Changed
 
 ### Deprecated

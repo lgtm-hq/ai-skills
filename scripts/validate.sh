@@ -21,6 +21,9 @@ Checks:
      (regenerate via: uv run python scripts/generate_readme.py)
   6. skills-manifest generator is deterministic (two runs produce identical
      output; see scripts/generate_skills_manifest.py)
+  6. lint-suppression comments in Python files carry an inline '- reason'
+     justification (lint skill ignore policy) via:
+     uv run python scripts/check_suppressions.py
 EOF
   exit 0
 fi
@@ -54,6 +57,12 @@ if ! command -v uv >/dev/null 2>&1; then
   errors=$((errors + 1))
 elif ! uv run python "$script_dir/validate_skills.py" skills; then
   errors=$((errors + 1))
+fi
+
+if command -v uv >/dev/null 2>&1; then
+  if ! uv run python "$script_dir/check_suppressions.py"; then
+    errors=$((errors + 1))
+  fi
 fi
 
 if [[ -f "AGENTS.md" ]]; then
