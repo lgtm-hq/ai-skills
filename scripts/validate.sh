@@ -121,10 +121,13 @@ fi
 
 if [[ -d "tests" ]]; then
   # Owner standard (#88): all test assertions use assertpy, never bare
-  # `assert`. A bare assert statement always starts a line, so this grep is
-  # reliable; pytest.raises/approx idioms are not assert statements and
-  # never match.
-  if bare_asserts=$(grep -rEn '^[[:space:]]*assert[[:space:]]' tests/ --include='*.py'); then
+  # `assert`. Match `assert expr` and `assert(expr)`; use find+grep so the
+  # check works with BSD grep (macOS) as well as GNU grep. pytest.raises /
+  # approx idioms are not assert statements and never match.
+  bare_asserts=$(
+    find tests -name '*.py' -exec grep -En '^[[:space:]]*assert([[:space:]]|\()' {} + 2>/dev/null || true
+  )
+  if [[ -n "${bare_asserts}" ]]; then
     echo "Bare assert statements found in tests/ (use assertpy assert_that):"
     echo "$bare_asserts"
     errors=$((errors + 1))
