@@ -52,3 +52,34 @@ unavailable or a skill here explicitly overrides that preference.
 Total skills: 36
 
 <!-- markdownlint-enable MD013 -->
+
+## Cursor Cloud specific instructions
+
+This repo is a Python tooling + Agent Skills catalog (no server or GUI). Python
+tooling runs through `uv` (Python >= 3.13); see `CONTRIBUTING.md` for the
+canonical local-dev commands. The "app" is the catalog generator scripts plus
+`scripts/validate.sh`.
+
+Key non-obvious points for working here:
+
+- Some `lintro` tools are external system binaries not installed by `uv sync`
+  (for example semgrep, shellcheck, shfmt, taplo, yamllint). They show as SKIP
+  in `uv run lintro chk` output; that is expected and not a lint failure.
+- Running `scripts/validate.sh` requires ripgrep (`rg`), which is preinstalled
+  in Cursor Cloud. It also runs the `--check` mode of the marketplace and README
+  generators, so those files must be regenerated after any skill change.
+- The `## Skills` list and the `Total skills:` line in this file are generated
+  by `scripts/generate_agents_md.py`; do not hand-edit them. This section lives
+  after `Total skills:` and is preserved across regeneration.
+- After adding, renaming, or removing a skill, register it in `bundles.yaml`
+  and regenerate `AGENTS.md`, `.claude-plugin/marketplace.json`, and `README.md`
+  (see `CONTRIBUTING.md`), then re-run `bash scripts/validate.sh`.
+
+Quick reference:
+
+```text
+uv sync --frozen                                  # install dev deps
+uv run lintro chk                                 # lint
+uv run pytest --cov=scripts --cov-report=term-missing  # tests + coverage
+bash scripts/validate.sh                          # validate catalog structure
+```
