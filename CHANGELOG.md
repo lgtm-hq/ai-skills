@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **ci**: lgtm-ci adoption audit script (`scripts/audit_lgtm_ci_adoption.py`)
+  and adoption plan (`docs/lgtm-ci-adoption.md`) for #90 — inventory and
+  classification only; adoption lands in follow-up PRs
 - **skills**: codify the lint-ignore policy (#89): `lint` Rules now require
   root-cause fixes first, narrowest single-line ignores with an inline
   `- reason` justification, and documented exceptions for blanket/file-level
