@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ci**: lgtm-ci adoption audit script (`scripts/audit_lgtm_ci_adoption.py`)
   and adoption plan (`docs/lgtm-ci-adoption.md`) for #90 — inventory and
   classification only; adoption lands in follow-up PRs
+- **skills**: codify the lint-ignore policy (#89): `lint` Rules now require
+  root-cause fixes first, narrowest single-line ignores with an inline
+  `- reason` justification, and documented exceptions for blanket/file-level
+  ignores; `stand-py` Ignoring Issues aligned with a Don't/Do pair; new
+  `scripts/check_suppressions.py` (run by `scripts/validate.sh`) rejects
+  suppression markers lacking a justification
 
 ### Changed
 
@@ -24,6 +30,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.1.23] - 2026-07-08
+
+### Added
+
+- **readme**: revamp README with generated skills section and pin drift guards (#118) (f1e88ef)
+- **docs**: generate the README skills section from bundles.yaml with hyperlinked SKILL.md entries (scripts/generate_readme.py, wired into scripts/validate.sh)
+- **release**: auto-bump README release-tag pins in the version PR (scripts/update-readme-version.sh via version-update-script)
+
+### Changed
+
+- **docs**: revamp README — bundle sections with per-skill links, collapsible install variants and known limitations, unpinned-install warning callout
+
+### Fixed
+
+- **docs**: sync README bundles with bundles.yaml (stand-odin, implement-issues, test-ui-qsf were missing) and refresh stale v0.1.10 install pins
+
+## [0.1.22] - 2026-07-06
+
+### Added
+
+- **ci**: add merge_group trigger for merge queue support (#113) (c38a3cd)
+
+## [0.1.21] - 2026-07-06
+
+### Added
+
+- **implement-issues**: add orchestrator skill for parallel issue implementation (#109) (6a41ca7)
+
+## [0.1.20] - 2026-07-06
+
+### Added
+
+- **babysit-pr**: add --merge flag for merge-queue shepherding (#108) (53ed625)
+
+## [0.1.19] - 2026-07-06
+
+### Added
+
+- **analyze-project**: add ground rules, backlog/dead-surface checks, scorecard (#107) (fa81383)
+
+## [0.1.18] - 2026-07-06
+
+### Added
+
+- **analyze-code**: add ground rules, repo-shape table, and supply-chain checks (#106) (9a5e1a4)
+
+### Changed
+
+- **design**: sync with upstream frontend-design (#92) (cf53536)
+- **design**: sync `skills/design/SKILL.md` body with the rewritten upstream
+  `anthropics/claude-code` frontend-design skill v1.1.0 (studio-brief framing,
+  two-pass plan/critique process, writing-for-design section); refreshed the
+  skill description to match the new intent and regenerated `AGENTS.md` (#82)
+
+## [0.1.17] - 2026-07-06
+
+### Changed
+
+- **deps**: update digest (#46) (6bfd56d)
+- **deps**: update actions/checkout to v7.0.0 (major) (#74) (3fde4ea)
+
+### Fixed
+
+- **ci**: grant release failure-reporting permissions to callers (#99) (3faa362)
+- **ci**: repin lgtm-ci and adopt release fixes (#98) (85de1e2)
 
 ## [0.1.16] - 2026-07-05
 
@@ -240,7 +312,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.16...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.23...HEAD
+[0.1.23]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.22...v0.1.23
+[0.1.22]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.21...v0.1.22
+[0.1.21]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.20...v0.1.21
+[0.1.20]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.19...v0.1.20
+[0.1.19]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.18...v0.1.19
+[0.1.18]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.17...v0.1.18
+[0.1.17]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.13...v0.1.14

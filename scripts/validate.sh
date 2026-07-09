@@ -17,8 +17,13 @@ Checks:
      uv run python scripts/generate_agents_md.py)
   4. bundles.yaml covers all skills and marketplace.json is in sync (regenerate via:
      uv run python scripts/generate_marketplace.py)
-  5. skills-manifest generator is deterministic (two runs produce identical
+  5. README.md generated skills section and release-tag pins are in sync
+     (regenerate via: uv run python scripts/generate_readme.py)
+  6. skills-manifest generator is deterministic (two runs produce identical
      output; see scripts/generate_skills_manifest.py)
+  6. lint-suppression comments in Python files carry an inline '- reason'
+     justification (lint skill ignore policy) via:
+     uv run python scripts/check_suppressions.py
 EOF
   exit 0
 fi
@@ -52,6 +57,12 @@ if ! command -v uv >/dev/null 2>&1; then
   errors=$((errors + 1))
 elif ! uv run python "$script_dir/validate_skills.py" skills; then
   errors=$((errors + 1))
+fi
+
+if command -v uv >/dev/null 2>&1; then
+  if ! uv run python "$script_dir/check_suppressions.py"; then
+    errors=$((errors + 1))
+  fi
 fi
 
 if [[ -f "AGENTS.md" ]]; then
@@ -93,6 +104,17 @@ if [[ -f "bundles.yaml" ]]; then
   fi
 else
   echo "bundles.yaml not found. Skipping marketplace consistency checks."
+fi
+
+if [[ -f "README.md" && -f "scripts/generate_readme.py" ]]; then
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "uv is required to validate README.md; please install it."
+    errors=$((errors + 1))
+  elif ! uv run python scripts/generate_readme.py --check; then
+    errors=$((errors + 1))
+  fi
+else
+  echo "README.md or its generator not found. Skipping README consistency checks."
 fi
 
 if [[ ! -f "scripts/generate_skills_manifest.py" ]]; then

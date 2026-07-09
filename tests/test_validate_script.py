@@ -28,7 +28,11 @@ def _copy_validate_script(
     script_path = tmp_path / "scripts" / "validate.sh"
     script_path.parent.mkdir(parents=True, exist_ok=False)
     shutil.copy2(src=repo_root / "scripts" / "validate.sh", dst=script_path)
-    for helper in ("validate_skills.py", "skill_frontmatter.py"):
+    for helper in (
+        "validate_skills.py",
+        "skill_frontmatter.py",
+        "check_suppressions.py",
+    ):
         shutil.copy2(
             src=repo_root / "scripts" / helper,
             dst=script_path.parent / helper,
@@ -56,8 +60,8 @@ def _run_validate(
     # The fake repo root has no pyproject.toml; point `uv run` at the real
     # project so the frontmatter validator resolves its dependencies.
     env["UV_PROJECT"] = str(REPO_ROOT)
-    return subprocess.run(  # nosec B603 B607  # noqa: S603
-        ["bash", str(script_path)],  # noqa: S607
+    return subprocess.run(  # noqa: S603 # nosec B603 B607 - fixed bash argv, no shell
+        ["bash", str(script_path)],  # noqa: S607 - bash resolved from PATH deliberately
         cwd=cwd,
         check=False,
         text=True,
