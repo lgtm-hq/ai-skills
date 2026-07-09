@@ -42,7 +42,7 @@ def fetch_upstream_text(
         raise RuntimeError(msg)
     url = RAW_URL_TEMPLATE.format(repo=repo, ref=ref, path=path)
     try:
-        # nosemgrep -- URL template pins scheme and host; repo/path vetted above
+        # nosemgrep - URL template pins scheme and host; repo/path vetted above
         with urllib.request.urlopen(  # noqa: S310 # nosec B310 - host pinned
             url,
             timeout=FETCH_TIMEOUT_SECONDS,

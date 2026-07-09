@@ -27,7 +27,7 @@ jobs:
       - name: Harden runner
         # Pinned to SHA for supply chain security
         # yamllint disable-line rule:line-length
-        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5  # v2.19.3
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
 
@@ -41,7 +41,7 @@ jobs:
       - name: Install uv
         # Pinned to SHA for supply chain security
         # yamllint disable-line rule:line-length
-        uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3  # v8.3.0
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
 
       - name: Check upstream drift and file tracking issue
         env:
