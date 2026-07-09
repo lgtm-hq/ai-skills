@@ -27,17 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **ci**: run pytest suite via CI (#97) (c3cf40b)
 
-- **ci**: run the pytest suite in CI via lgtm-ci `reusable-test-python.yml` (#95)
-- **ci**: lgtm-ci adoption audit script (`scripts/audit_lgtm_ci_adoption.py`)
-  and adoption plan (`docs/lgtm-ci-adoption.md`) for #90 — inventory and
-  classification only; adoption lands in follow-up PRs
-- **skills**: codify the lint-ignore policy (#89): `lint` Rules now require
-  root-cause fixes first, narrowest single-line ignores with an inline
-  `- reason` justification, and documented exceptions for blanket/file-level
-  ignores; `stand-py` Ignoring Issues aligned with a Don't/Do pair; new
-  `scripts/check_suppressions.py` (run by `scripts/validate.sh`) rejects
-  suppression markers lacking a justification
-
 ### Changed
 
 - **lint**: codify root-cause-first ignore policy (#93) (2d7b4bd)
