@@ -122,4 +122,59 @@ describe("install", () => {
       ),
     ).rejects.toThrow("Unknown skill for vendor anthropics: typo");
   });
+
+  test("defaults unset scope to global for both CLI and lock", async () => {
+    let received = [];
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-home-"));
+    try {
+      await install(
+        {
+          ...unattendedOptions,
+          global: false,
+          project: false,
+          skills: ["lint"],
+          bundle: null,
+        },
+        async (args) => {
+          received = args;
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { home },
+      );
+
+      expect(received).toContain("-g");
+      const lock = JSON.parse(await readFile(join(home, ".ai-skills", "lock.json"), "utf8"));
+      expect(lock.scope).toBe("global");
+      expect(lock.skills.lint.vendor).toBe("lgtm-hq");
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
+  });
+
+  test("fails closed on a malformed lock before invoking skills", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-bad-lock-"));
+    let ran = false;
+    try {
+      await Bun.write(join(cwd, "ai-skills-lock.json"), '{"version":99}\n');
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            global: false,
+            project: true,
+            skills: ["lint"],
+            bundle: null,
+          },
+          async () => {
+            ran = true;
+          },
+          undefined,
+          { cwd },
+        ),
+      ).rejects.toThrow("Invalid gateway lockfile");
+      expect(ran).toBe(false);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
 });

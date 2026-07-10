@@ -42,6 +42,8 @@ export function buildSkillsArguments(options, source) {
  * @returns {string[]} Arguments passed to `bunx`.
  */
 export function buildSkillsRemoveArguments(options, skills) {
+  // Upstream `skills remove` mirrors `add`: `-g` selects global; omitting it
+  // targets the project scope. There is no separate `--project` remove flag.
   const args = [`skills@^${MINIMUM_SKILLS_VERSION}`, "remove", ...skills];
   if (options.global) {
     args.push("-g");
