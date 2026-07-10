@@ -12,7 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **gateway**: adopt existing skills-lock installs into the gateway lockfile (#139)
-- **gateway**: document gateway install, vendors, locks, and npm publish (#137)
 
 ### Changed
 
@@ -23,6 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.2.0] - 2026-07-10
+
+### Added
+
+- **gateway**: add anthropics/claude-code vendor via skillRoots (#151) (ad9afb3)
+
+- **gateway**: register anthropics/claude-code vendor via skillRoots (#138)
+- **gateway**: document gateway install, vendors, locks, and npm publish (#137)
+
+### Changed
+
+- **gateway**: document gateway install, vendors, and escape hatches (#147) (af95a59)
 
 ## [0.1.27] - 2026-07-10
 
@@ -351,7 +363,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.27...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.27...v0.2.0
 [0.1.27]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.26...v0.1.27
 [0.1.26]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.24...v0.1.25

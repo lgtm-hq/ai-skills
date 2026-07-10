@@ -33,6 +33,19 @@ describe("parseArguments adopt", () => {
   });
 });
 
+describe("adoptSkills scope", () => {
+  test("requires an explicit scope even interactively", async () => {
+    await expect(
+      adoptSkills({
+        agents: [],
+        global: false,
+        project: false,
+        yes: false,
+      }),
+    ).rejects.toThrow("adopt requires an explicit --global or --project scope");
+  });
+});
+
 describe("mapSkillsLockEntry", () => {
   test("maps a github skills-lock entry onto a gateway lock record", () => {
     const mapped = mapSkillsLockEntry(
@@ -65,6 +78,41 @@ describe("mapSkillsLockEntry", () => {
       mapSkillsLockEntry("pdf", { sourceUrl: "anthropics/skills" }, ["cursor"], vendors),
     ).toEqual({
       ambiguous: "pdf: skills-lock entry has no commit/tag ref",
+    });
+  });
+
+  test("marks non-registry sources as ambiguous instead of vendor=external", () => {
+    expect(
+      mapSkillsLockEntry(
+        "weird",
+        {
+          sourceUrl: "someone/else",
+          ref: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        },
+        ["cursor"],
+        vendors,
+      ),
+    ).toEqual({
+      ambiguous: "weird: source someone/else is not in the gateway vendor registry",
+    });
+  });
+
+  test("normalizes matched vendor repo casing from the registry", () => {
+    const mapped = mapSkillsLockEntry(
+      "pdf",
+      {
+        sourceUrl: "https://github.com/Anthropics/Skills.git",
+        ref: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+      },
+      ["cursor"],
+      vendors,
+      () => new Date("2026-07-10T21:00:00.000Z"),
+    );
+    expect(mapped).toMatchObject({
+      entry: {
+        repo: "anthropics/skills",
+        vendor: "anthropics",
+      },
     });
   });
 });

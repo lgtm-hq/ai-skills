@@ -109,6 +109,41 @@ describe("install", () => {
     }
   });
 
+  test("installs a plugin-buried claude-code skill from the baked index", async () => {
+    let received = [];
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-install-"));
+    try {
+      await install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["frontend-design"],
+          vendor: "anthropics-claude-code",
+        },
+        async (args) => {
+          received = args;
+        },
+        undefined,
+        { cwd },
+      );
+
+      expect(received).toContain("anthropics/claude-code@15a21e1b4e240e2da6a4953d5f148a806c9c9bb2");
+      expect(received).toContain("--skill");
+      expect(received).toContain("frontend-design");
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.skills["frontend-design"]).toMatchObject({
+        repo: "anthropics/claude-code",
+        sha: "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2",
+        skillPath: "plugins/frontend-design/skills/frontend-design/SKILL.md",
+        vendor: "anthropics-claude-code",
+      });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("rejects skills absent from the selected vendor catalog", async () => {
     await expect(
       install(

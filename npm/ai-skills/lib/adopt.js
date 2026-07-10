@@ -126,17 +126,32 @@ export function mapSkillsLockEntry(name, entry, agents, vendors, now = () => new
   if (!sha) {
     return { ambiguous: `${name}: skills-lock entry has no commit/tag ref` };
   }
-  const vendor =
-    vendors.find((candidate) => candidate.repo.toLowerCase() === repo.toLowerCase())?.id ??
-    (repo === "lgtm-hq/ai-skills" ? "lgtm-hq" : "external");
+  if (repo.toLowerCase() === "lgtm-hq/ai-skills") {
+    return {
+      entry: {
+        agents: [...agents].sort(),
+        installedAt: now().toISOString(),
+        repo: "lgtm-hq/ai-skills",
+        sha,
+        skillPath: normalizeSkillPath(name, entry.skillPath),
+        vendor: "lgtm-hq",
+      },
+    };
+  }
+  const vendor = vendors.find((candidate) => candidate.repo.toLowerCase() === repo.toLowerCase());
+  if (!vendor) {
+    return {
+      ambiguous: `${name}: source ${repo} is not in the gateway vendor registry`,
+    };
+  }
   return {
     entry: {
       agents: [...agents].sort(),
       installedAt: now().toISOString(),
-      repo,
+      repo: vendor.repo,
       sha,
       skillPath: normalizeSkillPath(name, entry.skillPath),
-      vendor,
+      vendor: vendor.id,
     },
   };
 }
@@ -210,6 +225,9 @@ export function planAdopt(lock, installed, skillsLock, vendors, now = () => new 
  * @returns {Promise<AdoptResult>} Summary of adopt actions.
  */
 export async function adoptSkills(options, dependencies = {}) {
+  if (!options.global && !options.project) {
+    throw new Error("adopt requires an explicit --global or --project scope");
+  }
   const scope = resolveScope(options);
   const readLock = dependencies.readLock ?? readLockfile;
   const writeLock = dependencies.writeLock ?? writeLockfile;
