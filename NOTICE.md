@@ -1,0 +1,10 @@
+# Third-Party Notices
+
+This package catalogs third-party skills at the commit pins in `vendors.yaml`.
+
+## Vendor repositories
+
+- [mattpocock/skills](https://github.com/mattpocock/skills) — `MIT`
+- [anthropics/skills](https://github.com/anthropics/skills) — `Apache-2.0`
+  - Anthropic document skills are source-available.
+    The registry field is Apache-2.0 for this catalog.
