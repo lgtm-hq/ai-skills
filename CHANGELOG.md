@@ -13,10 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **tests**: adopt assertpy for all test assertions; add `assertpy` dev
-  dependency, document the rule in `stand-py` Testing, and enforce no bare
-  `assert` statements in `tests/` via `scripts/validate.sh` (#88)
-
 ### Deprecated
 
 ### Removed
