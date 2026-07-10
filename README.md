@@ -126,7 +126,6 @@ Playwright and BATS test-writing standards.
 
 Project-specific and optional skills (the installer's "Other" bucket).
 
-- **[design](skills/design/SKILL.md)** — Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one.
 - **[jira](skills/jira/SKILL.md)** — Generate Jira-style ticket descriptions.
 - **[lintro-add](skills/lintro-add/SKILL.md)** — Guide for adding new linting/formatting tools to lintro.
 - **[lintro-verify](skills/lintro-verify/SKILL.md)** — Verify that a lintro tool implementation is complete and follows all project standards.

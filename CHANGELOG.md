@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **gateway**: drop the design skill and retire upstream-drift vendoring in
+  preparation for the gateway migration (#133)
+
 ### Fixed
 
 ### Security
