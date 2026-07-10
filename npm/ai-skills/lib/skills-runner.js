@@ -35,6 +35,29 @@ export function buildSkillsArguments(options, source) {
 }
 
 /**
+ * Build arguments for removing known gateway-managed skills.
+ *
+ * @param {{agents: string[], global: boolean, yes: boolean}} options - Selected command options.
+ * @param {string[]} skills - Skills to remove.
+ * @returns {string[]} Arguments passed to `bunx`.
+ */
+export function buildSkillsRemoveArguments(options, skills) {
+  // Upstream `skills remove` mirrors `add`: `-g` selects global; omitting it
+  // targets the project scope. There is no separate `--project` remove flag.
+  const args = [`skills@^${MINIMUM_SKILLS_VERSION}`, "remove", ...skills];
+  if (options.global) {
+    args.push("-g");
+  }
+  if (options.agents.length > 0) {
+    args.push("-a", ...options.agents);
+  }
+  if (options.yes) {
+    args.push("-y");
+  }
+  return args;
+}
+
+/**
  * Execute the upstream skills CLI.
  *
  * @param {string[]} args - Arguments for `bunx`.

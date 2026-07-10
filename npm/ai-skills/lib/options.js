@@ -14,7 +14,7 @@ export const MINIMUM_SKILLS_VERSION = "0.16.0";
  * @throws {Error} When an option is malformed or unsupported.
  */
 export function parseArguments(argv) {
-  const commands = new Set(["install", "vendors"]);
+  const commands = new Set(["install", "list", "remove", "update", "vendors"]);
   const command = commands.has(argv[0]) ? argv[0] : "install";
   const args = commands.has(argv[0]) ? argv.slice(1) : argv;
   const options = {
@@ -78,6 +78,12 @@ export function parseArguments(argv) {
   if (command === "vendors" && args.length > 0) {
     throw new Error("vendors does not accept options");
   }
+  if (
+    ["list", "remove", "update"].includes(command) &&
+    (options.bundle || options.copy || options.onConflict || options.vendor)
+  ) {
+    throw new Error(`${command} does not accept install source options`);
+  }
   return { command, options };
 }
 
@@ -106,5 +112,35 @@ export function validateUnattendedOptions(options) {
   }
   if (!options.onConflict) {
     throw new Error("-y requires --on-conflict=keep, overwrite, or skip");
+  }
+}
+
+/**
+ * Resolve the installation scope, defaulting to global.
+ *
+ * @param {{global: boolean, project: boolean}} options - Parsed command options.
+ * @returns {"global" | "project"} Effective scope.
+ */
+export function resolveScope(options) {
+  return options.project ? "project" : "global";
+}
+
+/**
+ * Validate unattended scope (and optionally agent) selections for maintenance commands.
+ *
+ * @param {{agents: string[], global: boolean, project: boolean, yes: boolean}} options - Parsed command options.
+ * @param {{requireAgents?: boolean}} [rules] - Extra unattended requirements.
+ * @returns {void}
+ * @throws {Error} When unattended maintenance would infer a scope or agent.
+ */
+export function validateUnattendedCommandOptions(options, rules = {}) {
+  if (!options.yes) {
+    return;
+  }
+  if (!options.global && !options.project) {
+    throw new Error("-y requires an explicit --global or --project scope");
+  }
+  if (rules.requireAgents !== false && options.agents.length === 0) {
+    throw new Error("-y requires at least one -a/--agent");
   }
 }
