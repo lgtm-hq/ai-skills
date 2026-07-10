@@ -14,7 +14,7 @@ export const MINIMUM_SKILLS_VERSION = "0.16.0";
  * @throws {Error} When an option is malformed or unsupported.
  */
 export function parseArguments(argv) {
-  const commands = new Set(["install", "list", "remove", "update", "vendors"]);
+  const commands = new Set(["adopt", "install", "list", "remove", "update", "vendors"]);
   const command = commands.has(argv[0]) ? argv[0] : "install";
   const args = commands.has(argv[0]) ? argv.slice(1) : argv;
   const options = {
@@ -79,10 +79,13 @@ export function parseArguments(argv) {
     throw new Error("vendors does not accept options");
   }
   if (
-    ["list", "remove", "update"].includes(command) &&
+    ["adopt", "list", "remove", "update"].includes(command) &&
     (options.bundle || options.copy || options.onConflict || options.vendor)
   ) {
     throw new Error(`${command} does not accept install source options`);
+  }
+  if (command === "adopt" && options.skills.length > 0) {
+    throw new Error("adopt does not accept --skill; it imports installed skills");
   }
   return { command, options };
 }

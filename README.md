@@ -38,7 +38,7 @@ bunx @lgtm-hq/ai-skills@0.1.27 vendors   # offline: baked vendors + SHAs
 bunx @lgtm-hq/ai-skills@0.1.27 list
 bunx @lgtm-hq/ai-skills@0.1.27 update …
 bunx @lgtm-hq/ai-skills@0.1.27 remove …
-# adopt (import pre-gateway installs) — follow-up; see issue #139
+bunx @lgtm-hq/ai-skills@0.1.27 adopt -y --project   # import skills-lock installs
 ```
 
 Unattended installs require an explicit scope and agent, and fail closed on name
@@ -83,6 +83,9 @@ pnpm dlx skills add lgtm-hq/ai-skills@v0.1.27 -g
   vendor SHAs and prunes entries missing on disk.
 - **`remove`** / **`list`** operate on the gateway lock after shelling out to
   `skills` where needed.
+- **`adopt`** imports existing `skills add` installs into the gateway lock from
+  `skills-lock.json` + on-disk agent skill dirs (no reinstall). Ambiguous
+  sources are skipped with a report under `-y`, or confirmed interactively.
 
 ## Skills
 

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **gateway**: adopt existing skills-lock installs into the gateway lockfile (#139)
 - **gateway**: document gateway install, vendors, locks, and npm publish (#137)
 
 ### Changed

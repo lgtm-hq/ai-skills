@@ -1,3 +1,4 @@
+import { adoptSkills } from "./adopt.js";
 import { loadVendors } from "./catalog.js";
 import { listSkills, removeSkills, updateSkills } from "./gateway-commands.js";
 import { install, installInteractively } from "./install.js";
@@ -59,6 +60,11 @@ export async function runCli(argv) {
   if (command === "update") {
     validateUnattendedCommandOptions(options);
     await updateSkills(options);
+    return;
+  }
+  if (command === "adopt") {
+    validateUnattendedCommandOptions(options, { requireAgents: false });
+    await adoptSkills(options);
     return;
   }
   validateUnattendedOptions(options);
