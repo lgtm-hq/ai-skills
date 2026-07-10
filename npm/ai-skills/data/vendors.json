@@ -1,0 +1,24 @@
+{
+  "vendors": [
+    {
+      "id": "mattpocock",
+      "repo": "mattpocock/skills",
+      "sha": "391a2701dd948f94f56a39f7533f8eea9a859c87",
+      "skillRoots": [
+        "skills"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/mattpocock/skills"
+    },
+    {
+      "id": "anthropics",
+      "repo": "anthropics/skills",
+      "sha": "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+      "skillRoots": [
+        "skills"
+      ],
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/anthropics/skills"
+    }
+  ]
+}
