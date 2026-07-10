@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -219,6 +220,44 @@ def test_render_notice_records_anthropic_document_skill_nuance() -> None:
 
     assert_that(notice).contains("document skills are source-available")
     assert_that(notice).contains("Apache-2.0")
+
+
+def test_render_notice_records_claude_code_commercial_terms() -> None:
+    """Document Claude Code plugin skills under Anthropic commercial terms."""
+    notice = render_notice(
+        vendors=(
+            Vendor(
+                id="anthropics-claude-code",
+                repo="anthropics/claude-code",
+                sha="0123456789abcdef0123456789abcdef01234567",
+                skill_roots=("plugins/*/skills",),
+                license="Commercial",
+                homepage="https://github.com/anthropics/claude-code",
+            ),
+        ),
+    )
+
+    assert_that(notice).contains("anthropics/claude-code")
+    assert_that(notice).contains("Commercial")
+    assert_that(notice).contains("Commercial Terms of Service")
+
+
+def test_committed_claude_code_index_includes_frontend_design() -> None:
+    """Baked claude-code index must expose plugin-buried frontend-design."""
+    index_path = (
+        Path(__file__).resolve().parents[1]
+        / "vendor-indexes"
+        / "anthropics-claude-code.json"
+    )
+    payload = json.loads(index_path.read_text(encoding="utf-8"))
+    skills = {skill["name"]: skill["path"] for skill in payload["skills"]}
+
+    assert_that(payload["vendor"]["id"]).is_equal_to("anthropics-claude-code")
+    assert_that(payload["vendor"]["skillRoots"]).is_equal_to(["plugins/*/skills"])
+    assert_that(skills).contains_key("frontend-design")
+    assert_that(skills["frontend-design"]).is_equal_to(
+        "plugins/frontend-design/skills/frontend-design",
+    )
 
 
 def test_bake_preserves_committed_artifacts_when_fetch_fails(
