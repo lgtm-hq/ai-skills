@@ -11,8 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **gateway**: adopt existing skills-lock installs into the gateway lockfile (#139)
-
 ### Changed
 
 ### Deprecated
@@ -22,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.3.0] - 2026-07-10
+
+### Added
+
+- **gateway**: adopt existing skills-lock installs into gateway lock (#152) (6558fcd)
+- **gateway**: adopt existing skills-lock installs into the gateway lockfile (#139)
 
 ## [0.2.0] - 2026-07-10
 
@@ -363,7 +368,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.27...v0.2.0
 [0.1.27]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.26...v0.1.27
 [0.1.26]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.25...v0.1.26
