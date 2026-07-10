@@ -243,21 +243,32 @@ def test_render_notice_records_claude_code_commercial_terms() -> None:
 
 
 def test_committed_claude_code_index_includes_frontend_design() -> None:
-    """Baked claude-code index must expose plugin-buried frontend-design."""
-    index_path = (
-        Path(__file__).resolve().parents[1]
+    """Baked claude-code indexes must expose plugin-buried frontend-design."""
+    repo_root = Path(__file__).resolve().parents[1]
+    index_paths = (
+        repo_root / "vendor-indexes" / "anthropics-claude-code.json",
+        repo_root
+        / "npm"
+        / "ai-skills"
+        / "data"
         / "vendor-indexes"
-        / "anthropics-claude-code.json"
+        / "anthropics-claude-code.json",
     )
-    payload = json.loads(index_path.read_text(encoding="utf-8"))
-    skills = {skill["name"]: skill["path"] for skill in payload["skills"]}
+    for index_path in index_paths:
+        payload = json.loads(index_path.read_text(encoding="utf-8"))
+        skills = {skill["name"]: skill["path"] for skill in payload["skills"]}
 
-    assert_that(payload["vendor"]["id"]).is_equal_to("anthropics-claude-code")
-    assert_that(payload["vendor"]["skillRoots"]).is_equal_to(["plugins/*/skills"])
-    assert_that(skills).contains_key("frontend-design")
-    assert_that(skills["frontend-design"]).is_equal_to(
-        "plugins/frontend-design/skills/frontend-design",
-    )
+        assert_that(payload["vendor"]["id"]).is_equal_to("anthropics-claude-code")
+        assert_that(payload["vendor"]["skillRoots"]).is_equal_to(
+            ["plugins/*/skills"],
+        )
+        assert_that(skills).contains_key("frontend-design")
+        assert_that(skills["frontend-design"]).is_equal_to(
+            "plugins/frontend-design/skills/frontend-design",
+        )
+    root_index = index_paths[0].read_text(encoding="utf-8")
+    packaged_index = index_paths[1].read_text(encoding="utf-8")
+    assert_that(packaged_index).is_equal_to(root_index)
 
 
 def test_bake_preserves_committed_artifacts_when_fetch_fails(

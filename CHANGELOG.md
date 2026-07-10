@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **gateway**: register anthropics/claude-code vendor via skillRoots (#138)
+- **gateway**: document gateway install, vendors, locks, and npm publish (#137)
 
 ### Changed
 
