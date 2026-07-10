@@ -2,6 +2,8 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 
 import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
+import { mergeLockEntries, readLockfile, writeLockfile } from "./lockfile.js";
+import { resolveScope } from "./options.js";
 import { buildSkillsArguments, runSkills } from "./skills-runner.js";
 
 /**
@@ -100,14 +102,17 @@ export async function completeInteractively(options, prompt) {
  *
  * @param {{agents: string[], bundle: string | null, copy: boolean, global: boolean, onConflict: string | null, project: boolean, skills: string[], vendor: string | null, yes: boolean}} options - Validated install options.
  * @param {(args: string[]) => Promise<void>} [run] - Injectable skills process runner.
+ * @param {() => Date} [now] - Injectable clock.
+ * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable lockfile environment.
  * @returns {Promise<void>} Resolves when the skills CLI succeeds.
  */
-export async function install(options, run = runSkills) {
+export async function install(options, run = runSkills, now = () => new Date(), lockEnvironment) {
   let source;
   let selectedOptions = options;
+  let vendor;
   if (options.vendor) {
     const vendors = await loadVendors();
-    const vendor = vendors.vendors.find((item) => item.id === options.vendor);
+    vendor = vendors.vendors.find((item) => item.id === options.vendor);
     if (!vendor) {
       throw new Error(`Unknown vendor: ${options.vendor}`);
     }
@@ -135,6 +140,60 @@ export async function install(options, run = runSkills) {
     source = `lgtm-hq/ai-skills@v${packageVersion}`;
   }
   await run(buildSkillsArguments(selectedOptions, source));
+  const scope = resolveScope(selectedOptions);
+  const lock = await readLockfile(scope, lockEnvironment);
+  await writeLockfile(
+    mergeLockEntries(lock, await createLockEntries(selectedOptions, vendor, now)),
+    lockEnvironment,
+  );
+}
+
+/**
+ * Build lockfile entries for an installation that completed successfully.
+ *
+ * @param {{agents: string[], skills: string[]}} options - Completed install options.
+ * @param {{id: string, repo: string, sha: string} | undefined} vendor - Selected vendor, if any.
+ * @param {() => Date} now - Clock for installation metadata.
+ * @returns {Promise<Record<string, import("./lockfile.js").LockEntry>>} Entries keyed by skill name.
+ */
+async function createLockEntries(options, vendor, now) {
+  const installedAt = now().toISOString();
+  if (!vendor) {
+    return Object.fromEntries(
+      options.skills.map((name) => [
+        name,
+        {
+          agents: options.agents,
+          installedAt,
+          repo: "lgtm-hq/ai-skills",
+          sha: `v${process.env.npm_package_version ?? "0.0.0-dev"}`,
+          skillPath: `skills/${name}/SKILL.md`,
+          vendor: "lgtm-hq",
+        },
+      ]),
+    );
+  }
+  const index = await loadVendorIndex(vendor.id);
+  const paths = new Map(index.skills.map((skill) => [skill.name, skill.path]));
+  return Object.fromEntries(
+    options.skills.map((name) => {
+      const path = paths.get(name);
+      if (!path) {
+        throw new Error(`Unknown ${vendor.id} skill: ${name}`);
+      }
+      return [
+        name,
+        {
+          agents: options.agents,
+          installedAt,
+          repo: vendor.repo,
+          sha: vendor.sha,
+          skillPath: `${path}/SKILL.md`,
+          vendor: vendor.id,
+        },
+      ];
+    }),
+  );
 }
 
 /**

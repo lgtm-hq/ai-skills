@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { parseArguments, validateUnattendedOptions } from "../lib/options.js";
+import {
+  parseArguments,
+  validateUnattendedCommandOptions,
+  validateUnattendedOptions,
+} from "../lib/options.js";
 
 describe("parseArguments", () => {
   test("defaults to the install command", () => {
@@ -52,5 +56,28 @@ describe("parseArguments", () => {
     expect(() => parseArguments(["--vendor", "anthropics", "--bundle", "pre-push"])).toThrow(
       "Choose only one source",
     );
+  });
+
+  test("accepts a scoped unattended update", () => {
+    const parsed = parseArguments(["update", "-y", "--project", "-a", "cursor"]);
+
+    expect(parsed.command).toBe("update");
+    expect(() => validateUnattendedCommandOptions(parsed.options)).not.toThrow();
+  });
+
+  test("rejects an unattended remove without an agent", () => {
+    const parsed = parseArguments(["remove", "-y", "--global", "--skill", "lint"]);
+
+    expect(() => validateUnattendedCommandOptions(parsed.options)).toThrow(
+      "-y requires at least one",
+    );
+  });
+
+  test("allows unattended list without agents", () => {
+    const parsed = parseArguments(["list", "-y", "--global"]);
+
+    expect(() =>
+      validateUnattendedCommandOptions(parsed.options, { requireAgents: false }),
+    ).not.toThrow();
   });
 });
