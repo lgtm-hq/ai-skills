@@ -94,6 +94,11 @@ export async function completeInteractively(options, prompt) {
       prompt,
     );
   }
+  if (!options.global && !options.project) {
+    const scope = await choose("Install scope:", ["global", "project"], (item) => item, prompt);
+    options.global = scope === "global";
+    options.project = scope === "project";
+  }
   return options;
 }
 
@@ -139,13 +144,26 @@ export async function install(options, run = runSkills, now = () => new Date(), 
     const packageVersion = process.env.npm_package_version ?? "0.0.0-dev";
     source = `lgtm-hq/ai-skills@v${packageVersion}`;
   }
-  await run(buildSkillsArguments(selectedOptions, source));
   const scope = resolveScope(selectedOptions);
+  const scopedOptions = {
+    ...selectedOptions,
+    global: scope === "global",
+    project: scope === "project",
+  };
+  // Validate/read the lock before mutating agent skill dirs so a malformed lock
+  // fails closed instead of leaving an unlocked install behind.
   const lock = await readLockfile(scope, lockEnvironment);
-  await writeLockfile(
-    mergeLockEntries(lock, await createLockEntries(selectedOptions, vendor, now)),
-    lockEnvironment,
-  );
+  const entries = await createLockEntries(scopedOptions, vendor, now);
+  await run(buildSkillsArguments(scopedOptions, source));
+  try {
+    await writeLockfile(mergeLockEntries(lock, entries), lockEnvironment);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Skills installed but gateway lock update failed (${detail}). ` +
+        "Fix the lockfile path permissions and re-run install, or use adopt once available.",
+    );
+  }
 }
 
 /**
