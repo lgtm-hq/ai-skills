@@ -139,6 +139,25 @@ attaches it to the GitHub Release. The manifest is generated **at release time
 only** — it is not committed, so skill edits do not churn a checked-in file. CI
 (`scripts/validate.sh`) verifies the generator is deterministic.
 
+## Publishing `@lgtm-hq/ai-skills` (npm)
+
+The gateway package lives in `npm/ai-skills/` (version `0.0.0-dev` on `main`).
+Release tags inject `X.Y.Z` to match `vX.Y.Z`. Publishing uses **npm trusted
+publishing (OIDC)** via `.github/workflows/publish-npm.yml` and the GitHub
+**`npm` environment** (maintainer approval), mirroring
+[py-lintro](https://github.com/lgtm-hq/py-lintro).
+
+Before the first live publish:
+
+1. Configure a trusted publisher on npmjs for `@lgtm-hq/ai-skills` pointing at
+   this repository and workflow.
+2. Ensure the GitHub Environment named `npm` exists with required reviewers.
+3. Dry-run with `workflow_dispatch` (`dry_run: true`) until the tarball looks
+   right; then allow a real release publish.
+
+The publish job syncs embedded `vendors.yaml`, baked indexes, and `NOTICE.md`
+into the package before `npm publish`.
+
 ## Skill content policy
 
 Skills are executable influence: every `SKILL.md` becomes instructions inside a

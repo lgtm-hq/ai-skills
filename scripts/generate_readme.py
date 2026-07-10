@@ -44,6 +44,7 @@ _UNGROUPED_DESCRIPTION = (
 
 _VERSION_PIN_PATTERNS = (
     re.compile(r"(lgtm-hq/ai-skills@v)\d+\.\d+\.\d+"),
+    re.compile(r"(@lgtm-hq/ai-skills@)\d+\.\d+\.\d+"),
     re.compile(r"(gh release download v)\d+\.\d+\.\d+"),
 )
 
