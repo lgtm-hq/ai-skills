@@ -12,7 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **gateway**: document gateway install, vendors, locks, and npm publish (#137)
-- **gateway**: gateway lockfile plus `update` / `remove` / `list` commands (#136)
 
 ### Changed
 
@@ -22,7 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **release**: raise version-PR `max-bump` from patch to minor so `feat`
+  commits produce minor releases as documented in the PR template
+
 ### Security
+
+## [0.1.26] - 2026-07-10
+
+### Added
+
+- **gateway**: gateway lockfile and update command (#146) (6f4e449)
+- **gateway**: gateway lockfile plus `update` / `remove` / `list` commands (#136)
 
 ## [0.1.25] - 2026-07-10
 
@@ -336,7 +345,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.25...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.26...HEAD
+[0.1.26]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.22...v0.1.23
