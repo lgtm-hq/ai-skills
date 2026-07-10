@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from fnmatch import fnmatchcase
 import json
 import re
+from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
@@ -175,6 +175,12 @@ def _parse_skill_roots(*, value: object, position: int) -> tuple[str, ...]:
         if not isinstance(root, str):
             msg = f"Vendor {position} skillRoots entries must be strings"
             raise TypeError(msg)
+        if root.startswith("/"):
+            msg = (
+                f"Vendor {position} skillRoots entries must be relative, "
+                "non-empty paths"
+            )
+            raise ValueError(msg)
         normalized = root.strip("/")
         path = PurePosixPath(normalized)
         if not normalized or path.is_absolute() or ".." in path.parts:
@@ -232,7 +238,20 @@ def _is_within_skill_roots(
     Returns:
         Whether the skill resides below at least one configured root.
     """
-    return any(fnmatchcase(skill_path, f"{skill_root}/*") for skill_root in skill_roots)
+    skill_parts = PurePosixPath(skill_path).parts
+    return any(
+        len(skill_parts) > len(root_parts)
+        and all(
+            fnmatchcase(skill_part, root_part)
+            for skill_part, root_part in zip(
+                skill_parts,
+                root_parts,
+                strict=False,
+            )
+        )
+        for skill_root in skill_roots
+        if (root_parts := PurePosixPath(skill_root).parts)
+    )
 
 
 def render_index(*, vendor: Vendor, skills: list[dict[str, str]]) -> str:

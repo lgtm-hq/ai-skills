@@ -79,6 +79,12 @@ def test_load_registry_accepts_valid_vendor(
             id="empty-roots",
         ),
         pytest.param(
+            "skillRoots:\n      - plugins/*/skills\n      - skills",
+            "skillRoots:\n      - /skills",
+            "skillRoots entries must be relative",
+            id="absolute-root",
+        ),
+        pytest.param(
             "homepage: https://example.com/repository",
             "homepage: ftp://example.com",
             r"homepage must be an http\(s\) URL",
@@ -127,6 +133,21 @@ def test_discover_skills_filters_descendants_of_glob_roots() -> None:
             {"name": "beta", "path": "plugins/two/skills/beta"},
             {"name": "root", "path": "skills/root"},
         ],
+    )
+
+
+def test_discover_skills_rejects_cross_directory_glob_matches() -> None:
+    """Exclude paths where a root wildcard would otherwise cross directories."""
+    skills = discover_skills(
+        paths=[
+            "plugins/one/extra/skills/alpha/SKILL.md",
+            "plugins/one/skills/alpha/SKILL.md",
+        ],
+        skill_roots=("plugins/*/skills",),
+    )
+
+    assert_that(skills).is_equal_to(
+        [{"name": "alpha", "path": "plugins/one/skills/alpha"}],
     )
 
 
