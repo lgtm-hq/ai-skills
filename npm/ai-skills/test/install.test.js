@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { loadVendorIndex } from "../lib/catalog.js";
 import { install } from "../lib/install.js";
 import { buildSkillsArguments } from "../lib/skills-runner.js";
 
@@ -35,6 +36,10 @@ describe("buildSkillsArguments", () => {
 });
 
 describe("install", () => {
+  test("rejects a vendor path traversal attempt", () => {
+    expect(() => loadVendorIndex("../outside")).toThrow("Invalid vendor identifier");
+  });
+
   test("expands an unattended first-party bundle", async () => {
     let received = [];
     await install(

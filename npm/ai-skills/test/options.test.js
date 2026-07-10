@@ -47,4 +47,10 @@ describe("parseArguments", () => {
   test("rejects competing scopes", () => {
     expect(() => parseArguments(["--global", "--project"])).toThrow("Choose only one scope");
   });
+
+  test("rejects competing sources", () => {
+    expect(() => parseArguments(["--vendor", "anthropics", "--bundle", "pre-push"])).toThrow(
+      "Choose only one source",
+    );
+  });
 });

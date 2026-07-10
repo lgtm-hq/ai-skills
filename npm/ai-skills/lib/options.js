@@ -72,6 +72,9 @@ export function parseArguments(argv) {
   if (options.global && options.project) {
     throw new Error("Choose only one scope: --global or --project");
   }
+  if (options.vendor && options.bundle) {
+    throw new Error("Choose only one source: --vendor or --bundle");
+  }
   if (command === "vendors" && args.length > 0) {
     throw new Error("vendors does not accept options");
   }

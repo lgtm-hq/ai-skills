@@ -40,5 +40,8 @@ export function loadVendors() {
  * @returns {Promise<{skills: Array<{name: string, path: string}>, vendor: {id: string, repo: string, sha: string, skillRoots: string[]}}>} Vendor skill index.
  */
 export function loadVendorIndex(vendorId) {
+  if (!/^[a-z0-9-]+$/.test(vendorId)) {
+    throw new Error(`Invalid vendor identifier: ${vendorId}`);
+  }
   return readCatalog(`vendor-indexes/${vendorId}.json`);
 }
