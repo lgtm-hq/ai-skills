@@ -46,13 +46,13 @@ jobs:
       test-path: tests
       tooling-ref: "17483d234808cb3a2019afdff0dea29593f24a05"
     permissions:
-      # contents/pages write are required at compile time by the reusable
-      # workflow's publish jobs (skipped here: publish-test-summary and
-      # upload-coverage default to false). Each called job still runs with
-      # only its own declared subset; the test job itself declares
+      # actions: write is required at compile time by the reusable
+      # workflow's aggregate job (matrix mode only, skipped here), which
+      # merges coverage artifacts. Each called job still runs with only
+      # its own declared subset; the test job itself declares
       # contents: read.
-      contents: write
-      pages: write
+      actions: write
+      contents: read
       pull-requests: write
 
   validate:
