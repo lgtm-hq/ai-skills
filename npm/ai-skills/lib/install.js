@@ -111,6 +111,13 @@ export async function install(options, run = runSkills) {
     if (!vendor) {
       throw new Error(`Unknown vendor: ${options.vendor}`);
     }
+    const index = await loadVendorIndex(vendor.id);
+    const unknownSkill = options.skills.find(
+      (skillName) => !index.skills.some((skill) => skill.name === skillName),
+    );
+    if (unknownSkill) {
+      throw new Error(`Unknown skill for vendor ${vendor.id}: ${unknownSkill}`);
+    }
     source = `${vendor.repo}@${vendor.sha}`;
   } else {
     if (options.bundle && options.skills.length === 0) {

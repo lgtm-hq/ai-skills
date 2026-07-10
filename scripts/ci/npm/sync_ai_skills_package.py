@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -27,18 +28,30 @@ SOURCE_DATA = {
     PROJECT_ROOT / "bundles.yaml": DATA_ROOT / "bundles.yaml",
     PROJECT_ROOT / "NOTICE.md": PACKAGE_ROOT / "NOTICE.md",
 }
+SEMVER_PATTERN = re.compile(
+    r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
+    r"(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]+)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]+))*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$",
+)
 
 
 def normalize_version(raw_version: str) -> str:
-    """Return an npm version without a leading tag prefix.
+    """Validate and return an npm version without a leading tag prefix.
 
     Args:
         raw_version: Semver string, optionally prefixed with ``v``.
 
     Returns:
         The normalized semver string.
+
+    Raises:
+        ValueError: If the version is not valid semantic versioning.
     """
-    return raw_version.removeprefix("v")
+    version = raw_version.removeprefix("v")
+    if not SEMVER_PATTERN.fullmatch(version):
+        msg = f"Invalid npm semver version: {raw_version}"
+        raise ValueError(msg)
+    return version
 
 
 def rendered_files(version: str) -> dict[Path, str]:

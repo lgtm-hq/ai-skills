@@ -72,4 +72,18 @@ describe("install", () => {
 
     expect(received).toContain("anthropics/skills@9d2f1ae187231d8199c64b5b762e1bdf2244733d");
   });
+
+  test("rejects skills absent from the selected vendor catalog", async () => {
+    await expect(
+      install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          skills: ["typo"],
+          vendor: "anthropics",
+        },
+        async () => {},
+      ),
+    ).rejects.toThrow("Unknown skill for vendor anthropics: typo");
+  });
 });

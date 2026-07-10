@@ -6,6 +6,7 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 from assertpy import assert_that
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -42,3 +43,11 @@ def test_normalize_version_removes_tag_prefix() -> None:
     module = load_sync_module()
 
     assert_that(module.normalize_version("v1.2.3")).is_equal_to("1.2.3")
+
+
+def test_normalize_version_rejects_invalid_release_tag() -> None:
+    """Reject release tags that cannot become npm semver versions."""
+    module = load_sync_module()
+
+    with pytest.raises(ValueError, match="Invalid npm semver version"):
+        module.normalize_version("ai-skills-v1.2.3")
