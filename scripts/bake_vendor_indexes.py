@@ -12,7 +12,9 @@ import argparse
 import difflib
 from http.client import HTTPException, HTTPSConnection
 import json
+import os
 import sys
+from tempfile import TemporaryDirectory
 from pathlib import Path
 from typing import Any
 
@@ -48,8 +50,7 @@ def _fetch_tree_paths(*, vendor: Vendor) -> list[str]:
         RuntimeError: If GitHub cannot return a complete tree response.
     """
     target = f"/repos/{vendor.repo}/git/trees/{vendor.sha}?recursive=1"
-    # Fixed GitHub host; Python 3.13 HTTPSConnection verifies TLS.
-    # nosemgrep
+    # nosemgrep - fixed GitHub host; Python 3.13 HTTPSConnection verifies TLS.
     connection = HTTPSConnection(
         host="api.github.com",
         timeout=30,
@@ -126,20 +127,39 @@ def bake(*, repo_root: Path) -> None:
         repo_root: Repository root containing ``vendors.yaml``.
     """
     vendors = load_registry(registry_path=repo_root / "vendors.yaml")
-    indexes_dir = repo_root / "vendor-indexes"
-    indexes_dir.mkdir(parents=True, exist_ok=True)
-    for vendor in vendors:
-        paths = _fetch_tree_paths(vendor=vendor)
-        skills = discover_skills(paths=paths, skill_roots=vendor.skill_roots)
-        index_path = indexes_dir / f"{vendor.id}.json"
-        index_path.write_text(
-            render_index(vendor=vendor, skills=skills),
-            encoding="utf-8",
+    discovered_skills = [
+        (
+            vendor,
+            discover_skills(
+                paths=_fetch_tree_paths(vendor=vendor),
+                skill_roots=vendor.skill_roots,
+            ),
         )
-        print(f"Wrote {index_path.relative_to(repo_root)} ({len(skills)} skills)")
-    notice_path = repo_root / "NOTICE.md"
-    notice_path.write_text(render_notice(vendors=vendors), encoding="utf-8")
-    print(f"Wrote {notice_path.relative_to(repo_root)}")
+        for vendor in vendors
+    ]
+    indexes_dir = repo_root / "vendor-indexes"
+    with TemporaryDirectory(dir=repo_root) as temporary_directory:
+        temporary_root = Path(temporary_directory)
+        temporary_indexes_dir = temporary_root / "vendor-indexes"
+        temporary_indexes_dir.mkdir()
+        for vendor, skills in discovered_skills:
+            (temporary_indexes_dir / f"{vendor.id}.json").write_text(
+                render_index(vendor=vendor, skills=skills),
+                encoding="utf-8",
+            )
+        temporary_notice_path = temporary_root / "NOTICE.md"
+        temporary_notice_path.write_text(
+            render_notice(vendors=vendors), encoding="utf-8"
+        )
+
+        indexes_dir.mkdir(parents=True, exist_ok=True)
+        for vendor, skills in discovered_skills:
+            index_path = indexes_dir / f"{vendor.id}.json"
+            os.replace(temporary_indexes_dir / index_path.name, index_path)
+            print(f"Wrote {index_path.relative_to(repo_root)} ({len(skills)} skills)")
+        notice_path = repo_root / "NOTICE.md"
+        os.replace(temporary_notice_path, notice_path)
+        print(f"Wrote {notice_path.relative_to(repo_root)}")
 
 
 def check(*, repo_root: Path) -> int:

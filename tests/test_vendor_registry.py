@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from assertpy import assert_that
 
+import bake_vendor_indexes
 from vendor_registry.registry import (
     discover_skills,
     load_registry,
@@ -197,3 +198,61 @@ def test_render_notice_records_anthropic_document_skill_nuance() -> None:
 
     assert_that(notice).contains("document skills are source-available")
     assert_that(notice).contains("Apache-2.0")
+
+
+def test_bake_preserves_committed_artifacts_when_fetch_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Do not replace committed output when a later vendor fetch fails."""
+    tmp_path.joinpath("vendors.yaml").write_text(
+        """---
+vendors:
+  - id: first
+    repo: owner/first
+    sha: "0123456789abcdef0123456789abcdef01234567"
+    skillRoots: ["skills"]
+    license: MIT
+    homepage: https://example.com/first
+  - id: second
+    repo: owner/second
+    sha: "89abcdef0123456789abcdef0123456789abcdef"
+    skillRoots: ["skills"]
+    license: MIT
+    homepage: https://example.com/second
+""",
+        encoding="utf-8",
+    )
+    indexes_dir = tmp_path / "vendor-indexes"
+    indexes_dir.mkdir()
+    first_index = indexes_dir / "first.json"
+    first_index.write_text("existing index\n", encoding="utf-8")
+    notice_path = tmp_path / "NOTICE.md"
+    notice_path.write_text("existing notice\n", encoding="utf-8")
+
+    def _fetch_then_fail(*, vendor: Vendor) -> list[str]:
+        """Return a first tree then simulate a later network failure.
+
+        Args:
+            vendor: Vendor being fetched.
+
+        Returns:
+            Blob paths for the first vendor.
+
+        Raises:
+            RuntimeError: For the second vendor's simulated API failure.
+        """
+        if vendor.id == "first":
+            return ["skills/alpha/SKILL.md"]
+        msg = "network failure"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(bake_vendor_indexes, "_fetch_tree_paths", _fetch_then_fail)
+
+    with pytest.raises(RuntimeError, match="network failure"):
+        bake_vendor_indexes.bake(repo_root=tmp_path)
+
+    assert_that(first_index.read_text(encoding="utf-8")).is_equal_to("existing index\n")
+    assert_that(notice_path.read_text(encoding="utf-8")).is_equal_to(
+        "existing notice\n"
+    )
