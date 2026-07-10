@@ -130,6 +130,7 @@ Project-specific and optional skills (the installer's "Other" bucket).
 - **[jira](skills/jira/SKILL.md)** — Generate Jira-style ticket descriptions.
 - **[lintro-add](skills/lintro-add/SKILL.md)** — Guide for adding new linting/formatting tools to lintro.
 - **[lintro-verify](skills/lintro-verify/SKILL.md)** — Verify that a lintro tool implementation is complete and follows all project standards.
+- **[properize](skills/properize/SKILL.md)** — Promote a quick-and-dirty prototype to an lgtm-hq-standard repo - commit WIP lint-clean, grill the design, spec the backlog as milestone/epic/issue tree, then implement issue by issue.
 - **[scorecard](skills/scorecard/SKILL.md)** — Audit the OpenSSF Scorecard rating for py-lintro.
 - **[turbo-add](skills/turbo-add/SKILL.md)** — Guide for adding a new theme family to turbo-themes.
 - **[turbo-test](skills/turbo-test/SKILL.md)** — Run the full turbo-themes build and test pipeline.

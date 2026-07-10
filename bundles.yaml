@@ -77,6 +77,7 @@ ungrouped:
   - jira
   - lintro-add
   - lintro-verify
+  - properize
   - scorecard
   - turbo-add
   - turbo-test
