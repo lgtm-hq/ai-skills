@@ -162,6 +162,36 @@ When asked to create an issue:
 
 5. **Return the issue URL** to the user
 
+## Backlog Stewardship
+
+Rules for managing an existing backlog, not just creating new issues.
+
+- **Comment before closing.** Every closed issue gets a comment explaining
+  *why* it's closed and linking to whatever supersedes it (issue, PR, or
+  commit).
+  - Don't: `gh issue close 42` with no comment.
+  - Do: `gh issue comment 42 --body "Superseded by #57, merged in a1b2c3d."`
+    then `gh issue close 42`.
+- **"Done" means merged to `main`.** Work that exists only on a branch is not
+  done. Never close an issue because a branch has the fix — reopen or
+  repurpose the issue instead until it lands on `main`.
+- **Repurpose before minting.** When scope evolves, prefer retargeting an
+  existing issue number over closing it and opening a new one — it preserves
+  history and discussion.
+- **Placeholder convention for duplicates.** For issues that are redundant or
+  would only duplicate another: delete all comments, empty the description,
+  and set the title to `placeholder`. Don't flesh out a duplicate and don't
+  leave stale content behind — reserve the number for reuse.
+- **Never churn the backlog silently.** Announce close/reopen/create/edit
+  changes as you make them — the backlog should stay visible, not shift
+  underneath readers.
+- **Keep content correct.** Issues must carry accurate scope and follow the
+  `/issue` format above. When an assessment (audit, review, incident)
+  surfaces a real gap — bug, security issue, tech debt — add a spec-formatted,
+  labeled issue for it rather than leaving it undocumented.
+- **Dependency-update issues/PRs** (Renovate, Dependabot): follow the
+  dependency-triage rule in the `stand-general` skill.
+
 ## Examples
 
 ### Good Issue Titles
