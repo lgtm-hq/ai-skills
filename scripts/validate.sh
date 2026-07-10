@@ -9,9 +9,7 @@ Validate skill repository consistency.
 Checks:
   1. SKILL.md filename casing in skills/*/
   2. SKILL.md frontmatter values (YAML mapping; non-empty name/description
-     strings; description <= 1024 chars; name matches directory; optional
-     'upstream' provenance block is well-formed and the upstream-drift
-     tracking workflow exists) via:
+     strings; description <= 1024 chars; name matches directory) via:
      uv run python scripts/validate_skills.py
   3. AGENTS.md entries match skills/ directories (regenerate skills list via:
      uv run python scripts/generate_agents_md.py)
