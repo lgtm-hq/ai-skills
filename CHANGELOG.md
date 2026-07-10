@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **release**: raise version-PR `max-bump` from patch to minor so `feat`
+  commits produce minor releases as documented in the PR template
+
 ### Security
 
 ## [0.1.26] - 2026-07-10
