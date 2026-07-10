@@ -11,20 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **gateway**: add SHA-pinned vendor registry and baked skill indexes (#134)
-
 ### Changed
 
 ### Deprecated
 
 ### Removed
 
-- **gateway**: drop the design skill and retire upstream-drift vendoring in
-  preparation for the gateway migration (#133)
-
 ### Fixed
 
 ### Security
+
+## [0.1.25] - 2026-07-10
+
+### Added
+
+- **gateway**: publish @lgtm-hq/ai-skills install wrapper MVP (#142) (11e11f4)
+- **gateway**: SHA-pinned vendor registry with skillRoots (#141) (93abd31)
+
+- **gateway**: add SHA-pinned vendor registry and baked skill indexes (#134)
+
+### Changed
+
+- **gateway**: drop design skill and retire upstream drift (#140) (8a3a93a)
+- **tests**: adopt assertpy for all assertions (#96) (123deb5)
+
+### Removed
+
+- **gateway**: drop the design skill and retire upstream-drift vendoring in
+  preparation for the gateway migration (#133)
 
 ## [0.1.24] - 2026-07-09
 
@@ -319,7 +333,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.24...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.25...HEAD
+[0.1.25]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.21...v0.1.22
