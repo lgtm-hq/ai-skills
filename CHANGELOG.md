@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **gateway**: add SHA-pinned vendor registry and baked skill indexes (#134)
+
 ### Changed
 
 ### Deprecated
