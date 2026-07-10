@@ -19,10 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+### Security
+
+## [0.1.27] - 2026-07-10
+
+### Fixed
+
+- **release**: allow minor bumps from feat commits (#148) (ee64ff1)
 - **release**: raise version-PR `max-bump` from patch to minor so `feat`
   commits produce minor releases as documented in the PR template
-
-### Security
 
 ## [0.1.26] - 2026-07-10
 
@@ -343,7 +348,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.26...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.27...HEAD
+[0.1.27]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.26...v0.1.27
 [0.1.26]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.23...v0.1.24

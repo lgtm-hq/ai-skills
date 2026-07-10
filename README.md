@@ -24,7 +24,7 @@ Install with the [Vercel Labs `skills` CLI](https://github.com/vercel-labs/skill
 pinned to a release tag (reproducible, reviewable):
 
 ```bash
-bunx skills add lgtm-hq/ai-skills@v0.1.26 -g
+bunx skills add lgtm-hq/ai-skills@v0.1.27 -g
 ```
 
 The installer shows a **grouped checkbox picker** — pick workflow bundles, toggle
@@ -36,8 +36,8 @@ and others).
 <summary><strong>npm / pnpm equivalents</strong></summary>
 
 ```bash
-npx skills add lgtm-hq/ai-skills@v0.1.26 -g
-pnpm dlx skills add lgtm-hq/ai-skills@v0.1.26 -g
+npx skills add lgtm-hq/ai-skills@v0.1.27 -g
+pnpm dlx skills add lgtm-hq/ai-skills@v0.1.27 -g
 ```
 
 </details>
@@ -143,7 +143,7 @@ Every release ships a `skills-manifest.json` asset mapping each skill name to
 the sha256 of its `SKILL.md`, attested with GitHub build provenance:
 
 ```bash
-gh release download v0.1.26 -R lgtm-hq/ai-skills -p skills-manifest.json
+gh release download v0.1.27 -R lgtm-hq/ai-skills -p skills-manifest.json
 gh attestation verify skills-manifest.json -R lgtm-hq/ai-skills
 shasum -a 256 <install-dir>/<name>/SKILL.md  # compare against the manifest
 ```
@@ -158,7 +158,7 @@ Power users and CI can skip the interactive picker:
 
 ```bash
 # All skills, all detected agents, pinned to a release tag
-bunx skills add lgtm-hq/ai-skills@v0.1.26 -g --all
+bunx skills add lgtm-hq/ai-skills@v0.1.27 -g --all
 
 # Specific skills only
 bunx skills add lgtm-hq/ai-skills -g --skill lint commit greptile -y
@@ -183,7 +183,7 @@ bunx skills update lint commit -g
 To move everything to a specific release, reinstall with a tag:
 
 ```bash
-bunx skills add lgtm-hq/ai-skills@v0.1.26 -g --all
+bunx skills add lgtm-hq/ai-skills@v0.1.27 -g --all
 ```
 
 List or remove installs with `bunx skills ls -g` and `bunx skills remove <name> -g`.
