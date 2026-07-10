@@ -19,6 +19,16 @@
       ],
       "license": "Apache-2.0",
       "homepage": "https://github.com/anthropics/skills"
+    },
+    {
+      "id": "anthropics-claude-code",
+      "repo": "anthropics/claude-code",
+      "sha": "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2",
+      "skillRoots": [
+        "plugins/*/skills"
+      ],
+      "license": "Commercial",
+      "homepage": "https://github.com/anthropics/claude-code"
     }
   ]
 }

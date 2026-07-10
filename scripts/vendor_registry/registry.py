@@ -397,4 +397,11 @@ def render_notice(*, vendors: tuple[Vendor, ...]) -> str:
                     "    The registry field is Apache-2.0 for this catalog.",
                 ],
             )
+        if vendor.id == "anthropics-claude-code":
+            lines.extend(
+                [
+                    "  - Claude Code plugin skills are subject to Anthropic's",
+                    "    Commercial Terms of Service.",
+                ],
+            )
     return "\n".join(lines) + "\n"
