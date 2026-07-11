@@ -1,10 +1,10 @@
 /**
- * Minimum supported version of the upstream skills CLI.
+ * Minimum supported version of the upstream skills CLI (npm package `skills`).
  *
- * Keeping this value in the wrapper makes every invocation reproducible within
- * a compatible major version while allowing upstream patches.
+ * Pin a real published 1.x floor so `bunx skills@^…` resolves. Upstream is on
+ * the 1.x line (there is no 0.16.0). Caret allows compatible 1.x patches.
  */
-export const MINIMUM_SKILLS_VERSION = "0.16.0";
+export const MINIMUM_SKILLS_VERSION = "1.5.0";
 
 /**
  * Parse wrapper command-line arguments.
