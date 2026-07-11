@@ -7,9 +7,9 @@ requires-python = ">=3.13"
 dev = [
   "loguru>=0.7.3",
   # Exact pin kept in sync with the py-lintro image CI runs via
-  # reusable-quality-lint.yml (ghcr.io/lgtm-hq/py-lintro 0.64.1). The
-  # validate-lintro-version workflow fails the build if this drifts from
-  # the pinned image, so local `uv run lintro chk` matches CI exactly.
+  # ci.yml's lintro-image override (ghcr.io/lgtm-hq/py-lintro 0.74.0).
+  # The validate-lintro-version workflow fails the build if this drifts
+  # from the pinned image, so local `uv run lintro chk` matches CI.
   "lintro==0.74.0",
   "pip-audit>=2.9.0",
   "pytest-cov>=7.0.0",

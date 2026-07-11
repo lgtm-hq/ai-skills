@@ -90,24 +90,21 @@ merge conflicts across the parallel lanes; this table will be reconciled to
 
 ## lintro version alignment
 
-`ci.yml`'s `quality` job runs lintro via the `reusable-quality-lint.yml`
-default py-lintro image
-(`ghcr.io/lgtm-hq/py-lintro@sha256:1ff3db35…`, **0.64.1**). To keep local
+`ci.yml`'s `quality` job runs lintro via `reusable-quality-lint.yml` with an
+explicit `lintro-image` override
+(`ghcr.io/lgtm-hq/py-lintro@sha256:ec90de3f…`, **0.74.0**). To keep local
 `uv run lintro chk` from drifting away from what CI enforces,
-`pyproject.toml` pins `lintro==0.64.1` (exact) and `uv.lock` resolves to
-the same version. Issue #90's Phase-1 audit observed newer local locks
-(0.64.5) surfacing `untyped-decorator` mypy findings that the pinned CI
-image did not; the exact pin closes that gap (the suite is green on 0.64.1).
+`pyproject.toml` pins `lintro==0.74.0` (exact) and `uv.lock` resolves to
+the same version. The override is required while this repo's lgtm-ci SHA
+still defaults to an older image; bump the digest and the `lintro==` pin
+together on every lintro upgrade — the guard fails loudly if they drift.
 
 `reusable-validate-lintro-version.yml` guards this automatically: it runs
 `lintro --version` inside the pinned image and fails if it disagrees with
 the `lintro==` pin in `pyproject.toml`. As a consumer repo, ai-skills does
 not vendor lgtm-ci's `reusable-quality-lint.yml` / `run-quality` action, so
-`resolve-lintro-image.sh` cannot auto-discover the digest; the
-`validate-lintro-version.yml` caller passes `lintro-image` explicitly (the
-same digest `reusable-quality-lint.yml` defaults to at the pinned ref). On
-the next lgtm-ci repin, bump the image digest and the `lintro==` pin
-together — the guard fails loudly if they drift.
+`resolve-lintro-image.sh` cannot auto-discover the digest; both
+`validate-lintro-version.yml` and `ci.yml` pass `lintro-image` explicitly.
 
 ## Org-level coverage
 
@@ -122,7 +119,7 @@ per-repo adoption candidates rather than "covered elsewhere."
 ## Drift risks
 
 - **lintro pin vs lock drift:** resolved — `pyproject.toml` exact-pins
-  `lintro==0.64.1` to match the CI image, and
+  `lintro==0.74.0` to match the CI image override, and
   `reusable-validate-lintro-version.yml` (adopted via
   `validate-lintro-version.yml`) fails the build on any future drift. See
   [lintro version alignment](#lintro-version-alignment).
