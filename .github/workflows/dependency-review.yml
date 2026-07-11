@@ -22,8 +22,20 @@ jobs:
       tooling-ref: "66cad82ead0e5d119928c895c7d7da9c837989e5"
       egress-policy: block
       egress-preset: scorecard
-      allowed-endpoints-mode: append
+      # replace: harden-runner pre cannot see resolved presets; pass the full
+      # allowlist (scorecard default + deps.dev) as a folded input.
+      allowed-endpoints-mode: replace
       allowed-endpoints: >
+        github.com:443
+        api.github.com:443
+        codeload.github.com:443
+        objects.githubusercontent.com:443
+        raw.githubusercontent.com:443
+        pipelines.actions.githubusercontent.com:443
+        gcr.io:443
+        api.osv.dev:443
+        api.scorecard.dev:443
+        api.securityscorecards.dev:443
         api.deps.dev:443
         release-assets.githubusercontent.com:443
     permissions:
