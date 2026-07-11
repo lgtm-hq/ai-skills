@@ -23,6 +23,24 @@ jobs:
       version-update-script: scripts/update-readme-version.sh
       auto-merge: true
       tooling-ref: "66cad82ead0e5d119928c895c7d7da9c837989e5"
+      egress-policy: block
+      egress-preset: pypi
+      # Harden-runner pre reads inputs only. Python ecosystem updater pip-installs
+      # tomlkit and may run uv lock — include github + PyPI/astral hosts.
+      allowed-endpoints-mode: replace
+      allowed-endpoints: >
+        github.com:443
+        api.github.com:443
+        codeload.github.com:443
+        objects.githubusercontent.com:443
+        raw.githubusercontent.com:443
+        uploads.github.com:443
+        pipelines.actions.githubusercontent.com:443
+        release-assets.githubusercontent.com:443
+        pypi.org:443
+        files.pythonhosted.org:443
+        astral.sh:443
+        releases.astral.sh:443
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
