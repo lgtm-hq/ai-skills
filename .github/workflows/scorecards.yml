@@ -22,6 +22,12 @@ jobs:
     uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-scorecards.yml@17483d234808cb3a2019afdff0dea29593f24a05
     with:
       tooling-ref: "17483d234808cb3a2019afdff0dea29593f24a05"
+      # publish_results:true enforces an allowlist of actions that excludes
+      # lgtm-ci local composites (resolve-egress-allowlist / harden-runner).
+      # That makes every main push fail with "job has unallowed step". Keep
+      # SARIF upload to the Security tab; skip the public Scorecard API until
+      # the reusable workflow only uses allowlisted actions.
+      publish-results: false
       egress-policy: block
       egress-preset: scorecard
       allowed-endpoints-mode: append
