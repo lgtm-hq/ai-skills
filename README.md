@@ -41,12 +41,13 @@ bunx @lgtm-hq/ai-skills@0.5.4 remove …
 bunx @lgtm-hq/ai-skills@0.5.4 adopt -y --project   # import skills-lock installs
 ```
 
-Unattended installs require an explicit scope and agent, and fail closed on name
-conflicts unless you pass `--on-conflict=keep|overwrite|skip`:
+Unattended installs require an explicit scope and agent. Upstream `skills` has no
+conflict policy — omit `--on-conflict`, or pass `overwrite`. `keep` / `skip` fail
+closed:
 
 ```bash
 bunx @lgtm-hq/ai-skills@0.5.4 install -y --global -a cursor \
-  --bundle pre-push --on-conflict=skip
+  --bundle pre-push
 ```
 
 <!-- markdownlint-disable MD033 -- collapsible install variants -->
@@ -199,11 +200,11 @@ upstream CLI escape hatch:
 ```bash
 # Gateway: unattended first-party bundle
 bunx @lgtm-hq/ai-skills@0.5.4 install -y --global -a cursor \
-  --bundle pre-push --on-conflict=overwrite
+  --bundle pre-push
 
 # Gateway: unattended vendor skill at the baked SHA
 bunx @lgtm-hq/ai-skills@0.5.4 install -y --global -a cursor \
-  --vendor anthropics --skill frontend-design --on-conflict=skip
+  --vendor anthropics --skill frontend-design
 
 # Escape hatch: all first-party skills via skills CLI
 bunx skills add lgtm-hq/ai-skills@v0.5.4 -g --all

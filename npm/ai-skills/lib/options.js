@@ -113,8 +113,12 @@ export function validateUnattendedOptions(options) {
   if (options.skills.length === 0 && !options.bundle) {
     throw new Error("-y requires at least one --skill for a vendor");
   }
-  if (!options.onConflict) {
-    throw new Error("-y requires --on-conflict=keep, overwrite, or skip");
+  // Upstream `skills` has no conflict policy. Accept omitted/`overwrite` only so
+  // keep|skip cannot silently no-op under a fail-closed API.
+  if (options.onConflict && options.onConflict !== "overwrite") {
+    throw new Error(
+      `--on-conflict=${options.onConflict} is unsupported: upstream skills CLI has no conflict policy. Omit the flag, use overwrite, or remove the existing skill first.`,
+    );
   }
 }
 
