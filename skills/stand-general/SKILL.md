@@ -51,6 +51,20 @@ When adding a module or significant function:
 - A module growing past ~300–400 lines is a signal to split it along
   responsibility boundaries.
 
+## Dependency Update Triage (Renovate/Dependabot)
+
+- **Merge safe green bumps.** For breaking major bumps, fix and migrate —
+  never just close the PR to dodge the work.
+  - Don't: close a failing Astro 6→7 Renovate PR because `@astrojs/tailwind`
+    no longer builds.
+  - Do: migrate to the replacement (`@tailwindcss/vite`) in the same PR, then
+    merge.
+- **Green doesn't mean safe.** On a repo where CI doesn't cover every path, a
+  green PR can still be broken in the un-CI'd parts. Validate those parts
+  locally before merging, not just the parts CI checks.
+- Backlog handling for dependency issues/PRs (closing, repurposing,
+  announcing changes): follow the `issue` skill's Backlog Stewardship section.
+
 ## Cross-cutting References
 
 - Linting and formatting: follow the `lint` skill
