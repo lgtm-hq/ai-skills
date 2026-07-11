@@ -28,6 +28,7 @@ unavailable or a skill here explicitly overrides that preference.
 - `lintro-verify`: Verify that a lintro tool implementation is complete and follows all project standards. Use after adding a new tool to lintro. (`skills/lintro-verify/SKILL.md`)
 - `pr`: Create pull requests with proper templates and metadata. Use when asked to create a PR, open a pull request, or submit changes for review. Auto-assign and auto-labeling handled by CI. (`skills/pr/SKILL.md`)
 - `pr-raycast`: Prepare and open a pull request to raycast/extensions. Use when the user asks to open, submit, or get ready for a Raycast Store extension PR — not for general extension coding. (`skills/pr-raycast/SKILL.md`)
+- `properize`: Promote a quick-and-dirty prototype to an lgtm-hq-standard repo - commit WIP lint-clean, grill the design, spec the backlog as milestone/epic/issue tree, then implement issue by issue. Use when asked to properize, productionize, or turn a prototype into a proper project. (`skills/properize/SKILL.md`)
 - `raycast`: Raycast extension development standards. Use when writing or modifying Raycast extensions. Run lintro first, then Raycast's toolchain (npm run lint) which takes precedence for extension-specific rules. (`skills/raycast/SKILL.md`)
 - `rebase`: Rebase the current branch onto the latest main. Use when asked to rebase, sync with main, update branch, or pull latest changes. Fetches and rebases onto latest main; does not push automatically. (`skills/rebase/SKILL.md`)
 - `reconcile`: Consolidate worktrees and clean up stale branches. Use when asked to reconcile, clean up worktrees, consolidate branches, or tidy up a project's git state. (`skills/reconcile/SKILL.md`)
@@ -48,6 +49,6 @@ unavailable or a skill here explicitly overrides that preference.
 - `turbo-verify`: Verify that a theme implementation is complete and follows all project standards. Use after adding a new theme to turbo-themes. (`skills/turbo-verify/SKILL.md`)
 - `which-pr`: Report which PR is being worked on in the current conversation. Use when asked about the current PR context. (`skills/which-pr/SKILL.md`)
 
-Total skills: 35
+Total skills: 36
 
 <!-- markdownlint-enable MD013 -->
