@@ -35,17 +35,43 @@ describe("parseArguments", () => {
       "anthropics",
       "--skill",
       "pdf",
-      "--on-conflict",
-      "skip",
     ]);
 
     expect(() => validateUnattendedOptions(parsed.options)).not.toThrow();
   });
 
-  test("fails closed for unattended conflict decisions", () => {
-    const parsed = parseArguments(["-y", "--global", "-a", "cursor", "--bundle", "pre-push"]);
+  test("rejects unsupported conflict policies that upstream cannot honor", () => {
+    const parsed = parseArguments([
+      "-y",
+      "--global",
+      "-a",
+      "cursor",
+      "--bundle",
+      "pre-push",
+      "--on-conflict",
+      "skip",
+    ]);
 
-    expect(() => validateUnattendedOptions(parsed.options)).toThrow("-y requires --on-conflict");
+    expect(() => validateUnattendedOptions(parsed.options)).toThrow(
+      "--on-conflict=skip is unsupported",
+    );
+  });
+
+  test("allows overwrite or omitted conflict policy", () => {
+    const omitted = parseArguments(["-y", "--global", "-a", "cursor", "--bundle", "pre-push"]);
+    const overwrite = parseArguments([
+      "-y",
+      "--global",
+      "-a",
+      "cursor",
+      "--bundle",
+      "pre-push",
+      "--on-conflict",
+      "overwrite",
+    ]);
+
+    expect(() => validateUnattendedOptions(omitted.options)).not.toThrow();
+    expect(() => validateUnattendedOptions(overwrite.options)).not.toThrow();
   });
 
   test("rejects competing scopes", () => {

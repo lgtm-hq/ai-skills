@@ -56,15 +56,13 @@ describe("gateway maintenance commands", () => {
     });
     expect(calls).toEqual([
       [
-        "skills@^0.16.0",
+        "skills@^1.5.0",
         "add",
         "anthropics/skills@9d2f1ae187231d8199c64b5b762e1bdf2244733d",
         "-a",
         "cursor",
         "--skill",
         "pdf",
-        "--on-conflict",
-        "overwrite",
         "-y",
       ],
     ]);
@@ -95,7 +93,7 @@ describe("gateway maintenance commands", () => {
     );
 
     expect(removed).toEqual(["pdf"]);
-    expect(calls).toEqual([["skills@^0.16.0", "remove", "pdf", "-a", "cursor", "-y"]]);
+    expect(calls).toEqual([["skills@^1.5.0", "remove", "pdf", "-a", "cursor", "-y"]]);
     expect(written.skills).toEqual({
       lint: lock.skills.lint,
     });

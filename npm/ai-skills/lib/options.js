@@ -1,10 +1,10 @@
 /**
- * Minimum supported version of the upstream skills CLI.
+ * Minimum supported version of the upstream skills CLI (npm package `skills`).
  *
- * Keeping this value in the wrapper makes every invocation reproducible within
- * a compatible major version while allowing upstream patches.
+ * Pin a real published 1.x floor so `bunx skills@^…` resolves. Upstream is on
+ * the 1.x line (there is no 0.16.0). Caret allows compatible 1.x patches.
  */
-export const MINIMUM_SKILLS_VERSION = "0.16.0";
+export const MINIMUM_SKILLS_VERSION = "1.5.0";
 
 /**
  * Parse wrapper command-line arguments.
@@ -113,8 +113,12 @@ export function validateUnattendedOptions(options) {
   if (options.skills.length === 0 && !options.bundle) {
     throw new Error("-y requires at least one --skill for a vendor");
   }
-  if (!options.onConflict) {
-    throw new Error("-y requires --on-conflict=keep, overwrite, or skip");
+  // Upstream `skills` has no conflict policy. Accept omitted/`overwrite` only so
+  // keep|skip cannot silently no-op under a fail-closed API.
+  if (options.onConflict && options.onConflict !== "overwrite") {
+    throw new Error(
+      `--on-conflict=${options.onConflict} is unsupported: upstream skills CLI has no conflict policy. Omit the flag, use overwrite, or remove the existing skill first.`,
+    );
   }
 }
 
