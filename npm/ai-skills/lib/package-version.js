@@ -17,7 +17,6 @@ export function getPackageVersion(options = {}) {
     return env.npm_package_version;
   }
   const packageJsonPath =
-    options.packageJsonPath ??
-    join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+    options.packageJsonPath ?? join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
   return JSON.parse(readFileSync(packageJsonPath, "utf8")).version;
 }
