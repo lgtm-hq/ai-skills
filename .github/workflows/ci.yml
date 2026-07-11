@@ -20,6 +20,10 @@ jobs:
     uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-quality-lint.yml@17483d234808cb3a2019afdff0dea29593f24a05
     with:
       tooling-ref: "17483d234808cb3a2019afdff0dea29593f24a05"
+      # Override the reusable default (0.64.1 at this pin) so CI matches
+      # pyproject.toml's lintro==0.74.0 and validate-lintro-version.yml.
+      # yamllint disable-line rule:line-length
+      lintro-image: ghcr.io/lgtm-hq/py-lintro@sha256:ec90de3fd989e93be9c6734562e4d6217deb16bccd33d192b48fb8fe2ec54514
 
   publish-quality-summary:
     needs: quality
