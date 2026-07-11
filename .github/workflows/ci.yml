@@ -69,6 +69,48 @@ jobs:
       setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/validate.sh
       tooling-ref: "66cad82ead0e5d119928c895c7d7da9c837989e5"
+      egress-policy: block
+      egress-preset: quality
+      # Harden-runner pre reads inputs only. setup installs ripgrep via apt and
+      # uv via astral.sh, then uv sync against PyPI — pass the full quality
+      # allowlist plus Ubuntu apt mirrors (not in github-tooling default).
+      allowed-endpoints-mode: replace
+      allowed-endpoints: >
+        github.com:443
+        api.github.com:443
+        codeload.github.com:443
+        release-assets.githubusercontent.com:443
+        objects.githubusercontent.com:443
+        raw.githubusercontent.com:443
+        pipelines.actions.githubusercontent.com:443
+        github-releases.githubusercontent.com:443
+        ghcr.io:443
+        pkg-containers.githubusercontent.com:443
+        docker.io:443
+        registry-1.docker.io:443
+        auth.docker.io:443
+        production.cloudflare.docker.com:443
+        production.cloudfront.docker.com:443
+        pypi.org:443
+        files.pythonhosted.org:443
+        static.rust-lang.org:443
+        bun.sh:443
+        astral.sh:443
+        releases.astral.sh:443
+        sh.rustup.rs:443
+        deb.debian.org:80
+        registry.npmjs.org:443
+        crates.io:443
+        static.crates.io:443
+        index.crates.io:443
+        semgrep.dev:443
+        metrics.semgrep.dev:443
+        api.osv.dev:443
+        api.deps.dev:443
+        archive.ubuntu.com:80
+        azure.archive.ubuntu.com:80
+        security.ubuntu.com:80
+        security.ubuntu.com:443
     permissions:
       contents: read
       pull-requests: write
