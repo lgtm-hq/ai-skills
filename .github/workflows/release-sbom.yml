@@ -4,6 +4,8 @@ name: "Release: SBOM"
 "on":
   release:
     types: [published]
+  # Manual backfill must target a release tag ref in the Actions UI
+  # (not a branch). The job if-guard below rejects non-tag dispatches.
   workflow_dispatch:
 
 concurrency:
@@ -15,6 +17,11 @@ permissions:
 
 jobs:
   sbom:
+    # release events always have a tag; manual runs must select a tag ref
+    # so the reusable job scans/attests the intended release commit.
+    if: >-
+      github.event_name == 'release'
+      || startsWith(github.ref, 'refs/tags/')
     # lgtm-ci owns SBOM generation; this repo stays a thin caller.
     # Complements the release-manifest attestation with a signed CycloneDX
     # SBOM (plus vulnerability scan) for every published release.
