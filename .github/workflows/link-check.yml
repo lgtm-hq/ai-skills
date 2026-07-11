@@ -24,7 +24,9 @@ jobs:
     name: Internal link check
     # PR / merge-queue gate: offline, so egress stays hardened (block) with the
     # github-tooling preset that the reusable needs to check out its scripts.
-    if: github.event_name != 'schedule'
+    if: >-
+      github.event_name == 'pull_request'
+      || github.event_name == 'merge_group'
     permissions:
       contents: read
     # yamllint disable-line rule:line-length
