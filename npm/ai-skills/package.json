@@ -1,0 +1,32 @@
+{
+  "name": "@lgtm-hq/ai-skills",
+  "version": "0.0.0-dev",
+  "description": "Pinned installer gateway for first-party and vendor AI skills.",
+  "license": "MIT",
+  "homepage": "https://github.com/lgtm-hq/ai-skills#readme",
+  "bugs": {
+    "url": "https://github.com/lgtm-hq/ai-skills/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lgtm-hq/ai-skills.git",
+    "directory": "npm/ai-skills"
+  },
+  "bin": {
+    "ai-skills": "bin/ai-skills.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "data",
+    "NOTICE.md"
+  ],
+  "engines": {
+    "bun": ">=1.0.0",
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "bun test --coverage"
+  },
+  "type": "module"
+}

@@ -1,0 +1,10 @@
+---
+vendors:
+  - id: example-vendor
+    repo: owner/repository
+    sha: "0123456789abcdef0123456789abcdef01234567"
+    skillRoots:
+      - plugins/*/skills
+      - skills
+    license: MIT
+    homepage: https://example.com/repository

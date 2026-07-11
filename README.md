@@ -16,38 +16,76 @@ Canonical <a href="https://agentskills.io">Agent Skills</a> library — one <cod
 
 Validated, semver-pinned **Agent Skills** for real engineering workflows — commit,
 review, PR, and language standards. Install into Cursor, Claude Code, Codex, and
-other agents from one catalog.
+other agents from one catalog. Third-party vendor catalogs ship as-is via the
+gateway (SHA-pinned); curated skills stay first-party only.
 
 ## Quickstart
 
-Install with the [Vercel Labs `skills` CLI](https://github.com/vercel-labs/skills),
-pinned to a release tag (reproducible, reviewable):
+Install with the **gateway** package (recommended). The npm version matches the
+git release tag (`@0.1.27` ↔ `v0.1.27`):
 
 ```bash
-bunx skills add lgtm-hq/ai-skills@v0.1.24 -g
+bunx @lgtm-hq/ai-skills@0.3.0
 ```
 
-The installer shows a **grouped checkbox picker** — pick workflow bundles, toggle
-individual skills, then choose which agents to install into (Cursor, Claude, Codex,
-and others).
+That defaults to **global** install. Pick first-party bundles and/or vendor
+skills from the baked catalog, then choose agents (Cursor, Claude Code, Codex,
+and others). Use `--project` for a repo-local install.
+
+```bash
+bunx @lgtm-hq/ai-skills@0.3.0 install …
+bunx @lgtm-hq/ai-skills@0.3.0 vendors   # offline: baked vendors + SHAs
+bunx @lgtm-hq/ai-skills@0.3.0 list
+bunx @lgtm-hq/ai-skills@0.3.0 update …
+bunx @lgtm-hq/ai-skills@0.3.0 remove …
+bunx @lgtm-hq/ai-skills@0.3.0 adopt -y --project   # import skills-lock installs
+```
+
+Unattended installs require an explicit scope and agent, and fail closed on name
+conflicts unless you pass `--on-conflict=keep|overwrite|skip`:
+
+```bash
+bunx @lgtm-hq/ai-skills@0.3.0 install -y --global -a cursor \
+  --bundle pre-push --on-conflict=skip
+```
 
 <!-- markdownlint-disable MD033 -- collapsible install variants -->
 <details>
-<summary><strong>npm / pnpm equivalents</strong></summary>
+<summary><strong>Escape hatch: upstream <code>skills</code> CLI</strong></summary>
+
+The gateway shells out to the [Vercel Labs `skills` CLI](https://github.com/vercel-labs/skills).
+You can call it directly when you want the stock installer only:
 
 ```bash
-npx skills add lgtm-hq/ai-skills@v0.1.24 -g
-pnpm dlx skills add lgtm-hq/ai-skills@v0.1.24 -g
+bunx skills add lgtm-hq/ai-skills@v0.3.0 -g
+npx skills add lgtm-hq/ai-skills@v0.3.0 -g
+pnpm dlx skills add lgtm-hq/ai-skills@v0.3.0 -g
 ```
 
 </details>
 <!-- markdownlint-enable MD033 -->
 
 > [!WARNING]
-> Installing without a tag (`bunx skills add lgtm-hq/ai-skills -g`) tracks the
-> moving `main` branch, and later updates pull changes you haven't reviewed.
-> Skills are instructions your agents execute — pin to a tag and bump
-> deliberately.
+> Pin the gateway (or skills CLI) to a release. Floating `main` / unpinned
+> installs pull instructions you have not reviewed. Skills are instructions
+> your agents execute — bump deliberately.
+
+### Vendors, pins, and locks
+
+- **Vendors (v1):** `mattpocock/skills` and `anthropics/skills`, full trees at a
+  **commit SHA** (Renovate bumps SHAs). Skill discovery uses baked indexes
+  shipped inside the npm package — no GitHub API at install time.
+- **Licenses:** see root [`NOTICE.md`](./NOTICE.md) and `vendors.yaml`.
+- **Gateway lockfiles** (do not overwrite stock `skills-lock.json`):
+  - Global: `~/.ai-skills/lock.json`
+  - Project: `./ai-skills-lock.json`
+- **`update`** refreshes lock-managed skills to the current first-party tag /
+  vendor SHAs and prunes entries missing on disk.
+- **`remove`** / **`list`** operate on the gateway lock after shelling out to
+  `skills` where needed.
+- **`adopt`** imports existing `skills add` installs into the gateway lock from
+  `skills-lock.json` + on-disk agent skill dirs (no reinstall). Ambiguous
+  sources are skipped with a report under `-y`, or confirmed interactively.
 
 ## Skills
 
@@ -126,7 +164,6 @@ Playwright and BATS test-writing standards.
 
 Project-specific and optional skills (the installer's "Other" bucket).
 
-- **[design](skills/design/SKILL.md)** — Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one.
 - **[jira](skills/jira/SKILL.md)** — Generate Jira-style ticket descriptions.
 - **[lintro-add](skills/lintro-add/SKILL.md)** — Guide for adding new linting/formatting tools to lintro.
 - **[lintro-verify](skills/lintro-verify/SKILL.md)** — Verify that a lintro tool implementation is complete and follows all project standards.
@@ -144,7 +181,7 @@ Every release ships a `skills-manifest.json` asset mapping each skill name to
 the sha256 of its `SKILL.md`, attested with GitHub build provenance:
 
 ```bash
-gh release download v0.1.24 -R lgtm-hq/ai-skills -p skills-manifest.json
+gh release download v0.3.0 -R lgtm-hq/ai-skills -p skills-manifest.json
 gh attestation verify skills-manifest.json -R lgtm-hq/ai-skills
 shasum -a 256 <install-dir>/<name>/SKILL.md  # compare against the manifest
 ```
@@ -155,40 +192,50 @@ Cursor, Codex, or other agents.
 
 ## Advanced install
 
-Power users and CI can skip the interactive picker:
+Power users and CI can skip the interactive picker via the gateway or the
+upstream CLI escape hatch:
 
 ```bash
-# All skills, all detected agents, pinned to a release tag
-bunx skills add lgtm-hq/ai-skills@v0.1.24 -g --all
+# Gateway: unattended first-party bundle
+bunx @lgtm-hq/ai-skills@0.3.0 install -y --global -a cursor \
+  --bundle pre-push --on-conflict=overwrite
 
-# Specific skills only
-bunx skills add lgtm-hq/ai-skills -g --skill lint commit greptile -y
+# Gateway: unattended vendor skill at the baked SHA
+bunx @lgtm-hq/ai-skills@0.3.0 install -y --global -a cursor \
+  --vendor anthropics --skill frontend-design --on-conflict=skip
 
-# Single agent (e.g. Cursor)
-bunx skills add lgtm-hq/ai-skills -a cursor -g --skill lint commit -y
-
-# List available skills without installing
-bunx skills add lgtm-hq/ai-skills -l
+# Escape hatch: all first-party skills via skills CLI
+bunx skills add lgtm-hq/ai-skills@v0.3.0 -g --all
 ```
 
 ### Update installed skills
 
-The CLI updates by **skill name** or **scope**, not by package slug (`update
-lgtm-hq/ai-skills` does not match installed skills).
+Prefer the gateway for installs it manages:
+
+```bash
+bunx @lgtm-hq/ai-skills@0.3.0 update -y --global -a cursor
+bunx @lgtm-hq/ai-skills@0.3.0 list --global
+bunx @lgtm-hq/ai-skills@0.3.0 remove -y --global -a cursor --skill lint
+```
+
+The upstream CLI updates by **skill name** or **scope**, not by package slug
+(`update lgtm-hq/ai-skills` does not match installed skills):
 
 ```bash
 bunx skills update -g
 bunx skills update lint commit -g
 ```
 
-To move everything to a specific release, reinstall with a tag:
+To move first-party skills to a specific release via the escape hatch, reinstall
+with a tag:
 
 ```bash
-bunx skills add lgtm-hq/ai-skills@v0.1.24 -g --all
+bunx skills add lgtm-hq/ai-skills@v0.3.0 -g --all
 ```
 
-List or remove installs with `bunx skills ls -g` and `bunx skills remove <name> -g`.
-See the [upstream CLI docs](https://github.com/vercel-labs/skills) for more flags.
+List or remove stock installs with `bunx skills ls -g` and
+`bunx skills remove <name> -g`. See the
+[upstream CLI docs](https://github.com/vercel-labs/skills) for more flags.
 
 ### Known limitations
 
@@ -241,19 +288,24 @@ bunx skills remove dashboard-redesign -g -y
 ## Repository layout
 
 ```text
-skills/<name>/SKILL.md          # Canonical skill definitions
+skills/<name>/SKILL.md          # Canonical first-party skill definitions
 bundles.yaml                    # Installer group + README section source of truth
+vendors.yaml                    # SHA-pinned third-party vendor registry
+vendor-indexes/                 # Baked skill indexes for the gateway picker
+NOTICE.md                       # Third-party license notices for the npm package
+npm/ai-skills/                  # @lgtm-hq/ai-skills gateway package
 .claude-plugin/marketplace.json # Generated grouped picker manifest
 AGENTS.md                       # Human- and agent-readable skill index
 scripts/validate.sh             # Frontmatter, AGENTS, bundles, README, marketplace checks
 tests/                          # Pytest wraps for scripts
-.github/workflows/              # CI + org reusable workflows
+.github/workflows/              # CI + org reusable workflows + npm publish
 ```
 
-The `## Skills` section above and the release-tag pins in install examples are
-generated — edit `bundles.yaml` or SKILL.md frontmatter, then run
+The `## Skills` section above and the release-tag / npm-version pins in install
+examples are generated — edit `bundles.yaml` or SKILL.md frontmatter, then run
 `uv run python scripts/generate_readme.py`. Architecture diagrams, CI details,
-and release mechanics live in **[CONTRIBUTING.md](./CONTRIBUTING.md)**.
+npm publish, and release mechanics live in
+**[CONTRIBUTING.md](./CONTRIBUTING.md)**.
 
 ## License
 

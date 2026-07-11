@@ -2,5 +2,19 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "local>lgtm-hq/.github:renovate-config"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^vendors\\.yaml$/"
+      ],
+      "matchStrings": [
+        "repo:\\s*(?<depName>[^\\s]+)\\s+sha:\\s*[\"']?(?<currentDigest>[0-9a-f]{40})[\"']?"
+      ],
+      "datasourceTemplate": "git-refs",
+      "currentValueTemplate": "HEAD",
+      "packageNameTemplate": "https://github.com/{{{depName}}}"
+    }
   ]
 }

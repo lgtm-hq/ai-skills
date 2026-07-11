@@ -10,11 +10,7 @@ Single Python parser replacing the awk key-presence grep in
   mappings are rejected),
 - ``description`` is at most 1024 characters (Claude Code's
   skill-loading limit),
-- ``name`` equals the skill directory basename,
-- an ``upstream`` block, when present, is a mapping with non-empty
-  string ``repo`` (``owner/name``), ``path``, and ``version`` fields,
-  and the upstream-drift tracking workflow
-  (``.github/workflows/upstream-drift.yml``) exists in the repository.
+- ``name`` equals the skill directory basename.
 
 Prints one line per violation (including the file path) and exits 1 on
 any violation.
@@ -22,7 +18,6 @@ any violation.
 
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
@@ -30,9 +25,6 @@ import yaml
 from skill_frontmatter import split_frontmatter
 
 DESCRIPTION_MAX_LENGTH = 1024
-DRIFT_WORKFLOW_PATH = Path(".github/workflows/upstream-drift.yml")
-UPSTREAM_REPO_PATTERN = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
-UPSTREAM_REQUIRED_FIELDS = ("repo", "path", "version")
 
 
 def _validate_string_field(
@@ -64,79 +56,13 @@ def _validate_string_field(
     return value, []
 
 
-def _validate_upstream(
-    frontmatter: dict[str, object],
-    skill_md: Path,
-    repo_root: Path | None,
-) -> list[str]:
-    """Validate an optional ``upstream`` provenance block.
-
-    When present, ``upstream`` must be a mapping with non-empty string
-    ``repo`` (matching ``owner/name``), ``path`` (relative, no ``..``
-    segments — mirroring the drift checker's fetch safety rules), and
-    ``version`` fields. When ``repo_root`` is provided, the upstream-drift tracking
-    workflow must also exist so tracked skills cannot silently drift.
-
-    Args:
-        frontmatter: Parsed frontmatter mapping.
-        skill_md: Path to the SKILL.md file, used in violation messages.
-        repo_root: Repository root used to locate the drift workflow, or
-            ``None`` to skip the workflow-presence check.
-
-    Returns:
-        A list of violation messages; empty when valid or absent.
-    """
-    if "upstream" not in frontmatter:
-        return []
-    upstream = frontmatter["upstream"]
-    if not isinstance(upstream, dict):
-        return [
-            f"{skill_md}: 'upstream' must be a mapping, got {type(upstream).__name__}",
-        ]
-    violations: list[str] = []
-    for field in UPSTREAM_REQUIRED_FIELDS:
-        value = upstream.get(field)
-        if not isinstance(value, str) or not value.strip():
-            violations.append(
-                f"{skill_md}: 'upstream.{field}' must be a non-empty string",
-            )
-    repo = upstream.get("repo")
-    if (
-        isinstance(repo, str)
-        and repo.strip()
-        and (not UPSTREAM_REPO_PATTERN.match(repo) or ".." in repo)
-    ):
-        violations.append(
-            f"{skill_md}: 'upstream.repo' must match 'owner/name', got {repo!r}",
-        )
-    path = upstream.get("path")
-    stripped_path = path.strip() if isinstance(path, str) else ""
-    if stripped_path and (
-        stripped_path.startswith("/") or ".." in stripped_path.split("/")
-    ):
-        violations.append(
-            f"{skill_md}: 'upstream.path' must be a relative path without "
-            f"'..' segments, got {path!r}",
-        )
-    if repo_root is not None and not (repo_root / DRIFT_WORKFLOW_PATH).is_file():
-        violations.append(
-            f"{skill_md}: declares 'upstream' but the drift tracking workflow "
-            f"{DRIFT_WORKFLOW_PATH} is missing",
-        )
-    return violations
-
-
 def validate_skill(
     skill_md: Path,
-    repo_root: Path | None = None,
 ) -> list[str]:
     """Validate one SKILL.md file's frontmatter values.
 
     Args:
         skill_md: Path to ``SKILL.md`` under ``skills/<id>/``.
-        repo_root: Repository root used to check that skills declaring
-            ``upstream`` have the drift tracking workflow; pass ``None``
-            to skip that check.
 
     Returns:
         A list of violation messages; empty when the file is valid.
@@ -181,13 +107,6 @@ def validate_skill(
             f"{skill_md}: 'name' {name!r} does not match "
             f"directory name {directory_name!r}",
         )
-    violations.extend(
-        _validate_upstream(
-            frontmatter=frontmatter,
-            skill_md=skill_md,
-            repo_root=repo_root,
-        ),
-    )
     return violations
 
 
@@ -212,10 +131,7 @@ def validate_skills_tree(
             # Presence is checked by validate.sh; nothing to parse here.
             continue
         violations.extend(
-            validate_skill(
-                skill_md=skill_md,
-                repo_root=skills_root.parent,
-            ),
+            validate_skill(skill_md=skill_md),
         )
     return violations
 
