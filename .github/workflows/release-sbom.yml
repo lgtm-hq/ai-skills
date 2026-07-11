@@ -37,6 +37,27 @@ jobs:
       tooling-ref: "66cad82ead0e5d119928c895c7d7da9c837989e5"
       egress-policy: block
       egress-preset: sbom
+      # Harden-runner pre reads inputs only. Include uploads.github.com so
+      # anchore/sbom-action can attach the CycloneDX asset to the release.
+      allowed-endpoints-mode: replace
+      allowed-endpoints: >
+        github.com:443
+        api.github.com:443
+        codeload.github.com:443
+        release-assets.githubusercontent.com:443
+        objects.githubusercontent.com:443
+        raw.githubusercontent.com:443
+        uploads.github.com:443
+        anchore.io:443
+        get.anchore.io:443
+        toolbox-data.anchore.io:443
+        grype.anchore.io:443
+        pipelines.actions.githubusercontent.com:443
+        fulcio.sigstore.dev:443
+        rekor.sigstore.dev:443
+        timestamp.sigstore.dev:443
+        tuf-repo-cdn.sigstore.dev:443
+        sigstore-tuf-root.storage.googleapis.com:443
     permissions:
       # contents:write — attach the CycloneDX SBOM to the GitHub Release
       # (anchore/sbom-action upload-release-assets). Read alone fails with
