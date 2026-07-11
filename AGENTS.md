@@ -19,7 +19,6 @@ unavailable or a skill here explicitly overrides that preference.
 - `branch`: Start work on a new branch or worktree. Use when asked to start a new branch, new worktree, begin work on a feature/fix, or start fresh. Supports issue numbers and plain descriptions. (`skills/branch/SKILL.md`)
 - `coderabbit`: Run CodeRabbit CLI for pre-push AI diff review. Use when asked for CodeRabbit, cr review, or as part of the default dual pre-push workflow with greptile. Max 2-3 runs per change set. (`skills/coderabbit/SKILL.md`)
 - `commit`: Pre-commit workflow and commit guidelines. Use when asked to commit changes. Requires passing lint and tests, signed commits, semantic prefixes, imperative mood. (`skills/commit/SKILL.md`)
-- `design`: Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Use this skill when the user asks to build or restyle web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Helps with aesthetic direction, typography, and making choices that don't read as templated defaults or generic AI aesthetics. (`skills/design/SKILL.md`)
 - `greptile`: Run Greptile CLI for pre-push AI branch review. Use when asked for Greptile review, raycast/extensions pre-PR checks, or as part of the default dual pre-push workflow with coderabbit. Max 2 runs per change set. (`skills/greptile/SKILL.md`)
 - `implement-issues`: Implement a set of GitHub issues in parallel - triage or take an explicit issue list, group by file-conflict, create a worktree per lane, delegate to sub-agents, open a PR per lane; never merges. Use when asked to implement issues, work the backlog, or pick up multiple issues in parallel. (`skills/implement-issues/SKILL.md`)
 - `issue`: Create GitHub issues with proper formatting, labels, and AI implementation prompts. Use when asked to create an issue, report a bug, or request a feature. (`skills/issue/SKILL.md`)
@@ -50,6 +49,6 @@ unavailable or a skill here explicitly overrides that preference.
 - `turbo-verify`: Verify that a theme implementation is complete and follows all project standards. Use after adding a new theme to turbo-themes. (`skills/turbo-verify/SKILL.md`)
 - `which-pr`: Report which PR is being worked on in the current conversation. Use when asked about the current PR context. (`skills/which-pr/SKILL.md`)
 
-Total skills: 37
+Total skills: 36
 
 <!-- markdownlint-enable MD013 -->

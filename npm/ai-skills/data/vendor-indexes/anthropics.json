@@ -1,0 +1,80 @@
+{
+  "skills": [
+    {
+      "name": "algorithmic-art",
+      "path": "skills/algorithmic-art"
+    },
+    {
+      "name": "brand-guidelines",
+      "path": "skills/brand-guidelines"
+    },
+    {
+      "name": "canvas-design",
+      "path": "skills/canvas-design"
+    },
+    {
+      "name": "claude-api",
+      "path": "skills/claude-api"
+    },
+    {
+      "name": "doc-coauthoring",
+      "path": "skills/doc-coauthoring"
+    },
+    {
+      "name": "docx",
+      "path": "skills/docx"
+    },
+    {
+      "name": "frontend-design",
+      "path": "skills/frontend-design"
+    },
+    {
+      "name": "internal-comms",
+      "path": "skills/internal-comms"
+    },
+    {
+      "name": "mcp-builder",
+      "path": "skills/mcp-builder"
+    },
+    {
+      "name": "pdf",
+      "path": "skills/pdf"
+    },
+    {
+      "name": "pptx",
+      "path": "skills/pptx"
+    },
+    {
+      "name": "skill-creator",
+      "path": "skills/skill-creator"
+    },
+    {
+      "name": "slack-gif-creator",
+      "path": "skills/slack-gif-creator"
+    },
+    {
+      "name": "theme-factory",
+      "path": "skills/theme-factory"
+    },
+    {
+      "name": "web-artifacts-builder",
+      "path": "skills/web-artifacts-builder"
+    },
+    {
+      "name": "webapp-testing",
+      "path": "skills/webapp-testing"
+    },
+    {
+      "name": "xlsx",
+      "path": "skills/xlsx"
+    }
+  ],
+  "vendor": {
+    "id": "anthropics",
+    "repo": "anthropics/skills",
+    "sha": "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+    "skillRoots": [
+      "skills"
+    ]
+  }
+}

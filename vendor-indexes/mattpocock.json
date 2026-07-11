@@ -1,0 +1,168 @@
+{
+  "skills": [
+    {
+      "name": "design-an-interface",
+      "path": "skills/deprecated/design-an-interface"
+    },
+    {
+      "name": "qa",
+      "path": "skills/deprecated/qa"
+    },
+    {
+      "name": "request-refactor-plan",
+      "path": "skills/deprecated/request-refactor-plan"
+    },
+    {
+      "name": "ubiquitous-language",
+      "path": "skills/deprecated/ubiquitous-language"
+    },
+    {
+      "name": "ask-matt",
+      "path": "skills/engineering/ask-matt"
+    },
+    {
+      "name": "code-review",
+      "path": "skills/engineering/code-review"
+    },
+    {
+      "name": "codebase-design",
+      "path": "skills/engineering/codebase-design"
+    },
+    {
+      "name": "diagnosing-bugs",
+      "path": "skills/engineering/diagnosing-bugs"
+    },
+    {
+      "name": "domain-modeling",
+      "path": "skills/engineering/domain-modeling"
+    },
+    {
+      "name": "grill-with-docs",
+      "path": "skills/engineering/grill-with-docs"
+    },
+    {
+      "name": "implement",
+      "path": "skills/engineering/implement"
+    },
+    {
+      "name": "improve-codebase-architecture",
+      "path": "skills/engineering/improve-codebase-architecture"
+    },
+    {
+      "name": "prototype",
+      "path": "skills/engineering/prototype"
+    },
+    {
+      "name": "research",
+      "path": "skills/engineering/research"
+    },
+    {
+      "name": "resolving-merge-conflicts",
+      "path": "skills/engineering/resolving-merge-conflicts"
+    },
+    {
+      "name": "setup-matt-pocock-skills",
+      "path": "skills/engineering/setup-matt-pocock-skills"
+    },
+    {
+      "name": "tdd",
+      "path": "skills/engineering/tdd"
+    },
+    {
+      "name": "to-spec",
+      "path": "skills/engineering/to-spec"
+    },
+    {
+      "name": "to-tickets",
+      "path": "skills/engineering/to-tickets"
+    },
+    {
+      "name": "triage",
+      "path": "skills/engineering/triage"
+    },
+    {
+      "name": "wayfinder",
+      "path": "skills/engineering/wayfinder"
+    },
+    {
+      "name": "claude-handoff",
+      "path": "skills/in-progress/claude-handoff"
+    },
+    {
+      "name": "loop-me",
+      "path": "skills/in-progress/loop-me"
+    },
+    {
+      "name": "setup-ts-deep-modules",
+      "path": "skills/in-progress/setup-ts-deep-modules"
+    },
+    {
+      "name": "wizard",
+      "path": "skills/in-progress/wizard"
+    },
+    {
+      "name": "writing-beats",
+      "path": "skills/in-progress/writing-beats"
+    },
+    {
+      "name": "writing-fragments",
+      "path": "skills/in-progress/writing-fragments"
+    },
+    {
+      "name": "writing-shape",
+      "path": "skills/in-progress/writing-shape"
+    },
+    {
+      "name": "git-guardrails-claude-code",
+      "path": "skills/misc/git-guardrails-claude-code"
+    },
+    {
+      "name": "migrate-to-shoehorn",
+      "path": "skills/misc/migrate-to-shoehorn"
+    },
+    {
+      "name": "scaffold-exercises",
+      "path": "skills/misc/scaffold-exercises"
+    },
+    {
+      "name": "setup-pre-commit",
+      "path": "skills/misc/setup-pre-commit"
+    },
+    {
+      "name": "edit-article",
+      "path": "skills/personal/edit-article"
+    },
+    {
+      "name": "obsidian-vault",
+      "path": "skills/personal/obsidian-vault"
+    },
+    {
+      "name": "grill-me",
+      "path": "skills/productivity/grill-me"
+    },
+    {
+      "name": "grilling",
+      "path": "skills/productivity/grilling"
+    },
+    {
+      "name": "handoff",
+      "path": "skills/productivity/handoff"
+    },
+    {
+      "name": "teach",
+      "path": "skills/productivity/teach"
+    },
+    {
+      "name": "writing-great-skills",
+      "path": "skills/productivity/writing-great-skills"
+    }
+  ],
+  "vendor": {
+    "id": "mattpocock",
+    "repo": "mattpocock/skills",
+    "sha": "391a2701dd948f94f56a39f7533f8eea9a859c87",
+    "skillRoots": [
+      "skills"
+    ]
+  }
+}

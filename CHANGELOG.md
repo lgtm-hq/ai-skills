@@ -13,10 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **tests**: adopt assertpy for all test assertions; add `assertpy` dev
-  dependency, document the rule in `stand-py` Testing, and enforce no bare
-  `assert` statements in `tests/` via `scripts/validate.sh` (#88)
-
 ### Deprecated
 
 ### Removed
@@ -24,6 +20,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.3.0] - 2026-07-10
+
+### Added
+
+- **gateway**: adopt existing skills-lock installs into gateway lock (#152) (6558fcd)
+- **gateway**: adopt existing skills-lock installs into the gateway lockfile (#139)
+
+## [0.2.0] - 2026-07-10
+
+### Added
+
+- **gateway**: add anthropics/claude-code vendor via skillRoots (#151) (ad9afb3)
+
+- **gateway**: register anthropics/claude-code vendor via skillRoots (#138)
+- **gateway**: document gateway install, vendors, locks, and npm publish (#137)
+
+### Changed
+
+- **gateway**: document gateway install, vendors, and escape hatches (#147) (af95a59)
+
+## [0.1.27] - 2026-07-10
+
+### Fixed
+
+- **release**: allow minor bumps from feat commits (#148) (ee64ff1)
+- **release**: raise version-PR `max-bump` from patch to minor so `feat`
+  commits produce minor releases as documented in the PR template
+
+## [0.1.26] - 2026-07-10
+
+### Added
+
+- **gateway**: gateway lockfile and update command (#146) (6f4e449)
+- **gateway**: gateway lockfile plus `update` / `remove` / `list` commands (#136)
+
+## [0.1.25] - 2026-07-10
+
+### Added
+
+- **gateway**: publish @lgtm-hq/ai-skills install wrapper MVP (#142) (11e11f4)
+- **gateway**: SHA-pinned vendor registry with skillRoots (#141) (93abd31)
+
+- **gateway**: add SHA-pinned vendor registry and baked skill indexes (#134)
+
+### Changed
+
+- **gateway**: drop design skill and retire upstream drift (#140) (8a3a93a)
+- **tests**: adopt assertpy for all assertions (#96) (123deb5)
+
+### Removed
+
+- **gateway**: drop the design skill and retire upstream-drift vendoring in
+  preparation for the gateway migration (#133)
 
 ## [0.1.24] - 2026-07-09
 
@@ -318,7 +368,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.24...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.27...v0.2.0
+[0.1.27]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.26...v0.1.27
+[0.1.26]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.25...v0.1.26
+[0.1.25]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.21...v0.1.22

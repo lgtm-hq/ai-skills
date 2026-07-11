@@ -11,8 +11,8 @@ description: >-
 
 Turn "I hacked this together for myself, it's AI slop, but I want it proper
 now" into a repo that meets lgtm-hq standards. This skill **sequences** other
-skills into one pipeline — it composes `commit`, `grilling`, `issue`, and
-`implement-issues`/`pr`, it does not replace them. Never skip a stage or
+skills into one pipeline — it composes `commit`, design grilling, `issue`,
+and `implement-issues`/`pr`, it does not replace them. Never skip a stage or
 collapse two stages into one session; each stage produces an artifact
 (commits, a design decision, an issue tree) the next stage depends on.
 
@@ -46,9 +46,11 @@ committed baseline:
 
 ### 2. Grill the design
 
-Run `/grilling` over the **full** design before writing any spec. One
-question at a time, stress-testing rather than rubber-stamping. Cover at
-least:
+Stress-test the **full** design before writing any spec. Prefer the external
+`grilling` skill when it is installed (e.g. mattpocock/grilling via the
+vendor catalog); otherwise run the same interview inline. One question at a
+time, waiting for an answer before the next — do not batch questions.
+Recommend an answer with each question. Cover at least:
 
 - Audience and multi-tenancy (single-user tool vs. shared service?)
 - Data storage (what DB, migrations, backups?)
@@ -91,8 +93,9 @@ own.
 
 ## Standards-recon boilerplate
 
-Run this recon early — before or alongside stage 3 — as a checklist of
-repeatable commands, not a judgment call:
+Run this recon **before stage 3** (after grilling, before writing issues) so
+branch rulesets and CI requirements shape the backlog. Treat it as a
+checklist of repeatable commands, not a judgment call:
 
 - Fetch `winnow` workflows as the gold-standard CI reference (full workflow
   set).

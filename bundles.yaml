@@ -73,7 +73,6 @@ groups:
 
 # Skills intentionally omitted from named groups (installer's "Other" bucket).
 ungrouped:
-  - design
   - jira
   - lintro-add
   - lintro-verify
