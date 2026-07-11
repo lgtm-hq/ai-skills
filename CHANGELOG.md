@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.5.0] - 2026-07-11
+
+### Added
+
+- **skills**: add properize skill (#130) (b3f36e3)
+
 ## [0.4.0] - 2026-07-11
 
 ### Added
@@ -385,7 +391,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.27...v0.2.0
