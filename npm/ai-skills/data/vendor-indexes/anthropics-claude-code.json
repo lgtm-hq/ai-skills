@@ -1,0 +1,52 @@
+{
+  "skills": [
+    {
+      "name": "claude-opus-4-5-migration",
+      "path": "plugins/claude-opus-4-5-migration/skills/claude-opus-4-5-migration"
+    },
+    {
+      "name": "frontend-design",
+      "path": "plugins/frontend-design/skills/frontend-design"
+    },
+    {
+      "name": "writing-rules",
+      "path": "plugins/hookify/skills/writing-rules"
+    },
+    {
+      "name": "agent-development",
+      "path": "plugins/plugin-dev/skills/agent-development"
+    },
+    {
+      "name": "command-development",
+      "path": "plugins/plugin-dev/skills/command-development"
+    },
+    {
+      "name": "hook-development",
+      "path": "plugins/plugin-dev/skills/hook-development"
+    },
+    {
+      "name": "mcp-integration",
+      "path": "plugins/plugin-dev/skills/mcp-integration"
+    },
+    {
+      "name": "plugin-settings",
+      "path": "plugins/plugin-dev/skills/plugin-settings"
+    },
+    {
+      "name": "plugin-structure",
+      "path": "plugins/plugin-dev/skills/plugin-structure"
+    },
+    {
+      "name": "skill-development",
+      "path": "plugins/plugin-dev/skills/skill-development"
+    }
+  ],
+  "vendor": {
+    "id": "anthropics-claude-code",
+    "repo": "anthropics/claude-code",
+    "sha": "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2",
+    "skillRoots": [
+      "plugins/*/skills"
+    ]
+  }
+}

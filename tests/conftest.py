@@ -1,9 +1,8 @@
 """Shared pytest setup for script tests.
 
-Puts ``scripts/`` on ``sys.path`` so tests can import the
-``upstream_drift`` package and the ``skill_frontmatter`` helper the
-same way the CLI entrypoints do (``python scripts/<name>.py`` places
-``scripts/`` at ``sys.path[0]``).
+Puts ``scripts/`` on ``sys.path`` so tests can import script helpers
+the same way the CLI entrypoints do (``python scripts/<name>.py``
+places ``scripts/`` at ``sys.path[0]``).
 """
 
 from __future__ import annotations
