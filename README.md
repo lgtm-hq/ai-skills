@@ -25,7 +25,7 @@ Install with the **gateway** package (recommended). The npm version matches the
 git release tag (`@0.5.5` ↔ `v0.5.5`):
 
 ```bash
-bunx @lgtm-hq/ai-skills@0.5.5
+bunx @lgtm-hq/ai-skills@0.6.0
 ```
 
 Interactive install uses a Clack-style picker. Happy path:
@@ -38,12 +38,12 @@ Symlink installs are the default; copy-into-agent and conflict jargon stay behin
 advanced / unattended flags. Use `--project` for a repo-local install.
 
 ```bash
-bunx @lgtm-hq/ai-skills@0.5.5 install …
-bunx @lgtm-hq/ai-skills@0.5.5 vendors   # offline: baked vendors + SHAs
-bunx @lgtm-hq/ai-skills@0.5.5 list
-bunx @lgtm-hq/ai-skills@0.5.5 update …
-bunx @lgtm-hq/ai-skills@0.5.5 remove …
-bunx @lgtm-hq/ai-skills@0.5.5 adopt -y --project   # import skills-lock installs
+bunx @lgtm-hq/ai-skills@0.6.0 install …
+bunx @lgtm-hq/ai-skills@0.6.0 vendors   # offline: baked vendors + SHAs
+bunx @lgtm-hq/ai-skills@0.6.0 list
+bunx @lgtm-hq/ai-skills@0.6.0 update …
+bunx @lgtm-hq/ai-skills@0.6.0 remove …
+bunx @lgtm-hq/ai-skills@0.6.0 adopt -y --project   # import skills-lock installs
 ```
 
 Unattended installs require an explicit scope and agent. Upstream `skills` has no
@@ -51,7 +51,7 @@ conflict policy — omit `--on-conflict`, or pass `overwrite`. `keep` / `skip` f
 closed:
 
 ```bash
-bunx @lgtm-hq/ai-skills@0.5.5 install -y --global \
+bunx @lgtm-hq/ai-skills@0.6.0 install -y --global \
   -a claude-code -a cursor -a codex \
   --bundle pre-push
 ```
@@ -64,9 +64,9 @@ The gateway shells out to the [Vercel Labs `skills` CLI](https://github.com/verc
 You can call it directly when you want the stock installer only:
 
 ```bash
-bunx skills add lgtm-hq/ai-skills@v0.5.5 -g
-npx skills add lgtm-hq/ai-skills@v0.5.5 -g
-pnpm dlx skills add lgtm-hq/ai-skills@v0.5.5 -g
+bunx skills add lgtm-hq/ai-skills@v0.6.0 -g
+npx skills add lgtm-hq/ai-skills@v0.6.0 -g
+pnpm dlx skills add lgtm-hq/ai-skills@v0.6.0 -g
 ```
 
 </details>
@@ -189,7 +189,7 @@ Every release ships a `skills-manifest.json` asset mapping each skill name to
 the sha256 of its `SKILL.md`, attested with GitHub build provenance:
 
 ```bash
-gh release download v0.5.5 -R lgtm-hq/ai-skills -p skills-manifest.json
+gh release download v0.6.0 -R lgtm-hq/ai-skills -p skills-manifest.json
 gh attestation verify skills-manifest.json -R lgtm-hq/ai-skills
 shasum -a 256 <install-dir>/<name>/SKILL.md  # compare against the manifest
 ```
@@ -205,15 +205,15 @@ upstream CLI escape hatch:
 
 ```bash
 # Gateway: unattended first-party bundle
-bunx @lgtm-hq/ai-skills@0.5.5 install -y --global -a cursor \
+bunx @lgtm-hq/ai-skills@0.6.0 install -y --global -a cursor \
   --bundle pre-push
 
 # Gateway: unattended vendor skill at the baked SHA
-bunx @lgtm-hq/ai-skills@0.5.5 install -y --global -a cursor \
+bunx @lgtm-hq/ai-skills@0.6.0 install -y --global -a cursor \
   --vendor anthropics --skill frontend-design
 
 # Escape hatch: all first-party skills via skills CLI
-bunx skills add lgtm-hq/ai-skills@v0.5.5 -g --all
+bunx skills add lgtm-hq/ai-skills@v0.6.0 -g --all
 ```
 
 ### Update installed skills
@@ -221,9 +221,9 @@ bunx skills add lgtm-hq/ai-skills@v0.5.5 -g --all
 Prefer the gateway for installs it manages:
 
 ```bash
-bunx @lgtm-hq/ai-skills@0.5.5 update -y --global -a cursor
-bunx @lgtm-hq/ai-skills@0.5.5 list --global
-bunx @lgtm-hq/ai-skills@0.5.5 remove -y --global -a cursor --skill lint
+bunx @lgtm-hq/ai-skills@0.6.0 update -y --global -a cursor
+bunx @lgtm-hq/ai-skills@0.6.0 list --global
+bunx @lgtm-hq/ai-skills@0.6.0 remove -y --global -a cursor --skill lint
 ```
 
 The upstream CLI updates by **skill name** or **scope**, not by package slug
@@ -238,7 +238,7 @@ To move first-party skills to a specific release via the escape hatch, reinstall
 with a tag:
 
 ```bash
-bunx skills add lgtm-hq/ai-skills@v0.5.5 -g --all
+bunx skills add lgtm-hq/ai-skills@v0.6.0 -g --all
 ```
 
 List or remove stock installs with `bunx skills ls -g` and
