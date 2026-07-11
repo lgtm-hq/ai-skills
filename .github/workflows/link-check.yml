@@ -1,0 +1,57 @@
+---
+name: Link Check
+
+# The repo is almost entirely Markdown (skills, docs, README) and links were
+# unchecked. Two jobs split the work by cost and determinism:
+#   * internal-links gates every PR. It runs Lychee offline (check-external:
+#     false), so it only verifies relative/local links and never touches the
+#     network for targets — deterministic, non-flaky, safe as a PR check.
+#   * external-links runs on a schedule (and on demand). It validates external
+#     HTTP(S) links, which are inherently flaky (rate limits, transient 5xx),
+#     so it is kept off the PR path to avoid blocking merges on link rot.
+
+"on":
+  pull_request:
+    branches: [main]
+  merge_group:
+  schedule:
+    # Weekly, Monday 06:00 UTC — surfaces external link rot without gating PRs.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  internal-links:
+    name: Internal link check
+    # PR / merge-queue gate: offline, so egress stays hardened (block) with the
+    # github-tooling preset that the reusable needs to check out its scripts.
+    if: >-
+      github.event_name == 'pull_request'
+      || github.event_name == 'merge_group'
+    permissions:
+      contents: read
+    # yamllint disable-line rule:line-length
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@17483d234808cb3a2019afdff0dea29593f24a05
+    with:
+      job-name: Internal link check
+      file-extensions: md
+      check-external: false
+      tooling-ref: "17483d234808cb3a2019afdff0dea29593f24a05"
+
+  external-links:
+    name: External link check
+    # Scheduled / manual only. External checking needs egress to arbitrary
+    # documentation hosts, so the fixed github-tooling allowlist cannot apply;
+    # harden-runner runs in audit mode to monitor (not block) egress here.
+    if: >-
+      github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+    # yamllint disable-line rule:line-length
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@17483d234808cb3a2019afdff0dea29593f24a05
+    with:
+      job-name: External link check
+      file-extensions: md
+      check-external: true
+      egress-policy: audit
+      tooling-ref: "17483d234808cb3a2019afdff0dea29593f24a05"
