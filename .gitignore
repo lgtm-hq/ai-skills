@@ -45,6 +45,9 @@ downloads/
 eggs/
 .eggs/
 lib/
+# Keep the npm package source tree trackable despite the Python `lib/` ignore.
+!npm/ai-skills/lib/
+!npm/ai-skills/lib/**
 lib64/
 parts/
 sdist/

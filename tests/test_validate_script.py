@@ -30,6 +30,7 @@ def _copy_validate_script(
     script_path.parent.mkdir(parents=True, exist_ok=False)
     shutil.copy2(src=repo_root / "scripts" / "validate.sh", dst=script_path)
     for helper in (
+        "bake_vendor_indexes.py",
         "validate_skills.py",
         "skill_frontmatter.py",
         "check_suppressions.py",
@@ -38,6 +39,16 @@ def _copy_validate_script(
             src=repo_root / "scripts" / helper,
             dst=script_path.parent / helper,
         )
+    shutil.copytree(
+        src=repo_root / "scripts" / "vendor_registry",
+        dst=script_path.parent / "vendor_registry",
+    )
+    shutil.copy2(src=repo_root / "vendors.yaml", dst=tmp_path / "vendors.yaml")
+    shutil.copy2(src=repo_root / "NOTICE.md", dst=tmp_path / "NOTICE.md")
+    shutil.copytree(
+        src=repo_root / "vendor-indexes",
+        dst=tmp_path / "vendor-indexes",
+    )
     logger.debug("Copied validate.sh to {}", script_path)
     return script_path
 
