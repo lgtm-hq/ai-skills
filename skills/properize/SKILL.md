@@ -22,8 +22,8 @@ The default failure mode is jumping straight from "make this proper" to
 writing a full implementation plan and executing it in one pass — no
 commit checkpoint, no design interrogation, no issue trail. That produces an
 unreviewable mega-diff and bakes in whatever the prototype already got wrong.
-Do NOT do this. Do: commit → grill → spec → implement, one stage at a time,
-stopping between stages for the artifacts to exist and be reviewable.
+Do NOT do this. Do: commit → grill → recon → spec → implement, one stage at a
+time, stopping between stages for the artifacts to exist and be reviewable.
 
 ## Pipeline
 
@@ -64,38 +64,15 @@ Recommend an answer with each question. Cover at least:
 - Testing strategy and coverage bar
 - Issue granularity for the next stage (how small is "one PR"?)
 
-Do not proceed to spec generation until these questions have answers. If the
+Do not proceed to standards recon until these questions have answers. If the
 user defers a question, record the deferral explicitly rather than assuming
 a default.
 
-### 3. Spec the backlog as milestones, epics, and issues
+### 3. Standards recon (before writing issues)
 
-Turn the grilled design into a milestone → epic → issue tree:
-
-- **Milestones** group epics by release/phase.
-- **Epics** group issues by feature area.
-- **Issues** are one-PR-sized. Every code issue gets an AI Implementation
-  Prompt comment in the `issue` skill's format (see `skills/issue/SKILL.md`),
-  so any issue is fan-out-ready for `implement-issues` without rework.
-- Generalize the issue-generation script pattern (Python + `gh` calls
-  creating milestones, epics, and issues from a structured spec) into a
-  repo-agnostic template rather than a one-off script tied to this repo's
-  domain. Keep the domain content (titles, bodies, prompts) separate from the
-  generation mechanics so the template is reusable on the next prototype.
-
-### 4. Implement, issue by issue
-
-Only after the tree exists: implement issues one at a time, small PRs, per
-the `pr` skill (or hand the whole ready backlog to `implement-issues` for
-parallel, worktree-isolated lanes). Never batch unrelated issues into one PR
-to save time — the point of stage 3 was to make each unit reviewable on its
-own.
-
-## Standards-recon boilerplate
-
-Run this recon **before stage 3** (after grilling, before writing issues) so
-branch rulesets and CI requirements shape the backlog. Treat it as a
-checklist of repeatable commands, not a judgment call:
+Run this recon **after grilling and before stage 4** so branch rulesets and CI
+requirements shape the backlog. Treat it as a checklist of repeatable
+commands, not a judgment call:
 
 - Fetch `winnow` workflows as the gold-standard CI reference (full workflow
   set).
@@ -112,14 +89,40 @@ checklist of repeatable commands, not a judgment call:
 - Wire releases through the version-PR + auto-tag flow used elsewhere in
   lgtm-hq, not manual tagging.
 
+Do not create milestones, epics, or issues until this recon is complete.
+
+### 4. Spec the backlog as milestones, epics, and issues
+
+Turn the grilled design into a milestone → epic → issue tree:
+
+- **Milestones** group epics by release/phase.
+- **Epics** group issues by feature area.
+- **Issues** are one-PR-sized. Every code issue gets an AI Implementation
+  Prompt comment in the `issue` skill's format (see `skills/issue/SKILL.md`),
+  so any issue is fan-out-ready for `implement-issues` without rework.
+- Generalize the issue-generation script pattern (Python + `gh` calls
+  creating milestones, epics, and issues from a structured spec) into a
+  repo-agnostic template rather than a one-off script tied to this repo's
+  domain. Keep the domain content (titles, bodies, prompts) separate from the
+  generation mechanics so the template is reusable on the next prototype.
+
+### 5. Implement, issue by issue
+
+Only after the tree exists: implement issues one at a time, small PRs, per
+the `pr` skill (or hand the whole ready backlog to `implement-issues` for
+parallel, worktree-isolated lanes). Never batch unrelated issues into one PR
+to save time — the point of stage 4 was to make each unit reviewable on its
+own.
+
 ## Guardrails
 
-- **Stage order is not negotiable.** Do not spec issues before the design has
-  been grilled, and do not implement before the issue tree exists.
+- **Stage order is not negotiable.** Do not run standards recon before the
+  design has been grilled, do not spec issues before recon is done, and do
+  not implement before the issue tree exists.
 - **Stop between stages.** Each stage's artifact (commit history, recorded
-  design decisions, the issue tree) should be reviewable before the next
-  stage starts — do not silently chain all four stages into one unattended
-  run.
+  design decisions, recon notes, the issue tree) should be reviewable before
+  the next stage starts — do not silently chain all five stages into one
+  unattended run.
 - A stage that cannot stay green (lint, tests, or an unanswered blocking
   design question) **stops and reports** rather than pushing through.
 - This skill never merges — implementation PRs follow the normal review and
