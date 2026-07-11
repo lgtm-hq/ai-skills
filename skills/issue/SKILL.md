@@ -179,9 +179,12 @@ Rules for managing an existing backlog, not just creating new issues.
   existing issue number over closing it and opening a new one — it preserves
   history and discussion.
 - **Placeholder convention for duplicates.** For issues that are redundant or
-  would only duplicate another: delete all comments, empty the description,
-  and set the title to `placeholder`. Don't flesh out a duplicate and don't
-  leave stale content behind — reserve the number for reuse.
+  would only duplicate another: prefer closing with a supersession comment
+  (see above) when the issue has useful comments or an implementation prompt —
+  do not wipe history that other links or workflows may still need. Only
+  convert to a `placeholder` (empty body, title `placeholder`, comments
+  cleared) when the issue has no useful discussion to preserve and you are
+  explicitly reserving the number for reuse.
 - **Never churn the backlog silently.** Announce close/reopen/create/edit
   changes as you make them — the backlog should stay visible, not shift
   underneath readers.
