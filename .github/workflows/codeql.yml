@@ -39,9 +39,18 @@ jobs:
       egress-policy: block
       egress-preset: github-tooling
       # Harden-runner pre reads workflow inputs only (not resolved presets).
-      # Omit allowed-endpoints so the reusable baked default (github-tooling
-      # hosts) applies; append-only extras would replace that default and
-      # block github.com during checkout.
+      # Full list = reusable default + release-assets (CodeQL bundle download
+      # from github/codeql-action releases redirects there).
+      allowed-endpoints-mode: replace
+      allowed-endpoints: >
+        github.com:443
+        api.github.com:443
+        codeload.github.com:443
+        objects.githubusercontent.com:443
+        raw.githubusercontent.com:443
+        uploads.github.com:443
+        pipelines.actions.githubusercontent.com:443
+        release-assets.githubusercontent.com:443
     permissions:
       # read: checkout repository for CodeQL analysis
       contents: read
