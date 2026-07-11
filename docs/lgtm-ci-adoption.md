@@ -4,80 +4,129 @@ Inventory and adoption plan for [lgtm-hq/lgtm-ci](https://github.com/lgtm-hq/lgt
 reusable workflows, per issue
 [#90](https://github.com/lgtm-hq/ai-skills/issues/90). Generated with
 `scripts/audit_lgtm_ci_adoption.py` against the pinned ref
-`fc73b3ab8342a24597c12d137d6ff7fca84b9fe2`.
+`17483d234808cb3a2019afdff0dea29593f24a05`.
 
-This document is inventory and plan only — adoption lands in follow-up
-PRs (one workflow per PR).
+This document is inventory and plan. Adoptions land in focused follow-up
+PRs (one workflow per PR); several are in-flight — see
+[In-flight adoptions](#in-flight-adoptions).
 
 ## Summary
 
-- Available reusable workflows at the pinned ref: **27**
-- Adopted: **5**
-- Recommended for adoption: **6** (plus 2 post-repin candidates)
-- Covered differently: **3**
-- Not applicable: **13**
+- Available reusable workflows at the pinned ref: **45**
+- Adopted: **8**
+- Recommended for adoption: **7** (5 in-flight, 2 pending)
+- Deferred (with rationale): **2**
+- Covered differently: **1**
+- Not applicable: **27**
 
-Regenerate with:
+Regenerate the adopted/unadopted lists and counts with:
 
 ```bash
 uv run python scripts/audit_lgtm_ci_adoption.py
 ```
 
+The script exits non-zero on mixed pins, so re-running it after any repin
+catches partial updates. All eight callers share the single SHA above.
+
 ## Classification
 
 | Reusable workflow | Status | Rationale |
 | --- | --- | --- |
-| `reusable-quality.yml` | adopted | Called by `ci.yml`; runs lintro quality checks. |
+| `reusable-quality-lint.yml` | adopted | Called by `ci.yml`; runs lintro quality checks. Renamed upstream from `reusable-quality.yml` (which split into quality-lint + publish-quality-summary). |
+| `reusable-publish-quality-summary.yml` | adopted | Called by `ci.yml`; posts the quality summary PR comment (the write-scoped half of the old `reusable-quality.yml`). |
 | `reusable-validate.yml` | adopted | Called by `ci.yml`; runs `scripts/validate.sh`. |
-| `reusable-pr-auto-assign.yml` | adopted | Called by `pr-auto-assign.yml` (added in #77). |
+| `reusable-test-python.yml` | adopted | Called by `ci.yml` ([#97](https://github.com/lgtm-hq/ai-skills/pull/97)); runs the pytest suite. Repinned to the shared SHA here (was on the pre-repin `fc73b3ab…`). |
+| `reusable-validate-lintro-version.yml` | adopted | Called by `validate-lintro-version.yml`; fails the build if `pyproject.toml`'s `lintro==` pin drifts from the py-lintro image CI runs. Consumer repos pass `lintro-image` explicitly (see [lintro version alignment](#lintro-version-alignment)). |
+| `reusable-pr-auto-assign.yml` | adopted | Called by `pr-auto-assign.yml` (added in [#77](https://github.com/lgtm-hq/ai-skills/pull/77)). |
 | `reusable-release-auto-tag.yml` | adopted | Called by `release-auto-tag.yml`. |
 | `reusable-release-version-pr.yml` | adopted | Called by `release-version-pr.yml`. |
-| `reusable-scorecards.yml` | recommended | OpenSSF Scorecard posture; no supply-chain scoring runs today. |
-| `reusable-codeql.yml` | recommended | Static analysis for the Python scripts in `scripts/`; none runs today. |
-| `reusable-dependency-review.yml` | recommended | Blocks vulnerable dependency changes on PRs (`pyproject.toml`/`uv.lock`). |
-| `reusable-sbom.yml` | recommended | SBOM generation for releases; complements the existing manifest attestation. |
-| `reusable-link-check.yml` | recommended | Repo is mostly Markdown (skills, docs); links are unchecked today. |
-| `reusable-test-python.yml` | recommended | Audit finding: the pytest suite in `tests/` runs only locally — CI never executes it. |
-| `reusable-pr-labeler.yml` | covered-differently | #90 lists it as consumed, but no caller exists at this pin; labeling currently comes from PR tooling/skills. Verify or adopt during the repin. |
-| `reusable-semantic-pr-title.yml` | covered-differently | #90 lists it as consumed, but no caller exists at this pin; title convention enforced by the commit/pr skills and squash-merge policy. Verify or adopt during the repin. |
+| `reusable-scorecards.yml` | recommended | OpenSSF Scorecard posture; no supply-chain scoring runs today. In-flight (#90 plan item 2). |
+| `reusable-codeql.yml` | recommended | Static analysis for the Python scripts in `scripts/`; none runs today. In-flight (#90 plan item 3). |
+| `reusable-dependency-review.yml` | recommended | Blocks vulnerable dependency changes on PRs (`pyproject.toml`/`uv.lock`). In-flight (#90 plan item 4). |
+| `reusable-sbom.yml` | recommended | SBOM generation for releases; complements the existing manifest attestation. In-flight (#90 plan item 5). |
+| `reusable-link-check.yml` | recommended | Repo is mostly Markdown (skills, docs); links are unchecked today. In-flight (#90 plan item 6). |
+| `reusable-pr-labeler.yml` | recommended | No org-level fallback exists (see [org-level coverage](#org-level-coverage)); sibling repos adopt it per-repo. Candidate for a per-repo caller; labeling currently comes from PR tooling/skills. |
+| `reusable-semantic-pr-title.yml` | recommended | No org-level fallback exists (see [org-level coverage](#org-level-coverage)); sibling repos adopt it per-repo. Candidate for a per-repo caller; title convention is enforced today by the commit/pr skills and squash-merge policy. |
+| `reusable-required-check.yml` | deferred | Single required-status aggregation; most useful once branch protection exists — blocked on owner action ([#71](https://github.com/lgtm-hq/ai-skills/issues/71)). |
+| `reusable-vuln-suppression-check.yml` | deferred | Keeps vulnerability suppressions reviewed and time-boxed; no suppression files exist in this repo yet — adopt when the first suppression appears. |
 | `reusable-validate-action-pinning.yml` | covered-differently | SHA pinning is enforced by stand-ci convention and review today; automating it is a later hardening candidate. |
-| `reusable-coverage.yml` | not-applicable | No coverage publishing target; revisit if `reusable-test-python.yml` adoption produces coverage artifacts. |
+| `reusable-build-python-dist.yml` | not-applicable | Nothing built or distributed; `scripts/` are repo-internal tooling. |
+| `reusable-build-rust-binaries.yml` | not-applicable | No Rust code. |
+| `reusable-coverage.yml` | not-applicable | No coverage publishing target; revisit if the pytest job starts producing coverage artifacts. |
 | `reusable-deploy-pages.yml` | not-applicable | No site/pages deployment. |
+| `reusable-deploy-site-with-reports.yml` | not-applicable | No site/pages deployment. |
 | `reusable-docker.yml` | not-applicable | No container images built or published. |
 | `reusable-ghcr-cleanup.yml` | not-applicable | No GHCR packages to clean up. |
+| `reusable-github-release.yml` | not-applicable | No build artifacts to attach; release tagging is handled by `reusable-release-auto-tag.yml`. |
+| `reusable-publish-artifact-report.yml` | not-applicable | No artifact-report pipeline. |
 | `reusable-publish-gem.yml` | not-applicable | Nothing published to RubyGems. |
-| `reusable-publish-homebrew.yml` | not-applicable | No Homebrew formula. |
 | `reusable-publish-npm.yml` | not-applicable | Nothing published to npm. |
-| `reusable-publish-pypi.yml` | not-applicable | Nothing published to PyPI; scripts are repo-internal tooling. |
+| `reusable-publish-rust-release.yml` | not-applicable | No Rust release surface. |
+| `reusable-publish-security-audit-comment.yml` | not-applicable | No `reusable-security-audit.yml` pipeline to feed it. |
+| `reusable-publish-test-summary.yml` | not-applicable | The pytest job runs with `publish-results` disabled; no test-summary PR-comment pipeline is wired. |
+| `reusable-registry-health-check.yml` | not-applicable | No published registry packages to health-check. |
+| `reusable-rust-build.yml` | not-applicable | No Rust code. |
+| `reusable-rust-test.yml` | not-applicable | No Rust code. |
+| `reusable-security-audit.yml` | not-applicable | Python-only repo; PR-time dependency-vulnerability blocking is planned via `reusable-dependency-review.yml` (in-flight). A scheduled audit can be revisited. |
+| `reusable-site-quality.yml` | not-applicable | No site to quality-check. |
 | `reusable-test-e2e.yml` | not-applicable | No e2e/browser surface. |
 | `reusable-test-e2e-matrix.yml` | not-applicable | No e2e/browser surface. |
 | `reusable-test-node.yml` | not-applicable | No Node/TypeScript code. |
-| `reusable-test-pr-comment.yml` | not-applicable | No test-summary PR-comment pipeline to feed it. |
+| `reusable-test-node-custom.yml` | not-applicable | No Node/TypeScript code. |
+| `reusable-test-node-publish.yml` | not-applicable | No Node/TypeScript publish surface. |
+| `reusable-test-python-publish.yml` | not-applicable | Nothing published to PyPI; `scripts/` are repo-internal tooling. |
+| `reusable-test-rust-build.yml` | not-applicable | No Rust code. |
 | `reusable-test-shell.yml` | not-applicable | Shell scripts are thin installers without a BATS suite; revisit if one is added. |
 
-### Post-repin candidates (not present at the pinned ref)
+## In-flight adoptions
 
-These exist in current lgtm-ci but not at
-`fc73b3ab…`; adopting them rides the pending repin (the lgtm-ci release
-containing lgtm-ci#378, same repin as #37).
+Plan items 2–6 of [#90](https://github.com/lgtm-hq/ai-skills/issues/90) —
+`reusable-scorecards.yml`, `reusable-codeql.yml`,
+`reusable-dependency-review.yml`, `reusable-sbom.yml`, and
+`reusable-link-check.yml` — are being adopted in sibling PRs, one workflow
+per PR. Those PRs intentionally do **not** edit this document, to avoid
+merge conflicts across the parallel lanes; this table will be reconciled to
+`adopted` as they land.
 
-| Reusable workflow | Status | Rationale |
-| --- | --- | --- |
-| `reusable-required-check.yml` | recommended | Single required-status aggregation instead of enumerating branch-protection checks. |
-| `reusable-vuln-suppression-check.yml` | recommended | Keeps vulnerability suppressions reviewed and time-boxed. |
+## lintro version alignment
+
+`ci.yml`'s `quality` job runs lintro via the `reusable-quality-lint.yml`
+default py-lintro image
+(`ghcr.io/lgtm-hq/py-lintro@sha256:1ff3db35…`, **0.64.1**). To keep local
+`uv run lintro chk` from drifting away from what CI enforces,
+`pyproject.toml` pins `lintro==0.64.1` (exact) and `uv.lock` resolves to
+the same version. Issue #90's Phase-1 audit observed newer local locks
+(0.64.5) surfacing `untyped-decorator` mypy findings that the pinned CI
+image did not; the exact pin closes that gap (the suite is green on 0.64.1).
+
+`reusable-validate-lintro-version.yml` guards this automatically: it runs
+`lintro --version` inside the pinned image and fails if it disagrees with
+the `lintro==` pin in `pyproject.toml`. As a consumer repo, ai-skills does
+not vendor lgtm-ci's `reusable-quality-lint.yml` / `run-quality` action, so
+`resolve-lintro-image.sh` cannot auto-discover the digest; the
+`validate-lintro-version.yml` caller passes `lintro-image` explicitly (the
+same digest `reusable-quality-lint.yml` defaults to at the pinned ref). On
+the next lgtm-ci repin, bump the image digest and the `lintro==` pin
+together — the guard fails loudly if they drift.
+
+## Org-level coverage
+
+`reusable-pr-labeler.yml` and `reusable-semantic-pr-title.yml` are listed
+as consumed in #90's Phase-1 comment, but no caller exists in this repo and
+there is **no org-level fallback**: `lgtm-hq/.github` contains only its own
+`ci.yml` (no org-default workflows, no `workflow-templates/`). Sibling repos
+(`py-lintro`, `winnow`, `Rustume`, `podex`) each adopt these per-repo with
+SHA-pinned callers. They are therefore genuinely unadopted here and are
+per-repo adoption candidates rather than "covered elsewhere."
 
 ## Drift risks
 
-- **lintro pin vs lock version drift:** CI's `reusable-quality.yml` runs
-  a pinned `py-lintro` image (see `lintro-image` in lgtm-ci) that is
-  older/laxer than this repo's local lock (`lintro>=0.62.1` in
-  `pyproject.toml`, resolved in `uv.lock`). Issue #90 noted 2 mypy
-  findings passing CI but failing locally; at the current lock this
-  audit observes 5 (all `untyped-decorator` on the repo's
-  `pytest.mark.parametrize` uses in `tests/`). Fix pin/lock alignment
-  (and these findings) as part of the repin
-  (lgtm-ci offers `reusable-validate-lintro-version.yml` at newer refs
-  to guard exactly this).
-- **Single-SHA pin discipline:** all lgtm-ci callers currently share one
-  SHA; `scripts/audit_lgtm_ci_adoption.py` exits non-zero on mixed pins,
-  so re-running it after any repin catches partial updates.
+- **lintro pin vs lock drift:** resolved — `pyproject.toml` exact-pins
+  `lintro==0.64.1` to match the CI image, and
+  `reusable-validate-lintro-version.yml` (adopted via
+  `validate-lintro-version.yml`) fails the build on any future drift. See
+  [lintro version alignment](#lintro-version-alignment).
+- **Single-SHA pin discipline:** all eight lgtm-ci callers share one SHA
+  (`17483d234808cb3a2019afdff0dea29593f24a05`);
+  `scripts/audit_lgtm_ci_adoption.py` exits non-zero on mixed pins, so
+  re-running it after any repin catches partial updates.
