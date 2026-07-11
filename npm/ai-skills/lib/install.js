@@ -1,105 +1,165 @@
-import { createInterface } from "node:readline/promises";
-import { stdin, stdout } from "node:process";
-
 import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
 import { mergeLockEntries, readLockfile, writeLockfile } from "./lockfile.js";
 import { resolveScope } from "./options.js";
+import { getPackageVersion } from "./package-version.js";
 import { buildSkillsArguments, runSkills } from "./skills-runner.js";
-
-/**
- * Prompt for a numbered item.
- *
- * @template T
- * @param {string} label - Prompt heading.
- * @param {T[]} items - Selectable values.
- * @param {(item: T) => string} describe - Human-readable item formatter.
- * @param {{question: (query: string) => Promise<string>}} prompt - Interactive prompt.
- * @returns {Promise<T>} Selected value.
- */
-async function choose(label, items, describe, prompt) {
-  stdout.write(`${label}\n`);
-  items.forEach((item, index) => stdout.write(`  ${index + 1}. ${describe(item)}\n`));
-  const response = await prompt.question("> ");
-  const selection = Number.parseInt(response, 10) - 1;
-  if (!Number.isInteger(selection) || !items[selection]) {
-    throw new Error("Choose a listed number");
-  }
-  return items[selection];
-}
+import { createClackUi, KNOWN_AGENTS } from "./ui.js";
 
 /**
  * Fill unset install selections through the terminal picker.
  *
+ * Happy path asks for catalog source (+ vendor skill) and agents. Scope defaults
+ * to global, installs symlink (not copy), and uses overwrite for the gateway
+ * fail-closed `--on-conflict` API without prompting — upstream `skills` does
+ * not implement conflict policies yet.
+ *
  * @param {{agents: string[], bundle: string | null, copy: boolean, global: boolean, onConflict: string | null, project: boolean, skills: string[], vendor: string | null, yes: boolean}} options - Initial install options.
- * @param {{question: (query: string) => Promise<string>}} prompt - Interactive prompt.
+ * @param {ReturnType<typeof createClackUi>} [ui] - Injectable interactive UI.
  * @returns {Promise<typeof options>} Fully selected options.
  */
-export async function completeInteractively(options, prompt) {
+export async function completeInteractively(options, ui = createClackUi()) {
+  ui.intro("ai-skills gateway");
+
   const bundles = await loadBundles();
   const vendors = await loadVendors();
-  const source = await choose(
-    "Choose a first-party bundle or vendor catalog:",
-    [
-      ...Object.entries(bundles.groups).map(([id, bundle]) => ({
-        id,
-        kind: "bundle",
-        label: `${bundle.name} — ${bundle.description}`,
-      })),
-      ...vendors.vendors.map((vendor) => ({
-        id: vendor.id,
-        kind: "vendor",
-        label: `${vendor.repo} @ ${vendor.sha.slice(0, 12)}`,
-      })),
-    ],
-    (item) => item.label,
-    prompt,
-  );
+  const sourceChoices = [
+    ...Object.entries(bundles.groups).map(([id, bundle]) => ({
+      value: `bundle:${id}`,
+      label: `${bundle.name} — ${bundle.description}`,
+    })),
+    ...vendors.vendors.map((vendor) => ({
+      value: `vendor:${vendor.id}`,
+      label: `${vendor.repo} @ ${vendor.sha.slice(0, 12)}`,
+    })),
+  ];
 
-  if (source.kind === "bundle") {
-    const bundle = bundles.groups[source.id];
-    options.bundle = source.id;
+  const sourceValue = await cancelable(
+    ui,
+    ui.select({
+      message: "Install from which catalog?",
+      options: sourceChoices,
+    }),
+  );
+  const [sourceKind, sourceId] = splitSourceValue(sourceValue);
+
+  if (sourceKind === "bundle") {
+    const bundle = bundles.groups[sourceId];
+    options.bundle = sourceId;
     options.skills = bundle.skills;
   } else {
-    const index = await loadVendorIndex(source.id);
-    const skill = await choose(
-      `Choose a skill from ${index.vendor.repo}:`,
-      index.skills,
-      (item) => item.name,
-      prompt,
+    const index = await loadVendorIndex(sourceId);
+    const skillName = await cancelable(
+      ui,
+      ui.select({
+        message: `Skill from ${index.vendor.repo}`,
+        options: index.skills.map((skill) => ({
+          value: skill.name,
+          label: skill.name,
+        })),
+      }),
     );
-    options.vendor = source.id;
-    options.skills = [skill.name];
+    options.vendor = sourceId;
+    options.skills = [skillName];
   }
 
   if (options.agents.length === 0) {
-    const agents = await prompt.question(
-      "Agent(s), comma-separated (blank lets skills CLI detect): ",
+    const selected = await cancelable(
+      ui,
+      ui.multiselect({
+        message: "Install into which agents?",
+        options: [
+          ...KNOWN_AGENTS,
+          {
+            value: "__detect__",
+            label: "Detect installed agents (may target many tools)",
+          },
+        ],
+        initialValues: KNOWN_AGENTS.map((agent) => agent.value),
+        required: true,
+      }),
     );
-    options.agents = agents
-      .split(",")
-      .map((agent) => agent.trim())
-      .filter(Boolean);
+    if (selected.length === 1 && selected[0] === "__detect__") {
+      options.agents = [];
+      ui.note(
+        "Leaving agents unset so the upstream skills CLI can detect targets.",
+        "Agent detection",
+      );
+    } else {
+      options.agents = selected.filter((agent) => agent !== "__detect__");
+    }
   }
-  if (!options.copy) {
-    options.copy = (await prompt.question("Copy files instead of symlink? [y/N] "))
-      .trim()
-      .toLowerCase()
-      .startsWith("y");
-  }
-  if (!options.onConflict) {
-    options.onConflict = await choose(
-      "When an installed skill conflicts:",
-      ["keep", "overwrite", "skip"],
-      (item) => item,
-      prompt,
-    );
-  }
+
   if (!options.global && !options.project) {
-    const scope = await choose("Install scope:", ["global", "project"], (item) => item, prompt);
+    const scope = await cancelable(
+      ui,
+      ui.select({
+        message: "Install scope",
+        options: [
+          { value: "global", label: "Global (user home — recommended)" },
+          { value: "project", label: "Project (this repository)" },
+        ],
+        initialValue: "global",
+      }),
+    );
     options.global = scope === "global";
     options.project = scope === "project";
   }
+
+  // Symlink is the default; only offer copy as an advanced opt-in.
+  if (!options.copy) {
+    const advanced = await cancelable(
+      ui,
+      ui.confirm({
+        message: "Show advanced options (copy files instead of symlink)?",
+        initialValue: false,
+      }),
+    );
+    if (advanced) {
+      options.copy = await cancelable(
+        ui,
+        ui.confirm({
+          message: "Copy files into each agent instead of symlinking from ~/.agents/skills?",
+          initialValue: false,
+        }),
+      );
+    }
+  }
+
+  if (!options.onConflict) {
+    // Gateway still requires an explicit policy for -y; interactive defaults to
+    // overwrite so we do not ask a jargon question for a no-op upstream flag.
+    options.onConflict = "overwrite";
+  }
+
+  ui.outro("Starting install…");
   return options;
+}
+
+/**
+ * Split a `kind:id` catalog selection value.
+ *
+ * @param {string} value - Combined select value.
+ * @returns {[string, string]} Kind and id.
+ */
+function splitSourceValue(value) {
+  const separator = value.indexOf(":");
+  return [value.slice(0, separator), value.slice(separator + 1)];
+}
+
+/**
+ * Abort when Clack reports cancel (Ctrl+C / escape).
+ *
+ * @template T
+ * @param {ReturnType<typeof createClackUi>} ui - UI adapter.
+ * @param {Promise<T>} valuePromise - Pending prompt result.
+ * @returns {Promise<Exclude<T, symbol>>} Resolved non-cancel value.
+ */
+async function cancelable(ui, valuePromise) {
+  const value = await valuePromise;
+  if (ui.isCancel(value)) {
+    throw new Error("Install cancelled");
+  }
+  return /** @type {Exclude<T, symbol>} */ (value);
 }
 
 /**
@@ -112,6 +172,11 @@ export async function completeInteractively(options, prompt) {
  * @returns {Promise<void>} Resolves when the skills CLI succeeds.
  */
 export async function install(options, run = runSkills, now = () => new Date(), lockEnvironment) {
+  if (options.onConflict && options.onConflict !== "overwrite") {
+    throw new Error(
+      `--on-conflict=${options.onConflict} is unsupported: upstream skills CLI has no conflict policy. Omit the flag, use overwrite, or remove the existing skill first.`,
+    );
+  }
   let source;
   let selectedOptions = options;
   let vendor;
@@ -141,7 +206,7 @@ export async function install(options, run = runSkills, now = () => new Date(), 
         skills: bundle.skills,
       };
     }
-    const packageVersion = process.env.npm_package_version ?? "0.0.0-dev";
+    const packageVersion = getPackageVersion();
     source = `lgtm-hq/ai-skills@v${packageVersion}`;
   }
   const scope = resolveScope(selectedOptions);
@@ -184,7 +249,7 @@ async function createLockEntries(options, vendor, now) {
           agents: options.agents,
           installedAt,
           repo: "lgtm-hq/ai-skills",
-          sha: `v${process.env.npm_package_version ?? "0.0.0-dev"}`,
+          sha: `v${getPackageVersion()}`,
           skillPath: `skills/${name}/SKILL.md`,
           vendor: "lgtm-hq",
         },
@@ -221,10 +286,5 @@ async function createLockEntries(options, vendor, now) {
  * @returns {Promise<void>} Resolves when installation completes.
  */
 export async function installInteractively(options) {
-  const prompt = createInterface({ input: stdin, output: stdout });
-  try {
-    await install(await completeInteractively(options, prompt));
-  } finally {
-    prompt.close();
-  }
+  await install(await completeInteractively(options));
 }

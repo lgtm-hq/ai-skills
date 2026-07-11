@@ -219,3 +219,15 @@ describe("install", () => {
     }
   });
 });
+
+describe("install conflict policy", () => {
+  test("rejects unsupported keep/skip even outside -y", async () => {
+    await expect(
+      install({
+        ...unattendedOptions,
+        yes: false,
+        onConflict: "keep",
+      }),
+    ).rejects.toThrow("--on-conflict=keep is unsupported");
+  });
+});

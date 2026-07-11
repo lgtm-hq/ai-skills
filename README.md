@@ -22,15 +22,20 @@ gateway (SHA-pinned); curated skills stay first-party only.
 ## Quickstart
 
 Install with the **gateway** package (recommended). The npm version matches the
-git release tag (`@0.5.3` ↔ `v0.5.3`):
+git release tag (`@0.5.5` ↔ `v0.5.5`):
 
 ```bash
 bunx @lgtm-hq/ai-skills@0.5.5
 ```
 
-That defaults to **global** install. Pick first-party bundles and/or vendor
-skills from the baked catalog, then choose agents (Cursor, Claude Code, Codex,
-and others). Use `--project` for a repo-local install.
+Interactive install uses a Clack-style picker. Happy path:
+
+1. Pick a first-party bundle or vendor catalog
+2. Choose agents (Claude Code, Cursor, and Codex are selected by default)
+3. Keep **global** scope (default)
+
+Symlink installs are the default; copy-into-agent and conflict jargon stay behind
+advanced / unattended flags. Use `--project` for a repo-local install.
 
 ```bash
 bunx @lgtm-hq/ai-skills@0.5.5 install …
@@ -46,7 +51,8 @@ conflict policy — omit `--on-conflict`, or pass `overwrite`. `keep` / `skip` f
 closed:
 
 ```bash
-bunx @lgtm-hq/ai-skills@0.5.5 install -y --global -a cursor \
+bunx @lgtm-hq/ai-skills@0.5.5 install -y --global \
+  -a claude-code -a cursor -a codex \
   --bundle pre-push
 ```
 
@@ -183,7 +189,7 @@ Every release ships a `skills-manifest.json` asset mapping each skill name to
 the sha256 of its `SKILL.md`, attested with GitHub build provenance:
 
 ```bash
-gh release download v0.5.5 -R lgtm-hq/ai-skills -p skills-manifest.json
+gh release download v0.5.4 -R lgtm-hq/ai-skills -p skills-manifest.json
 gh attestation verify skills-manifest.json -R lgtm-hq/ai-skills
 shasum -a 256 <install-dir>/<name>/SKILL.md  # compare against the manifest
 ```
