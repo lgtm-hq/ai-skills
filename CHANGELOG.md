@@ -21,6 +21,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.4.0] - 2026-07-11
+
+### Added
+
+- **issue**: add backlog-stewardship conventions (#127) (b8e26a6)
+
+### Changed
+
+- **lgtm-ci**: repin test-python, align lintro, adopt version guard (#132) (37bc4e9)
+- **link-check**: adopt lgtm-ci reusable link-check workflow (#131) (9e7f33a)
+- **release**: add SBOM generation via lgtm-ci reusable workflow (#129) (822b622)
+- **codeql**: adopt reusable-codeql for python static analysis (#128) (5ccaae5)
+- **scorecards**: adopt reusable OpenSSF Scorecard workflow (#126) (09926bc)
+- **security**: add dependency-review workflow (#125) (5060455)
+- **deps**: update astral-sh/setup-uv to v8.3.2 (major) (#145) (8bf5b36)
+- **deps**: update actions/setup-python to v6.3.0 (minor) (#144) (6f71ec8)
+
 ## [0.3.0] - 2026-07-10
 
 ### Added
@@ -368,7 +385,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.27...v0.2.0
 [0.1.27]: https://github.com/lgtm-hq/ai-skills/compare/v0.1.26...v0.1.27
