@@ -7,6 +7,7 @@ name: Validate lintro version
     branches: [main]
     paths:
       - pyproject.toml
+      - uv.lock
       - .github/workflows/ci.yml
       - .github/workflows/validate-lintro-version.yml
   merge_group:
@@ -14,6 +15,7 @@ name: Validate lintro version
     branches: [main]
     paths:
       - pyproject.toml
+      - uv.lock
       - .github/workflows/ci.yml
       - .github/workflows/validate-lintro-version.yml
 
