@@ -26,7 +26,7 @@ jobs:
     # Complements the release-manifest attestation with a signed CycloneDX
     # SBOM (plus vulnerability scan) for every published release.
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-sbom.yml@17483d234808cb3a2019afdff0dea29593f24a05
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-sbom.yml@39073e8536eee287bfcccdf9f866672d4e4df258
     with:
       target: "."
       target-type: dir
@@ -34,7 +34,7 @@ jobs:
       scan-vulnerabilities: true
       create-attestation: true
       artifact-name: sbom
-      tooling-ref: "17483d234808cb3a2019afdff0dea29593f24a05"
+      tooling-ref: "39073e8536eee287bfcccdf9f866672d4e4df258"
       egress-policy: block
       egress-preset: sbom
     permissions:
