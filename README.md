@@ -22,7 +22,7 @@ gateway (SHA-pinned); curated skills stay first-party only.
 ## Quickstart
 
 Install with the **gateway** package (recommended). The npm version matches the
-git release tag (`@0.1.27` ↔ `v0.1.27`):
+git release tag (`@0.4.0` ↔ `v0.4.0`):
 
 ```bash
 bunx @lgtm-hq/ai-skills@0.4.0
