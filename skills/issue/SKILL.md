@@ -180,11 +180,12 @@ Rules for managing an existing backlog, not just creating new issues.
   history and discussion.
 - **Placeholder convention for duplicates.** For issues that are redundant or
   would only duplicate another: prefer closing with a supersession comment
-  (see above) when the issue has useful comments or an implementation prompt —
-  do not wipe history that other links or workflows may still need. Only
+  (see above) when the issue has useful comments, an implementation prompt,
+  **or a useful body** (repro steps, scoped feature spec, acceptance criteria)
+  — do not wipe history that other links or workflows may still need. Only
   convert to a `placeholder` (empty body, title `placeholder`, comments
-  cleared) when the issue has no useful discussion to preserve and you are
-  explicitly reserving the number for reuse.
+  cleared) when the issue has **no useful body and no useful discussion** to
+  preserve and you are explicitly reserving the number for reuse.
 - **Never churn the backlog silently.** Announce close/reopen/create/edit
   changes as you make them — the backlog should stay visible, not shift
   underneath readers.
