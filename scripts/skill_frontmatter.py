@@ -2,8 +2,7 @@
 """Shared SKILL.md frontmatter splitting.
 
 Single source of truth for detecting and splitting the YAML frontmatter
-block of a ``SKILL.md`` document, used by both ``validate_skills.py``
-and the ``upstream_drift`` package. Splitting normalizes Windows (CRLF)
+block of a ``SKILL.md`` document. Splitting normalizes Windows (CRLF)
 and legacy Mac (CR) line endings to Unix newlines first so the ``---``
 delimiters are detected reliably.
 """
