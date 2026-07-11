@@ -25,8 +25,8 @@ jobs:
       tooling-ref: "66cad82ead0e5d119928c895c7d7da9c837989e5"
       egress-policy: block
       egress-preset: pypi
-      # Harden-runner pre reads inputs only. Python ecosystem updater pip-installs
-      # tomlkit and may run uv lock — include github + PyPI/astral hosts.
+      # Harden-runner pre reads inputs only (not resolved presets).
+      # Python updater needs PyPI (tomlkit) and may run uv lock.
       allowed-endpoints-mode: replace
       allowed-endpoints: >
         github.com:443
