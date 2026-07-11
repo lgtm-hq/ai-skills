@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.5.3] - 2026-07-11
+
+### Fixed
+
+- **ci**: allow PyPI/astral egress for release version PR (#165) (080e4df)
+- **ci**: repin lgtm-ci to v0.52.3 for SBOM contents:write (#163) (f5ba1eb)
+
 ## [0.5.2] - 2026-07-11
 
 ### Fixed
@@ -407,7 +414,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/lgtm-hq/ai-skills/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/lgtm-hq/ai-skills/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.4.0...v0.5.0
