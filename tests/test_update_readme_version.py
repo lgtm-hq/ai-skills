@@ -46,11 +46,12 @@ def test_help_flag_exits_zero() -> None:
 
 
 def test_rewrites_all_pin_patterns(tmp_path: Path) -> None:
-    """Both install and gh-release pins are rewritten to NEXT_VERSION."""
+    """Git-tag, scoped npm, and gh-release pins rewrite to NEXT_VERSION."""
 
     readme = tmp_path / "README.md"
     readme.write_text(
         "bunx skills add lgtm-hq/ai-skills@v0.1.10 -g\n"
+        "bunx @lgtm-hq/ai-skills@0.1.10 install …\n"
         "gh release download v0.1.10 -R lgtm-hq/ai-skills\n"
         "bunx skills add lgtm-hq/ai-skills@v0.1.10 -g --all\n",
         encoding="utf-8",
@@ -61,6 +62,7 @@ def test_rewrites_all_pin_patterns(tmp_path: Path) -> None:
 
     assert_that(result.returncode).is_equal_to(0)
     assert_that(content).contains("lgtm-hq/ai-skills@v2.3.4 -g\n")
+    assert_that(content).contains("@lgtm-hq/ai-skills@2.3.4 install")
     assert_that(content).contains("gh release download v2.3.4")
     assert_that(content).contains("lgtm-hq/ai-skills@v2.3.4 -g --all")
     assert_that(content).does_not_contain("0.1.10")
