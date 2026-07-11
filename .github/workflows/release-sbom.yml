@@ -38,9 +38,11 @@ jobs:
       egress-policy: block
       egress-preset: sbom
     permissions:
-      # Reusable job needs read for checkout, security-events for the
-      # optional SARIF upload, and id-token/attestations to sign the SBOM.
-      contents: read
+      # contents:write — attach the CycloneDX SBOM to the GitHub Release
+      # (anchore/sbom-action upload-release-assets). Read alone fails with
+      # "Resource not accessible by integration". security-events / id-token /
+      # attestations cover SARIF + OIDC attestation signing.
+      contents: write
       security-events: write
       id-token: write
       attestations: write
