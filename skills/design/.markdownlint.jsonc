@@ -1,8 +1,0 @@
-{
-  // SKILL.md is synced verbatim from upstream anthropics/claude-code
-  // frontend-design (see the `upstream:` frontmatter block), which uses long
-  // single-line paragraphs. Rewrapping to satisfy MD013 would register as
-  // drift in scripts/check_upstream_drift.py, so line length is exempted for
-  // this directory only.
-  "MD013": false
-}

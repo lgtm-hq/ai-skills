@@ -90,7 +90,8 @@ ungrouped:
     )
     repo_root.joinpath("README.md").write_text(
         "# fake\n\n"
-        "```bash\nbunx skills add lgtm-hq/ai-skills@v0.0.1 -g\n"
+        "```bash\nbunx @lgtm-hq/ai-skills@0.0.1\n"
+        "bunx skills add lgtm-hq/ai-skills@v0.0.1 -g\n"
         "gh release download v0.0.1 -R lgtm-hq/ai-skills\n```\n\n"
         "## Skills\n\n"
         "<!-- skills:start -->\nstale\n<!-- skills:end -->\n\n"
@@ -138,9 +139,11 @@ def test_render_readme_syncs_version_pins_to_pyproject(tmp_path: Path) -> None:
 
     rendered = mod.render_readme(repo_root=tmp_path)
 
+    assert_that(rendered).contains("@lgtm-hq/ai-skills@9.9.9")
     assert_that(rendered).contains("lgtm-hq/ai-skills@v9.9.9")
     assert_that(rendered).contains("gh release download v9.9.9")
     assert_that(rendered).does_not_contain("v0.0.1")
+    assert_that(rendered).does_not_contain("@lgtm-hq/ai-skills@0.0.1")
 
 
 def test_render_readme_requires_markers(tmp_path: Path) -> None:
