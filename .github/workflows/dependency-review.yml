@@ -6,6 +6,7 @@ name: "Security: Dependency Review"
     branches: [main]
   merge_group:
 
+# Disable all token scopes by default; job grants only what review needs.
 permissions: {}
 
 concurrency:
@@ -26,5 +27,7 @@ jobs:
         api.deps.dev:443
         release-assets.githubusercontent.com:443
     permissions:
+      # Read repository manifests and lockfiles.
       contents: read
+      # Read pull-request metadata for dependency review.
       pull-requests: read
