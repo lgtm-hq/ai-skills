@@ -30,5 +30,16 @@
       "currentValueTemplate": "latest",
       "datasourceTemplate": "docker"
     }
+  ],
+  "packageRules": [
+    {
+      "description": "Keep pyproject lintro pin and workflow py-lintro digests in one PR (org preset also groups these; local rule documents the lockstep).",
+      "groupName": "lintro",
+      "groupSlug": "lintro",
+      "matchPackageNames": [
+        "ghcr.io/lgtm-hq/py-lintro",
+        "lintro"
+      ]
+    }
   ]
 }
