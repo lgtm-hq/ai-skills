@@ -92,12 +92,20 @@ bodies must not assume one agent's features or tool names.
 
 ```mermaid
 flowchart LR
-  subgraph repo [ai-skills]
+  subgraph sources [Repo sources]
     SK["skills/**/SKILL.md"]
     BY["bundles.yaml"]
-    MP[".claude-plugin/marketplace.json"]
+    VY["vendors.yaml"]
   end
-  subgraph cli [skills CLI]
+  subgraph bake [Bake / publish]
+    DATA["npm data/: bundles.json, vendors.json, vendor-indexes/"]
+    PKG["@lgtm-hq/ai-skills"]
+  end
+  subgraph gateway [Gateway CLI]
+    UI["Clack home/cart wizard"]
+    LOCK[".ai-skills-lock.json"]
+  end
+  subgraph escape [Escape hatch]
     add["bunx skills add …"]
   end
   subgraph dirs [Agent config]
@@ -105,23 +113,40 @@ flowchart LR
     u["~/.cursor/skills"]
     x["~/.codex/skills …"]
   end
-  BY --> MP
   SK --> BY
-  MP --> add
+  BY --> DATA
+  VY --> DATA
+  DATA --> PKG
+  PKG --> UI
+  UI --> LOCK
+  UI --> c
+  UI --> u
+  UI --> x
+  PKG -.-> add
   add --> c
   add --> u
   add --> x
 ```
 
-The [Vercel Labs `skills` CLI](https://github.com/vercel-labs/skills) reads
-`marketplace.json` to render the grouped checkbox installer. Skill paths stay flat
-(`skills/<name>/`); bundles are metadata only. Multi-agent install (`-a cursor`,
-`--all`, symlinks into each agent's config directory) is unchanged.
+The recommended installer is the **gateway** package (`bunx @lgtm-hq/ai-skills`).
+Its Clack home/cart UI loads baked `data/bundles.json` and vendor indexes shipped
+inside the npm package (produced from `bundles.yaml` / `vendors.yaml` at publish
+time), writes a gateway lockfile, and installs into agent skill directories.
+The [Vercel Labs `skills` CLI](https://github.com/vercel-labs/skills) remains the
+escape hatch for direct catalog installs; first-party skill paths stay flat
+(`skills/<name>/`).
 
 ## CI and releases
 
 Pull requests and pushes to `main` run **lintro** (via the published **py-lintro**
-container image) and `bash scripts/validate.sh`.
+container image), the pytest suite, skill-structure validation, and
+`bash scripts/validate.sh`.
+
+**Validate Lintro Version** compares `pyproject.toml`'s exact `lintro==`
+pin to the version inside the pinned `ghcr.io/lgtm-hq/py-lintro` digest on
+`ci.yml` / `validate-lintro-version.yml`. Those three must move together
+(Renovate's `lintro` group tracks the PyPI pin and workflow digests; the check
+is a required status). Do not bump the pin alone.
 
 Version bumps and **CHANGELOG.md** updates flow through **`lgtm-hq/lgtm-ci`**
 [reusable workflows](https://github.com/lgtm-hq/lgtm-ci), called from this repo
@@ -133,9 +158,10 @@ Skill retirements and other deletions belong under **`### Removed`** in
 under Other Changes or Previously Unreleased — the README upgrade FAQ points
 readers at those Removed sections.
 
-**Baseline note:** [`lgtm-ci#138`](https://github.com/lgtm-hq/lgtm-ci/pull/138)
-is merged; the current caller pins match `lgtm-hq/lgtm-ci` **`main`** at
-`79444626c1b3afa4d959b5840b4b5310a46a4095` (re-verify when bumping).
+**Baseline note:** Caller pins are mostly
+`66cad82ead0e5d119928c895c7d7da9c837989e5` (**v0.52.3**). Link Check alone pins
+`c4192f9d97fa79767241d85d0d8e4cba866dcdec` (post-v0.52.3 lychee-action output
+fix; re-verify when bumping).
 
 When a release is published, `.github/workflows/release-manifest.yml` runs
 `scripts/generate_skills_manifest.py` to build **`skills-manifest.json`** (skill
