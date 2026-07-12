@@ -30,9 +30,10 @@ bunx @lgtm-hq/ai-skills@0.6.0
 
 Interactive install uses a Clack-style picker. Happy path:
 
-1. Pick a first-party bundle or vendor catalog
-2. Choose agents (Claude Code, Cursor, and Codex are selected by default)
-3. Keep **global** scope (default)
+1. Pick `lgtm-hq/ai-skills` or a vendor catalog
+2. Toggle skills to install (grouped by category for first-party skills)
+3. Choose agents (Claude Code, Cursor, and Codex are selected by default)
+4. Keep **global** scope (default)
 
 Symlink installs are the default; copy-into-agent and conflict jargon stay behind
 advanced / unattended flags. Use `--project` for a repo-local install.

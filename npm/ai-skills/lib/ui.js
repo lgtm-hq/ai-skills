@@ -20,6 +20,7 @@ export const KNOWN_AGENTS = [
  *   note: (message: string, title?: string) => void,
  *   select: (options: {message: string, options: {value: string, label: string}[], initialValue?: string}) => Promise<string | symbol>,
  *   multiselect: (options: {message: string, options: {value: string, label: string}[], initialValues?: string[], required?: boolean}) => Promise<string[] | symbol>,
+ *   groupMultiselect: (options: {message: string, options: Record<string, {value: string, label: string}[]>, initialValues?: string[], required?: boolean}) => Promise<string[] | symbol>,
  *   confirm: (options: {message: string, initialValue?: boolean}) => Promise<boolean | symbol>,
  *   isCancel: (value: unknown) => boolean,
  * }} Interactive UI adapter.
@@ -31,6 +32,7 @@ export function createClackUi() {
     note: clack.note,
     select: clack.select,
     multiselect: clack.multiselect,
+    groupMultiselect: clack.groupMultiselect,
     confirm: clack.confirm,
     isCancel: clack.isCancel,
   };

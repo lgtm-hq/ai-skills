@@ -8,10 +8,10 @@ import { createClackUi, KNOWN_AGENTS } from "./ui.js";
 /**
  * Fill unset install selections through the terminal picker.
  *
- * Happy path asks for catalog source (+ vendor skill) and agents. Scope defaults
- * to global, installs symlink (not copy), and uses overwrite for the gateway
- * fail-closed `--on-conflict` API without prompting — upstream `skills` does
- * not implement conflict policies yet.
+ * Happy path asks for catalog source, skills (grouped multi-select for first-party),
+ * and agents. Scope defaults to global, installs symlink (not copy), and uses
+ * overwrite for the gateway fail-closed `--on-conflict` API without prompting —
+ * upstream `skills` does not implement conflict policies yet.
  *
  * @param {{agents: string[], bundle: string | null, copy: boolean, global: boolean, onConflict: string | null, project: boolean, skills: string[], vendor: string | null, yes: boolean}} options - Initial install options.
  * @param {ReturnType<typeof createClackUi>} [ui] - Injectable interactive UI.
@@ -22,14 +22,15 @@ export async function completeInteractively(options, ui = createClackUi()) {
 
   const bundles = await loadBundles();
   const vendors = await loadVendors();
+  const packageVersion = getPackageVersion();
   const sourceChoices = [
-    ...Object.entries(bundles.groups).map(([id, bundle]) => ({
-      value: `bundle:${id}`,
-      label: `${bundle.name} — ${bundle.description}`,
-    })),
+    {
+      value: "first-party",
+      label: `lgtm-hq/ai-skills @ v${packageVersion}`,
+    },
     ...vendors.vendors.map((vendor) => ({
       value: `vendor:${vendor.id}`,
-      label: `${vendor.repo} @ ${vendor.sha.slice(0, 12)}`,
+      label: vendor.repo,
     })),
   ];
 
@@ -40,26 +41,32 @@ export async function completeInteractively(options, ui = createClackUi()) {
       options: sourceChoices,
     }),
   );
-  const [sourceKind, sourceId] = splitSourceValue(sourceValue);
 
-  if (sourceKind === "bundle") {
-    const bundle = bundles.groups[sourceId];
-    options.bundle = sourceId;
-    options.skills = bundle.skills;
-  } else {
-    const index = await loadVendorIndex(sourceId);
-    const skillName = await cancelable(
+  if (sourceValue === "first-party") {
+    const skillGroups = buildFirstPartySkillGroups(bundles);
+    options.skills = await cancelable(
       ui,
-      ui.select({
-        message: `Skill from ${index.vendor.repo}`,
+      ui.groupMultiselect({
+        message: "Select skills to install",
+        options: skillGroups,
+        required: true,
+      }),
+    );
+  } else {
+    const vendorId = parseVendorSourceValue(sourceValue);
+    const index = await loadVendorIndex(vendorId);
+    options.vendor = vendorId;
+    options.skills = await cancelable(
+      ui,
+      ui.multiselect({
+        message: `Select skills from ${index.vendor.repo}`,
         options: index.skills.map((skill) => ({
           value: skill.name,
           label: skill.name,
         })),
+        required: true,
       }),
     );
-    options.vendor = sourceId;
-    options.skills = [skillName];
   }
 
   if (options.agents.length === 0) {
@@ -136,14 +143,36 @@ export async function completeInteractively(options, ui = createClackUi()) {
 }
 
 /**
- * Split a `kind:id` catalog selection value.
+ * Build grouped skill options for first-party interactive install.
  *
- * @param {string} value - Combined select value.
- * @returns {[string, string]} Kind and id.
+ * @param {{groups: Record<string, {name: string, skills: string[]}>, ungrouped: string[]}} bundles - Loaded bundle catalog.
+ * @returns {Record<string, {value: string, label: string}[]>} Clack groupMultiselect options.
  */
-function splitSourceValue(value) {
-  const separator = value.indexOf(":");
-  return [value.slice(0, separator), value.slice(separator + 1)];
+function buildFirstPartySkillGroups(bundles) {
+  const groups = Object.fromEntries(
+    Object.values(bundles.groups).map((bundle) => [
+      bundle.name,
+      bundle.skills.map((skill) => ({ value: skill, label: skill })),
+    ]),
+  );
+  if (bundles.ungrouped.length > 0) {
+    groups.Other = bundles.ungrouped.map((skill) => ({ value: skill, label: skill }));
+  }
+  return groups;
+}
+
+/**
+ * Parse a vendor catalog selection value.
+ *
+ * @param {string} value - Combined select value (`vendor:<id>`).
+ * @returns {string} Vendor id.
+ */
+function parseVendorSourceValue(value) {
+  const prefix = "vendor:";
+  if (!value.startsWith(prefix)) {
+    throw new Error(`Unknown catalog selection: ${value}`);
+  }
+  return value.slice(prefix.length);
 }
 
 /**
