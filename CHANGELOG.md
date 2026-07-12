@@ -350,11 +350,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **repo**: gitignore skills-CLI artifacts and re-lock version (#61) (2585c48)
 - **skills**: slim project-locked mega-skills (lintro-add, turbo-add, turbo-verify, test-ui) (#66) (6371d57)
+
+### Removed
+
 - **skills**: retire dashboard-redesign skill (#60) (998416c)
+- **skills**: retire dashboard-redesign skill (finished-project context dump) (#55)
 
 ### Previously Unreleased
 
-- **skills**: retire dashboard-redesign skill (finished-project context dump) (#55)
 - **skills**: resolve five cross-skill contradictions (#54): remove `test`'s dangling
   `/stand-general` coverage-report claim (coverage rule now owned inline by `test`);
   replace `lintro-add`'s banned `verify-manifest-sync.py` references with the
@@ -391,6 +394,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **readme**: fix skills update and document selective install (#40) (84c36c3)
 
+### Removed
+
+- **skills**: remove `review` skill — not backward-compatible; invoke `/coderabbit`
+  and `/greptile` instead
+
 ### Previously Unreleased
 
 - **skills**: add `greptile` skill for Greptile CLI pre-push review
@@ -399,8 +407,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   committed vs uncommitted scope)
 - **skills**: document dual pre-push workflow (`/greptile` + `/coderabbit`) in
   `stand-general` and `pr-raycast`
-- **skills**: remove `review` skill — not backward-compatible; invoke `/coderabbit`
-  and `/greptile` instead
 
 ## [0.1.7] - 2026-06-04
 
