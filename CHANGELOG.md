@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.7.0] - 2026-07-12
+
+### Added
+
+- **gateway**: use single-catalog picker with grouped skill multi-select (#183)
+  (b4c0ea2)
+
+### Changed
+
+- **deps**: update dependency python to 3.14.6 (minor) (#172) (af2aa38)
+- **deps-dev**: update dependency lintro to 0.77.2 (patch) (#184) (a7138de)
+
 ## [0.6.0] - 2026-07-11
 
 ### Added
@@ -437,7 +449,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/lgtm-hq/ai-skills/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/lgtm-hq/ai-skills/compare/v0.5.3...v0.5.4
