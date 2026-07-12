@@ -26,7 +26,7 @@ uv run python scripts/audit_lgtm_ci_adoption.py
 ```
 
 The script exits non-zero on mixed pins, so re-running it after any repin
-catches partial updates. All eight callers share the single SHA above.
+catches partial updates. All non-Link-Check callers share the single SHA above.
 
 ## Classification
 
@@ -123,7 +123,7 @@ per-repo adoption candidates rather than "covered elsewhere."
   `reusable-validate-lintro-version.yml` (adopted via
   `validate-lintro-version.yml`) fails the build on any future drift. See
   [lintro version alignment](#lintro-version-alignment).
-- **Single-SHA pin discipline:** all eight lgtm-ci callers share one SHA
+- **Single-SHA pin discipline:** all non-Link-Check lgtm-ci callers share one SHA
   (`768a6b72f0a5346b5ecba3f4e13b90040472341c`);
   `scripts/audit_lgtm_ci_adoption.py` exits non-zero on mixed pins, so
   re-running it after any repin catches partial updates.
