@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.9.6] - 2026-07-12
+
+### Fixed
+
+- **ci**: allowlist github-releases host for SBOM attach (#217) (24046cf)
+
 ## [0.9.5] - 2026-07-12
 
 ### Fixed
@@ -513,7 +519,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.6...HEAD
+[0.9.6]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.2...v0.9.3
