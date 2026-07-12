@@ -65,10 +65,12 @@ export async function completeInteractively(options, ui = createClackUi()) {
     if (action.startsWith("browse:vendor:")) {
       const vendorId = action.slice("browse:vendor:".length);
       const index = await loadVendorIndex(vendorId);
+      // Prefer registry record so displayRef survives (baked indexes omit it).
+      const vendor = vendors.vendors.find((entry) => entry.id === vendorId) ?? index.vendor;
       cart.vendors[vendorId] = await cancelable(
         ui,
         ui.multiselect({
-          message: `Skills from ${vendorDisplayLabel(index.vendor)}`,
+          message: `Skills from ${vendorDisplayLabel(vendor)}`,
           options: index.skills.map((skill) => ({
             value: skill.name,
             label: skill.name,
@@ -200,7 +202,8 @@ export function buildHomeOptions(cart, vendors) {
  * @returns {string} `owner/repo @ pin` label.
  */
 export function vendorDisplayLabel(vendor) {
-  const pin = vendor.displayRef?.trim() || "latest";
+  const displayRef = typeof vendor.displayRef === "string" ? vendor.displayRef : undefined;
+  const pin = displayRef?.trim() || "latest";
   return `${vendor.repo} @ ${pin}`;
 }
 

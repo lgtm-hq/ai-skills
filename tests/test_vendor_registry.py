@@ -150,6 +150,25 @@ def test_load_registry_rejects_sha_display_ref(
         load_registry(registry_path=registry_path)
 
 
+def test_load_registry_rejects_uppercase_sha_display_ref(
+    valid_registry_path: Path,
+) -> None:
+    """Reject uppercase 40-char hex displayRef values as commit SHAs."""
+    registry_path = valid_registry_path
+    contents = registry_path.read_text(encoding="utf-8")
+    registry_path.write_text(
+        contents.replace(
+            "homepage: https://example.com/repository",
+            "displayRef: ABCDEF0123456789ABCDEF0123456789ABCDEF01\n"
+            "    homepage: https://example.com/repository",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="displayRef must not be a commit SHA"):
+        load_registry(registry_path=registry_path)
+
+
 def test_discover_skills_filters_descendants_of_glob_roots() -> None:
     """Include all skill files below configured roots, including nested ones."""
     skills = discover_skills(

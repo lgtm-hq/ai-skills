@@ -88,7 +88,7 @@ def _parse_vendor(*, raw_vendor: object, position: int) -> Vendor:
             field="displayRef",
             position=position,
         )
-        if _SHA_PATTERN.fullmatch(display_ref) is not None:
+        if _SHA_PATTERN.fullmatch(display_ref.lower()) is not None:
             # Reject bare SHAs in the consumer-facing pin field.
             msg = f"Vendor {position} displayRef must not be a commit SHA"
             raise ValueError(msg)

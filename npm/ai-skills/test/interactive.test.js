@@ -65,6 +65,12 @@ describe("vendorDisplayLabel", () => {
     );
     expect(vendorDisplayLabel({ repo: "owner/repo" })).toBe("owner/repo @ latest");
   });
+
+  test("ignores non-string displayRef values", () => {
+    expect(vendorDisplayLabel({ repo: "owner/repo", displayRef: true })).toBe(
+      "owner/repo @ latest",
+    );
+  });
 });
 
 describe("cart helpers", () => {
