@@ -30,6 +30,12 @@ import { createClackUi, KNOWN_AGENTS } from "./ui.js";
 export async function completeInteractively(options, ui = createClackUi()) {
   ui.intro("ai-skills gateway");
 
+  // CLI already named a source/skills: honor it instead of discarding into an empty cart.
+  if (options.vendor || options.bundle || options.skills.length > 0) {
+    const installBatches = await batchesFromCliOptions(options);
+    return finishInteractiveInstall(options, ui, installBatches);
+  }
+
   const bundles = await loadBundles();
   const vendors = await loadVendors();
   /** @type {InstallCart} */
@@ -89,6 +95,18 @@ export async function completeInteractively(options, ui = createClackUi()) {
     throw new Error("Install cancelled");
   }
 
+  return finishInteractiveInstall(options, ui, installBatches);
+}
+
+/**
+ * Ask agents/scope/advanced once, then return shared options plus install batches.
+ *
+ * @param {{agents: string[], bundle: string | null, copy: boolean, global: boolean, onConflict: string | null, project: boolean, skills: string[], vendor: string | null, yes: boolean}} options - Initial install options.
+ * @param {ReturnType<typeof createClackUi>} ui - Interactive UI.
+ * @param {InstallBatch[]} installBatches - Per-catalog install batches.
+ * @returns {Promise<typeof options & {installBatches: InstallBatch[]}>} Shared options plus batches.
+ */
+async function finishInteractiveInstall(options, ui, installBatches) {
   options.bundle = null;
   options.vendor = null;
   options.skills = [];
@@ -238,6 +256,33 @@ export function batchesFromCart(cart) {
     }
   }
   return batches;
+}
+
+/**
+ * Build install batches from CLI source flags (interactive, without -y).
+ *
+ * @param {{bundle: string | null, skills: string[], vendor: string | null}} options - Parsed install options.
+ * @returns {Promise<InstallBatch[]>} One batch for the CLI-selected source.
+ */
+export async function batchesFromCliOptions(options) {
+  if (options.vendor) {
+    if (options.skills.length === 0) {
+      throw new Error(
+        "Interactive install with --vendor requires --skill, or omit both to browse catalogs",
+      );
+    }
+    return [{ vendor: options.vendor, skills: [...options.skills] }];
+  }
+  if (options.bundle) {
+    const bundles = await loadBundles();
+    const bundle = bundles.groups[options.bundle];
+    if (!bundle) {
+      throw new Error(`Unknown first-party bundle: ${options.bundle}`);
+    }
+    const skills = options.skills.length > 0 ? options.skills : bundle.skills;
+    return [{ vendor: null, skills: [...skills] }];
+  }
+  return [{ vendor: null, skills: [...options.skills] }];
 }
 
 /**
@@ -403,12 +448,22 @@ async function createLockEntries(options, vendor, now) {
  */
 export async function installInteractively(options) {
   const completed = await completeInteractively(options);
+  const finished = [];
   for (const batch of completed.installBatches) {
-    await install({
-      ...completed,
-      bundle: null,
-      vendor: batch.vendor,
-      skills: batch.skills,
-    });
+    try {
+      await install({
+        ...completed,
+        bundle: null,
+        vendor: batch.vendor,
+        skills: batch.skills,
+      });
+      finished.push(batch.vendor ?? "first-party");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Install failed for "${batch.vendor ?? "first-party"}" after completing: ` +
+          `${finished.length > 0 ? finished.join(", ") : "none"}. ${detail}`,
+      );
+    }
   }
 }

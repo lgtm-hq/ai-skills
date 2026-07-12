@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   batchesFromCart,
+  batchesFromCliOptions,
   buildHomeOptions,
   cartSkillCount,
   completeInteractively,
@@ -71,6 +72,12 @@ describe("vendorDisplayLabel", () => {
       "owner/repo @ latest",
     );
   });
+
+  test("treats whitespace-only displayRef as absent", () => {
+    expect(vendorDisplayLabel({ repo: "owner/repo", displayRef: "   " })).toBe(
+      "owner/repo @ latest",
+    );
+  });
 });
 
 describe("cart helpers", () => {
@@ -84,6 +91,19 @@ describe("cart helpers", () => {
       { vendor: null, skills: ["branch", "lint"] },
       { vendor: "anthropics", skills: ["pdf"] },
     ]);
+  });
+
+  test("builds a vendor batch from CLI options", async () => {
+    await expect(
+      batchesFromCliOptions({ vendor: "anthropics", skills: [], bundle: null }),
+    ).rejects.toThrow(/requires --skill/);
+    expect(
+      await batchesFromCliOptions({
+        vendor: "anthropics",
+        skills: ["pdf"],
+        bundle: null,
+      }),
+    ).toEqual([{ vendor: "anthropics", skills: ["pdf"] }]);
   });
 
   test("omits Proceed until the cart has skills", () => {
@@ -105,6 +125,18 @@ describe("cart helpers", () => {
 });
 
 describe("completeInteractively", () => {
+  test("honors CLI vendor/skills without opening the home wizard", async () => {
+    const options = await completeInteractively(
+      { ...blankOptions, vendor: "anthropics", skills: ["pdf"] },
+      scriptedUi([["cursor"], "global", false]),
+    );
+
+    expect(options.installBatches).toEqual([{ vendor: "anthropics", skills: ["pdf"] }]);
+    expect(options.vendor).toBeNull();
+    expect(options.skills).toEqual([]);
+    expect(options.agents).toEqual(["cursor"]);
+  });
+
   test("browse first-party then proceed with defaults", async () => {
     const options = await completeInteractively(
       { ...blankOptions },
