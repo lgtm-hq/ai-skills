@@ -15,9 +15,11 @@ from vendor_registry.vendor import Vendor
 _ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _REPO_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
-_VENDOR_FIELDS = frozenset(
+_VENDOR_REQUIRED_FIELDS = frozenset(
     {"id", "repo", "sha", "skillRoots", "license", "homepage"},
 )
+_VENDOR_OPTIONAL_FIELDS = frozenset({"displayRef"})
+_VENDOR_FIELDS = _VENDOR_REQUIRED_FIELDS | _VENDOR_OPTIONAL_FIELDS
 
 
 def load_registry(*, registry_path: Path) -> tuple[Vendor, ...]:
@@ -70,12 +72,26 @@ def _parse_vendor(*, raw_vendor: object, position: int) -> Vendor:
     if not isinstance(raw_vendor, dict):
         msg = f"Vendor {position} must be a mapping"
         raise TypeError(msg)
-    if set(raw_vendor) != _VENDOR_FIELDS:
+    raw_keys = set(raw_vendor)
+    missing = _VENDOR_REQUIRED_FIELDS - raw_keys
+    unknown = raw_keys - _VENDOR_FIELDS
+    if missing or unknown:
         msg = (
-            f"Vendor {position} must contain exactly: "
-            f"{', '.join(sorted(_VENDOR_FIELDS))}"
+            f"Vendor {position} must contain required fields "
+            f"{', '.join(sorted(_VENDOR_REQUIRED_FIELDS))}"
+            f" and may include optional: {', '.join(sorted(_VENDOR_OPTIONAL_FIELDS))}"
         )
         raise ValueError(msg)
+    if "displayRef" in raw_vendor:
+        display_ref = _required_string(
+            value=raw_vendor["displayRef"],
+            field="displayRef",
+            position=position,
+        )
+        if _SHA_PATTERN.fullmatch(display_ref.strip().lower()) is not None:
+            # Reject bare SHAs in the consumer-facing pin field.
+            msg = f"Vendor {position} displayRef must not be a commit SHA"
+            raise ValueError(msg)
 
     vendor_id = _required_string(
         value=raw_vendor["id"],

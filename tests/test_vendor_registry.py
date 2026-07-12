@@ -21,6 +21,25 @@ from vendor_registry.vendor import Vendor
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "vendor_registry"
 
 
+def _replace_once(*, contents: str, source: str, replacement: str) -> str:
+    """Replace exactly one occurrence or fail the test.
+
+    Args:
+        contents: Original fixture text.
+        source: Substring that must appear exactly once.
+        replacement: Replacement text.
+
+    Returns:
+        Updated fixture text.
+
+    Raises:
+        AssertionError: If ``source`` is missing or appears more than once.
+    """
+    count = contents.count(source)
+    assert_that(count).is_equal_to(1)
+    return contents.replace(source, replacement, 1)
+
+
 @pytest.fixture
 def valid_registry_path(tmp_path: Path) -> Path:
     """Copy the valid registry fixture into an isolated repository root.
@@ -108,6 +127,93 @@ def test_load_registry_rejects_invalid_required_fields(
     )
 
     with pytest.raises((TypeError, ValueError), match=message):
+        load_registry(registry_path=registry_path)
+
+
+def test_load_registry_accepts_optional_display_ref(
+    valid_registry_path: Path,
+) -> None:
+    """Allow consumer-facing displayRef pins that are not commit SHAs."""
+    registry_path = valid_registry_path
+    contents = registry_path.read_text(encoding="utf-8")
+    registry_path.write_text(
+        _replace_once(
+            contents=contents,
+            source="homepage: https://example.com/repository",
+            replacement="displayRef: latest\n    homepage: https://example.com/repository",
+        ),
+        encoding="utf-8",
+    )
+
+    vendors = load_registry(registry_path=registry_path)
+
+    assert_that(vendors).is_length(1)
+    assert_that(vendors[0].id).is_equal_to("example-vendor")
+
+
+def test_load_registry_rejects_sha_display_ref(
+    valid_registry_path: Path,
+) -> None:
+    """Reject displayRef values that look like commit SHAs."""
+    registry_path = valid_registry_path
+    contents = registry_path.read_text(encoding="utf-8")
+    registry_path.write_text(
+        _replace_once(
+            contents=contents,
+            source="homepage: https://example.com/repository",
+            replacement=(
+                "displayRef: 0123456789abcdef0123456789abcdef01234567\n"
+                "    homepage: https://example.com/repository"
+            ),
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="displayRef must not be a commit SHA"):
+        load_registry(registry_path=registry_path)
+
+
+def test_load_registry_rejects_uppercase_sha_display_ref(
+    valid_registry_path: Path,
+) -> None:
+    """Reject uppercase 40-char hex displayRef values as commit SHAs."""
+    registry_path = valid_registry_path
+    contents = registry_path.read_text(encoding="utf-8")
+    registry_path.write_text(
+        _replace_once(
+            contents=contents,
+            source="homepage: https://example.com/repository",
+            replacement=(
+                "displayRef: ABCDEF0123456789ABCDEF0123456789ABCDEF01\n"
+                "    homepage: https://example.com/repository"
+            ),
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="displayRef must not be a commit SHA"):
+        load_registry(registry_path=registry_path)
+
+
+def test_load_registry_rejects_padded_sha_display_ref(
+    valid_registry_path: Path,
+) -> None:
+    """Reject whitespace-padded 40-char hex displayRef values as commit SHAs."""
+    registry_path = valid_registry_path
+    contents = registry_path.read_text(encoding="utf-8")
+    registry_path.write_text(
+        _replace_once(
+            contents=contents,
+            source="homepage: https://example.com/repository",
+            replacement=(
+                'displayRef: "  0123456789abcdef0123456789abcdef01234567  "\n'
+                "    homepage: https://example.com/repository"
+            ),
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="displayRef must not be a commit SHA"):
         load_registry(registry_path=registry_path)
 
 
