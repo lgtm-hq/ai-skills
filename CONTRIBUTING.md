@@ -128,6 +128,11 @@ Version bumps and **CHANGELOG.md** updates flow through **`lgtm-hq/lgtm-ci`**
 with **full SHA pins** on `uses:` (see `.github/workflows/release-version-pr.yml`
 and `release-auto-tag.yml`).
 
+Skill retirements and other deletions belong under **`### Removed`** in
+`CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)), not
+under Other Changes or Previously Unreleased — the README upgrade FAQ points
+readers at those Removed sections.
+
 **Baseline note:** [`lgtm-ci#138`](https://github.com/lgtm-hq/lgtm-ci/pull/138)
 is merged; the current caller pins match `lgtm-hq/lgtm-ci` **`main`** at
 `79444626c1b3afa4d959b5840b4b5310a46a4095` (re-verify when bumping).
