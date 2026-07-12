@@ -3,13 +3,10 @@
 name: Validate lintro version
 
 "on":
+  # No path filter on pull_request / merge_group: this check is required by
+  # ruleset checks-validate-lintro, so it must always report a conclusion.
   pull_request:
     branches: [main]
-    paths:
-      - pyproject.toml
-      - uv.lock
-      - .github/workflows/ci.yml
-      - .github/workflows/validate-lintro-version.yml
   merge_group:
   push:
     branches: [main]
@@ -18,6 +15,7 @@ name: Validate lintro version
       - uv.lock
       - .github/workflows/ci.yml
       - .github/workflows/validate-lintro-version.yml
+      - renovate.json
 
 permissions: {}
 
