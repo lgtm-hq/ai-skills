@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.9.4] - 2026-07-12
+
+### Fixed
+
+- **docs**: move skill retirement records under Removed (#213) (3ef7c77)
+
 ## [0.9.3] - 2026-07-12
 
 ### Changed
@@ -501,7 +507,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.0...v0.9.1
