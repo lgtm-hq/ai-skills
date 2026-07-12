@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.8.1] - 2026-07-12
+
+### Fixed
+
+- **ci**: grant pull-requests write for Link Check reusable (#193) (2f92b34)
+
 ## [0.8.0] - 2026-07-12
 
 ### Added
@@ -461,7 +467,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.6.0...v0.7.0
