@@ -17,10 +17,23 @@ use the rubric sections as reference when interpreting findings.
 - Mark anything you couldn't verify as "unverified"; never guess or extrapolate.
 - This is an assessment only: no code changes, no pushes, no triggering workflows or
   releases.
+- Honor the target repo's standing context file when present (see step 0).
 
 ## Usage
 
 When asked to analyze project health:
+
+### 0. Load repo context
+
+At start, read the target repo's `AGENTS.md` and/or `CLAUDE.md` if present.
+**Precedence:** `AGENTS.md` is authoritative when both exist — do not also
+apply conflicting `CLAUDE.md` instructions; if only one exists, use that
+file; if both conflict in a blocking way, stop and ask. Treat house
+standards, operating agreement, and standing constraints in the chosen file
+as **binding** for this assessment — including safety limits such as no paid
+LLM API calls or local-only storage. See the `stand-general` skill's
+**Per-repo agent context** section for the expected file shape. If neither
+file exists, continue with chat instructions and `stand-*` skills only.
 
 ### 1. Map structure
 

@@ -71,7 +71,18 @@ Do not duplicate their full workflows here — read and follow them at commit ti
    only when it matches the resolved PR branch. Otherwise stop and ask for the
    correct worktree before continuing.
 
-4. **Snapshot** before looping: PR URL, branch, worktree path, latest commit SHA,
+4. **Load repo context** (after the target worktree is known): From that worktree
+   root only, read `AGENTS.md` and/or `CLAUDE.md` if present. **Do not** read
+   context from the parent checkout or any other repo. **Precedence:**
+   `AGENTS.md` is authoritative when both exist — do not also apply conflicting
+   `CLAUDE.md` instructions; if only one exists, use that file; if both conflict
+   in a blocking way, stop and ask. Treat house standards, operating agreement
+   (including merge policy / merge-queue notes), and standing constraints as
+   **binding** for this babysit run. See the `stand-general` skill's **Per-repo
+   agent context** section for the expected file shape. Missing the file is fine
+   — fall back to chat instructions and this skill's defaults.
+
+5. **Snapshot** before looping: PR URL, branch, worktree path, latest commit SHA,
    check summary, open review threads.
 
 ## Phase 1 — Launch background sub-agent (if supported)
