@@ -65,6 +65,46 @@ When adding a module or significant function:
 - Backlog handling for dependency issues/PRs (closing, repurposing,
   announcing changes): follow the `issue` skill's Backlog Stewardship section.
 
+## Per-repo agent context (`AGENTS.md` / `CLAUDE.md`)
+
+Every target repo may carry a standing context file that assessment and
+implementation skills load automatically. Prefer `AGENTS.md` when both exist;
+also honor `CLAUDE.md` (many repos use one or both). When present, treat its
+standards, constraints, and contract as **binding** for the session — do not
+re-type them from chat memory.
+
+### Expected sections
+
+Write the file so the **per-repo delta is only the repo facts**. Put recurring
+org-wide rules in an org preset section (or point at a shared org doc) rather
+than copying them into every repo.
+
+1. **House standards pointers** — toolchains (e.g. `uv` / `bun` / `lintro`),
+   lint entry point, CI source / reusable workflows, model repos to copy
+   conventions from, and any org-managed ruleset notes.
+2. **Contract / operating agreement** — autonomy level, merge policy (who
+   merges, squash vs queue, signed commits), babysit/review expectations, and
+   how the agent should surface vs keep going.
+3. **Standing constraints** — safety limits (e.g. no paid LLM API calls during
+   assessment), scope rules, storage limits (e.g. local SQLite only), and
+   no-side-effects rules for assessment-only work.
+4. **Org preset** — recurring org-wide rules referenced once so each repo file
+   stays short; only repo-specific product/org facts belong outside this
+   section.
+
+### Consumers
+
+At start of a run, these skills read the target repo's `AGENTS.md` /
+`CLAUDE.md` when present and apply it as binding context:
+
+- `analyze-project`
+- `implement-issues`
+- `babysit-pr`
+
+Missing the file is fine — fall back to chat instructions and `stand-*`
+skills. Do not invent standing constraints that are not in the file or the
+user's message.
+
 ## Cross-cutting References
 
 - Linting and formatting: follow the `lint` skill
@@ -74,6 +114,7 @@ When adding a module or significant function:
 - Pull requests: follow the `pr` skill
 - Pre-push AI review (CodeRabbit): follow the `coderabbit` skill
 - Pre-push AI review (Greptile): follow the `greptile` skill
+- Per-repo standing context: see **Per-repo agent context** above
 
 ## Pre-push review workflow
 
