@@ -15,24 +15,31 @@
       "datasourceTemplate": "git-refs",
       "currentValueTemplate": "HEAD",
       "packageNameTemplate": "https://github.com/{{{depName}}}"
+    },
+    {
+      "customType": "regex",
+      "description": "Track pinned py-lintro Docker image digests so org lintro grouping can move pin + image together",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/ci\\.yml$/",
+        "/^\\.github/workflows/validate-lintro-version\\.yml$/"
+      ],
+      "matchStrings": [
+        "ghcr\\.io/lgtm-hq/py-lintro@(?<currentDigest>sha256:[a-f0-9]+)"
+      ],
+      "depNameTemplate": "ghcr.io/lgtm-hq/py-lintro",
+      "currentValueTemplate": "latest",
+      "datasourceTemplate": "docker"
     }
   ],
   "packageRules": [
     {
-      "description": "Disable solo lintro bumps — pin must stay lockstep with ghcr.io/lgtm-hq/py-lintro digests in ci.yml / validate-lintro-version.yml.",
+      "description": "Keep pyproject lintro pin and workflow py-lintro digests in one PR (org preset also groups these; local rule documents the lockstep).",
+      "groupName": "lintro",
+      "groupSlug": "lintro",
       "matchPackageNames": [
+        "ghcr.io/lgtm-hq/py-lintro",
         "lintro"
-      ],
-      "enabled": false
-    },
-    {
-      "description": "Re-enable lintro vulnerability alerts only (GHCR digests must be updated in the same change).",
-      "matchPackageNames": [
-        "lintro"
-      ],
-      "vulnerabilityAlerts": {
-        "enabled": true
-      }
+      ]
     }
   ]
 }
