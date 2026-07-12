@@ -28,6 +28,9 @@ function scriptedUi(answers) {
     async multiselect() {
       return next();
     },
+    async groupMultiselect() {
+      return next();
+    },
     async confirm() {
       return next();
     },
@@ -50,10 +53,17 @@ describe("completeInteractively", () => {
   test("defaults to global scope, symlink, overwrite, and known agents", async () => {
     const options = await completeInteractively(
       { ...blankOptions },
-      scriptedUi(["bundle:pre-push", KNOWN_AGENTS.map((agent) => agent.value), "global", false]),
+      scriptedUi([
+        "first-party",
+        ["lint", "test", "greptile", "coderabbit"],
+        KNOWN_AGENTS.map((agent) => agent.value),
+        "global",
+        false,
+      ]),
     );
 
-    expect(options.bundle).toBe("pre-push");
+    expect(options.bundle).toBeNull();
+    expect(options.vendor).toBeNull();
     expect(options.skills).toEqual(["lint", "test", "greptile", "coderabbit"]);
     expect(options.agents).toEqual(["claude-code", "cursor", "codex"]);
     expect(options.global).toBe(true);
@@ -62,14 +72,30 @@ describe("completeInteractively", () => {
     expect(options.onConflict).toBe("overwrite");
   });
 
-  test("selects a vendor skill and respects detect-only agent choice", async () => {
+  test("selects first-party skills across categories without setting bundle", async () => {
     const options = await completeInteractively(
       { ...blankOptions },
-      scriptedUi(["vendor:anthropics", "pdf", ["__detect__"], "project", false]),
+      scriptedUi([
+        "first-party",
+        ["branch", "lint"],
+        KNOWN_AGENTS.map((agent) => agent.value),
+        "global",
+        false,
+      ]),
+    );
+
+    expect(options.bundle).toBeNull();
+    expect(options.skills).toEqual(["branch", "lint"]);
+  });
+
+  test("selects vendor skills and respects detect-only agent choice", async () => {
+    const options = await completeInteractively(
+      { ...blankOptions },
+      scriptedUi(["vendor:anthropics", ["pdf", "xlsx"], ["__detect__"], "project", false]),
     );
 
     expect(options.vendor).toBe("anthropics");
-    expect(options.skills).toEqual(["pdf"]);
+    expect(options.skills).toEqual(["pdf", "xlsx"]);
     expect(options.agents).toEqual([]);
     expect(options.project).toBe(true);
     expect(options.global).toBe(false);
@@ -78,7 +104,7 @@ describe("completeInteractively", () => {
   test("offers copy only when advanced options are enabled", async () => {
     const options = await completeInteractively(
       { ...blankOptions },
-      scriptedUi(["bundle:git-pr", ["cursor"], "global", true, true]),
+      scriptedUi(["first-party", ["branch", "commit"], ["cursor"], "global", true, true]),
     );
 
     expect(options.agents).toEqual(["cursor"]);
