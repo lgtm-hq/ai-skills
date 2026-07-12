@@ -103,7 +103,7 @@ flowchart LR
   end
   subgraph gateway [Gateway CLI]
     UI["Clack home/cart wizard"]
-    LOCK[".ai-skills-lock.json"]
+    LOCK["ai-skills-lock.json / ~/.ai-skills/lock.json"]
   end
   subgraph escape [Escape hatch]
     add["bunx skills add …"]
