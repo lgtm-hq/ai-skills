@@ -73,17 +73,25 @@ export async function completeInteractively(options, ui = createClackUi()) {
       const index = await loadVendorIndex(vendorId);
       // Prefer registry record so displayRef survives (baked indexes omit it).
       const vendor = vendors.vendors.find((entry) => entry.id === vendorId) ?? index.vendor;
+      const skillRoots = index.vendor.skillRoots ?? vendor.skillRoots ?? [];
+      const picker = buildVendorSkillPicker(index.skills, skillRoots);
+      const message = `Skills from ${vendorDisplayLabel(vendor)}`;
+      const initialValues = cart.vendors[vendorId] ?? [];
       cart.vendors[vendorId] = await cancelable(
         ui,
-        ui.multiselect({
-          message: `Skills from ${vendorDisplayLabel(vendor)}`,
-          options: index.skills.map((skill) => ({
-            value: skill.name,
-            label: skill.name,
-          })),
-          initialValues: cart.vendors[vendorId] ?? [],
-          required: false,
-        }),
+        picker.mode === "grouped"
+          ? ui.groupMultiselect({
+              message,
+              options: picker.options,
+              initialValues,
+              required: false,
+            })
+          : ui.multiselect({
+              message,
+              options: picker.options,
+              initialValues,
+              required: false,
+            }),
       );
       continue;
     }
@@ -302,6 +310,187 @@ function buildFirstPartySkillGroups(bundles) {
     groups.Other = bundles.ungrouped.map((skill) => ({ value: skill, label: skill }));
   }
   return groups;
+}
+
+/**
+ * Derive a runtime category key from a vendor skill path (no hand-crafted maps).
+ *
+ * Matching follows the baker's skillRoots segment rules as used by the runtime
+ * picker: each root segment may be a literal or a full-segment ``*`` wildcard
+ * (other glob metacharacters are compared as literals). Wildcard captures become
+ * the group (for example plugins slash-star slash skills maps to the plugin
+ * folder). Literal roots use the first path segment under the root when the
+ * skill is nested (skills/engineering/tdd maps to engineering); skills sitting
+ * directly under the root stay uncategorized.
+ *
+ * @param {string} skillPath - POSIX skill directory from the vendor index.
+ * @param {string[]} skillRoots - Vendor skillRoots globs.
+ * @returns {string | null} Category key, or null when uncategorized / unmatched.
+ */
+export function vendorSkillGroupKey(skillPath, skillRoots) {
+  const skillParts = posixParts(skillPath);
+  for (const skillRoot of skillRoots) {
+    const rootParts = posixParts(skillRoot);
+    if (rootParts.length === 0 || skillParts.length <= rootParts.length) {
+      continue;
+    }
+    /** @type {string[]} */
+    const wildcards = [];
+    let matched = true;
+    for (let index = 0; index < rootParts.length; index += 1) {
+      const rootPart = rootParts[index];
+      const skillPart = skillParts[index];
+      if (!posixPartMatches({ skillPart, pattern: rootPart })) {
+        matched = false;
+        break;
+      }
+      if (rootPart === "*") {
+        wildcards.push(skillPart);
+      }
+    }
+    if (!matched) {
+      continue;
+    }
+    if (wildcards.length > 0) {
+      return wildcards.join("/");
+    }
+    const relative = skillParts.slice(rootParts.length);
+    if (relative.length >= 2) {
+      return relative[0];
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Build vendor skill picker options, grouped when path categories exist.
+ *
+ * Uses `groupMultiselect` shape when two or more headings would appear (multiple
+ * named groups, or one named group plus uncategorized). Otherwise returns a
+ * flat multiselect option list.
+ *
+ * @param {Array<{name: string, path: string}>} skills - Vendor index skills.
+ * @param {string[]} skillRoots - Vendor skillRoots globs.
+ * @returns {{mode: "grouped", options: Record<string, {value: string, label: string}[]>} | {mode: "flat", options: {value: string, label: string}[]}} Picker mode and options.
+ */
+export function buildVendorSkillPicker(skills, skillRoots) {
+  /** @type {Map<string, {value: string, label: string}[]>} */
+  const named = new Map();
+  /** @type {{value: string, label: string}[]} */
+  const other = [];
+
+  for (const skill of skills) {
+    const option = { value: skill.name, label: skill.name };
+    const key = vendorSkillGroupKey(skill.path, skillRoots);
+    if (key === null) {
+      other.push(option);
+      continue;
+    }
+    const existing = named.get(key);
+    if (existing) {
+      existing.push(option);
+    } else {
+      named.set(key, [option]);
+    }
+  }
+
+  const namedKeys = [...named.keys()].sort((left, right) => {
+    if (left < right) {
+      return -1;
+    }
+    if (left > right) {
+      return 1;
+    }
+    return 0;
+  });
+  if (namedKeys.length === 0 || (namedKeys.length === 1 && other.length === 0)) {
+    return {
+      mode: "flat",
+      options: skills.map((skill) => ({ value: skill.name, label: skill.name })),
+    };
+  }
+
+  /** @type {Record<string, {value: string, label: string}[]>} */
+  const options = {};
+  /** @type {Set<string>} */
+  const usedHeadings = new Set(other.length > 0 ? ["Other"] : []);
+  for (const key of namedKeys) {
+    const heading = uniqueVendorGroupHeading({
+      preferred: formatVendorGroupHeading(key),
+      fallbackKey: key,
+      used: usedHeadings,
+    });
+    options[heading] = named.get(key) ?? [];
+  }
+  if (other.length > 0) {
+    options.Other = other;
+  }
+  return { mode: "grouped", options };
+}
+
+/**
+ * Title-case a path-derived group key for Clack headings.
+ *
+ * @param {string} key - Raw folder key (for example in-progress or plugin-dev).
+ * @returns {string} Display heading.
+ */
+export function formatVendorGroupHeading(key) {
+  return key
+    .split(/[-_/]/)
+    .filter((part) => part.length > 0)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+/**
+ * Pick a Clack group heading that does not collide with an existing one.
+ *
+ * Reserves ``Other`` for uncategorized skills when that bucket is present.
+ *
+ * @param {object} args - Named arguments.
+ * @param {string} args.preferred - Title-cased heading.
+ * @param {string} args.fallbackKey - Raw path key for disambiguation.
+ * @param {Set<string>} args.used - Headings already assigned.
+ * @returns {string} Unique heading (also recorded in ``used``).
+ */
+function uniqueVendorGroupHeading({ preferred, fallbackKey, used }) {
+  let heading = preferred;
+  if (used.has(heading)) {
+    heading = `${preferred} (${fallbackKey})`;
+  }
+  let suffix = 2;
+  while (used.has(heading)) {
+    heading = `${preferred} (${fallbackKey} ${suffix})`;
+    suffix += 1;
+  }
+  used.add(heading);
+  return heading;
+}
+
+/**
+ * Split a POSIX path into non-empty segments.
+ *
+ * @param {string} path - POSIX path.
+ * @returns {string[]} Path segments.
+ */
+function posixParts(path) {
+  return path.split("/").filter((part) => part.length > 0);
+}
+
+/**
+ * Match one path segment against a skillRoots segment.
+ *
+ * Only full-segment ``*`` wildcards are supported (matches the registry usage
+ * today). Other glob metacharacters are compared as literals.
+ *
+ * @param {object} args - Named arguments.
+ * @param {string} args.skillPart - Skill path segment.
+ * @param {string} args.pattern - Root segment (literal or ``*``).
+ * @returns {boolean} Whether the segment matches.
+ */
+function posixPartMatches({ skillPart, pattern }) {
+  return pattern === "*" || skillPart === pattern;
 }
 
 /**

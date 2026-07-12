@@ -31,7 +31,9 @@ bunx @lgtm-hq/ai-skills@0.8.1
 Interactive install uses a Clack home/cart wizard. Happy path:
 
 1. Browse one or more catalogs (first-party `@ v…`, vendors `@ latest` / `@ v…`)
-2. Toggle skills; return to home to browse another catalog or **Proceed**
+2. Toggle skills (first-party bundles and nested vendor folders are grouped at
+   runtime from paths; flat vendor layouts stay a single list); return to home
+   to browse another catalog or **Proceed**
 3. Choose agents (Claude Code, Cursor, and Codex are selected by default)
 4. Keep **global** scope (default)
 

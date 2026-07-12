@@ -4,9 +4,12 @@ import {
   batchesFromCart,
   batchesFromCliOptions,
   buildHomeOptions,
+  buildVendorSkillPicker,
   cartSkillCount,
   completeInteractively,
+  formatVendorGroupHeading,
   vendorDisplayLabel,
+  vendorSkillGroupKey,
 } from "../lib/install.js";
 import { KNOWN_AGENTS } from "../lib/ui.js";
 
@@ -77,6 +80,129 @@ describe("vendorDisplayLabel", () => {
     expect(vendorDisplayLabel({ repo: "owner/repo", displayRef: "   " })).toBe(
       "owner/repo @ latest",
     );
+  });
+});
+
+describe("vendorSkillGroupKey", () => {
+  test("groups nested skills under a literal skillRoot", () => {
+    expect(vendorSkillGroupKey("skills/engineering/tdd", ["skills"])).toBe("engineering");
+    expect(vendorSkillGroupKey("skills/in-progress/wizard", ["skills"])).toBe("in-progress");
+  });
+
+  test("leaves skills sitting directly under a literal root uncategorized", () => {
+    expect(vendorSkillGroupKey("skills/pdf", ["skills"])).toBeNull();
+  });
+
+  test("uses wildcard captures from skillRoots as the group", () => {
+    expect(
+      vendorSkillGroupKey("plugins/plugin-dev/skills/hook-development", ["plugins/*/skills"]),
+    ).toBe("plugin-dev");
+    expect(
+      vendorSkillGroupKey("plugins/frontend-design/skills/frontend-design", ["plugins/*/skills"]),
+    ).toBe("frontend-design");
+  });
+});
+
+describe("buildVendorSkillPicker", () => {
+  test("stays flat when every skill is directly under the root", () => {
+    const picker = buildVendorSkillPicker(
+      [
+        { name: "pdf", path: "skills/pdf" },
+        { name: "docx", path: "skills/docx" },
+      ],
+      ["skills"],
+    );
+    expect(picker).toEqual({
+      mode: "flat",
+      options: [
+        { value: "pdf", label: "pdf" },
+        { value: "docx", label: "docx" },
+      ],
+    });
+  });
+
+  test("groups nested vendor folders for groupMultiselect", () => {
+    const picker = buildVendorSkillPicker(
+      [
+        { name: "tdd", path: "skills/engineering/tdd" },
+        { name: "grill-me", path: "skills/productivity/grill-me" },
+        { name: "qa", path: "skills/deprecated/qa" },
+      ],
+      ["skills"],
+    );
+    expect(picker.mode).toBe("grouped");
+    expect(picker.options).toEqual({
+      Deprecated: [{ value: "qa", label: "qa" }],
+      Engineering: [{ value: "tdd", label: "tdd" }],
+      Productivity: [{ value: "grill-me", label: "grill-me" }],
+    });
+  });
+
+  test("groups claude-code skills by plugin folder", () => {
+    const picker = buildVendorSkillPicker(
+      [
+        {
+          name: "hook-development",
+          path: "plugins/plugin-dev/skills/hook-development",
+        },
+        {
+          name: "skill-development",
+          path: "plugins/plugin-dev/skills/skill-development",
+        },
+        {
+          name: "frontend-design",
+          path: "plugins/frontend-design/skills/frontend-design",
+        },
+      ],
+      ["plugins/*/skills"],
+    );
+    expect(picker.mode).toBe("grouped");
+    expect(picker.options).toEqual({
+      "Frontend Design": [{ value: "frontend-design", label: "frontend-design" }],
+      "Plugin Dev": [
+        { value: "hook-development", label: "hook-development" },
+        { value: "skill-development", label: "skill-development" },
+      ],
+    });
+  });
+
+  test("puts uncategorized skills under Other when mixed with groups", () => {
+    const picker = buildVendorSkillPicker(
+      [
+        { name: "tdd", path: "skills/engineering/tdd" },
+        { name: "orphan", path: "skills/orphan" },
+      ],
+      ["skills"],
+    );
+    expect(picker.mode).toBe("grouped");
+    expect(picker.options).toEqual({
+      Engineering: [{ value: "tdd", label: "tdd" }],
+      Other: [{ value: "orphan", label: "orphan" }],
+    });
+  });
+
+  test("title-cases path-derived headings", () => {
+    expect(formatVendorGroupHeading("in-progress")).toBe("In Progress");
+    expect(formatVendorGroupHeading("plugin-dev")).toBe("Plugin Dev");
+  });
+
+  test("disambiguates title-cased headings that would collide", () => {
+    const picker = buildVendorSkillPicker(
+      [
+        { name: "a", path: "skills/plugin-dev/a" },
+        { name: "b", path: "skills/plugin_dev/b" },
+        { name: "c", path: "skills/other/c" },
+        { name: "orphan", path: "skills/orphan" },
+      ],
+      ["skills"],
+    );
+    expect(picker.mode).toBe("grouped");
+    expect(Object.keys(picker.options).sort()).toEqual([
+      "Other",
+      "Other (other)",
+      "Plugin Dev",
+      "Plugin Dev (plugin_dev)",
+    ]);
   });
 });
 
@@ -180,6 +306,36 @@ describe("completeInteractively", () => {
       { vendor: null, skills: ["branch"] },
       { vendor: "anthropics", skills: ["pdf"] },
     ]);
+  });
+
+  test("uses groupMultiselect for nested vendor catalogs", async () => {
+    /** @type {string[]} */
+    const prompts = [];
+    const base = scriptedUi([
+      "browse:vendor:mattpocock",
+      ["tdd", "grill-me"],
+      "proceed",
+      ["cursor"],
+      "global",
+      false,
+    ]);
+    const ui = {
+      ...base,
+      async multiselect(options) {
+        prompts.push("multiselect");
+        return base.multiselect(options);
+      },
+      async groupMultiselect(options) {
+        prompts.push("groupMultiselect");
+        expect(Object.keys(options.options).length).toBeGreaterThan(1);
+        return base.groupMultiselect(options);
+      },
+    };
+
+    const options = await completeInteractively({ ...blankOptions }, ui);
+
+    expect(prompts[0]).toBe("groupMultiselect");
+    expect(options.installBatches).toEqual([{ vendor: "mattpocock", skills: ["tdd", "grill-me"] }]);
   });
 
   test("empty catalog selection returns home without installing", async () => {
