@@ -26,11 +26,13 @@ Hand-off to `babysit-pr` / `babysit-pr --merge` for shepherding and merge.
 ## Inputs & readiness
 
 - **Load repo context first.** At start, read the target repo's `AGENTS.md`
-  and/or `CLAUDE.md` if present (prefer `AGENTS.md` when both exist). Treat its
-  house standards, operating agreement, and standing constraints as **binding**
-  for every lane. See the `stand-general` skill's **Per-repo agent context**
-  section for the expected file shape. Missing the file is fine — fall back to
-  chat instructions and `stand-*` skills.
+  and/or `CLAUDE.md` if present. **Precedence:** `AGENTS.md` is authoritative
+  when both exist — do not also apply conflicting `CLAUDE.md` instructions; if
+  only one exists, use that file; if both conflict in a blocking way, stop and
+  ask. Treat its house standards, operating agreement, and standing constraints
+  as **binding** for every lane. See the `stand-general` skill's **Per-repo
+  agent context** section for the expected file shape. Missing the file is fine
+  — fall back to chat instructions and `stand-*` skills.
 - Take issues from the args, or select from `gh issue list` favouring
   self-contained and file-disjoint work.
 - Every issue **must** carry an AI Implementation Prompt comment (per the `issue`
@@ -63,8 +65,9 @@ same issue (a race that has bitten this workflow before).
    commonly exclude that path and will silently scan nothing.
 2. **Sub-agent prompt is pointers, not content.** Instruct the lane to:
    - Read issue #N and its AI Implementation Prompt comment.
-   - Read the repo `AGENTS.md` / `CLAUDE.md` when present and treat its
-     standards/constraints/contract as binding; follow applicable `stand-*`
+   - Read the repo `AGENTS.md` / `CLAUDE.md` when present (`AGENTS.md` wins when
+     both exist; do not apply conflicting `CLAUDE.md` instructions) and treat
+     its standards/constraints/contract as binding; follow applicable `stand-*`
      skills.
    - Run the **full** lint and **full** test suite before **every** commit —
      never a subset.

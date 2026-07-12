@@ -68,10 +68,13 @@ When adding a module or significant function:
 ## Per-repo agent context (`AGENTS.md` / `CLAUDE.md`)
 
 Every target repo may carry a standing context file that assessment and
-implementation skills load automatically. Prefer `AGENTS.md` when both exist;
-also honor `CLAUDE.md` (many repos use one or both). When present, treat its
-standards, constraints, and contract as **binding** for the session — do not
-re-type them from chat memory.
+implementation skills load automatically. **Precedence:** if both
+`AGENTS.md` and `CLAUDE.md` exist, `AGENTS.md` is authoritative — apply it
+and do not also apply conflicting `CLAUDE.md` instructions. If only one
+exists, use that file. If both exist and their requirements conflict in a
+way that blocks safe progress, stop and ask the user which wins rather than
+guessing. When present, treat its standards, constraints, and contract as
+**binding** for the session — do not re-type them from chat memory.
 
 ### Expected sections
 
