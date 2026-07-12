@@ -43,8 +43,10 @@ jobs:
       # checkout (append/preset resolve happens too late). Pass the full
       # github-tooling default list plus release-assets so Lychee can download
       # its binary without dropping github.com from the early harden step.
+      # Use folded `>` like other workflows — literal `|` was parsed as a single
+      # host with port 0 by harden-runner, blocking checkout.
       allowed-endpoints-mode: replace
-      allowed-endpoints: |
+      allowed-endpoints: >
         github.com:443
         api.github.com:443
         codeload.github.com:443
