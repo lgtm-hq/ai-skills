@@ -19,21 +19,20 @@
   ],
   "packageRules": [
     {
-      "description": "Block solo lintro version bumps — pin must stay lockstep with ghcr.io/lgtm-hq/py-lintro digests in ci.yml / validate-lintro-version.yml. Vulnerability alerts stay enabled so security releases still surface.",
+      "description": "Disable solo lintro bumps — pin must stay lockstep with ghcr.io/lgtm-hq/py-lintro digests in ci.yml / validate-lintro-version.yml.",
       "matchPackageNames": [
         "lintro"
       ],
-      "matchUpdateTypes": [
-        "major",
-        "minor",
-        "patch",
-        "pin",
-        "pinDigest",
-        "rollback",
-        "bump",
-        "replacement"
-      ],
       "enabled": false
+    },
+    {
+      "description": "Re-enable lintro vulnerability alerts only (GHCR digests must be updated in the same change).",
+      "matchPackageNames": [
+        "lintro"
+      ],
+      "vulnerabilityAlerts": {
+        "enabled": true
+      }
     }
   ]
 }
