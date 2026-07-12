@@ -6,68 +6,90 @@ import { buildSkillsArguments, runSkills } from "./skills-runner.js";
 import { createClackUi, KNOWN_AGENTS } from "./ui.js";
 
 /**
- * Fill unset install selections through the terminal picker.
+ * @typedef {{firstParty: string[], vendors: Record<string, string[]>}} InstallCart
+ * Interactive skill cart keyed by catalog source.
+ */
+
+/**
+ * @typedef {{vendor: string | null, skills: string[]}} InstallBatch
+ * One upstream `skills add` invocation (single source).
+ */
+
+/**
+ * Fill unset install selections through the home/cart wizard.
  *
- * Happy path asks for catalog source, skills (grouped multi-select for first-party),
- * and agents. Scope defaults to global, installs symlink (not copy), and uses
- * overwrite for the gateway fail-closed `--on-conflict` API without prompting —
- * upstream `skills` does not implement conflict policies yet.
+ * Home lists catalogs to browse; selections accumulate in a cart. Proceed asks
+ * for agents/scope once, then returns install batches. Scope defaults to global,
+ * installs symlink (not copy), and uses overwrite for the gateway fail-closed
+ * `--on-conflict` API without prompting.
  *
  * @param {{agents: string[], bundle: string | null, copy: boolean, global: boolean, onConflict: string | null, project: boolean, skills: string[], vendor: string | null, yes: boolean}} options - Initial install options.
  * @param {ReturnType<typeof createClackUi>} [ui] - Injectable interactive UI.
- * @returns {Promise<typeof options>} Fully selected options.
+ * @returns {Promise<typeof options & {installBatches: InstallBatch[]}>} Shared options plus per-source install batches.
  */
 export async function completeInteractively(options, ui = createClackUi()) {
   ui.intro("ai-skills gateway");
 
   const bundles = await loadBundles();
   const vendors = await loadVendors();
-  const packageVersion = getPackageVersion();
-  const sourceChoices = [
-    {
-      value: "first-party",
-      label: `lgtm-hq/ai-skills @ v${packageVersion}`,
-    },
-    ...vendors.vendors.map((vendor) => ({
-      value: `vendor:${vendor.id}`,
-      label: vendor.repo,
-    })),
-  ];
+  /** @type {InstallCart} */
+  const cart = { firstParty: [], vendors: {} };
 
-  const sourceValue = await cancelable(
-    ui,
-    ui.select({
-      message: "Install from which catalog?",
-      options: sourceChoices,
-    }),
-  );
-
-  if (sourceValue === "first-party") {
-    const skillGroups = buildFirstPartySkillGroups(bundles);
-    options.skills = await cancelable(
+  while (true) {
+    const action = await cancelable(
       ui,
-      ui.groupMultiselect({
-        message: "Select skills to install",
-        options: skillGroups,
-        required: true,
+      ui.select({
+        message: "Install skills",
+        options: buildHomeOptions(cart, vendors),
       }),
     );
-  } else {
-    const vendorId = parseVendorSourceValue(sourceValue);
-    const index = await loadVendorIndex(vendorId);
-    options.vendor = vendorId;
-    options.skills = await cancelable(
-      ui,
-      ui.multiselect({
-        message: `Select skills from ${index.vendor.repo}`,
-        options: index.skills.map((skill) => ({
-          value: skill.name,
-          label: skill.name,
-        })),
-        required: true,
-      }),
-    );
+
+    if (action === "cancel") {
+      throw new Error("Install cancelled");
+    }
+    if (action === "proceed") {
+      break;
+    }
+    if (action === "browse:first-party") {
+      cart.firstParty = await cancelable(
+        ui,
+        ui.groupMultiselect({
+          message: `Skills from lgtm-hq/ai-skills @ v${getPackageVersion()}`,
+          options: buildFirstPartySkillGroups(bundles),
+          initialValues: cart.firstParty,
+          required: false,
+        }),
+      );
+      continue;
+    }
+    if (action.startsWith("browse:vendor:")) {
+      const vendorId = action.slice("browse:vendor:".length);
+      const index = await loadVendorIndex(vendorId);
+      cart.vendors[vendorId] = await cancelable(
+        ui,
+        ui.multiselect({
+          message: `Skills from ${vendorDisplayLabel(index.vendor)}`,
+          options: index.skills.map((skill) => ({
+            value: skill.name,
+            label: skill.name,
+          })),
+          initialValues: cart.vendors[vendorId] ?? [],
+          required: false,
+        }),
+      );
+      continue;
+    }
+    throw new Error(`Unknown home action: ${action}`);
   }
+
+  const installBatches = batchesFromCart(cart);
+  if (installBatches.length === 0) {
+    throw new Error("Install cancelled");
+  }
+
+  options.bundle = null;
+  options.vendor = null;
+  options.skills = [];
 
   if (options.agents.length === 0) {
     const selected = await cancelable(
@@ -139,7 +161,80 @@ export async function completeInteractively(options, ui = createClackUi()) {
   }
 
   ui.outro("Starting install…");
+  return { ...options, installBatches };
+}
+
+/**
+ * Build home-screen options for the install wizard.
+ *
+ * @param {InstallCart} cart - Current skill cart.
+ * @param {{vendors: Array<{id: string, repo: string, displayRef?: string}>}} vendors - Vendor registry.
+ * @returns {{value: string, label: string}[]} Clack select options.
+ */
+export function buildHomeOptions(cart, vendors) {
+  const options = [
+    {
+      value: "browse:first-party",
+      label: `Browse lgtm-hq/ai-skills @ v${getPackageVersion()}`,
+    },
+    ...vendors.vendors.map((vendor) => ({
+      value: `browse:vendor:${vendor.id}`,
+      label: `Browse ${vendorDisplayLabel(vendor)}`,
+    })),
+  ];
+  const total = cartSkillCount(cart);
+  if (total > 0) {
+    options.push({
+      value: "proceed",
+      label: `Proceed with install (${total} skill${total === 1 ? "" : "s"})`,
+    });
+  }
+  options.push({ value: "cancel", label: "Cancel" });
   return options;
+}
+
+/**
+ * Consumer-facing catalog pin for a vendor (never a SHA).
+ *
+ * @param {{repo: string, displayRef?: string}} vendor - Vendor record.
+ * @returns {string} `owner/repo @ pin` label.
+ */
+export function vendorDisplayLabel(vendor) {
+  const pin = vendor.displayRef?.trim() || "latest";
+  return `${vendor.repo} @ ${pin}`;
+}
+
+/**
+ * Count skills currently in the cart.
+ *
+ * @param {InstallCart} cart - Skill cart.
+ * @returns {number} Total selected skills.
+ */
+export function cartSkillCount(cart) {
+  return (
+    cart.firstParty.length +
+    Object.values(cart.vendors).reduce((sum, skills) => sum + skills.length, 0)
+  );
+}
+
+/**
+ * Convert a cart into install batches (first-party first).
+ *
+ * @param {InstallCart} cart - Skill cart.
+ * @returns {InstallBatch[]} Non-empty batches only.
+ */
+export function batchesFromCart(cart) {
+  /** @type {InstallBatch[]} */
+  const batches = [];
+  if (cart.firstParty.length > 0) {
+    batches.push({ vendor: null, skills: [...cart.firstParty] });
+  }
+  for (const [vendorId, skills] of Object.entries(cart.vendors)) {
+    if (skills.length > 0) {
+      batches.push({ vendor: vendorId, skills: [...skills] });
+    }
+  }
+  return batches;
 }
 
 /**
@@ -159,20 +254,6 @@ function buildFirstPartySkillGroups(bundles) {
     groups.Other = bundles.ungrouped.map((skill) => ({ value: skill, label: skill }));
   }
   return groups;
-}
-
-/**
- * Parse a vendor catalog selection value.
- *
- * @param {string} value - Combined select value (`vendor:<id>`).
- * @returns {string} Vendor id.
- */
-function parseVendorSourceValue(value) {
-  const prefix = "vendor:";
-  if (!value.startsWith(prefix)) {
-    throw new Error(`Unknown catalog selection: ${value}`);
-  }
-  return value.slice(prefix.length);
 }
 
 /**
@@ -311,9 +392,20 @@ async function createLockEntries(options, vendor, now) {
 /**
  * Create an interactive installer session.
  *
+ * Runs one upstream install per selected catalog so mixed first-party + vendor
+ * picks complete in a single interactive session.
+ *
  * @param {{agents: string[], bundle: string | null, copy: boolean, global: boolean, onConflict: string | null, project: boolean, skills: string[], vendor: string | null, yes: boolean}} options - Install options.
  * @returns {Promise<void>} Resolves when installation completes.
  */
 export async function installInteractively(options) {
-  await install(await completeInteractively(options));
+  const completed = await completeInteractively(options);
+  for (const batch of completed.installBatches) {
+    await install({
+      ...completed,
+      bundle: null,
+      vendor: batch.vendor,
+      skills: batch.skills,
+    });
+  }
 }

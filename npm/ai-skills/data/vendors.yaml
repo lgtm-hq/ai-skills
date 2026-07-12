@@ -3,6 +3,7 @@ vendors:
   - id: mattpocock
     repo: mattpocock/skills
     sha: "391a2701dd948f94f56a39f7533f8eea9a859c87"
+    displayRef: latest
     skillRoots:
       - skills
     license: MIT
@@ -10,6 +11,7 @@ vendors:
   - id: anthropics
     repo: anthropics/skills
     sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d"
+    displayRef: latest
     skillRoots:
       - skills
     license: Apache-2.0
@@ -17,6 +19,7 @@ vendors:
   - id: anthropics-claude-code
     repo: anthropics/claude-code
     sha: "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2"
+    displayRef: latest
     skillRoots:
       - plugins/*/skills
     license: Commercial

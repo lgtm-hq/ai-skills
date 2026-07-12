@@ -28,12 +28,14 @@ git release tag (`@0.5.5` ↔ `v0.5.5`):
 bunx @lgtm-hq/ai-skills@0.7.1
 ```
 
-Interactive install uses a Clack-style picker. Happy path:
+Interactive install uses a Clack home/cart wizard. Happy path:
 
-1. Pick `lgtm-hq/ai-skills` or a vendor catalog
-2. Toggle skills to install (grouped by category for first-party skills)
+1. Browse one or more catalogs (first-party `@ v…`, vendors `@ latest` / `@ v…`)
+2. Toggle skills; return to home to browse another catalog or **Proceed**
 3. Choose agents (Claude Code, Cursor, and Codex are selected by default)
 4. Keep **global** scope (default)
+
+Cancel from home exits with no install. Mixed catalogs install once per source.
 
 Symlink installs are the default; copy-into-agent and conflict jargon stay behind
 advanced / unattended flags. Use `--project` for a repo-local install.

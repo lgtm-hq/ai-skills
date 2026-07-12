@@ -27,7 +27,7 @@ export function loadBundles() {
 /**
  * Load all vendor records baked into the package.
  *
- * @returns {Promise<{vendors: Array<{id: string, repo: string, sha: string, skillRoots: string[], license: string, homepage: string}>}>} Vendor registry.
+ * @returns {Promise<{vendors: Array<{id: string, repo: string, sha: string, displayRef?: string, skillRoots: string[], license: string, homepage: string}>}>} Vendor registry.
  */
 export function loadVendors() {
   return readCatalog("vendors.json");

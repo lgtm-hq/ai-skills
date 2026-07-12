@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { completeInteractively } from "../lib/install.js";
+import {
+  batchesFromCart,
+  buildHomeOptions,
+  cartSkillCount,
+  completeInteractively,
+  vendorDisplayLabel,
+} from "../lib/install.js";
 import { KNOWN_AGENTS } from "../lib/ui.js";
 
 /**
@@ -49,13 +55,57 @@ const blankOptions = {
   yes: false,
 };
 
+describe("vendorDisplayLabel", () => {
+  test("uses displayRef when present and defaults to latest", () => {
+    expect(vendorDisplayLabel({ repo: "mattpocock/skills", displayRef: "latest" })).toBe(
+      "mattpocock/skills @ latest",
+    );
+    expect(vendorDisplayLabel({ repo: "owner/repo", displayRef: "v1.1.0" })).toBe(
+      "owner/repo @ v1.1.0",
+    );
+    expect(vendorDisplayLabel({ repo: "owner/repo" })).toBe("owner/repo @ latest");
+  });
+});
+
+describe("cart helpers", () => {
+  test("counts skills and builds install batches", () => {
+    const cart = {
+      firstParty: ["branch", "lint"],
+      vendors: { anthropics: ["pdf"], mattpocock: [] },
+    };
+    expect(cartSkillCount(cart)).toBe(3);
+    expect(batchesFromCart(cart)).toEqual([
+      { vendor: null, skills: ["branch", "lint"] },
+      { vendor: "anthropics", skills: ["pdf"] },
+    ]);
+  });
+
+  test("omits Proceed until the cart has skills", () => {
+    const vendors = {
+      vendors: [{ id: "anthropics", repo: "anthropics/skills", displayRef: "latest" }],
+    };
+    const empty = buildHomeOptions({ firstParty: [], vendors: {} }, vendors);
+    expect(empty.map((option) => option.value)).toEqual([
+      "browse:first-party",
+      "browse:vendor:anthropics",
+      "cancel",
+    ]);
+    const filled = buildHomeOptions({ firstParty: ["branch"], vendors: {} }, vendors);
+    expect(filled.some((option) => option.value === "proceed")).toBe(true);
+    expect(filled.find((option) => option.value === "proceed")?.label).toBe(
+      "Proceed with install (1 skill)",
+    );
+  });
+});
+
 describe("completeInteractively", () => {
-  test("defaults to global scope, symlink, overwrite, and known agents", async () => {
+  test("browse first-party then proceed with defaults", async () => {
     const options = await completeInteractively(
       { ...blankOptions },
       scriptedUi([
-        "first-party",
+        "browse:first-party",
         ["lint", "test", "greptile", "coderabbit"],
+        "proceed",
         KNOWN_AGENTS.map((agent) => agent.value),
         "global",
         false,
@@ -64,56 +114,74 @@ describe("completeInteractively", () => {
 
     expect(options.bundle).toBeNull();
     expect(options.vendor).toBeNull();
-    expect(options.skills).toEqual(["lint", "test", "greptile", "coderabbit"]);
+    expect(options.installBatches).toEqual([
+      { vendor: null, skills: ["lint", "test", "greptile", "coderabbit"] },
+    ]);
     expect(options.agents).toEqual(["claude-code", "cursor", "codex"]);
     expect(options.global).toBe(true);
-    expect(options.project).toBe(false);
     expect(options.copy).toBe(false);
     expect(options.onConflict).toBe("overwrite");
   });
 
-  test("selects first-party skills across categories without setting bundle", async () => {
+  test("accumulates first-party and vendor catalogs before proceed", async () => {
     const options = await completeInteractively(
       { ...blankOptions },
       scriptedUi([
-        "first-party",
-        ["branch", "lint"],
+        "browse:first-party",
+        ["branch"],
+        "browse:vendor:anthropics",
+        ["pdf"],
+        "proceed",
         KNOWN_AGENTS.map((agent) => agent.value),
         "global",
         false,
       ]),
     );
 
-    expect(options.bundle).toBeNull();
-    expect(options.skills).toEqual(["branch", "lint"]);
+    expect(options.installBatches).toEqual([
+      { vendor: null, skills: ["branch"] },
+      { vendor: "anthropics", skills: ["pdf"] },
+    ]);
   });
 
-  test("selects vendor skills and respects detect-only agent choice", async () => {
+  test("empty catalog selection returns home without installing", async () => {
     const options = await completeInteractively(
       { ...blankOptions },
-      scriptedUi(["vendor:anthropics", ["pdf", "xlsx"], ["__detect__"], "project", false]),
+      scriptedUi([
+        "browse:vendor:anthropics",
+        [],
+        "browse:first-party",
+        ["commit"],
+        "proceed",
+        ["cursor"],
+        "project",
+        false,
+      ]),
     );
 
-    expect(options.vendor).toBe("anthropics");
-    expect(options.skills).toEqual(["pdf", "xlsx"]);
-    expect(options.agents).toEqual([]);
-    expect(options.project).toBe(true);
-    expect(options.global).toBe(false);
-  });
-
-  test("offers copy only when advanced options are enabled", async () => {
-    const options = await completeInteractively(
-      { ...blankOptions },
-      scriptedUi(["first-party", ["branch", "commit"], ["cursor"], "global", true, true]),
-    );
-
+    expect(options.installBatches).toEqual([{ vendor: null, skills: ["commit"] }]);
     expect(options.agents).toEqual(["cursor"]);
-    expect(options.copy).toBe(true);
+    expect(options.project).toBe(true);
+  });
+
+  test("cancel from home aborts", async () => {
+    await expect(
+      completeInteractively({ ...blankOptions }, scriptedUi(["cancel"])),
+    ).rejects.toThrow("Install cancelled");
   });
 
   test("aborts when the UI reports cancel", async () => {
     await expect(
       completeInteractively({ ...blankOptions }, scriptedUi([Symbol.for("clack:cancel")])),
     ).rejects.toThrow("Install cancelled");
+  });
+
+  test("offers copy only when advanced options are enabled", async () => {
+    const options = await completeInteractively(
+      { ...blankOptions },
+      scriptedUi(["browse:first-party", ["branch"], "proceed", ["cursor"], "global", true, true]),
+    );
+
+    expect(options.copy).toBe(true);
   });
 });
