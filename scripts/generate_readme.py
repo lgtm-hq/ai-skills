@@ -8,8 +8,9 @@ Two things in README.md are derived, not hand-written:
    names/descriptions and each skill's ``SKILL.md`` frontmatter, with
    every skill hyperlinked to its ``SKILL.md``.
 2. Release-tag pins in install examples (``lgtm-hq/ai-skills@vX.Y.Z``,
-   ``gh release download vX.Y.Z``) — synced to the ``version`` in
-   ``pyproject.toml``.
+   ``@lgtm-hq/ai-skills@X.Y.Z``, ``gh release download vX.Y.Z``) and the
+   prose npm↔tag pair (`` `@X.Y.Z` ↔ `vX.Y.Z` ``) — synced to the
+   ``version`` in ``pyproject.toml``.
 
 Usage:
     uv run python scripts/generate_readme.py          # rewrite README.md
@@ -46,6 +47,11 @@ _VERSION_PIN_PATTERNS = (
     re.compile(r"(lgtm-hq/ai-skills@v)\d+\.\d+\.\d+"),
     re.compile(r"(@lgtm-hq/ai-skills@)\d+\.\d+\.\d+"),
     re.compile(r"(gh release download v)\d+\.\d+\.\d+"),
+)
+
+# Prose pair on the install intro line; both sides must move together.
+_PROSE_VERSION_PAIR_PATTERN = re.compile(
+    r"`@\d+\.\d+\.\d+` ↔ `v\d+\.\d+\.\d+`",
 )
 
 
@@ -194,7 +200,10 @@ def _sync_version_pins(*, text: str, version: str) -> str:
     """
     for pattern in _VERSION_PIN_PATTERNS:
         text = pattern.sub(rf"\g<1>{version}", text)
-    return text
+    return _PROSE_VERSION_PAIR_PATTERN.sub(
+        f"`@{version}` ↔ `v{version}`",
+        text,
+    )
 
 
 def render_readme(*, repo_root: Path) -> str:

@@ -4,7 +4,8 @@
 # Runs as the repo-specific version-update-script in the release version-PR
 # workflow (after the ecosystem updater bumps pyproject.toml), keeping the
 # README install examples pinned to the release being cut. Mirrors the pin
-# patterns in scripts/generate_readme.py (git-tag, @lgtm-hq/ai-skills@, gh).
+# patterns in scripts/generate_readme.py (git-tag, @lgtm-hq/ai-skills@, gh,
+# and the prose npm↔tag pair).
 #
 # Required environment variables:
 #   NEXT_VERSION Semver to pin, without the v prefix (e.g. 0.1.23)
@@ -37,12 +38,14 @@ if [[ ! -f "${readme_path}" ]]; then
 fi
 
 # -i.bak keeps BSD (macOS) and GNU sed compatible.
-# Patterns mirror scripts/generate_readme.py (_VERSION_PIN_PATTERNS):
-# git-tag pins, scoped npm package pins, and gh release download pins.
+# Patterns mirror scripts/generate_readme.py (_VERSION_PIN_PATTERNS +
+# _PROSE_VERSION_PAIR_PATTERN): git-tag pins, scoped npm package pins,
+# gh release download pins, and the prose npm↔tag pair.
 sed -E -i.bak \
   -e "s|(lgtm-hq/ai-skills@v)[0-9]+\.[0-9]+\.[0-9]+|\1${next_version}|g" \
   -e "s|(@lgtm-hq/ai-skills@)[0-9]+\.[0-9]+\.[0-9]+|\1${next_version}|g" \
   -e "s|(gh release download v)[0-9]+\.[0-9]+\.[0-9]+|\1${next_version}|g" \
+  -e "s|\`@[0-9]+\.[0-9]+\.[0-9]+\` ↔ \`v[0-9]+\.[0-9]+\.[0-9]+\`|\`@${next_version}\` ↔ \`v${next_version}\`|g" \
   "${readme_path}"
 rm -f "${readme_path}.bak"
 echo "Pinned README install examples to v${next_version}."
