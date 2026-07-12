@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.9.0] - 2026-07-12
+
+### Added
+
+- **gateway**: group vendor skills by path at install time (#195) (e22d4c9)
+
 ## [0.8.1] - 2026-07-12
 
 ### Fixed
@@ -467,7 +473,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.7.0...v0.7.1
