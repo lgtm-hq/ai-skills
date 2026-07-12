@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "ai-skills"
-version = "0.9.5"
+version = "0.9.6"
 source = { virtual = "." }
 
 [package.dev-dependencies]
