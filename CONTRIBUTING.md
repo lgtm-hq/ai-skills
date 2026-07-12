@@ -159,7 +159,7 @@ under Other Changes or Previously Unreleased — the README upgrade FAQ points
 readers at those Removed sections.
 
 **Baseline note:** Caller pins are mostly
-`66cad82ead0e5d119928c895c7d7da9c837989e5` (**v0.52.3**). Link Check alone pins
+`768a6b72f0a5346b5ecba3f4e13b90040472341c` (**v0.52.4**). Link Check alone pins
 `c4192f9d97fa79767241d85d0d8e4cba866dcdec` (post-v0.52.3 lychee-action output
 fix; re-verify when bumping).
 
