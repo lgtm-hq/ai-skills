@@ -39,11 +39,19 @@ jobs:
       file-extensions: md
       check-external: false
       tooling-ref: "66cad82ead0e5d119928c895c7d7da9c837989e5"  # v0.52.3
-      # Lychee-action downloads its binary from GitHub Releases, which now
-      # serves assets from release-assets.githubusercontent.com (not yet in
-      # the github-tooling preset / reusable defaults).
-      allowed-endpoints-mode: append
+      # reusable-link-check hardens with inputs.allowed-endpoints before
+      # checkout (append/preset resolve happens too late). Pass the full
+      # github-tooling default list plus release-assets so Lychee can download
+      # its binary without dropping github.com from the early harden step.
+      allowed-endpoints-mode: replace
       allowed-endpoints: |
+        github.com:443
+        api.github.com:443
+        codeload.github.com:443
+        objects.githubusercontent.com:443
+        raw.githubusercontent.com:443
+        uploads.github.com:443
+        pipelines.actions.githubusercontent.com:443
         release-assets.githubusercontent.com:443
 
   external-links:
