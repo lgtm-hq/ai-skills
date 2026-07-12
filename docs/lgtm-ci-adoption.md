@@ -4,7 +4,7 @@ Inventory and adoption plan for [lgtm-hq/lgtm-ci](https://github.com/lgtm-hq/lgt
 reusable workflows, per issue
 [#90](https://github.com/lgtm-hq/ai-skills/issues/90). Generated with
 `scripts/audit_lgtm_ci_adoption.py` against the pinned ref
-`66cad82ead0e5d119928c895c7d7da9c837989e5`.
+`768a6b72f0a5346b5ecba3f4e13b90040472341c`.
 
 This document is inventory and plan. Adoptions land in focused follow-up
 PRs (one workflow per PR); several are in-flight — see
@@ -124,6 +124,6 @@ per-repo adoption candidates rather than "covered elsewhere."
   `validate-lintro-version.yml`) fails the build on any future drift. See
   [lintro version alignment](#lintro-version-alignment).
 - **Single-SHA pin discipline:** all eight lgtm-ci callers share one SHA
-  (`66cad82ead0e5d119928c895c7d7da9c837989e5`);
+  (`768a6b72f0a5346b5ecba3f4e13b90040472341c`);
   `scripts/audit_lgtm_ci_adoption.py` exits non-zero on mixed pins, so
   re-running it after any repin catches partial updates.
