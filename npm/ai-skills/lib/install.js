@@ -315,12 +315,13 @@ function buildFirstPartySkillGroups(bundles) {
 /**
  * Derive a runtime category key from a vendor skill path (no hand-crafted maps).
  *
- * Matching follows the same skillRoots glob rules as the baker: each root segment
- * may be a literal or an fnmatch pattern. Wildcard captures become the group
- * (for example plugins slash-star slash skills maps to the plugin folder). Literal
- * roots use the first path segment under the root when the skill is nested
- * (skills/engineering/tdd maps to engineering); skills sitting directly under the
- * root stay uncategorized.
+ * Matching follows the baker's skillRoots segment rules as used by the runtime
+ * picker: each root segment may be a literal or a full-segment ``*`` wildcard
+ * (other glob metacharacters are compared as literals). Wildcard captures become
+ * the group (for example plugins slash-star slash skills maps to the plugin
+ * folder). Literal roots use the first path segment under the root when the
+ * skill is nested (skills/engineering/tdd maps to engineering); skills sitting
+ * directly under the root stay uncategorized.
  *
  * @param {string} skillPath - POSIX skill directory from the vendor index.
  * @param {string[]} skillRoots - Vendor skillRoots globs.
@@ -394,7 +395,15 @@ export function buildVendorSkillPicker(skills, skillRoots) {
     }
   }
 
-  const namedKeys = [...named.keys()].sort((left, right) => left.localeCompare(right));
+  const namedKeys = [...named.keys()].sort((left, right) => {
+    if (left < right) {
+      return -1;
+    }
+    if (left > right) {
+      return 1;
+    }
+    return 0;
+  });
   if (namedKeys.length === 0 || (namedKeys.length === 1 && other.length === 0)) {
     return {
       mode: "flat",

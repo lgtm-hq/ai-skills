@@ -201,7 +201,7 @@ describe("buildVendorSkillPicker", () => {
       "Other",
       "Other (other)",
       "Plugin Dev",
-      "Plugin Dev (plugin-dev)",
+      "Plugin Dev (plugin_dev)",
     ]);
   });
 });
