@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { loadVendorIndex } from "../lib/catalog.js";
 import { install } from "../lib/install.js";
+import { MINIMUM_SKILLS_VERSION } from "../lib/options.js";
 import { buildSkillsArguments } from "../lib/skills-runner.js";
 
 const unattendedOptions = {
@@ -20,9 +21,16 @@ const unattendedOptions = {
 };
 
 describe("buildSkillsArguments", () => {
-  test("preserves scope, conflict, and symlink defaults", () => {
+  test("pins a published skills 1.x floor", () => {
+    expect(MINIMUM_SKILLS_VERSION).toMatch(/^1\.\d+\.\d+$/);
+    expect(buildSkillsArguments(unattendedOptions, "lgtm-hq/ai-skills@v1.2.3")[0]).toBe(
+      `skills@^${MINIMUM_SKILLS_VERSION}`,
+    );
+  });
+
+  test("preserves scope and symlink defaults without forwarding on-conflict", () => {
     expect(buildSkillsArguments(unattendedOptions, "lgtm-hq/ai-skills@v1.2.3")).toEqual([
-      "skills@^0.16.0",
+      "skills@^1.5.0",
       "add",
       "lgtm-hq/ai-skills@v1.2.3",
       "-g",
@@ -31,8 +39,6 @@ describe("buildSkillsArguments", () => {
       "--skill",
       "lint",
       "test",
-      "--on-conflict",
-      "overwrite",
       "-y",
     ]);
   });
@@ -211,5 +217,17 @@ describe("install", () => {
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
+  });
+});
+
+describe("install conflict policy", () => {
+  test("rejects unsupported keep/skip even outside -y", async () => {
+    await expect(
+      install({
+        ...unattendedOptions,
+        yes: false,
+        onConflict: "keep",
+      }),
+    ).rejects.toThrow("--on-conflict=keep is unsupported");
   });
 });

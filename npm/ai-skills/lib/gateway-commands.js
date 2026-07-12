@@ -1,4 +1,5 @@
 import { loadVendors } from "./catalog.js";
+import { getPackageVersion } from "./package-version.js";
 import { pruneMissingLockEntries, readLockfile, writeLockfile } from "./lockfile.js";
 import { resolveScope } from "./options.js";
 import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./skills-runner.js";
@@ -60,7 +61,7 @@ export async function updateSkills(options, dependencies = {}) {
   );
   await writeLock({
     ...prunedLock,
-    gatewayVersion: process.env.npm_package_version ?? "0.0.0-dev",
+    gatewayVersion: getPackageVersion(),
     skills,
   });
   return { pruned, updated };
@@ -147,7 +148,7 @@ function resolveSources(skills, vendors) {
   for (const [name, entry] of Object.entries(skills)) {
     const source =
       entry.vendor === "lgtm-hq"
-        ? `lgtm-hq/ai-skills@v${process.env.npm_package_version ?? "0.0.0-dev"}`
+        ? `lgtm-hq/ai-skills@v${getPackageVersion()}`
         : resolveVendorSource(entry, vendors);
     sources.set(source, [...(sources.get(source) ?? []), name]);
   }
@@ -180,7 +181,7 @@ function resolveVendorSource(entry, vendors) {
  */
 function sourceSha(vendor, currentSha, vendors) {
   if (vendor === "lgtm-hq") {
-    return `v${process.env.npm_package_version ?? "0.0.0-dev"}`;
+    return `v${getPackageVersion()}`;
   }
   return vendors.find((candidate) => candidate.id === vendor)?.sha ?? currentSha;
 }

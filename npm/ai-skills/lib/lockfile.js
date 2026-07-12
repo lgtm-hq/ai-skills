@@ -2,6 +2,8 @@ import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { getPackageVersion } from "./package-version.js";
+
 const LOCKFILE_VERSION = 1;
 
 const AGENT_SKILL_PATHS = {
@@ -156,7 +158,7 @@ export async function isSkillInstalled(name, entry, scope, environment = {}) {
  */
 function createLockfile(scope) {
   return {
-    gatewayVersion: process.env.npm_package_version ?? "0.0.0-dev",
+    gatewayVersion: getPackageVersion(),
     scope,
     skills: {},
     version: LOCKFILE_VERSION,

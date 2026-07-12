@@ -25,9 +25,9 @@ export function buildSkillsArguments(options, source) {
   if (options.copy) {
     args.push("--copy");
   }
-  if (options.onConflict) {
-    args.push("--on-conflict", options.onConflict);
-  }
+  // Gateway still accepts --on-conflict for unattended fail-closed API stability,
+  // but upstream `skills` (through 1.5.x) does not implement that flag — do not
+  // forward a no-op that implies conflict handling the CLI does not provide.
   if (options.yes) {
     args.push("-y");
   }
