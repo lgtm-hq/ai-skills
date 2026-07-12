@@ -51,27 +51,17 @@ Do not duplicate their full workflows here — read and follow them at commit ti
 
 ## Phase 0 — Resolve target PR
 
-1. **Load repo context**: At start, read the target repo's `AGENTS.md` and/or
-   `CLAUDE.md` if present. **Precedence:** `AGENTS.md` is authoritative when
-   both exist — do not also apply conflicting `CLAUDE.md` instructions; if only
-   one exists, use that file; if both conflict in a blocking way, stop and ask.
-   Treat house standards, operating agreement (including merge policy /
-   merge-queue notes), and standing constraints as **binding** for this babysit
-   run. See the `stand-general` skill's **Per-repo agent context** section for
-   the expected file shape. Missing the file is fine — fall back to chat
-   instructions and this skill's defaults.
-
-2. **PR number**: Extract from the user message (`#123`, URL) or resolve from the
+1. **PR number**: Extract from the user message (`#123`, URL) or resolve from the
    current branch:
 
    ```bash
    gh pr view --json number,url,title,headRefName,baseRefName,state,mergeable,mergeStateStatus
    ```
 
-3. **Repository**: Use `gh repo view --json nameWithOwner` from the worktree, or parse
+2. **Repository**: Use `gh repo view --json nameWithOwner` from the worktree, or parse
    from a PR URL.
 
-4. **Worktree**: Prefer a path from conversation context. Otherwise scan worktrees:
+3. **Worktree**: Prefer a path from conversation context. Otherwise scan worktrees:
 
    ```bash
    git worktree list
@@ -80,6 +70,17 @@ Do not duplicate their full workflows here — read and follow them at commit ti
    Match `headRefName` to a worktree path. If none exists, use the current git root
    only when it matches the resolved PR branch. Otherwise stop and ask for the
    correct worktree before continuing.
+
+4. **Load repo context** (after the target worktree is known): From that worktree
+   root only, read `AGENTS.md` and/or `CLAUDE.md` if present. **Do not** read
+   context from the parent checkout or any other repo. **Precedence:**
+   `AGENTS.md` is authoritative when both exist — do not also apply conflicting
+   `CLAUDE.md` instructions; if only one exists, use that file; if both conflict
+   in a blocking way, stop and ask. Treat house standards, operating agreement
+   (including merge policy / merge-queue notes), and standing constraints as
+   **binding** for this babysit run. See the `stand-general` skill's **Per-repo
+   agent context** section for the expected file shape. Missing the file is fine
+   — fall back to chat instructions and this skill's defaults.
 
 5. **Snapshot** before looping: PR URL, branch, worktree path, latest commit SHA,
    check summary, open review threads.
