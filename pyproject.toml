@@ -10,7 +10,7 @@ dev = [
   # ci.yml's lintro-image override (ghcr.io/lgtm-hq/py-lintro 0.77.1).
   # The validate-lintro-version workflow fails the build if this drifts
   # from the pinned image, so local `uv run lintro chk` matches CI.
-  "lintro==0.77.1",
+  "lintro==0.78.1",
   "pip-audit>=2.9.0",
   "pytest-cov>=7.0.0",
   "pytest-timeout>=2.4.0",
