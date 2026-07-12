@@ -32,9 +32,9 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    # Pin past v0.52.3: lychee-action v2.9 rejects --output in args when the
+    # action `output` input is also set (lgtm-ci#531 / c4192f9).
     # yamllint disable-line rule:line-length
-    # c4192f9: unreleased lgtm-ci fix — lychee-action v2.9 rejects --output in
-    # args when the action `output` input is set (blocks after egress is fixed).
     uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@c4192f9d97fa79767241d85d0d8e4cba866dcdec
     with:
       job-name: "🔗 Internal Link Check"

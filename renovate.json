@@ -19,9 +19,19 @@
   ],
   "packageRules": [
     {
-      "description": "lintro PyPI pin must stay lockstep with ghcr.io/lgtm-hq/py-lintro digests in ci.yml and validate-lintro-version.yml. Solo Renovate bumps re-break Validate Lintro Version when the GHCR tag is missing.",
+      "description": "Block solo lintro version bumps — pin must stay lockstep with ghcr.io/lgtm-hq/py-lintro digests in ci.yml / validate-lintro-version.yml. Vulnerability alerts stay enabled so security releases still surface.",
       "matchPackageNames": [
         "lintro"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch",
+        "pin",
+        "pinDigest",
+        "rollback",
+        "bump",
+        "replacement"
       ],
       "enabled": false
     }
