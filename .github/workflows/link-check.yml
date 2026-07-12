@@ -39,6 +39,12 @@ jobs:
       file-extensions: md
       check-external: false
       tooling-ref: "66cad82ead0e5d119928c895c7d7da9c837989e5"  # v0.52.3
+      # Lychee-action downloads its binary from GitHub Releases, which now
+      # serves assets from release-assets.githubusercontent.com (not yet in
+      # the github-tooling preset / reusable defaults).
+      allowed-endpoints-mode: append
+      allowed-endpoints: |
+        release-assets.githubusercontent.com:443
 
   external-links:
     # Scheduled / manual only. External checking needs egress to arbitrary

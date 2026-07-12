@@ -16,5 +16,14 @@
       "currentValueTemplate": "HEAD",
       "packageNameTemplate": "https://github.com/{{{depName}}}"
     }
+  ],
+  "packageRules": [
+    {
+      "description": "lintro PyPI pin must stay lockstep with ghcr.io/lgtm-hq/py-lintro digests in ci.yml and validate-lintro-version.yml. Solo Renovate bumps re-break Validate Lintro Version when the GHCR tag is missing.",
+      "matchPackageNames": [
+        "lintro"
+      ],
+      "enabled": false
+    }
   ]
 }
