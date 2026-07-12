@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.10.1] - 2026-07-12
+
+### Fixed
+
+- **ci**: re-enable Scorecard publish_results on lgtm-ci v0.52.4 (#224) (8e4b65d)
+
 ## [0.10.0] - 2026-07-12
 
 ### Added
@@ -531,7 +537,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.7...v0.10.0
 [0.9.7]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/lgtm-hq/ai-skills/compare/v0.9.5...v0.9.6
