@@ -26,7 +26,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **gateway**: add JuliusBrussee/caveman SHA-pinned vendor (#240) (3f672a5)
-- **gateway**: add `JuliusBrussee/caveman` as a SHA-pinned vendor catalog (#239)
 
 ## [0.10.2] - 2026-07-16
 
