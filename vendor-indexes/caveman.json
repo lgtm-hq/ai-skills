@@ -1,0 +1,40 @@
+{
+  "skills": [
+    {
+      "name": "cavecrew",
+      "path": "skills/cavecrew"
+    },
+    {
+      "name": "caveman",
+      "path": "skills/caveman"
+    },
+    {
+      "name": "caveman-commit",
+      "path": "skills/caveman-commit"
+    },
+    {
+      "name": "caveman-compress",
+      "path": "skills/caveman-compress"
+    },
+    {
+      "name": "caveman-help",
+      "path": "skills/caveman-help"
+    },
+    {
+      "name": "caveman-review",
+      "path": "skills/caveman-review"
+    },
+    {
+      "name": "caveman-stats",
+      "path": "skills/caveman-stats"
+    }
+  ],
+  "vendor": {
+    "id": "caveman",
+    "repo": "JuliusBrussee/caveman",
+    "sha": "0d95a81d35a9f2d123a5e9430d1cfc43d55f1bb0",
+    "skillRoots": [
+      "skills"
+    ]
+  }
+}

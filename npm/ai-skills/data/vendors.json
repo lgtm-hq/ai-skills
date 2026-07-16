@@ -32,6 +32,17 @@
       ],
       "license": "Commercial",
       "homepage": "https://github.com/anthropics/claude-code"
+    },
+    {
+      "id": "caveman",
+      "repo": "JuliusBrussee/caveman",
+      "sha": "0d95a81d35a9f2d123a5e9430d1cfc43d55f1bb0",
+      "displayRef": "latest",
+      "skillRoots": [
+        "skills"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/JuliusBrussee/caveman"
     }
   ]
 }
