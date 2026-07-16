@@ -11,3 +11,4 @@ This package catalogs third-party skills at the commit pins in `data/vendors.yam
 - [anthropics/claude-code](https://github.com/anthropics/claude-code) — `Commercial`
   - Claude Code plugin skills are subject to Anthropic's
     Commercial Terms of Service.
+- [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) — `MIT`
