@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 from assertpy import assert_that
 
 import bake_vendor_indexes
@@ -27,6 +28,7 @@ def _fake_tree(*, vendor: Vendor) -> list[str]:
     Returns:
         A stable list of ``SKILL.md`` blob paths.
     """
+    del vendor
     return list(_FETCHED_TREE)
 
 
@@ -183,3 +185,150 @@ def test_check_detects_registry_drift(repo_root: Path) -> None:
     )
 
     assert_that(manage_vendors.check(repo_root=repo_root)).is_equal_to(1)
+
+
+def test_add_rolls_back_registry_when_rebake_fails(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Restore vendors.yaml when the post-write rebake raises."""
+    registry_path = repo_root / "vendors.yaml"
+    original = registry_path.read_text(encoding="utf-8")
+
+    def _boom(*, vendor: Vendor) -> list[str]:
+        """Simulate a GitHub fetch failure during rebake.
+
+        Args:
+            vendor: Vendor whose tree would normally be fetched.
+
+        Raises:
+            RuntimeError: Always, to emulate a network failure.
+        """
+        del vendor
+        msg = "network failure"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(bake_vendor_indexes, "_fetch_tree_paths", _boom)
+
+    with pytest.raises(RuntimeError, match="network failure"):
+        manage_vendors.add(
+            repo_root=repo_root,
+            vendor_id="brand-new",
+            repo="owner/brand-new",
+            sha=_NEW_SHA,
+            skill_roots=("skills",),
+            license_name="MIT",
+            homepage="https://github.com/owner/brand-new",
+            display_ref=None,
+        )
+
+    assert_that(registry_path.read_text(encoding="utf-8")).is_equal_to(original)
+    assert_that((repo_root / "vendor-indexes" / "brand-new.json").exists()).is_false()
+
+
+def test_update_rejects_unknown_registry_key(repo_root: Path) -> None:
+    """Fail closed instead of silently dropping unknown registry keys."""
+    registry_path = repo_root / "vendors.yaml"
+    original = registry_path.read_text(encoding="utf-8")
+    registry_path.write_text(original + "extra: dropped\n", encoding="utf-8")
+
+    with pytest.raises((TypeError, ValueError)):
+        manage_vendors.update(
+            repo_root=repo_root,
+            vendor_id="existing",
+            repo=None,
+            sha=_NEW_SHA,
+            skill_roots=None,
+            license_name=None,
+            homepage=None,
+            display_ref=None,
+        )
+
+
+def test_add_quotes_yaml_reserved_word_display_ref(repo_root: Path) -> None:
+    """Quote reserved-word field values so they reload as strings, not bools."""
+    exit_code = manage_vendors.main(
+        [
+            "add",
+            "--repo-root",
+            str(repo_root),
+            "--id",
+            "brand-new",
+            "--repo",
+            "owner/brand-new",
+            "--sha",
+            _NEW_SHA,
+            "--skill-roots",
+            "skills",
+            "--license",
+            "MIT",
+            "--homepage",
+            "https://github.com/owner/brand-new",
+            "--display-ref",
+            "yes",
+        ],
+    )
+
+    assert_that(exit_code).is_zero()
+    registry_text = (repo_root / "vendors.yaml").read_text(encoding="utf-8")
+    assert_that(registry_text).contains('displayRef: "yes"')
+    data = yaml.safe_load(registry_text)
+    added = next(vendor for vendor in data["vendors"] if vendor["id"] == "brand-new")
+    assert_that(added["displayRef"]).is_equal_to("yes")
+
+
+def test_add_via_main_accepts_comma_separated_roots(repo_root: Path) -> None:
+    """Support comma-separated --skill-roots through the CLI entrypoint."""
+    exit_code = manage_vendors.main(
+        [
+            "add",
+            "--repo-root",
+            str(repo_root),
+            "--id",
+            "brand-new",
+            "--repo",
+            "owner/brand-new",
+            "--sha",
+            _NEW_SHA,
+            "--skill-roots",
+            "skills, plugins/*/skills",
+            "--license",
+            "MIT",
+            "--homepage",
+            "https://github.com/owner/brand-new",
+        ],
+    )
+
+    assert_that(exit_code).is_zero()
+    vendors = load_registry(registry_path=repo_root / "vendors.yaml")
+    added = next(vendor for vendor in vendors if vendor.id == "brand-new")
+    assert_that(added.skill_roots).is_equal_to(("skills", "plugins/*/skills"))
+
+
+def test_add_via_main_rejects_empty_skill_roots(repo_root: Path) -> None:
+    """Reject skill-root input that yields no non-empty entries."""
+    registry_path = repo_root / "vendors.yaml"
+    original = registry_path.read_text(encoding="utf-8")
+
+    exit_code = manage_vendors.main(
+        [
+            "add",
+            "--repo-root",
+            str(repo_root),
+            "--id",
+            "brand-new",
+            "--repo",
+            "owner/brand-new",
+            "--sha",
+            _NEW_SHA,
+            "--skill-roots",
+            " , ",
+            "--license",
+            "MIT",
+            "--homepage",
+            "https://github.com/owner/brand-new",
+        ],
+    )
+
+    assert_that(exit_code).is_equal_to(1)
+    assert_that(registry_path.read_text(encoding="utf-8")).is_equal_to(original)

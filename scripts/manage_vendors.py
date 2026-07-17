@@ -17,13 +17,28 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 import yaml
 
 import bake_vendor_indexes
 from vendor_registry.registry import load_registry
+
+
+class _SyncModule(Protocol):
+    """Structural contract for the npm package synchronization module."""
+
+    PROJECT_ROOT: Path
+    PACKAGE_ROOT: Path
+    DATA_ROOT: Path
+    PACKAGE_MANIFEST: Path
+    SOURCE_DATA: dict[Path, Path]
+    rendered_files: Callable[[str], dict[Path, str]]
+    write_rendered: Callable[[dict[Path, str]], None]
+    check_rendered: Callable[[dict[Path, str]], int]
+
 
 _SYNC_SCRIPT = (
     Path(__file__).resolve().parent / "ci" / "npm" / "sync_ai_skills_package.py"
@@ -49,11 +64,11 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def _load_sync_module() -> Any:
+def _load_sync_module() -> _SyncModule:
     """Load the npm package synchronization script as a module.
 
     Returns:
-        Loaded synchronization module, typed dynamically for reconfiguration.
+        Loaded synchronization module cast to its structural contract.
 
     Raises:
         RuntimeError: If the synchronization script cannot be imported.
@@ -67,10 +82,10 @@ def _load_sync_module() -> Any:
         raise RuntimeError(msg)
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
-    return module
+    return cast("_SyncModule", module)
 
 
-def _configure_sync(*, sync: Any, repo_root: Path) -> None:
+def _configure_sync(*, sync: _SyncModule, repo_root: Path) -> None:
     """Point the synchronization module at a specific repository root.
 
     Args:
@@ -102,7 +117,7 @@ def _sync_artifacts(*, repo_root: Path, check_only: bool) -> int:
     """
     sync = _load_sync_module()
     _configure_sync(sync=sync, repo_root=repo_root)
-    files = sync.rendered_files(version="0.0.0-dev")
+    files = sync.rendered_files("0.0.0-dev")
     if check_only:
         return int(sync.check_rendered(files))
     sync.write_rendered(files)
@@ -111,6 +126,11 @@ def _sync_artifacts(*, repo_root: Path, check_only: bool) -> int:
 
 def _needs_quote(*, value: str) -> bool:
     """Return whether a scalar value must be double-quoted in YAML.
+
+    Quotes are forced for values with structural YAML characters and for values
+    that ``yaml.safe_load`` would coerce to a non-string (YAML 1.1 reserved
+    words such as ``yes``/``no``/``null``, numbers, and date-like scalars), so a
+    written value always round-trips back as the same string.
 
     Args:
         value: Scalar string destined for the registry document.
@@ -122,7 +142,13 @@ def _needs_quote(*, value: str) -> bool:
         return True
     if value[0] in "!&*?|>%@`\"'#,[]{}:-":
         return True
-    return ": " in value or " #" in value
+    if ": " in value or " #" in value:
+        return True
+    try:
+        parsed = yaml.safe_load(value)
+    except yaml.YAMLError:
+        return True
+    return not isinstance(parsed, str) or parsed != value
 
 
 def _scalar(*, value: str, quote: bool = False) -> str:
@@ -143,6 +169,11 @@ def _scalar(*, value: str, quote: bool = False) -> str:
 
 def _dump_registry(*, vendors: list[dict[str, Any]]) -> str:
     """Serialize vendor mappings to the canonical ``vendors.yaml`` layout.
+
+    Only the canonical fields in ``_FIELD_ORDER`` are emitted; any other key is
+    dropped. Callers must validate the registry with ``load_registry`` first
+    (as ``_read_raw_registry`` does), which rejects unknown fields, so no
+    intended data is lost here.
 
     Args:
         vendors: Ordered vendor mappings with camelCase keys.
@@ -173,7 +204,11 @@ def _dump_registry(*, vendors: list[dict[str, Any]]) -> str:
 
 
 def _read_raw_registry(*, registry_path: Path) -> list[dict[str, Any]]:
-    """Load the registry into mutable vendor mappings without validation.
+    """Fail-closed validate the registry, then load mutable vendor mappings.
+
+    The registry is first validated with ``load_registry`` so unknown top-level
+    keys or unknown per-vendor fields are rejected up front rather than being
+    silently discarded during re-serialization (see ``_dump_registry``).
 
     Args:
         registry_path: Path to the ``vendors.yaml`` registry.
@@ -182,9 +217,10 @@ def _read_raw_registry(*, registry_path: Path) -> list[dict[str, Any]]:
         Vendor mappings in source order as mutable dictionaries.
 
     Raises:
-        TypeError: If a vendor entry is not a mapping.
-        ValueError: If the document lacks a ``vendors`` list.
+        TypeError: If the registry or a vendor entry has an invalid type.
+        ValueError: If the registry violates its schema or lacks a list.
     """
+    load_registry(registry_path=registry_path)
     data = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
     if (
         not isinstance(data, dict)
@@ -206,12 +242,16 @@ def _write_registry(
     *,
     registry_path: Path,
     vendors: list[dict[str, Any]],
-) -> None:
+) -> str | None:
     """Write and re-validate the registry, restoring the original on error.
 
     Args:
         registry_path: Path to the ``vendors.yaml`` registry.
         vendors: Vendor mappings to serialize.
+
+    Returns:
+        The original registry text, or ``None`` when the file did not exist,
+        so callers can roll back later stages (for example a failed rebake).
 
     Raises:
         TypeError: If the serialized registry fails type validation.
@@ -227,6 +267,64 @@ def _write_registry(
         if original is not None:
             registry_path.write_text(original, encoding="utf-8")
         raise
+    return original
+
+
+def _refresh_or_restore(
+    *,
+    repo_root: Path,
+    registry_path: Path,
+    original: str | None,
+) -> None:
+    """Rebake and synchronize, restoring ``vendors.yaml`` if that fails.
+
+    Keeps the registry and its derived artifacts atomically consistent from the
+    caller's perspective: if the rebake/sync stage raises (for example a GitHub
+    fetch failure), the previous registry contents are restored.
+
+    Args:
+        repo_root: Repository root containing ``vendors.yaml``.
+        registry_path: Path to the ``vendors.yaml`` registry.
+        original: Registry text to restore on failure, or ``None`` to remove a
+            newly created file.
+    """
+    refreshed = False
+    try:
+        refresh(repo_root=repo_root)
+        refreshed = True
+    finally:
+        if not refreshed:
+            if original is not None:
+                registry_path.write_text(original, encoding="utf-8")
+            elif registry_path.is_file():
+                registry_path.unlink()
+
+
+def _normalize_skill_roots(*, values: list[str]) -> tuple[str, ...]:
+    """Split, trim, and flatten repeated/comma-separated skill-root values.
+
+    Supports both repeated ``--skill-roots`` flags and comma-separated values
+    within a single flag (for example ``--skill-roots skills,plugins/*/skills``).
+
+    Args:
+        values: Raw ``--skill-roots`` occurrences collected by argparse.
+
+    Returns:
+        Trimmed, non-empty skill roots in the order provided.
+
+    Raises:
+        ValueError: If no non-empty skill root remains after normalization.
+    """
+    roots = [
+        stripped
+        for value in values
+        for root in value.split(",")
+        if (stripped := root.strip())
+    ]
+    if not roots:
+        msg = "--skill-roots must contain at least one non-empty path"
+        raise ValueError(msg)
+    return tuple(roots)
 
 
 def _build_vendor_mapping(
@@ -345,8 +443,12 @@ def add(
             display_ref=display_ref,
         ),
     )
-    _write_registry(registry_path=registry_path, vendors=vendors)
-    refresh(repo_root=repo_root)
+    original = _write_registry(registry_path=registry_path, vendors=vendors)
+    _refresh_or_restore(
+        repo_root=repo_root,
+        registry_path=registry_path,
+        original=original,
+    )
     _print_summary(action="Added", vendor_id=vendor_id)
 
 
@@ -396,8 +498,12 @@ def update(
     target.update(
         {field: value for field, value in patch.items() if value is not None},
     )
-    _write_registry(registry_path=registry_path, vendors=vendors)
-    refresh(repo_root=repo_root)
+    original = _write_registry(registry_path=registry_path, vendors=vendors)
+    _refresh_or_restore(
+        repo_root=repo_root,
+        registry_path=registry_path,
+        original=original,
+    )
     _print_summary(action="Updated", vendor_id=vendor_id)
 
 
@@ -429,7 +535,7 @@ def _add_vendor_arguments(
         action="append",
         required=require_fields,
         metavar="PATH",
-        help="Skill-root path or glob (repeatable)",
+        help="Skill-root path or glob (repeatable or comma-separated)",
     )
     parser.add_argument(
         "--license",
@@ -508,7 +614,7 @@ def main(argv: list[str] | None = None) -> int:
                 vendor_id=args.vendor_id,
                 repo=args.repo,
                 sha=args.sha,
-                skill_roots=tuple(args.skill_roots),
+                skill_roots=_normalize_skill_roots(values=args.skill_roots),
                 license_name=args.license_name,
                 homepage=args.homepage,
                 display_ref=args.display_ref,
@@ -521,7 +627,9 @@ def main(argv: list[str] | None = None) -> int:
                 repo=args.repo,
                 sha=args.sha,
                 skill_roots=(
-                    tuple(args.skill_roots) if args.skill_roots is not None else None
+                    _normalize_skill_roots(values=args.skill_roots)
+                    if args.skill_roots is not None
+                    else None
                 ),
                 license_name=args.license_name,
                 homepage=args.homepage,
