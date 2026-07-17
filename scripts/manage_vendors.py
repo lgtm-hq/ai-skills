@@ -324,7 +324,9 @@ def _restore_artifacts(
         current = (
             [file for file in path.rglob("*") if file.is_file()]
             if path.is_dir()
-            else [path] if path.is_file() else []
+            else [path]
+            if path.is_file()
+            else []
         )
         for file in current:
             if file not in snapshot:
