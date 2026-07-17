@@ -13,7 +13,8 @@
     "directory": "npm/ai-skills"
   },
   "bin": {
-    "ai-skills": "bin/ai-skills.js"
+    "skill": "bin/skill.js",
+    "sk": "bin/skill.js"
   },
   "files": [
     "bin",
