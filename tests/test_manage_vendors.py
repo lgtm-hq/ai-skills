@@ -226,6 +226,57 @@ def test_add_rolls_back_registry_when_rebake_fails(
     assert_that((repo_root / "vendor-indexes" / "brand-new.json").exists()).is_false()
 
 
+def test_add_rolls_back_indexes_when_sync_fails(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Restore vendors.yaml and baked indexes when sync fails after bake."""
+    registry_path = repo_root / "vendors.yaml"
+    original_registry = registry_path.read_text(encoding="utf-8")
+    existing_index = repo_root / "vendor-indexes" / "existing.json"
+    original_index = existing_index.read_text(encoding="utf-8")
+    original_notice = (repo_root / "NOTICE.md").read_text(encoding="utf-8")
+
+    def _boom_sync(*, repo_root: Path, check_only: bool) -> int:
+        """Simulate a sync failure after a successful rebake.
+
+        Args:
+            repo_root: Repository root that would be synchronized.
+            check_only: Whether the sync would only verify artifacts.
+
+        Raises:
+            RuntimeError: Always, to emulate a partial sync write.
+        """
+        del repo_root, check_only
+        msg = "sync failure"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(manage_vendors, "_sync_artifacts", _boom_sync)
+
+    with pytest.raises(RuntimeError, match="sync failure"):
+        manage_vendors.add(
+            repo_root=repo_root,
+            vendor_id="brand-new",
+            repo="owner/brand-new",
+            sha=_NEW_SHA,
+            skill_roots=("skills",),
+            license_name="MIT",
+            homepage="https://github.com/owner/brand-new",
+            display_ref=None,
+        )
+
+    assert_that(registry_path.read_text(encoding="utf-8")).is_equal_to(
+        original_registry
+    )
+    assert_that((repo_root / "vendor-indexes" / "brand-new.json").exists()).is_false()
+    assert_that(existing_index.read_text(encoding="utf-8")).is_equal_to(original_index)
+    assert_that((repo_root / "NOTICE.md").read_text(encoding="utf-8")).is_equal_to(
+        original_notice,
+    )
+    monkeypatch.undo()
+    assert_that(manage_vendors.check(repo_root=repo_root)).is_zero()
+
+
 def test_update_rejects_unknown_registry_key(repo_root: Path) -> None:
     """Fail closed instead of silently dropping unknown registry keys."""
     registry_path = repo_root / "vendors.yaml"

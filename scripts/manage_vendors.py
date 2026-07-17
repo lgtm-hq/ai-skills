@@ -270,17 +270,83 @@ def _write_registry(
     return original
 
 
+def _generated_artifact_paths(*, repo_root: Path) -> tuple[Path, ...]:
+    """Return the files and directories that ``bake`` and sync overwrite.
+
+    Args:
+        repo_root: Repository root containing generated artifacts.
+
+    Returns:
+        Paths (files or directory roots) covering every rebake/sync output.
+    """
+    package_root = repo_root / "npm" / "ai-skills"
+    return (
+        repo_root / "vendor-indexes",
+        repo_root / "NOTICE.md",
+        package_root / "data",
+        package_root / "NOTICE.md",
+        package_root / "package.json",
+    )
+
+
+def _snapshot_artifacts(*, paths: tuple[Path, ...]) -> dict[Path, bytes]:
+    """Capture the current contents of every existing file below ``paths``.
+
+    Args:
+        paths: Files or directory roots to snapshot.
+
+    Returns:
+        Mapping of existing file paths to their byte contents.
+    """
+    snapshot: dict[Path, bytes] = {}
+    for path in paths:
+        if path.is_dir():
+            snapshot.update(
+                {file: file.read_bytes() for file in path.rglob("*") if file.is_file()},
+            )
+        elif path.is_file():
+            snapshot[path] = path.read_bytes()
+    return snapshot
+
+
+def _restore_artifacts(
+    *,
+    paths: tuple[Path, ...],
+    snapshot: dict[Path, bytes],
+) -> None:
+    """Restore snapshotted files and delete any created after the snapshot.
+
+    Args:
+        paths: Files or directory roots covered by the snapshot.
+        snapshot: Pre-change file contents from ``_snapshot_artifacts``.
+    """
+    for path in paths:
+        current = (
+            [file for file in path.rglob("*") if file.is_file()]
+            if path.is_dir()
+            else [path] if path.is_file() else []
+        )
+        for file in current:
+            if file not in snapshot:
+                file.unlink()
+    for file, content in snapshot.items():
+        file.parent.mkdir(parents=True, exist_ok=True)
+        if not file.is_file() or file.read_bytes() != content:
+            file.write_bytes(content)
+
+
 def _refresh_or_restore(
     *,
     repo_root: Path,
     registry_path: Path,
     original: str | None,
 ) -> None:
-    """Rebake and synchronize, restoring ``vendors.yaml`` if that fails.
+    """Rebake and synchronize, restoring all artifacts if that fails.
 
     Keeps the registry and its derived artifacts atomically consistent from the
     caller's perspective: if the rebake/sync stage raises (for example a GitHub
-    fetch failure), the previous registry contents are restored.
+    fetch failure or a partial sync write), ``vendors.yaml`` and every baked
+    index plus mirrored npm artifact are restored to their pre-refresh state.
 
     Args:
         repo_root: Repository root containing ``vendors.yaml``.
@@ -288,6 +354,8 @@ def _refresh_or_restore(
         original: Registry text to restore on failure, or ``None`` to remove a
             newly created file.
     """
+    artifact_paths = _generated_artifact_paths(repo_root=repo_root)
+    snapshot = _snapshot_artifacts(paths=artifact_paths)
     refreshed = False
     try:
         refresh(repo_root=repo_root)
@@ -298,6 +366,7 @@ def _refresh_or_restore(
                 registry_path.write_text(original, encoding="utf-8")
             elif registry_path.is_file():
                 registry_path.unlink()
+            _restore_artifacts(paths=artifact_paths, snapshot=snapshot)
 
 
 def _normalize_skill_roots(*, values: list[str]) -> tuple[str, ...]:
