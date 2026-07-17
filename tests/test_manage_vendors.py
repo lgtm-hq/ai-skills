@@ -247,23 +247,27 @@ def test_add_rolls_back_indexes_when_sync_fails(
         Raises:
             RuntimeError: Always, to emulate a partial sync write.
         """
-        del repo_root, check_only
+        del check_only
+        (repo_root / "NOTICE.md").write_text(
+            "partially synchronized\n",
+            encoding="utf-8",
+        )
         msg = "sync failure"
         raise RuntimeError(msg)
 
-    monkeypatch.setattr(manage_vendors, "_sync_artifacts", _boom_sync)
-
-    with pytest.raises(RuntimeError, match="sync failure"):
-        manage_vendors.add(
-            repo_root=repo_root,
-            vendor_id="brand-new",
-            repo="owner/brand-new",
-            sha=_NEW_SHA,
-            skill_roots=("skills",),
-            license_name="MIT",
-            homepage="https://github.com/owner/brand-new",
-            display_ref=None,
-        )
+    with monkeypatch.context() as sync_patch:
+        sync_patch.setattr(manage_vendors, "_sync_artifacts", _boom_sync)
+        with pytest.raises(RuntimeError, match="sync failure"):
+            manage_vendors.add(
+                repo_root=repo_root,
+                vendor_id="brand-new",
+                repo="owner/brand-new",
+                sha=_NEW_SHA,
+                skill_roots=("skills",),
+                license_name="MIT",
+                homepage="https://github.com/owner/brand-new",
+                display_ref=None,
+            )
 
     assert_that(registry_path.read_text(encoding="utf-8")).is_equal_to(
         original_registry
@@ -273,7 +277,6 @@ def test_add_rolls_back_indexes_when_sync_fails(
     assert_that((repo_root / "NOTICE.md").read_text(encoding="utf-8")).is_equal_to(
         original_notice,
     )
-    monkeypatch.undo()
     assert_that(manage_vendors.check(repo_root=repo_root)).is_zero()
 
 
