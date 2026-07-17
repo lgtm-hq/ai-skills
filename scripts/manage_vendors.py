@@ -321,13 +321,12 @@ def _restore_artifacts(
         snapshot: Pre-change file contents from ``_snapshot_artifacts``.
     """
     for path in paths:
-        current = (
-            [file for file in path.rglob("*") if file.is_file()]
-            if path.is_dir()
-            else [path]
-            if path.is_file()
-            else []
-        )
+        if path.is_dir():
+            current = [file for file in path.rglob("*") if file.is_file()]
+        elif path.is_file():
+            current = [path]
+        else:
+            current = []
         for file in current:
             if file not in snapshot:
                 file.unlink()
