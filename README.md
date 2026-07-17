@@ -21,8 +21,16 @@ gateway (SHA-pinned); curated skills stay first-party only.
 
 ## Quickstart
 
-Install with the **gateway** package (recommended). The npm version matches the
-git release tag (`@0.11.0` ↔ `v0.11.0`):
+Install the **gateway** package globally (recommended). It exposes two
+first-class binaries, `skill` and `sk` (aliases for the same CLI):
+
+```bash
+bun add -g @lgtm-hq/ai-skills@0.11.0
+skill          # or: sk
+```
+
+Prefer a pinned, install-free run? Use `bunx` with the release tag (the npm
+version matches the git tag, `@0.11.0` ↔ `v0.11.0`):
 
 ```bash
 bunx @lgtm-hq/ai-skills@0.11.0
