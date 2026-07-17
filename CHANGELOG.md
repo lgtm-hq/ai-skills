@@ -11,11 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **gateway**: expose first-class `skill` and `sk` binaries for the installed
+  gateway CLI (#243)
+
 ### Changed
 
 ### Deprecated
 
 ### Removed
+
+- **gateway**: remove the `ai-skills` binary in favor of `skill` / `sk` (#243)
 
 ### Fixed
 
