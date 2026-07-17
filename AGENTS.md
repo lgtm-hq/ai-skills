@@ -52,3 +52,32 @@ unavailable or a skill here explicitly overrides that preference.
 Total skills: 36
 
 <!-- markdownlint-enable MD013 -->
+
+## Cursor Cloud specific instructions
+
+<!-- markdownlint-disable MD013 -->
+
+There are no long-running services. This repo ships two deliverables: the Python
+catalog/validation/generator scripts (managed with **uv**) and the JS gateway CLI
+(`@lgtm-hq/ai-skills`, managed with **bun**) under `npm/ai-skills/`.
+
+- Toolchains: Python via **uv** (`requires-python >= 3.13`; uv provisions the
+  interpreter, so the base image's Python does not matter) and JS via **bun** for
+  the gateway package. The startup update script installs both and runs
+  `uv sync --frozen` plus `bun install` in `npm/ai-skills/`.
+- PATH: uv lands in `~/.local/bin` and bun in `~/.bun/bin` (the bun installer
+  appends this to `~/.bashrc`). If `uv`/`bun` are not found in a fresh non-login
+  shell, prefix commands with those paths or `export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"`.
+- Standard commands live in `CONTRIBUTING.md` (root: `uv run lintro chk`,
+  `uv run lintro fmt`, `uv run lintro tst`, `bash scripts/validate.sh`) and in
+  `npm/ai-skills/package.json` (`bun test`). Run Python tests directly with
+  `uv run pytest tests/`. `scripts/validate.sh` needs both `uv` and `rg` on PATH.
+- Running the gateway CLI without installing: `node npm/ai-skills/bin/ai-skills.js <list|vendors|install|update|remove|adopt>`.
+- Gateway `install`/`update` shell out to the upstream Vercel `skills` CLI via
+  `bunx skills@^…`, which needs network + GitHub access. To smoke-test a real
+  install, prefer a vendor source (for example `--vendor mattpocock --skill code-review
+  -a cursor --project -y` inside a scratch directory). First-party installs resolve
+  `lgtm-hq/ai-skills@v<package-version>`, and on `main` the package version is
+  `0.0.0-dev` (not a real tag), so a first-party install will not resolve there.
+
+<!-- markdownlint-enable MD013 -->
