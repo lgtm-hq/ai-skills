@@ -32,15 +32,13 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    # Pin past v0.52.3: lychee-action v2.9 rejects --output in args when the
-    # action `output` input is also set (lgtm-ci#531 / c4192f9).
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@c4192f9d97fa79767241d85d0d8e4cba866dcdec
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@443a687caa93b3afa306a066aae8d8a2b4e60c3c  # v0.59.0
     with:
       job-name: "🔗 Internal Link Check"
       file-extensions: md
       check-external: false
-      tooling-ref: "c4192f9d97fa79767241d85d0d8e4cba866dcdec"
+      tooling-ref: "443a687caa93b3afa306a066aae8d8a2b4e60c3c"  # v0.59.0
       # reusable-link-check hardens with inputs.allowed-endpoints before
       # checkout (append/preset resolve happens too late). Pass the full
       # github-tooling default list plus release-assets so Lychee can download
@@ -69,10 +67,10 @@ jobs:
       contents: read
       pull-requests: write
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@c4192f9d97fa79767241d85d0d8e4cba866dcdec
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@443a687caa93b3afa306a066aae8d8a2b4e60c3c  # v0.59.0
     with:
       job-name: "🔗 External Link Check"
       file-extensions: md
       check-external: true
       egress-policy: audit
-      tooling-ref: "c4192f9d97fa79767241d85d0d8e4cba866dcdec"
+      tooling-ref: "443a687caa93b3afa306a066aae8d8a2b4e60c3c"  # v0.59.0

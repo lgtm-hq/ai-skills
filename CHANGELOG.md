@@ -26,6 +26,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.12.0] - 2026-07-18
+
+### Added
+
+- **gateway**: add manage_vendors CLI for SHA-pinned vendors (#248) (12fd543)
+
+### Changed
+
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.59.0 (minor) (#247) (9afadad)
+- **deps-dev**: update dependency lintro to 0.80.9 (patch) (#254) (6d98e18)
+
+## [0.11.1] - 2026-07-18
+
+### Changed
+
+- add Cursor Cloud environment setup notes to AGENTS.md (#245) (96dc061)
+- **deps**: update lintro (#252) (d7a4182)
+- **deps**: update lintro (#251) (8029ebc)
+- **deps**: update lintro (#246) (4648008)
+- **deps**: update lintro (#244) (113f89b)
+
+### Fixed
+
+- **ci**: repin link-check to lgtm-ci v0.54.0 and restore single-SHA lockstep (#250)
+  (7380494)
+
 ## [0.11.0] - 2026-07-16
 
 ### Added
@@ -564,7 +590,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.11.1...v0.12.0
+[0.11.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/lgtm-hq/ai-skills/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.10.0...v0.10.1
