@@ -21,13 +21,13 @@ jobs:
   auto-tag:
     # lgtm-ci owns tag/release creation; this repo only supplies trigger policy.
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-release-auto-tag.yml@31c25ef2e8992960e218524780e34f44f51271b5  # v0.54.0
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-release-auto-tag.yml@443a687caa93b3afa306a066aae8d8a2b4e60c3c  # v0.59.0
     with:
       version: >-
         ${{ github.event_name == 'workflow_dispatch'
             && inputs.version
             || '' }}
-      tooling-ref: "31c25ef2e8992960e218524780e34f44f51271b5"  # v0.54.0
+      tooling-ref: "443a687caa93b3afa306a066aae8d8a2b4e60c3c"  # v0.59.0
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}

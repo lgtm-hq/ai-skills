@@ -26,7 +26,7 @@ jobs:
     # Complements the release-manifest attestation with a signed CycloneDX
     # SBOM (plus vulnerability scan) for every published release.
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-sbom.yml@31c25ef2e8992960e218524780e34f44f51271b5  # v0.54.0
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-sbom.yml@443a687caa93b3afa306a066aae8d8a2b4e60c3c  # v0.59.0
     with:
       target: "."
       target-type: dir
@@ -34,7 +34,7 @@ jobs:
       scan-vulnerabilities: true
       create-attestation: true
       artifact-name: sbom
-      tooling-ref: "31c25ef2e8992960e218524780e34f44f51271b5"  # v0.54.0
+      tooling-ref: "443a687caa93b3afa306a066aae8d8a2b4e60c3c"  # v0.59.0
       egress-policy: block
       egress-preset: sbom
       # Harden-runner pre reads inputs only. Include uploads.github.com and
