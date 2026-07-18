@@ -21,11 +21,21 @@ gateway (SHA-pinned); curated skills stay first-party only.
 
 ## Quickstart
 
-Install with the **gateway** package (recommended). The npm version matches the
-git release tag (`@0.12.0` ↔ `v0.12.0`):
+Install the **gateway** package globally (recommended). It exposes two
+first-class binaries, `skill` and `sk` (aliases for the same CLI):
 
 ```bash
-bunx @lgtm-hq/ai-skills@0.12.0
+bun add -g @lgtm-hq/ai-skills@0.12.0
+skill          # or: sk
+```
+
+Prefer a pinned, install-free run? Because the package ships two binaries,
+`bunx` needs an explicit `--package` plus the binary name — the npm version
+matches the git tag, `@0.12.0` ↔ `v0.12.0`:
+
+```bash
+bunx --package=@lgtm-hq/ai-skills@0.12.0 skill
+# or: bunx --package=@lgtm-hq/ai-skills@0.12.0 sk
 ```
 
 Interactive install uses a Clack home/cart wizard. Happy path:
@@ -40,23 +50,25 @@ Interactive install uses a Clack home/cart wizard. Happy path:
 Cancel from home exits with no install. Mixed catalogs install once per source.
 
 Symlink installs are the default; copy-into-agent and conflict jargon stay behind
-advanced / unattended flags. Use `--project` for a repo-local install.
+advanced / unattended flags. Use `--project` for a repo-local install. With the
+gateway installed globally, invoke the CLI as `skill` (or `sk`):
 
 ```bash
-bunx @lgtm-hq/ai-skills@0.12.0 install …
-bunx @lgtm-hq/ai-skills@0.12.0 vendors   # offline: baked vendors + SHAs
-bunx @lgtm-hq/ai-skills@0.12.0 list
-bunx @lgtm-hq/ai-skills@0.12.0 update …
-bunx @lgtm-hq/ai-skills@0.12.0 remove …
-bunx @lgtm-hq/ai-skills@0.12.0 adopt -y --project   # import skills-lock installs
+skill install …
+skill vendors   # offline: baked vendors + SHAs
+skill list
+skill update …
+skill remove …
+skill adopt -y --project   # import skills-lock installs
 ```
 
 Unattended installs require an explicit scope and agent. Upstream `skills` has no
 conflict policy — omit `--on-conflict`, or pass `overwrite`. `keep` / `skip` fail
-closed:
+closed. For a pinned, install-free run, front the command with
+`bunx --package=@lgtm-hq/ai-skills@0.12.0 skill`:
 
 ```bash
-bunx @lgtm-hq/ai-skills@0.12.0 install -y --global \
+bunx --package=@lgtm-hq/ai-skills@0.12.0 skill install -y --global \
   -a claude-code -a cursor -a codex \
   --bundle pre-push
 ```
@@ -210,12 +222,12 @@ Power users and CI can skip the interactive picker via the gateway or the
 upstream CLI escape hatch:
 
 ```bash
-# Gateway: unattended first-party bundle
-bunx @lgtm-hq/ai-skills@0.12.0 install -y --global -a cursor \
+# Gateway: unattended first-party bundle (globally installed → `skill`)
+skill install -y --global -a cursor \
   --bundle pre-push
 
-# Gateway: unattended vendor skill at the baked SHA
-bunx @lgtm-hq/ai-skills@0.12.0 install -y --global -a cursor \
+# Gateway: unattended vendor skill at the baked SHA, pinned + install-free
+bunx --package=@lgtm-hq/ai-skills@0.12.0 skill install -y --global -a cursor \
   --vendor anthropics --skill frontend-design
 
 # Escape hatch: all first-party skills via skills CLI
@@ -224,12 +236,13 @@ bunx skills add lgtm-hq/ai-skills@v0.12.0 -g --all
 
 ### Update installed skills
 
-Prefer the gateway for installs it manages:
+Prefer the gateway for installs it manages (globally installed → `skill`; for a
+pinned, install-free run swap in `bunx --package=@lgtm-hq/ai-skills@0.12.0 skill`):
 
 ```bash
-bunx @lgtm-hq/ai-skills@0.12.0 update -y --global -a cursor
-bunx @lgtm-hq/ai-skills@0.12.0 list --global
-bunx @lgtm-hq/ai-skills@0.12.0 remove -y --global -a cursor --skill lint
+skill update -y --global -a cursor
+skill list --global
+skill remove -y --global -a cursor --skill lint
 ```
 
 The upstream CLI updates by **skill name** or **scope**, not by package slug

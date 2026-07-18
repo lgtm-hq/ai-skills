@@ -72,7 +72,7 @@ catalog/validation/generator scripts (managed with **uv**) and the JS gateway CL
   `uv run lintro fmt`, `uv run lintro tst`, `bash scripts/validate.sh`) and in
   `npm/ai-skills/package.json` (`bun test`). Run Python tests directly with
   `uv run pytest tests/`. `scripts/validate.sh` needs both `uv` and `rg` on PATH.
-- Running the gateway CLI without installing: `node npm/ai-skills/bin/ai-skills.js <list|vendors|install|update|remove|adopt>`.
+- Running the gateway CLI without installing: `node npm/ai-skills/bin/skill.js <list|vendors|install|update|remove|adopt>`.
 - Gateway `install`/`update` shell out to the upstream Vercel `skills` CLI via
   `bunx skills@^…`, which needs network + GitHub access. To smoke-test a real
   install, prefer a vendor source (for example `--vendor mattpocock --skill code-review

@@ -92,7 +92,7 @@ ungrouped:
         "# fake\n\n"
         "The npm version matches the git release tag "
         "(`@0.0.1` ↔ `v0.0.1`):\n\n"
-        "```bash\nbunx @lgtm-hq/ai-skills@0.0.1\n"
+        "```bash\nbunx --package=@lgtm-hq/ai-skills@0.0.1 skill\n"
         "bunx skills add lgtm-hq/ai-skills@v0.0.1 -g\n"
         "gh release download v0.0.1 -R lgtm-hq/ai-skills\n```\n\n"
         "## Skills\n\n"

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 /**
  * Resolve the gateway package version for install pins and lock metadata.
  *
- * `bunx` / direct `node bin/ai-skills.js` do not set `npm_package_version`, so
+ * `bunx` / direct `node bin/skill.js` do not set `npm_package_version`, so
  * fall back to the on-disk `package.json` shipped in the published tarball.
  *
  * @param {{env?: NodeJS.ProcessEnv, packageJsonPath?: string}} [options] - Injectable paths/env for tests.
