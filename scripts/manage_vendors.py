@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -35,9 +34,15 @@ class _SyncModule(Protocol):
     DATA_ROOT: Path
     PACKAGE_MANIFEST: Path
     SOURCE_DATA: dict[Path, Path]
-    rendered_files: Callable[[str], dict[Path, str]]
-    write_rendered: Callable[[dict[Path, str]], None]
-    check_rendered: Callable[[dict[Path, str]], int]
+
+    @staticmethod
+    def rendered_files(version: str) -> dict[Path, str]: ...
+
+    @staticmethod
+    def write_rendered(files: dict[Path, str]) -> None: ...
+
+    @staticmethod
+    def check_rendered(files: dict[Path, str]) -> int: ...
 
 
 _SYNC_SCRIPT = (
@@ -117,10 +122,10 @@ def _sync_artifacts(*, repo_root: Path, check_only: bool) -> int:
     """
     sync = _load_sync_module()
     _configure_sync(sync=sync, repo_root=repo_root)
-    files = sync.rendered_files("0.0.0-dev")
+    files = sync.rendered_files(version="0.0.0-dev")
     if check_only:
-        return int(sync.check_rendered(files))
-    sync.write_rendered(files)
+        return int(sync.check_rendered(files=files))
+    sync.write_rendered(files=files)
     return 0
 
 
@@ -266,6 +271,8 @@ def _write_registry(
     except (TypeError, ValueError):
         if original is not None:
             registry_path.write_text(original, encoding="utf-8")
+        elif registry_path.is_file():
+            registry_path.unlink()
         raise
     return original
 
@@ -710,7 +717,7 @@ def main(argv: list[str] | None = None) -> int:
             refresh(repo_root=repo_root)
             return 0
         return check(repo_root=repo_root)
-    except (OSError, RuntimeError, TypeError, ValueError) as error:
+    except (OSError, RuntimeError, TypeError, ValueError, yaml.YAMLError) as error:
         print(error, file=sys.stderr)
         return 1
 
