@@ -53,6 +53,37 @@ uv run python scripts/generate_readme.py
 bash scripts/validate.sh
 ```
 
+## Adding / updating a vendor
+
+Third-party vendors live in root **`vendors.yaml`** (SHA-pinned). Use
+`scripts/manage_vendors.py` to mutate the registry and regenerate every derived
+artifact (baked `vendor-indexes/`, `NOTICE.md`, and the embedded npm package data)
+in one step — never hand-edit the baked indexes.
+
+```bash
+# Add a vendor (all fields required; --display-ref defaults to latest)
+uv run python scripts/manage_vendors.py add \
+  --id owner-skills --repo owner/skills \
+  --sha 0123456789abcdef0123456789abcdef01234567 \
+  --skill-roots skills --license MIT \
+  --homepage https://github.com/owner/skills
+
+# Update fields on an existing vendor (only --id is required)
+uv run python scripts/manage_vendors.py update --id owner-skills \
+  --sha 89abcdef0123456789abcdef0123456789abcdef
+
+# Rebake indexes + resync npm data without touching vendors.yaml
+# (this is the Renovate path for automated vendor SHA bumps)
+uv run python scripts/manage_vendors.py refresh
+
+# Verify baked indexes and npm data are current (exits non-zero on drift)
+uv run python scripts/manage_vendors.py check
+```
+
+`add`/`update` still leave two edits for a human: add or update the vendor bullet in
+**`README.md`** and record the change under the Unreleased section of
+**`CHANGELOG.md`**. The script prints this reminder and never edits those files.
+
 ## Pull requests
 
 - Use **[Conventional Commits](https://www.conventionalcommits.org/)** in PR titles;
