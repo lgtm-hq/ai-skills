@@ -174,6 +174,7 @@ Autonomous agents that shepherd PRs and work issue backlogs.
 
 - **[babysit-pr](skills/babysit-pr/SKILL.md)** — Autonomously drive an open PR to merge-ready state by triaging Greptile and CodeRabbit review comments, fixing CI failures, handling CodeRabbit rate limits, and looping until checks are green with no unresolved actionable threads.
 - **[implement-issues](skills/implement-issues/SKILL.md)** — Implement a set of GitHub issues in parallel - triage or take an explicit issue list, group by file-conflict, create a worktree per lane, delegate to sub-agents, open a PR per lane; never merges.
+- **[sweep-prs](skills/sweep-prs/SKILL.md)** — Retrospective audit of merged and closed PRs over a time window.
 - **[which-pr](skills/which-pr/SKILL.md)** — Report which PR is being worked on in the current conversation.
 
 ### Testing

@@ -57,6 +57,7 @@
       "skills": [
         "./skills/babysit-pr",
         "./skills/implement-issues",
+        "./skills/sweep-prs",
         "./skills/which-pr"
       ]
     },
