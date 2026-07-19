@@ -59,6 +59,7 @@ groups:
     description: Autonomous agents that shepherd PRs and work issue backlogs.
     skills:
       - babysit-pr
+      - backlog
       - implement-issues
       - which-pr
 

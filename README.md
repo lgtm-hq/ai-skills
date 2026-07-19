@@ -173,6 +173,7 @@ Manual pre-review analysis of code, projects, and test suites.
 Autonomous agents that shepherd PRs and work issue backlogs.
 
 - **[babysit-pr](skills/babysit-pr/SKILL.md)** — Autonomously drive an open PR to merge-ready state by triaging Greptile and CodeRabbit review comments, fixing CI failures, handling CodeRabbit rate limits, and looping until checks are green with no unresolved actionable threads.
+- **[backlog](skills/backlog/SKILL.md)** — Interactive dispatcher for backlog work.
 - **[implement-issues](skills/implement-issues/SKILL.md)** — Implement a set of GitHub issues in parallel - triage or take an explicit issue list, group by file-conflict, create a worktree per lane, delegate to sub-agents, open a PR per lane; never merges.
 - **[which-pr](skills/which-pr/SKILL.md)** — Report which PR is being worked on in the current conversation.
 
