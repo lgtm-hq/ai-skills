@@ -74,10 +74,11 @@ this checkpoint away for fewer clicks.
   skill to open PRs, then run the `babysit-pr` skill with `--merge` across
   the in-scope PRs (one babysitter for all of them, per that skill's
   guidance). Otherwise go straight to `babysit-pr --merge`.
-- **open-pr** → run the `implement-issues` skill, then `babysit-pr`
-  **without** `--merge` on each resulting PR until its Phase 5 exit
-  conditions hold (threads resolved, checks green). Report PR URLs and stop
-  — never merge in this mode.
+- **open-pr** → run the `implement-issues` skill, then run the `babysit-pr`
+  skill **without** `--merge` across the resulting PRs (one babysitter for
+  all of them, per that skill's guidance) until Phase 5 exit conditions hold
+  (threads resolved, checks green). Report PR URLs and stop — never merge in
+  this mode.
 
 Read and follow the composed skills at dispatch time; do not restate their
 workflows here.
