@@ -113,7 +113,7 @@ applying filters.
 
 ### 1.3 Check categories
 
-**Check A — Merged without green builds**
+#### Check A — Merged without green builds
 
 For each merged PR, inspect the `statusCheckRollup.state` on the merge-head
 commit:
@@ -125,13 +125,13 @@ commit:
 - Has the failure been addressed post-merge? (look for a follow-up commit or
   fix-forward issue)
 
-**Check B — Merged while main was red**
+#### Check B — Merged while main was red
 
 - Did the merge land while a `main` branch run was `failure`/`in_progress`?
 - Did the merge fix the redness, ignore it, or worsen it?
 - Was the redness tracked (existing issue / comment on the PR)?
 
-**Check C — Review thread hygiene**
+#### Check C — Review thread hygiene
 
 For each merged or closed PR with review threads:
 
@@ -142,7 +142,7 @@ For each merged or closed PR with review threads:
 - Dangling threads on closed-not-merged PRs (unresolved threads on abandoned
   PRs that should be acknowledged or converted to issues)
 
-**Check D — Extensible case-by-case patterns**
+#### Check D — Extensible case-by-case patterns
 
 Review for:
 
@@ -165,9 +165,9 @@ more than ~4 sub-agents concurrently for deep-reads.
 
 Produce a findings table:
 
-| PR | Title | Category | Evidence | Proposed Disposition |
-|----|-------|----------|----------|---------------------|
-| #N | ... | A/B/C/D | commit sha, check name, thread URL | open issue / resolve thread / no-action |
+| PR | Title | Category | Evidence                           | Proposed Disposition                    |
+|----|-------|----------|------------------------------------|------------------------------------------|
+| #N | ...   | A/B/C/D  | commit sha, check name, thread URL | open issue / resolve thread / no-action |
 
 Categories: `A` merged-without-green, `B` main-was-red, `C` thread-hygiene,
 `D` case-by-case.
@@ -228,7 +228,7 @@ PRs).
 
 ## Phase 4 — Final report
 
-```
+```text
 ## Sweep-PRs Report
 Window: <start> → <end>  (e.g. 2026-06-19 → 2026-07-19)
 Repository: owner/repo
