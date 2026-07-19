@@ -358,3 +358,5 @@ Return a concise summary:
   Greptile/CodeRabbit-aware, and enforces the lint gate and CodeRabbit rate-limit loop.
 - Stacked branches on py-lintro sometimes need cherry-pick onto `main`, not a blind
   rebase — prefer conversation context or ask before rewriting history.
+- For periodic fleet-wide audits of already-merged/closed PRs, use the `sweep-prs`
+  skill — it is the retrospective complement to this per-PR live-shepherding skill.

@@ -60,6 +60,7 @@ groups:
     skills:
       - babysit-pr
       - implement-issues
+      - sweep-prs
       - which-pr
 
   testing:
