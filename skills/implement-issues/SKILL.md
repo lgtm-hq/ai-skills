@@ -95,6 +95,9 @@ same issue (a race that has bitten this workflow before).
 Shepherding and merging are **not** this skill. Once PRs are open, hand off to
 `babysit-pr` (drive to merge-ready) or `babysit-pr --merge`.
 
+For interactive routing that composes this skill alongside `babysit-pr`, use the
+`backlog` skill — it runs the interview and applies standing policy before delegating.
+
 ## Harness mechanics (Claude Code)
 
 - Run lanes as **background sub-agents** so the main thread stays free.
