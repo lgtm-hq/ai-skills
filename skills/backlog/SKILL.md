@@ -30,7 +30,8 @@ Args skip already-answered questions:
 > **What is the goal for this session?**
 >
 > 1. `merge-pr` — shepherd open PRs to merged (drive existing PRs to `main`).
-> 2. `open-pr` — implement open issues into new PRs, and shepherd already-open PRs (stop at PR-open, no merge).
+> 2. `open-pr` — implement open issues into new PRs, and shepherd already-open
+>    PRs (stop at PR-open, no merge).
 
 Wait for an answer (or read from args).
 
