@@ -358,3 +358,5 @@ Return a concise summary:
   Greptile/CodeRabbit-aware, and enforces the lint gate and CodeRabbit rate-limit loop.
 - Stacked branches on py-lintro sometimes need cherry-pick onto `main`, not a blind
   rebase — prefer conversation context or ask before rewriting history.
+- See also `backlog`: the interactive routing entry point that composes this
+  skill with `implement-issues`. It does not auto-invoke either.
