@@ -363,11 +363,13 @@ the review arrives is not evidence that CodeRabbit had nothing to say. Sweep
 mechanics:
 
 - **In-flight case** — re-poll on the same cadence as Step A (start at 60s, back off
-  to 5m) until the review lands or the PR's CodeRabbit rate-limit window opens; then
-  finish triage.
+  to 5m) until the review actually lands. If the sweep encounters a fresh rate-limit
+  during this window, record the reset window and switch to the rate-limited-case
+  mechanics below; rate-limit reset alone is **not** equivalent to a landed review.
 - **Rate-limited case** — defer the sweep until after the reset window recorded in
-  Step E item 3, then poll once the window opens and continue until the review lands.
-  The sweep may run long after the merge; that is expected.
+  Step E item 3, then resume polling. The reset only unblocks CodeRabbit to start
+  reviewing again; the sweep is not done until the review of the merged head has
+  actually landed. The sweep may run long after the merge; that is expected.
 
 When the late review arrives: fix-forward for genuine findings (open follow-up issues
 or PRs in the same repo); reply and resolve for invalid or already-addressed findings.
