@@ -192,6 +192,32 @@ Skill retirements and other deletions belong under **`### Removed`** in
 under Other Changes or Previously Unreleased — the README upgrade FAQ points
 readers at those Removed sections.
 
+### CHANGELOG entry format
+
+Every bullet that references a PR merged to `main` must end with
+`(#PR) (shortsha)` — for example:
+
+```text
+- **gateway**: add manage_vendors CLI for SHA-pinned vendors (#248) (12fd543)
+```
+
+`shortsha` is the first 7 characters of the squash-merge commit on `main`.
+Resolve it with:
+
+```bash
+git log --oneline | grep '(#248)'
+# → 12fd543 feat(gateway): add manage_vendors CLI for SHA-pinned vendors (#248)
+```
+
+The `lgtm-hq/lgtm-ci` release-version-pr workflow appends this pair
+automatically for generated entries. Human-authored bullets — for example when
+recording a vendor addition or a manual CHANGELOG update — must follow the same
+convention.
+
+Entries that reference draft or abandoned PRs that were never merged to `main`
+have no resolvable commit SHA; leave them without the shortsha suffix rather than
+inventing one.
+
 **Baseline note:** Caller pins are mostly
 `768a6b72f0a5346b5ecba3f4e13b90040472341c` (**v0.52.4**). Link Check alone pins
 `c4192f9d97fa79767241d85d0d8e4cba866dcdec` (post-v0.52.3 lychee-action output
