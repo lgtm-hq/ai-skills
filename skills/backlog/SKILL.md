@@ -88,8 +88,12 @@ Before routing to any lane, check `main` CI health:
 gh run list --branch main --limit 5 --json conclusion,status,name
 ```
 
-If `main` is red: open an issue, implement a fix PR, babysit it to merge — **before**
-touching anything else in the backlog. Report the blocker at Q3.
+If `main` is red: include a P0 fix lane in the Q3 plan **before** any other work,
+name it as the first item (e.g. "Lane 0 — fix red `main`: open issue with a full
+AI Implementation Prompt, then implement-issues → babysit-pr --merge on the
+resulting PR"), and wait for explicit Q3 confirmation before creating the issue,
+implementing the fix, or merging. Do not mutate the repository — including issue
+creation — before Q3 confirmation.
 
 ### Assess before amplifying
 
@@ -101,12 +105,16 @@ Implementation Prompt-ready issues first.
 
 This session authorises `babysit-pr` to exit successfully when all other Phase 5
 conditions are met and the only remaining blocker is a CodeRabbit rate-limit window
-**without any unreviewed current-head commit** (i.e. the current head is already
-reviewed; the wait is for a follow-up review after a trivial fixup). Do not sleep
-indefinitely on the rate limit in that case — note it in the final report and exit.
+**and the current PR head has already been reviewed by CodeRabbit** (positive
+evidence per `babysit-pr` Step E — a summary/walkthrough or inline review submitted
+against the current head, all resulting threads triaged). In that case the rate
+limit only affects follow-up reviews for future pushes, not the current head. Do
+not sleep indefinitely — note it in the final report and exit.
 
-If the current head is **unreviewed**, the standard `babysit-pr` Step E behavior
-applies: post `@coderabbitai please review` and wait.
+The condition is **not** met when the current head is unreviewed (only a rate-limit
+comment, an older-commit summary, or no CodeRabbit activity). In that case the
+standard `babysit-pr` Step E behavior applies: post `@coderabbitai please review`
+and wait for the review of the current head to land before exiting.
 
 Note: issue #261 may flip the `babysit-pr` default later; until then this override
 is carried by `backlog`.
