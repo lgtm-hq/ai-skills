@@ -79,7 +79,7 @@ def find_bare_asserts(
         try:
             source = py_file.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
-            violations.append(f"{relative}: cannot read file: {exc}")
+            violations.append(f"{relative}:0: cannot read file: {exc}")
             continue
         try:
             tree = ast.parse(source=source, filename=str(relative))
@@ -88,12 +88,12 @@ def find_bare_asserts(
                 f"{relative}:{exc.lineno or 0}: cannot parse file: {exc.msg}",
             )
             continue
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assert):
-                violations.append(
-                    f"{relative}:{node.lineno}: bare `assert` statement; "
-                    f"use assertpy `assert_that(...)` instead",
-                )
+        violations.extend(
+            f"{relative}:{node.lineno}: bare `assert` statement; "
+            f"use assertpy `assert_that(...)` instead"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assert)
+        )
     return violations
 
 
