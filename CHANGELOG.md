@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.14.0] - 2026-07-19
+
+### Added
+
+- **backlog**: add backlog routing skill (#271) (63c328b)
+
+### Changed
+
+- **deps**: update lintro (#259) (51fe084)
+- **deps**: update lintro (#258) (af0f293)
+- **deps-dev**: update dependency lintro to 0.80.10 (patch) (#257) (dac7614)
+
 ## [0.13.0] - 2026-07-18
 
 ### Added
@@ -597,7 +609,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.11.0...v0.11.1
