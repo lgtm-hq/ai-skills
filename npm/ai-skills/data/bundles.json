@@ -55,6 +55,7 @@
       "name": "Agents",
       "description": "Autonomous agents that shepherd PRs and work issue backlogs.",
       "skills": [
+        "backlog",
         "babysit-pr",
         "implement-issues",
         "which-pr"
