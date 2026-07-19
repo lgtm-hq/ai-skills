@@ -13,9 +13,9 @@ disable-model-invocation: true
 # Sweep PRs
 
 Retrospective, read-then-confirm-then-fix audit of a repository's recently
-merged and closed pull requests. Work in three phases: gather evidence
-(read-only), present a findings checkpoint, then remediate only confirmed
-items.
+merged and closed pull requests. Work in four phases: gather evidence
+(read-only), present a findings checkpoint, remediate only confirmed items,
+then produce a final report.
 
 ## Invocation
 
@@ -96,7 +96,15 @@ query SweepPRs($owner: String!, $repo: String!, $after: String) {
 }
 ```
 
-Stop paginating once `mergedAt`/`closedAt` falls outside the requested window.
+Paginate until `pageInfo.hasNextPage` is `false`, then filter client-side by
+`mergedAt` / `closedAt` against the requested window. **Do not** stop the loop
+early on the first out-of-window `mergedAt` / `closedAt` — the query orders by
+`UPDATED_AT`, which is not correlated with merge/close time (a stale PR pushed
+to the top by a recent comment can hide in-window PRs on later pages). If the
+repository is large enough that full pagination is expensive, switch the query
+to `orderBy: { field: CREATED_AT, direction: DESC }` and stop when `createdAt`
+exits the window plus a safety buffer (long-running PRs created before the
+window can still merge inside it).
 
 ### 1.2 Main-branch health (Check B)
 
