@@ -181,6 +181,9 @@ review.
    ```bash
    gh pr view --json headRefOid
    gh api repos/<owner>/<repo>/commits/<sha> --jq '.commit.committer.date'
+   # Note: committer.date approximates the push time but predates the actual push
+   # for rebased/cherry-picked commits. For a precise push timestamp when accuracy
+   # matters, use the GitHub Events API PushEvent for the branch instead.
    ```
 
 2. Find the latest CodeRabbit activity (comments **and** reviews), comparing timestamps
@@ -348,15 +351,28 @@ Queue discipline (this mode only):
 
 ### Post-merge review sweep (both modes)
 
-After each merge, sweep the merged PR once if either condition applies:
+After each merge, sweep the merged PR until CodeRabbit's review of the merged head
+has actually landed, if either condition applies:
 
 - The merge proceeded while a CodeRabbit review was in-flight (settle window had not
   elapsed and positive evidence had not yet landed).
 - The PR exited with a pending rate-limit review (Step E item 3 exemption).
 
+Do **not** treat a single immediate poll as a completed sweep — an empty poll before
+the review arrives is not evidence that CodeRabbit had nothing to say. Sweep
+mechanics:
+
+- **In-flight case** — re-poll on the same cadence as Step A (start at 60s, back off
+  to 5m) until the review lands or the PR's CodeRabbit rate-limit window opens; then
+  finish triage.
+- **Rate-limited case** — defer the sweep until after the reset window recorded in
+  Step E item 3, then poll once the window opens and continue until the review lands.
+  The sweep may run long after the merge; that is expected.
+
 When the late review arrives: fix-forward for genuine findings (open follow-up issues
 or PRs in the same repo); reply and resolve for invalid or already-addressed findings.
-**Never orphan late CodeRabbit findings from a merged PR.**
+**Never orphan late CodeRabbit findings from a merged PR** — including cases where
+the review only arrives after a multi-hour rate-limit reset.
 
 ### Releases (both modes)
 
