@@ -1,0 +1,21 @@
+# Configuration for the PR auto-labeler (actions/labeler).
+# Maps changed file paths to labels for automatic PR labeling.
+# Labels used here must exist in the repository (see `gh label list`).
+---
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "README.md"
+          - "CHANGELOG.md"
+          - "**/*.md"
+          - "!.github/**/*.md"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "pyproject.toml"
+          - "uv.lock"
+          - "npm/**/package.json"
+          - "npm/**/bun.lock"
+          - "renovate.json"
