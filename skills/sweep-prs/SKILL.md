@@ -166,7 +166,7 @@ more than ~4 sub-agents concurrently for deep-reads.
 Produce a findings table:
 
 | PR | Title | Category | Evidence                           | Proposed Disposition                    |
-|----|-------|----------|------------------------------------|------------------------------------------|
+|----|-------|----------|------------------------------------|-----------------------------------------|
 | #N | ...   | A/B/C/D  | commit sha, check name, thread URL | open issue / resolve thread / no-action |
 
 Categories: `A` merged-without-green, `B` main-was-red, `C` thread-hygiene,
