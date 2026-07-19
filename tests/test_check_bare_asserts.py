@@ -197,6 +197,47 @@ def test_skip_dirs_are_not_scanned(
     logger.info("[TEST] skip dirs excluded from scan")
 
 
+def test_named_skip_dirs_are_not_scanned(
+    tmp_path: Path,
+) -> None:
+    """Skip non-dot named vendored directories (``venv``, ``build``, ...).
+
+    The dot-prefixed path in ``test_skip_dirs_are_not_scanned`` only exercises
+    the ``part.startswith('.')`` branch of ``_is_skipped``; this case pins the
+    ``part in SKIP_DIRS`` branch so a regression that empties or renames the
+    set cannot silently pass.
+    """
+    for skipped in ("venv", "build", "dist", "node_modules"):
+        vendored = tmp_path / skipped / "pkg"
+        vendored.mkdir(parents=True)
+        (vendored / "bad.py").write_text("assert 1 == 1\n", encoding="utf-8")
+
+    violations = find_bare_asserts(root=tmp_path)
+
+    assert_that(violations).is_empty()
+    logger.info("[TEST] named skip dirs excluded from scan")
+
+
+def test_read_error_is_reported(
+    tmp_path: Path,
+) -> None:
+    """Surface unreadable ``*.py`` files as CI-greppable violations.
+
+    Writes a file whose bytes cannot be decoded as UTF-8; the checker should
+    catch the ``UnicodeDecodeError`` and emit a ``path:0: cannot read file``
+    violation (the ``0`` sentinel preserves the ``path:line: message`` format
+    even when no meaningful line number exists).
+    """
+    unreadable = tmp_path / "bad_encoding.py"
+    unreadable.write_bytes(b"\xff\xfe\x00\x00broken\n")
+
+    violations = find_bare_asserts(root=tmp_path)
+
+    assert_that(violations).is_length(1)
+    assert_that(violations[0]).contains("bad_encoding.py:0: cannot read file")
+    logger.info("[TEST] read error surfaced: {}", violations[0])
+
+
 def test_repository_tests_tree_passes() -> None:
     """The real ``tests/`` tree must satisfy the assertpy policy."""
     violations = find_bare_asserts(root=REPO_ROOT / "tests")
