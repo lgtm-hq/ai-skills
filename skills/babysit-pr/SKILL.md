@@ -169,28 +169,50 @@ load entire JSON payloads into context.
 CodeRabbit is not done when its GitHub check says "Review completed" on an **older**
 commit. The babysit loop must cover the **current PR head**.
 
-1. Record the latest commit SHA (`gh pr view --json headRefOid`).
-2. Find the latest CodeRabbit issue comment:
+**Positive evidence required**: a review submission via
+`gh api repos/<owner>/<repo>/pulls/<number>/reviews`, a walkthrough/summary comment,
+or an explicit skip message — **all timestamped after the head commit's push**. Zero
+unresolved threads is NOT evidence of review; it also describes a review that has not
+started. CodeRabbit posts no check-run, so `gh pr checks` cannot detect an in-flight
+review.
+
+1. Record the latest commit SHA and its push timestamp:
+
+   ```bash
+   gh pr view --json headRefOid
+   gh api repos/<owner>/<repo>/commits/<sha> --jq '.commit.committer.date'
+   ```
+
+2. Find the latest CodeRabbit activity (comments **and** reviews), comparing timestamps
+   to the head commit push time:
 
    ```bash
    gh api repos/<owner>/<repo>/issues/<number>/comments \
      --jq '.[] | select(.user.login | test("coderabbit"; "i")) | {id, created_at, body}'
+   gh api repos/<owner>/<repo>/pulls/<number>/reviews \
+     --jq '.[] | select(.user.login | test("coderabbit"; "i")) | {id, submitted_at, state}'
    ```
 
 3. **Rate-limited** (`Review limit reached` / `Next review available in`):
-   - Parse the wait time from the comment body.
-   - **Sleep until after reset** — poll every 2–5 minutes; do not exit early.
-   - After reset:
-     - **If unpushed commits**: Step A → push → return to loop.
-     - **If nothing to push**: post `@coderabbitai please review` on the PR, then wait
-       for CodeRabbit to respond and triage any new threads (Step D).
-4. **Not rate-limited but head unreviewed** (latest CodeRabbit summary/walkthrough
-   comment is **older** than the current head commit, or only a rate-limit comment
-   exists): post `@coderabbitai please review`, then wait and triage.
-5. Do not burn CodeRabbit CLI runs during babysit — PR bot comments are the source of
-   truth.
-6. Repeat Step E after every push until CodeRabbit has reviewed the current head and
-   all resulting threads are triaged.
+   - **Do not sleep or block waiting for the reset window.**
+   - If unpushed commits exist, complete Step A and push now.
+   - Record that CodeRabbit review of the current head is **pending due to rate limit**
+     and carry this note into the Phase 6 report.
+   - Continue toward Phase 5 exit — the rate-limit exemption applies (see Phase 5 and
+     Per-PR gate under Merging).
+
+4. **Not rate-limited but head unreviewed** — latest positive CodeRabbit evidence
+   predates the head commit push, or no post-push CodeRabbit activity exists after a
+   ~5-minute settle window:
+   - Wait ~5 minutes from the last push if no activity has appeared yet.
+   - Post `@coderabbitai please review`, then wait and triage new threads (Step D).
+   - **Settle window**: never merge or enqueue within ~5 minutes of the last push unless
+     positive review evidence has already landed.
+
+5. Do not burn CodeRabbit CLI runs during babysit — PR bot comments and reviews are the
+   source of truth.
+6. Repeat Step E after every push until there is positive evidence CodeRabbit reviewed
+   the current head and all resulting threads are triaged.
 
 ### Step F — Re-check and repeat
 
@@ -230,9 +252,11 @@ Done when **all** are true:
 
 - All required CI checks green (or only allowed skips like `REVIEW_REQUIRED`).
 - No unresolved actionable Greptile/CodeRabbit/Bugbot threads (fixed or replied).
-- **CodeRabbit has reviewed the current head** — summary/walkthrough or inline review
-  on the latest commit, with all threads triaged; not merely a stale green check or an
-  outstanding rate-limit window without `@coderabbitai please review`.
+- **CodeRabbit has reviewed the current head** — positive evidence: a review submission,
+  a walkthrough/summary comment, or an explicit skip message, **all timestamped after
+  the head commit's push** (verified per Step E items 1–2); **OR** the head review is
+  **pending due to rate limit** (Step E item 3 exemption, noted in Phase 6 report). Zero
+  unresolved threads is NOT evidence of review.
 - No unpushed local commits.
 - Branch mergeable (no conflicts).
 
@@ -261,8 +285,14 @@ and signing-park behavior below apply to **both** modes.
 Before merging (or enqueuing) any single PR:
 
 - **Phase 5 exit conditions met** for that PR.
-- **Bot reviewed the CURRENT head** — if the head moved since the last CodeRabbit
-  review, re-request (`@coderabbitai please review`) and wait before merging.
+- **CodeRabbit reviewed the CURRENT head** — positive evidence required: review
+  submission, walkthrough/summary comment, or explicit skip message timestamped after
+  the head commit's push (use Step E items 1–2 to verify). Zero unresolved threads is
+  not sufficient — it also describes an unstarted review. Never merge or enqueue within
+  ~5 minutes of the last push unless positive evidence has already landed; if nothing
+  after ~5 min, trigger Step E item 4. **Rate-limit exemption**: if the head review is
+  pending due to rate limit (Step E item 3), merging or enqueuing may proceed with the
+  pending-review note carried into the Phase 6 report.
 - **Re-check PR state immediately before merge** — an already-merged PR is a normal
   outcome, not an error; re-baseline the queue and move on.
 
@@ -316,6 +346,18 @@ Queue discipline (this mode only):
 - Under strict up-to-date-branch policies, use `gh pr update-branch <n>` to bring each
   PR current before its turn.
 
+### Post-merge review sweep (both modes)
+
+After each merge, sweep the merged PR once if either condition applies:
+
+- The merge proceeded while a CodeRabbit review was in-flight (settle window had not
+  elapsed and positive evidence had not yet landed).
+- The PR exited with a pending rate-limit review (Step E item 3 exemption).
+
+When the late review arrives: fix-forward for genuine findings (open follow-up issues
+or PRs in the same repo); reply and resolve for invalid or already-addressed findings.
+**Never orphan late CodeRabbit findings from a merged PR.**
+
 ### Releases (both modes)
 
 - Expect **auto version PRs** to appear after merges.
@@ -350,6 +392,7 @@ Return a concise summary:
 | Threads handled | fixed / replied N/A |
 | Merge-ready? | yes/no + why |
 | PRs merged | list (or n/a without `--merge`) |
+| CodeRabbit pending | rate-limited review awaiting reset (if applicable) |
 | Human blockers | approval, decisions, etc. |
 
 ## Notes
