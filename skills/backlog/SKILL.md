@@ -19,7 +19,7 @@ already specify.
 Args skip already-answered questions:
 
 - `/backlog` — start the full interview (Q1 → Q2 → Q3).
-- `/backlog merge #124 #125` — goal = `merge-pr`, scope = those PRs; jump to Q3.
+- `/backlog merge-pr #124 #125` — goal = `merge-pr`, scope = those PRs; jump to Q3.
 - `/backlog open-pr` — goal = `open-pr`, scope TBD; start at Q2.
 - `/backlog open-pr all` — goal = `open-pr`, scope = all eligible; jump to Q3.
 
@@ -30,7 +30,7 @@ Args skip already-answered questions:
 > **What is the goal for this session?**
 >
 > 1. `merge-pr` — shepherd open PRs to merged (drive existing PRs to `main`).
-> 2. `open-pr` — implement open issues and open PRs (stop at PR-open, no merge).
+> 2. `open-pr` — implement open issues into new PRs, and shepherd already-open PRs (stop at PR-open, no merge).
 
 Wait for an answer (or read from args).
 

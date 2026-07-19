@@ -55,8 +55,8 @@
       "name": "Agents",
       "source": "./",
       "skills": [
-        "./skills/backlog",
         "./skills/babysit-pr",
+        "./skills/backlog",
         "./skills/implement-issues",
         "./skills/which-pr"
       ]
