@@ -146,15 +146,13 @@ fi
 
 if [[ -d "tests" ]]; then
   # Owner standard (#88): all test assertions use assertpy, never bare
-  # `assert`. Match `assert expr` and `assert(expr)`; use find+grep so the
-  # check works with BSD grep (macOS) as well as GNU grep. pytest.raises /
-  # approx idioms are not assert statements and never match.
-  bare_asserts=$(
-    find tests -name '*.py' -exec grep -En '^[[:space:]]*assert([[:space:]]|\()' {} + 2>/dev/null || true
-  )
-  if [[ -n "${bare_asserts}" ]]; then
-    echo "Bare assert statements found in tests/ (use assertpy assert_that):"
-    echo "$bare_asserts"
+  # `assert`. Delegates to a Python AST scan so docstring examples and
+  # comments (which the previous grep-based scan false-positived on) are
+  # inherently ignored. See scripts/check_bare_asserts.py.
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "uv is required to validate assertpy usage; please install it."
+    errors=$((errors + 1))
+  elif ! uv run python "$script_dir/check_bare_asserts.py" tests; then
     errors=$((errors + 1))
   fi
 else

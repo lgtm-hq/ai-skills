@@ -34,6 +34,7 @@ def _copy_validate_script(
         "validate_skills.py",
         "skill_frontmatter.py",
         "check_suppressions.py",
+        "check_bare_asserts.py",
     ):
         shutil.copy2(
             src=repo_root / "scripts" / helper,
