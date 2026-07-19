@@ -8,6 +8,10 @@ name: PR - Auto Label
 
 permissions: {}
 
+concurrency:
+  group: pr-labeler-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   label:
     # lgtm-ci owns the labeling logic; this repo stays a thin caller.
