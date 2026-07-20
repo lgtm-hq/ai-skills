@@ -26,9 +26,9 @@ concurrency:
 jobs:
   validate:
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate-lintro-version.yml@443a687caa93b3afa306a066aae8d8a2b4e60c3c  # v0.59.0
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate-lintro-version.yml@6a96470c698addc35f81b5420e1e4114b35c5a03  # v0.59.1
     with:
-      tooling-ref: "443a687caa93b3afa306a066aae8d8a2b4e60c3c"  # v0.59.0
+      tooling-ref: "6a96470c698addc35f81b5420e1e4114b35c5a03"  # v0.59.1
       # Consumer repos must pass lintro-image: resolve-lintro-image.sh
       # defaults to lgtm-ci-owned paths that do not exist here. Keep this
       # digest in lockstep with pyproject.toml's lintro== pin and the
