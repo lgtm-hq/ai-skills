@@ -117,7 +117,7 @@ def test_unreadable_file_reports_read_violation(
     violations = find_bare_asserts(root=tmp_path)
 
     assert_that(violations).is_length(1)
-    assert_that(violations[0]).contains("test_binary.py")
+    assert_that(violations[0]).contains("test_binary.py:0:")
     assert_that(violations[0]).contains("cannot read file")
     logger.info("[TEST] unreadable file reported: {}", violations[0])
 
@@ -154,3 +154,26 @@ def test_main_rejects_missing_root(
     assert_that(exit_code).is_equal_to(1)
     assert_that(captured.err).contains("Directory not found")
     logger.info("[TEST] missing root rejected with exit code 1")
+
+
+def test_main_reports_violations_with_banner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Exit 1 and print the banner plus ``path:line:`` violation lines."""
+    root = _write_module(
+        tmp_path=tmp_path,
+        source="def test_x() -> None:\n    assert 1 == 1\n",
+    )
+    monkeypatch.setattr(sys, "argv", ["check_bare_asserts.py", str(root)])
+
+    exit_code = main()
+
+    captured = capsys.readouterr()
+    assert_that(exit_code).is_equal_to(1)
+    assert_that(captured.out).contains(
+        "Bare-assert check found violations (see each line for details):",
+    )
+    assert_that(captured.out).contains("test_sample.py:2: bare assert statement")
+    logger.info("[TEST] main reports banner and violation lines")

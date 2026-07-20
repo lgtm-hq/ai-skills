@@ -43,7 +43,7 @@ def find_bare_asserts(
         try:
             source = py_file.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
-            violations.append(f"{py_file}: cannot read file: {exc}")
+            violations.append(f"{py_file}:0: cannot read file: {exc}")
             continue
         try:
             tree = ast.parse(source=source, filename=str(py_file))
