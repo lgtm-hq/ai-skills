@@ -21,6 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.14.1] - 2026-07-20
+
+### Changed
+
+- **changelog**: codify one commit-pointer convention for CHANGELOG entries (#268)
+  (62b9fb0)
+- adopt pr-labeler and semantic-pr-title callers (#273) (ff819b2)
+- **deps**: update actions/setup-python action to v7.0.0 (major) (#277) (95bb0c5)
+- **deps**: update lintro (#278) (7ba8476)
+
+### Fixed
+
+- **scripts**: replace grep bare-assert scan with AST check (#272) (bec21cd)
+
 ## [0.14.0] - 2026-07-19
 
 ### Added
@@ -609,7 +623,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.11.1...v0.12.0
