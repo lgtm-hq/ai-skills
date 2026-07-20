@@ -77,7 +77,7 @@ def main() -> int:
         return 1
     violations = find_bare_asserts(root=root)
     if violations:
-        print("Bare assert statements found in tests/ (use assertpy assert_that):")
+        print("Bare-assert check found violations (see each line for details):")
         for violation in violations:
             print(violation)
     return 1 if violations else 0

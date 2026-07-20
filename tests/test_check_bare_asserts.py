@@ -9,10 +9,12 @@ assertion must not be flagged, while both ``assert expr`` and
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
+import pytest
 from assertpy import assert_that
-from check_bare_asserts import find_bare_asserts
+from check_bare_asserts import find_bare_asserts, main
 from loguru import logger
 
 
@@ -104,3 +106,51 @@ def test_clean_file_passes(
 
     assert_that(violations).is_empty()
     logger.info("[TEST] clean assertpy module passes")
+
+
+def test_unreadable_file_reports_read_violation(
+    tmp_path: Path,
+) -> None:
+    """Report a ``cannot read file`` violation for undecodable bytes."""
+    (tmp_path / "test_binary.py").write_bytes(b"\xff\xfe\x00bad utf-8\x00")
+
+    violations = find_bare_asserts(root=tmp_path)
+
+    assert_that(violations).is_length(1)
+    assert_that(violations[0]).contains("test_binary.py")
+    assert_that(violations[0]).contains("cannot read file")
+    logger.info("[TEST] unreadable file reported: {}", violations[0])
+
+
+def test_syntax_error_reports_parse_violation(
+    tmp_path: Path,
+) -> None:
+    """Report a ``cannot parse file`` violation for broken syntax."""
+    root = _write_module(
+        tmp_path=tmp_path,
+        source="def broken(:\n",
+    )
+
+    violations = find_bare_asserts(root=root)
+
+    assert_that(violations).is_length(1)
+    assert_that(violations[0]).contains("test_sample.py:1")
+    assert_that(violations[0]).contains("cannot parse file")
+    logger.info("[TEST] syntax error reported: {}", violations[0])
+
+
+def test_main_rejects_missing_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Exit 1 with a stderr message when the root directory is missing."""
+    missing = tmp_path / "does-not-exist"
+    monkeypatch.setattr(sys, "argv", ["check_bare_asserts.py", str(missing)])
+
+    exit_code = main()
+
+    captured = capsys.readouterr()
+    assert_that(exit_code).is_equal_to(1)
+    assert_that(captured.err).contains("Directory not found")
+    logger.info("[TEST] missing root rejected with exit code 1")
