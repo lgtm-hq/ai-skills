@@ -1,0 +1,30 @@
+---
+name: PR - Title Validation
+# Validates PR titles follow Conventional Commits format.
+
+"on":
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+  merge_group:
+
+permissions: {}
+
+concurrency:
+  group: semantic-pr-title-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # lgtm-ci owns the title validation; this repo stays a thin caller.
+  semantic-title:
+    # yamllint disable-line rule:line-length
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-semantic-pr-title.yml@443a687caa93b3afa306a066aae8d8a2b4e60c3c  # v0.59.0
+    with:
+      job-name: "📝 Validate PR Title"
+      tooling-ref: "443a687caa93b3afa306a066aae8d8a2b4e60c3c"  # v0.59.0
+      egress-policy: block
+      egress-preset: github-tooling
+      comment-marker: "<!-- semantic-pr-title -->"
+    permissions:
+      contents: read
+      # post-failure-comment (default: true) upserts failure comments on the PR
+      pull-requests: write
