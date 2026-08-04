@@ -47,6 +47,20 @@ function scriptedUi(answers) {
   };
 }
 
+/**
+ * Wizard dependencies that disable network checks and read no real lockfile.
+ *
+ * @returns {never} Never returns; throws a synthetic ENOENT.
+ */
+const missingLockRead = async () => {
+  throw Object.assign(new Error("no lockfile"), { code: "ENOENT" });
+};
+
+const offlineDependencies = {
+  env: { AI_SKILLS_NO_UPDATE_CHECK: "1" },
+  lockEnvironment: { cwd: "/nonexistent", home: "/nonexistent", read: missingLockRead },
+};
+
 const blankOptions = {
   agents: [],
   bundle: null,
@@ -255,6 +269,7 @@ describe("completeInteractively", () => {
     const options = await completeInteractively(
       { ...blankOptions, vendor: "anthropics", skills: ["pdf"] },
       scriptedUi([["cursor"], "global", false]),
+      offlineDependencies,
     );
 
     expect(options.installBatches).toEqual([{ vendor: "anthropics", skills: ["pdf"] }]);
@@ -274,6 +289,7 @@ describe("completeInteractively", () => {
         "global",
         false,
       ]),
+      offlineDependencies,
     );
 
     expect(options.bundle).toBeNull();
@@ -300,6 +316,7 @@ describe("completeInteractively", () => {
         "global",
         false,
       ]),
+      offlineDependencies,
     );
 
     expect(options.installBatches).toEqual([
@@ -332,7 +349,7 @@ describe("completeInteractively", () => {
       },
     };
 
-    const options = await completeInteractively({ ...blankOptions }, ui);
+    const options = await completeInteractively({ ...blankOptions }, ui, offlineDependencies);
 
     expect(prompts[0]).toBe("groupMultiselect");
     expect(options.installBatches).toEqual([{ vendor: "mattpocock", skills: ["tdd", "grill-me"] }]);
@@ -351,6 +368,7 @@ describe("completeInteractively", () => {
         "project",
         false,
       ]),
+      offlineDependencies,
     );
 
     expect(options.installBatches).toEqual([{ vendor: null, skills: ["commit"] }]);
@@ -360,13 +378,17 @@ describe("completeInteractively", () => {
 
   test("cancel from home aborts", async () => {
     await expect(
-      completeInteractively({ ...blankOptions }, scriptedUi(["cancel"])),
+      completeInteractively({ ...blankOptions }, scriptedUi(["cancel"]), offlineDependencies),
     ).rejects.toThrow("Install cancelled");
   });
 
   test("aborts when the UI reports cancel", async () => {
     await expect(
-      completeInteractively({ ...blankOptions }, scriptedUi([Symbol.for("clack:cancel")])),
+      completeInteractively(
+        { ...blankOptions },
+        scriptedUi([Symbol.for("clack:cancel")]),
+        offlineDependencies,
+      ),
     ).rejects.toThrow("Install cancelled");
   });
 
@@ -374,6 +396,7 @@ describe("completeInteractively", () => {
     const options = await completeInteractively(
       { ...blankOptions },
       scriptedUi(["browse:first-party", ["branch"], "proceed", ["cursor"], "global", true, true]),
+      offlineDependencies,
     );
 
     expect(options.copy).toBe(true);

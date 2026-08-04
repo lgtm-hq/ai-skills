@@ -3,7 +3,15 @@ import { mergeLockEntries, readLockfile, writeLockfile } from "./lockfile.js";
 import { resolveScope } from "./options.js";
 import { getPackageVersion } from "./package-version.js";
 import { buildSkillsArguments, runSkills } from "./skills-runner.js";
-import { createClackUi, KNOWN_AGENTS } from "./ui.js";
+import {
+  createClackUi,
+  formatGatewayUpdateNotice,
+  formatInstalledSummary,
+  formatSkillStatusSuffix,
+  KNOWN_AGENTS,
+  VENDOR_DRIFT_SUFFIX,
+} from "./ui.js";
+import { checkGatewayUpdate, checkSkillDrift, checkVendorDrift } from "./update-check.js";
 
 /**
  * @typedef {{firstParty: string[], vendors: Record<string, string[]>}} InstallCart
@@ -16,6 +24,16 @@ import { createClackUi, KNOWN_AGENTS } from "./ui.js";
  */
 
 /**
+ * @typedef {{lock: {skills: Record<string, import("./lockfile.js").LockEntry>}, gatewayUpdate: {current: string, latest: string} | null, driftedVendors: Set<string>, driftedSkills: Set<string>}} WizardSignals
+ * Installed-state and update signals surfaced by the install wizard.
+ */
+
+/**
+ * @typedef {import("./update-check.js").UpdateCheckDependencies & {lockEnvironment?: Parameters<typeof readLockfile>[1]}} WizardDependencies
+ * Injectable fetch/env/lockfile dependencies for the wizard's soft signals.
+ */
+
+/**
  * Fill unset install selections through the home/cart wizard.
  *
  * Home lists catalogs to browse; selections accumulate in a cart. Proceed asks
@@ -25,9 +43,10 @@ import { createClackUi, KNOWN_AGENTS } from "./ui.js";
  *
  * @param {{agents: string[], bundle: string | null, copy: boolean, global: boolean, onConflict: string | null, project: boolean, skills: string[], vendor: string | null, yes: boolean}} options - Initial install options.
  * @param {ReturnType<typeof createClackUi>} [ui] - Injectable interactive UI.
+ * @param {WizardDependencies} [dependencies] - Injectable fetch/env/lockfile for the soft signals.
  * @returns {Promise<typeof options & {installBatches: InstallBatch[]}>} Shared options plus per-source install batches.
  */
-export async function completeInteractively(options, ui = createClackUi()) {
+export async function completeInteractively(options, ui = createClackUi(), dependencies = {}) {
   ui.intro("ai-skills gateway");
 
   // CLI already named a source/skills: honor it instead of discarding into an empty cart.
@@ -38,6 +57,14 @@ export async function completeInteractively(options, ui = createClackUi()) {
 
   const bundles = await loadBundles();
   const vendors = await loadVendors();
+  const signals = await gatherWizardSignals(options, vendors, dependencies);
+  if (signals.gatewayUpdate) {
+    ui.note(formatGatewayUpdateNotice(signals.gatewayUpdate), "Update available");
+  }
+  const installedSummary = formatInstalledSummary(signals.lock);
+  if (installedSummary) {
+    ui.note(installedSummary, "Installed");
+  }
   /** @type {InstallCart} */
   const cart = { firstParty: [], vendors: {} };
 
@@ -46,7 +73,7 @@ export async function completeInteractively(options, ui = createClackUi()) {
       ui,
       ui.select({
         message: "Install skills",
-        options: buildHomeOptions(cart, vendors),
+        options: buildHomeOptions(cart, vendors, signals),
       }),
     );
 
@@ -61,7 +88,7 @@ export async function completeInteractively(options, ui = createClackUi()) {
         ui,
         ui.groupMultiselect({
           message: `Skills from lgtm-hq/ai-skills @ v${getPackageVersion()}`,
-          options: buildFirstPartySkillGroups(bundles),
+          options: buildFirstPartySkillGroups(bundles, buildSkillMarkers(signals, null)),
           initialValues: cart.firstParty,
           required: false,
         }),
@@ -74,7 +101,11 @@ export async function completeInteractively(options, ui = createClackUi()) {
       // Prefer registry record so displayRef survives (baked indexes omit it).
       const vendor = vendors.vendors.find((entry) => entry.id === vendorId) ?? index.vendor;
       const skillRoots = index.vendor.skillRoots ?? vendor.skillRoots ?? [];
-      const picker = buildVendorSkillPicker(index.skills, skillRoots);
+      const picker = buildVendorSkillPicker(
+        index.skills,
+        skillRoots,
+        buildSkillMarkers(signals, vendorId),
+      );
       const message = `Skills from ${vendorDisplayLabel(vendor)}`;
       const initialValues = cart.vendors[vendorId] ?? [];
       cart.vendors[vendorId] = await cancelable(
@@ -193,13 +224,69 @@ async function finishInteractiveInstall(options, ui, installBatches) {
 }
 
 /**
+ * Gather installed-state and update signals for the wizard (all soft-fail).
+ *
+ * Network checks start first and run concurrently with the local lockfile read;
+ * each self-resolves within its timeout so the wizard never blocks beyond it.
+ * Any failure degrades to "no signal" — the prompt flow itself never breaks.
+ *
+ * @param {{global: boolean, project: boolean}} options - Install options (for scope).
+ * @param {{vendors: Array<{id: string, repo: string, sha: string}>}} vendors - Vendor registry.
+ * @param {WizardDependencies} dependencies - Injectable fetch/env/lockfile.
+ * @returns {Promise<WizardSignals>} Merged signals, empty where checks were skipped or failed.
+ */
+async function gatherWizardSignals(options, vendors, dependencies) {
+  const gatewayPromise = checkGatewayUpdate(dependencies);
+  const vendorDriftPromise = checkVendorDrift(vendors.vendors, dependencies);
+  /** @type {WizardSignals["lock"]} */
+  let lock = { skills: {} };
+  try {
+    lock = await readLockfile(resolveScope(options), dependencies.lockEnvironment);
+  } catch {
+    // Malformed lockfiles fail installs loudly elsewhere; signals stay silent.
+  }
+  const [gatewayUpdate, driftedVendors] = await Promise.all([gatewayPromise, vendorDriftPromise]);
+  return {
+    lock,
+    gatewayUpdate,
+    driftedVendors,
+    driftedSkills: checkSkillDrift(lock, { vendors: vendors.vendors }),
+  };
+}
+
+/**
+ * Compute browse-row status suffixes for skills installed from one catalog.
+ *
+ * @param {WizardSignals} signals - Wizard signals.
+ * @param {string | null} vendorId - Vendor being browsed, or null for first-party.
+ * @returns {Map<string, string>} Skill name to label suffix.
+ */
+function buildSkillMarkers(signals, vendorId) {
+  /** @type {Map<string, string>} */
+  const markers = new Map();
+  const catalogVendor = vendorId ?? "lgtm-hq";
+  for (const [name, entry] of Object.entries(signals.lock.skills)) {
+    if (entry.vendor !== catalogVendor) {
+      continue;
+    }
+    markers.set(
+      name,
+      formatSkillStatusSuffix({ entry, drifted: signals.driftedSkills.has(name) }),
+    );
+  }
+  return markers;
+}
+
+/**
  * Build home-screen options for the install wizard.
  *
  * @param {InstallCart} cart - Current skill cart.
  * @param {{vendors: Array<{id: string, repo: string, displayRef?: string}>}} vendors - Vendor registry.
+ * @param {{driftedVendors?: Set<string>}} [signals] - Wizard signals (vendor drift annotations).
  * @returns {{value: string, label: string}[]} Clack select options.
  */
-export function buildHomeOptions(cart, vendors) {
+export function buildHomeOptions(cart, vendors, signals = {}) {
+  const driftedVendors = signals.driftedVendors ?? new Set();
   const options = [
     {
       value: "browse:first-party",
@@ -207,7 +294,9 @@ export function buildHomeOptions(cart, vendors) {
     },
     ...vendors.vendors.map((vendor) => ({
       value: `browse:vendor:${vendor.id}`,
-      label: `Browse ${vendorDisplayLabel(vendor)}`,
+      label: `Browse ${vendorDisplayLabel(vendor)}${
+        driftedVendors.has(vendor.id) ? VENDOR_DRIFT_SUFFIX : ""
+      }`,
     })),
   ];
   const total = cartSkillCount(cart);
@@ -297,17 +386,16 @@ export async function batchesFromCliOptions(options) {
  * Build grouped skill options for first-party interactive install.
  *
  * @param {{groups: Record<string, {name: string, skills: string[]}>, ungrouped: string[]}} bundles - Loaded bundle catalog.
+ * @param {Map<string, string>} [markers] - Status suffixes keyed by skill name.
  * @returns {Record<string, {value: string, label: string}[]>} Clack groupMultiselect options.
  */
-function buildFirstPartySkillGroups(bundles) {
+function buildFirstPartySkillGroups(bundles, markers = new Map()) {
+  const toOption = (skill) => ({ value: skill, label: `${skill}${markers.get(skill) ?? ""}` });
   const groups = Object.fromEntries(
-    Object.values(bundles.groups).map((bundle) => [
-      bundle.name,
-      bundle.skills.map((skill) => ({ value: skill, label: skill })),
-    ]),
+    Object.values(bundles.groups).map((bundle) => [bundle.name, bundle.skills.map(toOption)]),
   );
   if (bundles.ungrouped.length > 0) {
-    groups.Other = bundles.ungrouped.map((skill) => ({ value: skill, label: skill }));
+    groups.Other = bundles.ungrouped.map(toOption);
   }
   return groups;
 }
@@ -372,16 +460,21 @@ export function vendorSkillGroupKey(skillPath, skillRoots) {
  *
  * @param {Array<{name: string, path: string}>} skills - Vendor index skills.
  * @param {string[]} skillRoots - Vendor skillRoots globs.
+ * @param {Map<string, string>} [markers] - Status suffixes keyed by skill name.
  * @returns {{mode: "grouped", options: Record<string, {value: string, label: string}[]>} | {mode: "flat", options: {value: string, label: string}[]}} Picker mode and options.
  */
-export function buildVendorSkillPicker(skills, skillRoots) {
+export function buildVendorSkillPicker(skills, skillRoots, markers = new Map()) {
   /** @type {Map<string, {value: string, label: string}[]>} */
   const named = new Map();
   /** @type {{value: string, label: string}[]} */
   const other = [];
+  const toOption = (skill) => ({
+    value: skill.name,
+    label: `${skill.name}${markers.get(skill.name) ?? ""}`,
+  });
 
   for (const skill of skills) {
-    const option = { value: skill.name, label: skill.name };
+    const option = toOption(skill);
     const key = vendorSkillGroupKey(skill.path, skillRoots);
     if (key === null) {
       other.push(option);
@@ -407,7 +500,7 @@ export function buildVendorSkillPicker(skills, skillRoots) {
   if (namedKeys.length === 0 || (namedKeys.length === 1 && other.length === 0)) {
     return {
       mode: "flat",
-      options: skills.map((skill) => ({ value: skill.name, label: skill.name })),
+      options: skills.map(toOption),
     };
   }
 
