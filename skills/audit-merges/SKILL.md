@@ -55,8 +55,10 @@ recipe.)
 2. `main` workflow-run health across the window (`gh run list --branch main
    --created "START..END" --limit 1000` — an explicit date range plus a
    limit well above the repo's run volume; never the bare default, which
-   returns a recent time-unbounded subset), so every failure can be mapped
-   to the merge that caused it.
+   returns a recent time-unbounded subset). If the returned count equals
+   the limit, the window is truncated: raise the limit or split the date
+   range until the count comes back under it, so every failure can be
+   mapped to the merge that caused it.
 
 Then triage:
 
