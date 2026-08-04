@@ -41,6 +41,7 @@ unavailable or a skill here explicitly overrides that preference.
 - `stand-py`: Python >= 3.11 coding standards. Use when writing Python code. Requires type hints, return types, Google-style docstrings, trailing commas, explicit kwargs, StrEnum with auto(), dataclasses, pytest-style tests. (`skills/stand-py/SKILL.md`)
 - `stand-rust`: Rust coding standards. Use when writing Rust code. Covers edition, error handling with thiserror/anyhow, unsafe policy, type patterns, testing, documentation, and dependency management. (`skills/stand-rust/SKILL.md`)
 - `stand-ts`: TypeScript and JavaScript standards. Use when writing TS/JS code. Covers strict mode, type patterns, error handling, imports, naming, testing, React conventions, and package management with bun. (`skills/stand-ts/SKILL.md`)
+- `sweep-prs`: Retrospective audit of recently merged/closed PRs for anomalies that slipped through - merges without green builds, merges onto red main, unresolved or post-merge review threads, hollow resolutions. Read-only sweep, then confirmed remediation (issues, disposition replies). Use when asked to sweep PRs, audit merged PRs, or check what slipped through. (`skills/sweep-prs/SKILL.md`)
 - `test`: Run tests with coverage reporting. Auto-detects test frameworks (Vitest, Playwright, RSpec, pytest, Jest, BATS, etc.) and runs appropriate test commands. Use when asked to run tests, check coverage, or validate code. (`skills/test/SKILL.md`)
 - `test-api`: Playwright API testing best practices. Use when writing REST API tests with Playwright. Enforces Zod schema validation, client/fixture separation, and contract testing. (`skills/test-api/SKILL.md`)
 - `test-shell`: BATS shell script testing. Use when writing or running shell script tests. Covers setup/teardown, assertions, mocking, helper patterns, and coverage with kcov. (`skills/test-shell/SKILL.md`)
@@ -51,7 +52,7 @@ unavailable or a skill here explicitly overrides that preference.
 - `turbo-verify`: Verify that a theme implementation is complete and follows all project standards. Use after adding a new theme to turbo-themes. (`skills/turbo-verify/SKILL.md`)
 - `which-pr`: Report which PR is being worked on in the current conversation. Use when asked about the current PR context. (`skills/which-pr/SKILL.md`)
 
-Total skills: 38
+Total skills: 39
 
 <!-- markdownlint-enable MD013 -->
 

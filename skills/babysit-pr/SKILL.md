@@ -369,3 +369,6 @@ Return a concise summary:
   rebase — prefer conversation context or ask before rewriting history.
 - See also `backlog`: the interactive routing entry point that composes this
   skill with `implement-issues`. It does not auto-invoke either.
+- See also `sweep-prs`: the periodic, fleet-wide complement — where this skill
+  watches the PR it's actively merging, `sweep-prs` retrospectively audits
+  everything else across repos.

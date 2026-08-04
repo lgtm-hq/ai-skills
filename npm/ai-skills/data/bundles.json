@@ -49,7 +49,8 @@
         "analyze-code",
         "analyze-project",
         "analyze-tests",
-        "audit-merges"
+        "audit-merges",
+        "sweep-prs"
       ]
     },
     "agents": {
