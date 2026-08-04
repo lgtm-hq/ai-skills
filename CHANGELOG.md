@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **vendors**: add `davidondrej/skills` as a SHA-pinned gateway vendor (#313)
+
 ### Changed
 
 ### Deprecated

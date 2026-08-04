@@ -32,3 +32,11 @@ vendors:
       - skills
     license: MIT
     homepage: https://github.com/JuliusBrussee/caveman
+  - id: davidondrej
+    repo: davidondrej/skills
+    sha: "6e5545081c888b89576a620d9b2e54e9a6590f68"
+    displayRef: latest
+    skillRoots:
+      - skills/*
+    license: MIT
+    homepage: https://github.com/davidondrej/skills
