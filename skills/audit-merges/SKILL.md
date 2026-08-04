@@ -46,8 +46,10 @@ are agent-authored or auto-merged and human review coverage is thin.
 Per repo, gather in bulk with one paginated GraphQL `search` query per repo
 (`type: ISSUE`, query `repo:OWNER/NAME is:pr is:merged base:main
 merged:>=DATE` — filter to the default branch, resolving it per repo when it
-is not `main`) whose nodes fetch the checks rollup (`statusCheckRollup`) and
-review threads (`reviewThreads`) in the same query — prefer server-side
+is not `main`) whose nodes fetch — inside a `... on PullRequest` inline
+fragment, since `search` returns `SearchResultItem` nodes — the checks
+rollup (`statusCheckRollup`) and review threads (`reviewThreads`) in the
+same query — prefer server-side
 search filters over client-side truncation. Paginate **every** connection
 (`search`, `reviewThreads`, thread comments, rollup contexts) via
 `hasNextPage`/`endCursor`; GitHub search caps at 1,000 results per query, so
