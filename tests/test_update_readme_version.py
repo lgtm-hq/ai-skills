@@ -27,12 +27,13 @@ def _run(
     env = {"PATH": "/usr/bin:/bin"}
     if env_version is not None:
         env["NEXT_VERSION"] = env_version
-    return subprocess.run(  # noqa: S603 # nosec B603 - fixed repo script path
+    return subprocess.run(  # nosec B603 - fixed repo script path
         [str(_SCRIPT), *args],
         capture_output=True,
         text=True,
         env=env,
         timeout=10,
+        check=False,
     )
 
 

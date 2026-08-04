@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import argparse
 import difflib
-from http.client import HTTPException, HTTPSConnection
 import json
 import os
 import sys
-from tempfile import TemporaryDirectory
+from http.client import HTTPException, HTTPSConnection
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 from vendor_registry.registry import (
@@ -82,7 +82,7 @@ def _fetch_tree_paths(*, vendor: Vendor) -> list[str]:
     tree = data.get("tree")
     if not isinstance(tree, list):
         msg = f"GitHub returned no tree entries for {vendor.repo}@{vendor.sha}"
-        raise RuntimeError(msg)
+        raise TypeError(msg)
     paths: list[str] = []
     for entry in tree:
         if isinstance(entry, dict) and entry.get("type") == "blob":

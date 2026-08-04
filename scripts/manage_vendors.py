@@ -20,9 +20,8 @@ import sys
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-import yaml
-
 import bake_vendor_indexes
+import yaml
 from vendor_registry.registry import load_registry
 
 
