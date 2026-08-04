@@ -301,6 +301,7 @@ def validate_index(*, index_path: Path, vendor: Vendor) -> None:
 
     Raises:
         ValueError: If the index is absent, malformed, stale, or inconsistent.
+        TypeError: If the index skills payload is not a list.
     """
     if not index_path.is_file():
         msg = f"Missing vendor index: {index_path}"
@@ -351,6 +352,7 @@ def _validate_index_skills(
 
     Raises:
         ValueError: If a skill entry does not meet index invariants.
+        TypeError: If a skill name or path is not a string.
     """
     normalized: list[dict[str, str]] = []
     for skill in skills:

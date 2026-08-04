@@ -48,6 +48,7 @@ def _fetch_tree_paths(*, vendor: Vendor) -> list[str]:
 
     Raises:
         RuntimeError: If GitHub cannot return a complete tree response.
+        TypeError: If the GitHub tree payload is not a list of entries.
     """
     target = f"/repos/{vendor.repo}/git/trees/{vendor.sha}?recursive=1"
     # nosemgrep - fixed GitHub host; Python 3.13 HTTPSConnection verifies TLS.
