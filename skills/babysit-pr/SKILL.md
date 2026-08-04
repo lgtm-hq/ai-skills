@@ -276,6 +276,13 @@ green, then enqueue and observe:
 gh pr merge <n> --auto --squash --delete-branch
 ```
 
+**Never pass `--subject` or `--body` to `gh pr merge`** (either mode). Repo squash
+defaults produce the correct commit on their own: PR title + auto-appended `(#N)` +
+blank body. An explicit `--subject` suppresses the `(#N)` append (seen: py-lintro
+`#1916`/`#1922` landed numberless); a custom `--body` trips commitlint
+`body-max-line-length` on main's dogfood. "Squash with PR title and blank body"
+means *rely on the defaults*, not *pass them as flags*.
+
 The platform serializes merges, rebases each PR, merges when its turn comes, and
 blocks on unresolved threads. Do **not** re-implement that machinery: no manual
 main-green waiting between merges, no single-merger lock, no hand-rolled ordering.
