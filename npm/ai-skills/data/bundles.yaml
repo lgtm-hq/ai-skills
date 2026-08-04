@@ -53,6 +53,7 @@ groups:
       - analyze-code
       - analyze-project
       - analyze-tests
+      - audit-merges
 
   agents:
     name: Agents

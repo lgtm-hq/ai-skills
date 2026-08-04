@@ -48,7 +48,8 @@
       "skills": [
         "./skills/analyze-code",
         "./skills/analyze-project",
-        "./skills/analyze-tests"
+        "./skills/analyze-tests",
+        "./skills/audit-merges"
       ]
     },
     {

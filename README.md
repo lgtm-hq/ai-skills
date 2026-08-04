@@ -167,6 +167,7 @@ Manual pre-review analysis of code, projects, and test suites.
 - **[analyze-code](skills/analyze-code/SKILL.md)** — Code-level quality analysis.
 - **[analyze-project](skills/analyze-project/SKILL.md)** — High-level project analysis.
 - **[analyze-tests](skills/analyze-tests/SKILL.md)** — Test suite analysis.
+- **[audit-merges](skills/audit-merges/SKILL.md)** — Deep retrospective audit of everything merged to main over a window - code quality against the stand-* skills, introduced bugs, unsafe changes, merges over red signals, hollow thread resolutions, and untracked deferrals - with a tabbed HTML report as the deliverable.
 
 ### Agents
 

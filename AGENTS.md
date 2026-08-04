@@ -15,6 +15,7 @@ unavailable or a skill here explicitly overrides that preference.
 - `analyze-code`: Code-level quality analysis. Use when asked to review code for smells, security issues, implementation quality, or test coverage. (`skills/analyze-code/SKILL.md`)
 - `analyze-project`: High-level project analysis. Use when asked to analyze, review, or evaluate a project's architecture, structure, and overall health. (`skills/analyze-project/SKILL.md`)
 - `analyze-tests`: Test suite analysis. Use when asked to analyze, review, or evaluate a project's tests for quality, coverage gaps, and best practices. (`skills/analyze-tests/SKILL.md`)
+- `audit-merges`: Deep retrospective audit of everything merged to main over a window - code quality against the stand-* skills, introduced bugs, unsafe changes, merges over red signals, hollow thread resolutions, and untracked deferrals - with a tabbed HTML report as the deliverable. Use when asked to audit merges, review what landed on main, or verify automated/agent-authored merges were up to standard. (`skills/audit-merges/SKILL.md`)
 - `babysit-pr`: Autonomously drive an open PR to merge-ready state by triaging Greptile and CodeRabbit review comments, fixing CI failures, handling CodeRabbit rate limits, and looping until checks are green with no unresolved actionable threads. With the --merge flag, also merge the PR(s) once binding merge-queue conditions are met. Use when asked to babysit a PR, shepherd a PR, or keep a PR merge-ready until review/CI cycles complete. (`skills/babysit-pr/SKILL.md`)
 - `backlog`: Interactive dispatcher for backlog work. Asks one routing question — drive PRs to merge, or implement issues to open-PR state — then follow-ups based on the answer, and hands off to implement-issues / babysit-pr with standing policy applied. Use when asked to work the backlog or run /backlog. (`skills/backlog/SKILL.md`)
 - `branch`: Start work on a new branch or worktree. Use when asked to start a new branch, new worktree, begin work on a feature/fix, or start fresh. Supports issue numbers and plain descriptions. (`skills/branch/SKILL.md`)
@@ -50,7 +51,7 @@ unavailable or a skill here explicitly overrides that preference.
 - `turbo-verify`: Verify that a theme implementation is complete and follows all project standards. Use after adding a new theme to turbo-themes. (`skills/turbo-verify/SKILL.md`)
 - `which-pr`: Report which PR is being worked on in the current conversation. Use when asked about the current PR context. (`skills/which-pr/SKILL.md`)
 
-Total skills: 37
+Total skills: 38
 
 <!-- markdownlint-enable MD013 -->
 

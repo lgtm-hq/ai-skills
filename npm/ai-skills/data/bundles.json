@@ -48,7 +48,8 @@
       "skills": [
         "analyze-code",
         "analyze-project",
-        "analyze-tests"
+        "analyze-tests",
+        "audit-merges"
       ]
     },
     "agents": {
