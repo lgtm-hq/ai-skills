@@ -178,12 +178,11 @@ commit. The babysit loop must cover the **current PR head**.
    ```
 
 3. **Rate-limited** (`Review limit reached` / `Next review available in`):
-   - Parse the wait time from the comment body.
-   - **Sleep until after reset** — poll every 2–5 minutes; do not exit early.
-   - After reset:
-     - **If unpushed commits**: Step A → push → return to loop.
-     - **If nothing to push**: post `@coderabbitai please review` on the PR, then wait
-       for CodeRabbit to respond and triage any new threads (Step D).
+   - **Do not sleep or poll for the reset** — the rate limit does not block exit.
+   - **If unpushed commits exist**: push per Step A discipline (CI quiescent first),
+     then return to the loop.
+   - Record that CodeRabbit review of the **current head** is pending due to the rate
+     limit, and continue toward the Phase 5 exit conditions.
 4. **Not rate-limited but head unreviewed** (latest CodeRabbit summary/walkthrough
    comment is **older** than the current head commit, or only a rate-limit comment
    exists): post `@coderabbitai please review`, then wait and triage.
@@ -231,8 +230,8 @@ Done when **all** are true:
 - All required CI checks green (or only allowed skips like `REVIEW_REQUIRED`).
 - No unresolved actionable Greptile/CodeRabbit/Bugbot threads (fixed or replied).
 - **CodeRabbit has reviewed the current head** — summary/walkthrough or inline review
-  on the latest commit, with all threads triaged; not merely a stale green check or an
-  outstanding rate-limit window without `@coderabbitai please review`.
+  on the latest commit, with all threads triaged — **or** CodeRabbit is rate-limited
+  and the pending review of the current head is noted in the final report.
 - No unpushed local commits.
 - Branch mergeable (no conflicts).
 
@@ -262,7 +261,9 @@ Before merging (or enqueuing) any single PR:
 
 - **Phase 5 exit conditions met** for that PR.
 - **Bot reviewed the CURRENT head** — if the head moved since the last CodeRabbit
-  review, re-request (`@coderabbitai please review`) and wait before merging.
+  review, re-request (`@coderabbitai please review`) and wait before merging — **or**
+  CodeRabbit is rate-limited and the pending review of the current head is noted in the
+  final report.
 - **Re-check PR state immediately before merge** — an already-merged PR is a normal
   outcome, not an error; re-baseline the queue and move on.
 
@@ -348,6 +349,7 @@ Return a concise summary:
 | CI | pass/fail per check |
 | Commits pushed | list (short) |
 | Threads handled | fixed / replied N/A |
+| CodeRabbit | reviewed current head / review pending (rate-limited) |
 | Merge-ready? | yes/no + why |
 | PRs merged | list (or n/a without `--merge`) |
 | Human blockers | approval, decisions, etc. |

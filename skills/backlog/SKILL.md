@@ -92,10 +92,8 @@ workflows here.
   in this session, review the implementation on its merits; where you
   disagree, fix or push back on the PR rather than shepherding it through
   unchanged.
-- **CodeRabbit rate limits do not block exit.** Overriding `babysit-pr`
-  Step E: when CodeRabbit is rate-limited, do not sleep until reset.
-  Resolved threads plus green required checks satisfy the exit conditions;
-  note the pending CodeRabbit review in the final report.
+- **CodeRabbit rate limits do not block exit** — now the `babysit-pr` Step E
+  default; no override needed.
 - **Releases**: follow the composed skills' release handling (1 PR = 1
   release where that is the repo convention).
 - **Sub-agents**: run lanes and babysitters as background sub-agents so the
