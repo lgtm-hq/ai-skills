@@ -169,6 +169,7 @@ Manual pre-review analysis of code, projects, and test suites.
 - **[analyze-project](skills/analyze-project/SKILL.md)** — High-level project analysis.
 - **[analyze-tests](skills/analyze-tests/SKILL.md)** — Test suite analysis.
 - **[audit-merges](skills/audit-merges/SKILL.md)** — Deep retrospective audit of everything merged to main over a window - code quality against the stand-* skills, introduced bugs, unsafe changes, merges over red signals, hollow thread resolutions, and untracked deferrals - with a tabbed HTML report as the deliverable.
+- **[sweep-prs](skills/sweep-prs/SKILL.md)** — Retrospective audit of recently merged/closed PRs for anomalies that slipped through - merges without green builds, merges onto red main, unresolved or post-merge review threads, hollow resolutions.
 
 ### Agents
 

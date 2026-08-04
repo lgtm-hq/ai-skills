@@ -54,6 +54,7 @@ groups:
       - analyze-project
       - analyze-tests
       - audit-merges
+      - sweep-prs
 
   agents:
     name: Agents
