@@ -11,8 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **vendors**: add `davidondrej/skills` as a SHA-pinned gateway vendor (#313)
-
 ### Changed
 
 ### Deprecated
@@ -22,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.16.0] - 2026-08-04
+
+### Added
+
+- **vendors**: add davidondrej/skills as SHA-pinned gateway vendor (#313, #316) (05c975e)
+
+### Changed
+
+- **scripts**: document TypeError in changed Raises contracts (#314) (0c8764d)
 
 ## [0.15.0] - 2026-08-04
 
@@ -672,7 +680,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.14.2...v0.15.0
 [0.14.2]: https://github.com/lgtm-hq/ai-skills/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.14.0...v0.14.1
