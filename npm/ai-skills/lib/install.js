@@ -238,13 +238,7 @@ async function finishInteractiveInstall(options, ui, installBatches) {
 async function gatherWizardSignals(options, vendors, dependencies) {
   const gatewayPromise = checkGatewayUpdate(dependencies);
   const vendorDriftPromise = checkVendorDrift(vendors.vendors, dependencies);
-  /** @type {WizardSignals["lock"]} */
-  let lock = { skills: {} };
-  try {
-    lock = await readLockfile(resolveScope(options), dependencies.lockEnvironment);
-  } catch {
-    // Malformed lockfiles fail installs loudly elsewhere; signals stay silent.
-  }
+  const lock = await readWizardLock(options, dependencies.lockEnvironment);
   const [gatewayUpdate, driftedVendors] = await Promise.all([gatewayPromise, vendorDriftPromise]);
   return {
     lock,
@@ -252,6 +246,35 @@ async function gatherWizardSignals(options, vendors, dependencies) {
     driftedVendors,
     driftedSkills: checkSkillDrift(lock, { vendors: vendors.vendors }),
   };
+}
+
+/**
+ * Read the lockfile state backing the wizard's installed/drift signals.
+ *
+ * With an explicit scope flag the matching lockfile is read alone. Before the
+ * wizard has asked for scope (both flags unset) the user may still pick either
+ * scope, so global and project lockfiles are merged — a skill installed in
+ * either scope is marked installed, with project entries winning on conflict.
+ * Each read soft-fails to empty: malformed lockfiles fail installs loudly
+ * elsewhere, signals stay silent.
+ *
+ * @param {{global: boolean, project: boolean}} options - Install options (for scope).
+ * @param {Parameters<typeof readLockfile>[1] | undefined} lockEnvironment - Injectable lockfile environment.
+ * @returns {Promise<WizardSignals["lock"]>} Lock state for signals, empty on failure.
+ */
+async function readWizardLock(options, lockEnvironment) {
+  const readScope = async (scope) => {
+    try {
+      return await readLockfile(scope, lockEnvironment);
+    } catch {
+      return { skills: {} };
+    }
+  };
+  if (options.global || options.project) {
+    return readScope(resolveScope(options));
+  }
+  const [globalLock, projectLock] = await Promise.all([readScope("global"), readScope("project")]);
+  return mergeLockEntries(globalLock, projectLock.skills);
 }
 
 /**

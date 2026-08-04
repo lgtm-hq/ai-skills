@@ -52,6 +52,17 @@ describe("isNewerVersion", () => {
     expect(isNewerVersion("0.17.0-dev", "0.17.0")).toBe(false);
   });
 
+  test("orders prereleases by SemVer identifier precedence", () => {
+    expect(isNewerVersion("1.0.0-beta.2", "1.0.0-beta.1")).toBe(true);
+    expect(isNewerVersion("1.0.0-beta.1", "1.0.0-beta.2")).toBe(false);
+    expect(isNewerVersion("1.0.0-beta", "1.0.0-alpha")).toBe(true);
+    expect(isNewerVersion("1.0.0-beta.1", "1.0.0-beta")).toBe(true);
+    expect(isNewerVersion("1.0.0-beta", "1.0.0-beta.1")).toBe(false);
+    expect(isNewerVersion("1.0.0-alpha.beta", "1.0.0-alpha.1")).toBe(true);
+    expect(isNewerVersion("1.0.0-beta.2", "1.0.0-beta.2")).toBe(false);
+    expect(isNewerVersion("1.0.0-beta.11", "1.0.0-beta.9")).toBe(true);
+  });
+
   test("treats unparsable versions as not newer", () => {
     expect(isNewerVersion("not-a-version", "0.1.0")).toBe(false);
     expect(isNewerVersion("0.2.0", "garbage")).toBe(false);

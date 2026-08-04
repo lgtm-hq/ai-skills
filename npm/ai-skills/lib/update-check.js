@@ -28,7 +28,8 @@ export function isUpdateCheckDisabled(env = process.env) {
  *
  * Unparsable versions compare as not-newer so callers stay silent instead of
  * nagging on malformed data. On equal numeric triples a release counts as newer
- * than a prerelease (`0.17.0` > `0.17.0-dev`).
+ * than a prerelease (`0.17.0` > `0.17.0-dev`), and prereleases compare by
+ * SemVer identifier precedence (`0.17.0-beta.2` > `0.17.0-beta.1`).
  *
  * @param {string} candidate - Version that may be newer (optionally `v`-prefixed).
  * @param {string} current - Version currently running.
@@ -45,7 +46,45 @@ export function isNewerVersion(candidate, current) {
       return parsedCandidate[part] > parsedCurrent[part];
     }
   }
-  return parsedCurrent.prerelease !== null && parsedCandidate.prerelease === null;
+  if (parsedCandidate.prerelease === null || parsedCurrent.prerelease === null) {
+    return parsedCurrent.prerelease !== null && parsedCandidate.prerelease === null;
+  }
+  return comparePrereleases(parsedCandidate.prerelease, parsedCurrent.prerelease) > 0;
+}
+
+/**
+ * Compare two prerelease identifier strings per SemVer precedence (spec item 11).
+ *
+ * Dot-separated identifiers compare pairwise: numeric identifiers compare
+ * numerically and rank below alphanumeric ones; alphanumeric identifiers
+ * compare in ASCII order; with all shared identifiers equal, more identifiers
+ * ranks higher (`beta.1` > `beta`).
+ *
+ * @param {string} left - Prerelease portion, e.g. `beta.2`.
+ * @param {string} right - Prerelease portion, e.g. `beta.1`.
+ * @returns {number} Negative, zero, or positive comparison result.
+ */
+function comparePrereleases(left, right) {
+  const leftIdentifiers = left.split(".");
+  const rightIdentifiers = right.split(".");
+  const shared = Math.min(leftIdentifiers.length, rightIdentifiers.length);
+  for (let index = 0; index < shared; index += 1) {
+    const leftIdentifier = leftIdentifiers[index];
+    const rightIdentifier = rightIdentifiers[index];
+    if (leftIdentifier === rightIdentifier) {
+      continue;
+    }
+    const leftIsNumeric = /^\d+$/.test(leftIdentifier);
+    const rightIsNumeric = /^\d+$/.test(rightIdentifier);
+    if (leftIsNumeric && rightIsNumeric) {
+      return Number(leftIdentifier) - Number(rightIdentifier);
+    }
+    if (leftIsNumeric !== rightIsNumeric) {
+      return leftIsNumeric ? -1 : 1;
+    }
+    return leftIdentifier < rightIdentifier ? -1 : 1;
+  }
+  return leftIdentifiers.length - rightIdentifiers.length;
 }
 
 /**

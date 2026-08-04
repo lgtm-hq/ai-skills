@@ -21,9 +21,9 @@ export const VENDOR_DRIFT_SUFFIX =
   " (upstream has newer commits — installable after a gateway re-pin)";
 
 /**
- * One-line home-screen summary of the scope's installed skills.
+ * One-line home-screen summary of the installed skills in the given lock state.
  *
- * @param {{skills: Record<string, {agents: string[]}>}} lock - Scope lockfile.
+ * @param {{skills: Record<string, {agents: string[]}>}} lock - Lock state (single scope, or merged scopes when undetermined).
  * @returns {string | null} Summary such as `12 skills installed · 3 agents`, or null when empty.
  */
 export function formatInstalledSummary(lock) {
@@ -52,6 +52,20 @@ export function formatGatewayUpdateNotice(update) {
 }
 
 /**
+ * Strip C0/C1 control characters (ANSI ESC, OSC, etc.) from untrusted display text.
+ *
+ * Lockfiles are user-editable JSON, so agent names must not be able to smuggle
+ * terminal control sequences into Clack labels (CWE-150).
+ *
+ * @param {string} text - Untrusted text destined for terminal output.
+ * @returns {string} Text with control characters removed.
+ */
+function stripControlCharacters(text) {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+}
+
+/**
  * Status suffix for an installed skill row in a browse list.
  *
  * @param {object} args - Named arguments.
@@ -63,7 +77,10 @@ export function formatSkillStatusSuffix({ entry, drifted }) {
   if (!entry) {
     return "";
   }
-  const agents = entry.agents.length > 0 ? ` (${entry.agents.join(", ")})` : "";
+  const agents =
+    entry.agents.length > 0
+      ? ` (${entry.agents.map((agent) => stripControlCharacters(agent)).join(", ")})`
+      : "";
   const drift = drifted ? " · update available (run skill update)" : "";
   return ` ✔ installed${agents}${drift}`;
 }

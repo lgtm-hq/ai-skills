@@ -145,6 +145,15 @@ describe("ui signal formatting", () => {
       formatSkillStatusSuffix({ entry: { agents: ["claude-code", "cursor"] }, drifted: true }),
     ).toBe(" ✔ installed (claude-code, cursor) · update available (run skill update)");
   });
+
+  test("strips terminal control sequences from lockfile agent names", () => {
+    expect(
+      formatSkillStatusSuffix({
+        entry: { agents: ["safe", "\u001b]0;attacker\u0007", "\u001b[31mred"] },
+        drifted: false,
+      }),
+    ).toBe(" ✔ installed (safe, ]0;attacker, [31mred)");
+  });
 });
 
 describe("completeInteractively signals", () => {
@@ -207,6 +216,82 @@ describe("completeInteractively signals", () => {
     const anthropicsLabels = captured.multiSelects[0].map((option) => option.label);
     expect(anthropicsLabels).toContain("pdf ✔ installed (claude-code)");
     expect(anthropicsLabels).toContain("docx");
+  });
+
+  test("merges global and project lockfiles while scope is undetermined", async () => {
+    const captured = recordingUi(["browse:first-party", [], "cancel"]);
+    const projectLock = {
+      gatewayVersion: getPackageVersion(),
+      scope: "project",
+      version: 1,
+      skills: {
+        pr: {
+          agents: ["cursor"],
+          installedAt: "2026-01-01T00:00:00.000Z",
+          repo: "lgtm-hq/ai-skills",
+          sha: `v${getPackageVersion()}`,
+          skillPath: "skills/pr/SKILL.md",
+          vendor: "lgtm-hq",
+        },
+        commit: {
+          agents: ["codex"],
+          installedAt: "2026-01-01T00:00:00.000Z",
+          repo: "lgtm-hq/ai-skills",
+          sha: `v${getPackageVersion()}`,
+          skillPath: "skills/commit/SKILL.md",
+          vendor: "lgtm-hq",
+        },
+      },
+    };
+    const dependencies = {
+      env: { AI_SKILLS_NO_UPDATE_CHECK: "1" },
+      lockEnvironment: {
+        home: "/nonexistent",
+        cwd: "/project",
+        read: async (path) =>
+          String(path).startsWith("/project")
+            ? `${JSON.stringify(projectLock)}\n`
+            : `${JSON.stringify(lockFixture())}\n`,
+      },
+    };
+
+    await expect(
+      completeInteractively({ ...blankOptions }, captured.ui, dependencies),
+    ).rejects.toThrow("Install cancelled");
+
+    // Union of both scopes: 3 global skills + 1 project-only skill.
+    const installedNote = captured.notes.find((note) => note.title === "Installed");
+    expect(installedNote?.message).toBe("4 skills installed · 3 agents");
+
+    const firstPartyLabels = Object.values(captured.groupSelects[0])
+      .flat()
+      .map((option) => option.label);
+    expect(firstPartyLabels).toContain("pr ✔ installed (cursor)");
+    // Shared skill merges agents across scopes.
+    expect(firstPartyLabels).toContain("commit ✔ installed (claude-code, codex)");
+  });
+
+  test("explicit scope flags read only that scope's lockfile", async () => {
+    const captured = recordingUi(["browse:first-party", [], "cancel"]);
+    /** @type {string[]} */
+    const readPaths = [];
+    const dependencies = {
+      env: { AI_SKILLS_NO_UPDATE_CHECK: "1" },
+      lockEnvironment: {
+        home: "/nonexistent",
+        cwd: "/project",
+        read: async (path) => {
+          readPaths.push(String(path));
+          return `${JSON.stringify(lockFixture())}\n`;
+        },
+      },
+    };
+
+    await expect(
+      completeInteractively({ ...blankOptions, global: true }, captured.ui, dependencies),
+    ).rejects.toThrow("Install cancelled");
+
+    expect(readPaths).toEqual(["/nonexistent/.ai-skills/lock.json"]);
   });
 
   test("env opt-out skips every network fetch and shows no notices", async () => {
