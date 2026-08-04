@@ -52,8 +52,11 @@ rollup (`statusCheckRollup`) and review threads (`reviewThreads`) in the
 same query — prefer server-side
 search filters over client-side truncation. Paginate **every** connection
 (`search`, `reviewThreads`, thread comments, rollup contexts) via
-`hasNextPage`/`endCursor`; GitHub search caps at 1,000 results per query, so
-split the date window when a repo's merge volume can exceed it.
+`hasNextPage`/`endCursor` — nested cursors do not advance with the search
+cursor, so when a PR node reports `hasNextPage` on a nested connection,
+drain it with per-PR follow-up queries (`repository { pullRequest(...) }`)
+before moving on. GitHub search caps at 1,000 results per query, so split
+the date window when a repo's merge volume can exceed it.
 
 1. Full merged-PR list for the window — paginate past 100; verify the total
    against `search(type: ISSUE)` `issueCount` (or the REST search API) and
