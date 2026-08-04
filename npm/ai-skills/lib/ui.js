@@ -17,7 +17,8 @@ export const KNOWN_AGENTS = [
  * Deliberately phrased as a signal, not an action: the newer commits become
  * installable only after the gateway re-pins them in a new release.
  */
-export const VENDOR_DRIFT_SUFFIX = " (upstream has newer commits — installable after a gateway re-pin)";
+export const VENDOR_DRIFT_SUFFIX =
+  " (upstream has newer commits — installable after a gateway re-pin)";
 
 /**
  * One-line home-screen summary of the scope's installed skills.

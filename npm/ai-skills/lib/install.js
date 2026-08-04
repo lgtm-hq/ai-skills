@@ -269,10 +269,7 @@ function buildSkillMarkers(signals, vendorId) {
     if (entry.vendor !== catalogVendor) {
       continue;
     }
-    markers.set(
-      name,
-      formatSkillStatusSuffix({ entry, drifted: signals.driftedSkills.has(name) }),
-    );
+    markers.set(name, formatSkillStatusSuffix({ entry, drifted: signals.driftedSkills.has(name) }));
   }
   return markers;
 }

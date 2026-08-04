@@ -186,7 +186,8 @@ describe("completeInteractively signals", () => {
     const homeLabels = captured.selects[0].map((option) => option.label);
     expect(
       homeLabels.some(
-        (label) => label.startsWith("Browse davidondrej/skills") && label.endsWith(VENDOR_DRIFT_SUFFIX),
+        (label) =>
+          label.startsWith("Browse davidondrej/skills") && label.endsWith(VENDOR_DRIFT_SUFFIX),
       ),
     ).toBe(true);
     expect(
