@@ -21,6 +21,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.15.0] - 2026-08-04
+
+### Added
+
+- **skills**: add audit-merges skill (#309) (8c1d071)
+
+### Changed
+
+- **babysit-pr**: make CodeRabbit rate limit non-blocking on exit (#275) (8db4ac4)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.63.0 (minor) (#295) (a76c90a)
+- **deps**: update lintro (#307) (22dfb69)
+- **deps**: lock file maintenance (#310) (57e61e3)
+- **deps**: update lintro (#306) (1791ac3)
+- **deps**: lock file maintenance (#305) (d8fc164)
+- **deps**: update lintro (#304) (b11c059)
+- **deps**: update lintro (#303) (455d30d)
+- **deps**: update lintro (#302) (570d9ca)
+- **deps**: update lintro (#301) (b249016)
+- **deps**: update lintro (#300) (60325f6)
+- **deps**: update lintro (#299) (57c157a)
+- **deps**: update lintro (#298) (454be5f)
+- **deps**: update lintro (#297) (81c5d08)
+- **deps**: update lintro (#296) (f3fed24)
+- **deps**: update lintro (#294) (28f025f)
+- **deps**: update lintro (#293) (c6c73fe)
+- **deps**: update lintro (#292) (1900cee)
+- **deps**: update lintro (#291) (89082b7)
+- **deps**: update lintro (#290) (f53d329)
+- **deps**: update lintro (#289) (01917ad)
+- **deps**: update lintro (#288) (7097a81)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.59.2 (patch) (#283) (0934d13)
+- **deps**: update astral-sh/setup-uv action to v9.0.0 (major) (#287) (2384cf2)
+- **deps**: update lintro (#286) (89fd4fc)
+- **deps**: update lintro (#284) (a09a642)
+
 ## [0.14.2] - 2026-07-20
 
 ### Changed
@@ -635,7 +670,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.14.2...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.14.2...v0.15.0
 [0.14.2]: https://github.com/lgtm-hq/ai-skills/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.13.0...v0.14.0

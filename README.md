@@ -25,17 +25,17 @@ Install the **gateway** package globally (recommended). It exposes two
 first-class binaries, `skill` and `sk` (aliases for the same CLI):
 
 ```bash
-bun add -g @lgtm-hq/ai-skills@0.14.2
+bun add -g @lgtm-hq/ai-skills@0.15.0
 skill          # or: sk
 ```
 
 Prefer a pinned, install-free run? Because the package ships two binaries,
 `bunx` needs an explicit `--package` plus the binary name — the npm version
-matches the git tag, `@0.14.2` ↔ `v0.14.2`:
+matches the git tag, `@0.15.0` ↔ `v0.15.0`:
 
 ```bash
-bunx --package=@lgtm-hq/ai-skills@0.14.2 skill
-# or: bunx --package=@lgtm-hq/ai-skills@0.14.2 sk
+bunx --package=@lgtm-hq/ai-skills@0.15.0 skill
+# or: bunx --package=@lgtm-hq/ai-skills@0.15.0 sk
 ```
 
 Interactive install uses a Clack home/cart wizard. Happy path:
@@ -65,10 +65,10 @@ skill adopt -y --project   # import skills-lock installs
 Unattended installs require an explicit scope and agent. Upstream `skills` has no
 conflict policy — omit `--on-conflict`, or pass `overwrite`. `keep` / `skip` fail
 closed. For a pinned, install-free run, front the command with
-`bunx --package=@lgtm-hq/ai-skills@0.14.2 skill`:
+`bunx --package=@lgtm-hq/ai-skills@0.15.0 skill`:
 
 ```bash
-bunx --package=@lgtm-hq/ai-skills@0.14.2 skill install -y --global \
+bunx --package=@lgtm-hq/ai-skills@0.15.0 skill install -y --global \
   -a claude-code -a cursor -a codex \
   --bundle pre-push
 ```
@@ -81,9 +81,9 @@ The gateway shells out to the [Vercel Labs `skills` CLI](https://github.com/verc
 You can call it directly when you want the stock installer only:
 
 ```bash
-bunx skills add lgtm-hq/ai-skills@v0.14.2 -g
-npx skills add lgtm-hq/ai-skills@v0.14.2 -g
-pnpm dlx skills add lgtm-hq/ai-skills@v0.14.2 -g
+bunx skills add lgtm-hq/ai-skills@v0.15.0 -g
+npx skills add lgtm-hq/ai-skills@v0.15.0 -g
+pnpm dlx skills add lgtm-hq/ai-skills@v0.15.0 -g
 ```
 
 </details>
@@ -209,7 +209,7 @@ Every release ships a `skills-manifest.json` asset mapping each skill name to
 the sha256 of its `SKILL.md`, attested with GitHub build provenance:
 
 ```bash
-gh release download v0.14.2 -R lgtm-hq/ai-skills -p skills-manifest.json
+gh release download v0.15.0 -R lgtm-hq/ai-skills -p skills-manifest.json
 gh attestation verify skills-manifest.json -R lgtm-hq/ai-skills
 shasum -a 256 <install-dir>/<name>/SKILL.md  # compare against the manifest
 ```
@@ -229,17 +229,17 @@ skill install -y --global -a cursor \
   --bundle pre-push
 
 # Gateway: unattended vendor skill at the baked SHA, pinned + install-free
-bunx --package=@lgtm-hq/ai-skills@0.14.2 skill install -y --global -a cursor \
+bunx --package=@lgtm-hq/ai-skills@0.15.0 skill install -y --global -a cursor \
   --vendor anthropics --skill frontend-design
 
 # Escape hatch: all first-party skills via skills CLI
-bunx skills add lgtm-hq/ai-skills@v0.14.2 -g --all
+bunx skills add lgtm-hq/ai-skills@v0.15.0 -g --all
 ```
 
 ### Update installed skills
 
 Prefer the gateway for installs it manages (globally installed → `skill`; for a
-pinned, install-free run swap in `bunx --package=@lgtm-hq/ai-skills@0.14.2 skill`):
+pinned, install-free run swap in `bunx --package=@lgtm-hq/ai-skills@0.15.0 skill`):
 
 ```bash
 skill update -y --global -a cursor
@@ -259,7 +259,7 @@ To move first-party skills to a specific release via the escape hatch, reinstall
 with a tag:
 
 ```bash
-bunx skills add lgtm-hq/ai-skills@v0.14.2 -g --all
+bunx skills add lgtm-hq/ai-skills@v0.15.0 -g --all
 ```
 
 List or remove stock installs with `bunx skills ls -g` and
