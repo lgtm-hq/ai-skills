@@ -43,15 +43,20 @@ are agent-authored or auto-merged and human review coverage is thin.
 
 ## Phase 1 — Enumerate and triage
 
-Per repo, gather in bulk (see `sweep-prs` for the GraphQL bulk-gathering
-recipe — paginated search fetching checks rollup + review threads in one
-query; server-side filters over client-side truncation):
+Per repo, gather in bulk with one paginated GraphQL `search` query per repo
+(`type: ISSUE`, query `repo:OWNER/NAME is:pr is:merged merged:>=DATE`) whose
+nodes fetch the checks rollup (`statusCheckRollup`) and review threads
+(`reviewThreads`) in the same query — prefer server-side search filters over
+client-side truncation. (The `sweep-prs` skill, where present, uses the same
+recipe.)
 
-1. Full merged-PR list for the window (`gh pr list --state merged --search
-   "merged:>=DATE"` — paginate past 100; verify the total with the search
-   API).
-2. `main` workflow-run health across the window (`gh run list --branch
-   main`), so every failure can be mapped to the merge that caused it.
+1. Full merged-PR list for the window — paginate past 100; verify the total
+   against `search(type: ISSUE)` `issueCount` (or the REST search API).
+2. `main` workflow-run health across the window (`gh run list --branch main
+   --created "START..END" --limit 1000` — an explicit date range plus a
+   limit well above the repo's run volume; never the bare default, which
+   returns a recent time-unbounded subset), so every failure can be mapped
+   to the merge that caused it.
 
 Then triage:
 
@@ -106,6 +111,11 @@ Multi-repo audits fan out **one background sub-agent per repo**
 The orchestrator compiles the report only after all agents return; it never
 duplicates their reading.
 
+**Portability note:** on agents without background sub-agents, audit the
+repos sequentially inline — same standards loading, gathering, deep-read,
+and scratchpad findings file per repo — then compile the report the same
+way. The fan-out is an optimization, not a prerequisite.
+
 ## Phase 3 — Report
 
 The deliverable is a single self-contained HTML report (an Artifact when
@@ -120,9 +130,10 @@ available, else a local file):
 
 ## Phase 4 — Remediate (checkpoint, confirmed only)
 
-Follow the `sweep-prs` Phase 2/3 model: present aggregate counts with an
-assessment split (agree → propose follow-up issue per the `issue` skill;
-disagree/moot → propose disposition reply; no-action → one-line rationale),
+Checkpoint-then-execute (the same model `sweep-prs` uses, where present):
+present aggregate counts with an assessment split (agree → propose
+follow-up issue per the `issue` skill; disagree/moot → propose disposition
+reply; no-action → one-line rationale),
 let the owner approve per bucket, then execute exactly what was confirmed.
 Never trade the checkpoint away for fewer clicks.
 
