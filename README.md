@@ -97,9 +97,10 @@ pnpm dlx skills add lgtm-hq/ai-skills@v0.15.0 -g
 ### Vendors, pins, and locks
 
 - **Vendors (v1):** `mattpocock/skills`, `anthropics/skills`,
-  `anthropics/claude-code`, and `JuliusBrussee/caveman`, full trees at a
-  **commit SHA** (Renovate bumps SHAs). Skill discovery uses baked indexes
-  shipped inside the npm package — no GitHub API at install time.
+  `anthropics/claude-code`, `JuliusBrussee/caveman`, and `davidondrej/skills`,
+  full trees at a **commit SHA** (Renovate bumps SHAs). Skill discovery uses
+  baked indexes shipped inside the npm package — no GitHub API at install
+  time.
 - **Licenses:** see root [`NOTICE.md`](./NOTICE.md) and `vendors.yaml`.
 - **Gateway lockfiles** (do not overwrite stock `skills-lock.json`):
   - Global: `~/.ai-skills/lock.json`

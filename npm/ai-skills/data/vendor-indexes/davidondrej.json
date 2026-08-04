@@ -1,0 +1,192 @@
+{
+  "skills": [
+    {
+      "name": "agent-self-scheduling",
+      "path": "skills/agent-orchestration/agent-self-scheduling"
+    },
+    {
+      "name": "cmux",
+      "path": "skills/agent-orchestration/cmux"
+    },
+    {
+      "name": "codex-subagent",
+      "path": "skills/agent-orchestration/codex-subagent"
+    },
+    {
+      "name": "fable-review",
+      "path": "skills/agent-orchestration/fable-review"
+    },
+    {
+      "name": "fable-safe-prompt",
+      "path": "skills/agent-orchestration/fable-safe-prompt"
+    },
+    {
+      "name": "git-worktree",
+      "path": "skills/agent-orchestration/git-worktree"
+    },
+    {
+      "name": "goal-loop",
+      "path": "skills/agent-orchestration/goal-loop"
+    },
+    {
+      "name": "gpt-review",
+      "path": "skills/agent-orchestration/gpt-review"
+    },
+    {
+      "name": "handoff",
+      "path": "skills/agent-orchestration/handoff"
+    },
+    {
+      "name": "herdr",
+      "path": "skills/agent-orchestration/herdr"
+    },
+    {
+      "name": "launch-subagent",
+      "path": "skills/agent-orchestration/launch-subagent"
+    },
+    {
+      "name": "run-deep-swe",
+      "path": "skills/agent-orchestration/run-deep-swe"
+    },
+    {
+      "name": "anti-sleep",
+      "path": "skills/ops-and-setup/anti-sleep"
+    },
+    {
+      "name": "create-readonly-db-role",
+      "path": "skills/ops-and-setup/create-readonly-db-role"
+    },
+    {
+      "name": "cyber-audit",
+      "path": "skills/ops-and-setup/cyber-audit"
+    },
+    {
+      "name": "global-agent-guardrails",
+      "path": "skills/ops-and-setup/global-agent-guardrails"
+    },
+    {
+      "name": "google-safe-browsing",
+      "path": "skills/ops-and-setup/google-safe-browsing"
+    },
+    {
+      "name": "macbook-metrics-setup",
+      "path": "skills/ops-and-setup/macbook-metrics-setup"
+    },
+    {
+      "name": "nuke-cursor-app",
+      "path": "skills/ops-and-setup/nuke-cursor-app"
+    },
+    {
+      "name": "pi-custom-model",
+      "path": "skills/ops-and-setup/pi-custom-model"
+    },
+    {
+      "name": "prod-push",
+      "path": "skills/ops-and-setup/prod-push"
+    },
+    {
+      "name": "setup-help",
+      "path": "skills/ops-and-setup/setup-help"
+    },
+    {
+      "name": "browser-harness",
+      "path": "skills/research-and-web/browser-harness"
+    },
+    {
+      "name": "deep-research",
+      "path": "skills/research-and-web/deep-research"
+    },
+    {
+      "name": "deepapi",
+      "path": "skills/research-and-web/deepapi"
+    },
+    {
+      "name": "fireflies-transcript",
+      "path": "skills/research-and-web/fireflies-transcript"
+    },
+    {
+      "name": "online-shopping",
+      "path": "skills/research-and-web/online-shopping"
+    },
+    {
+      "name": "pi-web-search",
+      "path": "skills/research-and-web/pi-web-search"
+    },
+    {
+      "name": "research-prompt",
+      "path": "skills/research-and-web/research-prompt"
+    },
+    {
+      "name": "youtube-transcript",
+      "path": "skills/research-and-web/youtube-transcript"
+    },
+    {
+      "name": "distribute-skill-to-all-agents",
+      "path": "skills/skill-authoring/distribute-skill-to-all-agents"
+    },
+    {
+      "name": "effective-agent-skills",
+      "path": "skills/skill-authoring/effective-agent-skills"
+    },
+    {
+      "name": "folder-specific-claude-and-agents-md",
+      "path": "skills/skill-authoring/folder-specific-claude-and-agents-md"
+    },
+    {
+      "name": "push-skill-to-github",
+      "path": "skills/skill-authoring/push-skill-to-github"
+    },
+    {
+      "name": "before-building",
+      "path": "skills/thinking-and-docs/before-building"
+    },
+    {
+      "name": "brain-to-docs",
+      "path": "skills/thinking-and-docs/brain-to-docs"
+    },
+    {
+      "name": "decisions",
+      "path": "skills/thinking-and-docs/decisions"
+    },
+    {
+      "name": "level-up",
+      "path": "skills/thinking-and-docs/level-up"
+    },
+    {
+      "name": "next-decision",
+      "path": "skills/thinking-and-docs/next-decision"
+    },
+    {
+      "name": "prompt-me",
+      "path": "skills/thinking-and-docs/prompt-me"
+    },
+    {
+      "name": "read-all-adrs",
+      "path": "skills/thinking-and-docs/read-all-adrs"
+    },
+    {
+      "name": "remind",
+      "path": "skills/thinking-and-docs/remind"
+    },
+    {
+      "name": "save-idea",
+      "path": "skills/thinking-and-docs/save-idea"
+    },
+    {
+      "name": "short",
+      "path": "skills/thinking-and-docs/short"
+    },
+    {
+      "name": "teach",
+      "path": "skills/thinking-and-docs/teach"
+    }
+  ],
+  "vendor": {
+    "id": "davidondrej",
+    "repo": "davidondrej/skills",
+    "sha": "6e5545081c888b89576a620d9b2e54e9a6590f68",
+    "skillRoots": [
+      "skills/*"
+    ]
+  }
+}
