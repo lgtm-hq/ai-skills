@@ -5,10 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import bake_vendor_indexes
 import pytest
 from assertpy import assert_that
-
-import bake_vendor_indexes
 from vendor_registry.registry import (
     discover_skills,
     load_registry,

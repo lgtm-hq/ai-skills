@@ -32,7 +32,7 @@ jobs:
       # Consumer repos must pass lintro-image: resolve-lintro-image.sh
       # defaults to lgtm-ci-owned paths that do not exist here. Keep this
       # digest in lockstep with pyproject.toml's lintro== pin and the
-      # lintro-image override on ci.yml's quality job (py-lintro 0.77.1).
+      # lintro-image override on ci.yml's quality job (py-lintro 0.105.0).
       # yamllint disable-line rule:line-length
       lintro-image: ghcr.io/lgtm-hq/py-lintro@sha256:6a355a6ce47c4501ff368ae5f8adfa58171441f19c80bb7fa0de36a008674cd0
       egress-policy: block

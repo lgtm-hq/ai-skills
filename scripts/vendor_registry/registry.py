@@ -325,7 +325,7 @@ def validate_index(*, index_path: Path, vendor: Vendor) -> None:
     skills = payload["skills"]
     if not isinstance(skills, list):
         msg = f"Vendor index skills must be a list: {index_path}"
-        raise ValueError(msg)
+        raise TypeError(msg)
     expected_skills = _validate_index_skills(skills=skills, vendor=vendor)
     if skills != expected_skills:
         msg = (
@@ -361,7 +361,7 @@ def _validate_index_skills(
         path = skill["path"]
         if not isinstance(name, str) or not isinstance(path, str):
             msg = "Vendor index skill name and path must be strings"
-            raise ValueError(msg)
+            raise TypeError(msg)
         pure_path = PurePosixPath(path)
         if (
             not name

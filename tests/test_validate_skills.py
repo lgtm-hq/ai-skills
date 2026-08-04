@@ -214,8 +214,10 @@ def test_overlong_description_is_rejected(tmp_path: Path) -> None:
 
     assert_that(violations).is_equal_to(
         [
-            f"{skill_md}: 'description' is 1025 characters, "
-            "exceeds the 1024-character limit",
+            (
+                f"{skill_md}: 'description' is 1025 characters, "
+                "exceeds the 1024-character limit"
+            ),
         ]
     )
 

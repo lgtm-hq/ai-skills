@@ -26,7 +26,6 @@ import tomllib
 from pathlib import Path
 
 import yaml
-
 from generate_marketplace import BundlesDocument, load_validated_bundles
 from skill_frontmatter import split_frontmatter
 
@@ -83,7 +82,7 @@ def _read_skill_description(*, skill_md: Path) -> str:
     data = yaml.safe_load(frontmatter)
     if not isinstance(data, dict) or not isinstance(data.get("description"), str):
         msg = f"Missing string description in {skill_md}"
-        raise ValueError(msg)
+        raise TypeError(msg)
     return " ".join(data["description"].split())
 
 

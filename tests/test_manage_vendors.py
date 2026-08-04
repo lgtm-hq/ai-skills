@@ -5,12 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import bake_vendor_indexes
+import manage_vendors
 import pytest
 import yaml
 from assertpy import assert_that
-
-import bake_vendor_indexes
-import manage_vendors
 from vendor_registry.registry import load_registry
 from vendor_registry.vendor import Vendor
 

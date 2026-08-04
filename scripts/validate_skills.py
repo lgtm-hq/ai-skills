@@ -80,8 +80,10 @@ def validate_skill(
         return [f"{skill_md}: frontmatter is not valid YAML: {exc}"]
     if not isinstance(frontmatter, dict):
         return [
-            f"{skill_md}: frontmatter must be a YAML mapping, "
-            f"got {type(frontmatter).__name__}",
+            (
+                f"{skill_md}: frontmatter must be a YAML mapping, "
+                f"got {type(frontmatter).__name__}"
+            ),
         ]
     violations: list[str] = []
     name, name_violations = _validate_string_field(

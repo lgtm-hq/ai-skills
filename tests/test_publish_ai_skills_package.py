@@ -128,7 +128,7 @@ def _run_publish_script(
         "NPM_DIST_TAG": "latest",
         "HOME": str(tmp_path / "home"),
     }
-    return subprocess.run(  # noqa: S603 # nosec B603 - test-local script copy
+    return subprocess.run(  # nosec B603 - test-local script copy
         [str(script_path)],
         capture_output=True,
         text=True,

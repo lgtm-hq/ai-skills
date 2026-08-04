@@ -10,10 +10,9 @@ import json
 import subprocess  # nosec B404 - only CompletedProcess is constructed
 from pathlib import Path
 
+import audit_lgtm_ci_adoption as audit
 import pytest
 from assertpy import assert_that
-
-import audit_lgtm_ci_adoption as audit
 
 SHA_A = "fc73b3ab8342a24597c12d137d6ff7fca84b9fe2"
 SHA_B = "0" * 40

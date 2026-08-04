@@ -72,8 +72,8 @@ def _run_validate(
     # The fake repo root has no pyproject.toml; point `uv run` at the real
     # project so the frontmatter validator resolves its dependencies.
     env["UV_PROJECT"] = str(REPO_ROOT)
-    return subprocess.run(  # noqa: S603 # nosec B603 B607 - fixed bash argv, no shell
-        ["bash", str(script_path)],  # noqa: S607 - bash resolved from PATH deliberately
+    return subprocess.run(  # nosec B603 B607 - fixed bash argv, no shell
+        ["bash", str(script_path)],
         cwd=cwd,
         check=False,
         text=True,
