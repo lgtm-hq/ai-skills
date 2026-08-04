@@ -21,6 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.18.0] - 2026-08-04
+
+### Added
+
+- **npm**: surface installed skills and update signals in install wizard (#324)
+  (d46b856)
+
+### Changed
+
+- **deps**: update lintro (#322) (17ba8f0)
+
 ## [0.17.0] - 2026-08-04
 
 ### Added
@@ -692,7 +703,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.15.0...v0.16.0
