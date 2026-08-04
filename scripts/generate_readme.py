@@ -73,7 +73,8 @@ def _read_skill_description(*, skill_md: Path) -> str:
         The description text with folded newlines collapsed to spaces.
 
     Raises:
-        ValueError: If frontmatter or the description key is missing.
+        ValueError: If frontmatter is missing.
+        TypeError: If the description is missing or not a string.
     """
     frontmatter, _ = split_frontmatter(skill_md.read_text(encoding="utf-8"))
     if frontmatter is None:
