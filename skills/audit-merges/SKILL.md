@@ -62,8 +62,8 @@ the date window when a repo's merge volume can exceed it.
    against `search(type: ISSUE)` `issueCount` (or the REST search API) and
    treat any mismatch or truncated connection as a gathering failure, not a
    smaller audit.
-2. `main` workflow-run health across the window (`gh run list --branch main
-   --created "START..END" --limit 1000 --json
+2. Default-branch workflow-run health across the window (`gh run list
+   --branch <default-branch> --created "START..END" --limit 1000 --json
    databaseId,headSha,createdAt,event,conclusion,workflowName,url` — an
    explicit date range plus a limit well above the repo's run volume; never
    the bare default, which returns a recent time-unbounded subset). If the
