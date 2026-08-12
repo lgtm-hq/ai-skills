@@ -34,7 +34,7 @@ jobs:
       # digest in lockstep with pyproject.toml's lintro== pin and the
       # lintro-image override on ci.yml's quality job (py-lintro 0.105.0).
       # yamllint disable-line rule:line-length
-      lintro-image: ghcr.io/lgtm-hq/py-lintro@sha256:9058ea64723ac5c91cdb03f06b226a175dc76b7225b74559ad8d42cf652bfbdb
+      lintro-image: ghcr.io/lgtm-hq/py-lintro@sha256:5aaeac574204b0850af21b92df05e82f3e388d17e648c8ad4ed862a303834e74
       egress-policy: block
       egress-preset: quality
     permissions:
