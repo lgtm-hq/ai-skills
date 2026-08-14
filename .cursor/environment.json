@@ -1,0 +1,4 @@
+{
+  "name": "ai-skills",
+  "install": "bash scripts/cloud-agent-install.sh"
+}
