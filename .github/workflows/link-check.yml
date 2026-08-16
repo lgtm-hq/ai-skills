@@ -38,7 +38,7 @@ jobs:
       job-name: "🔗 Internal Link Check"
       file-extensions: md
       check-external: false
-      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2" # v0.63.1
+      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2"  # v0.63.1
       # reusable-link-check hardens with inputs.allowed-endpoints before
       # checkout (append/preset resolve happens too late). Pass the full
       # github-tooling default list plus release-assets so Lychee can download
@@ -73,4 +73,4 @@ jobs:
       file-extensions: md
       check-external: true
       egress-policy: audit
-      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2" # v0.63.1
+      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2"  # v0.63.1

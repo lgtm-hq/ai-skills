@@ -20,7 +20,7 @@ jobs:
     uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-quality-lint.yml@23c79b65490a3307fb08cdefafa22db12f75b9b2  # v0.63.1
     with:
       job-name: "🛠️ Lintro Code Quality"
-      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2" # v0.63.1
+      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2"  # v0.63.1
       # Override the reusable default (0.64.1 at this pin) so CI matches
       # pyproject.toml's lintro==0.105.0 and validate-lintro-version.yml.
       # yamllint disable-line rule:line-length
@@ -36,7 +36,7 @@ jobs:
     uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-publish-quality-summary.yml@23c79b65490a3307fb08cdefafa22db12f75b9b2  # v0.63.1
     with:
       exit-code: ${{ needs.quality.outputs.exit-code }}
-      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2" # v0.63.1
+      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2"  # v0.63.1
     permissions:
       contents: read
       pull-requests: write
@@ -49,7 +49,7 @@ jobs:
     with:
       python-version: "3.13"
       test-path: tests
-      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2" # v0.63.1
+      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2"  # v0.63.1
     permissions:
       # actions: write is required at compile time by the reusable
       # workflow's aggregate job (matrix mode only, skipped here), which
@@ -68,7 +68,7 @@ jobs:
       job-name: "📚 Validate Skill Structure"
       setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/validate.sh
-      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2" # v0.63.1
+      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2"  # v0.63.1
       egress-policy: block
       egress-preset: quality
       # Harden-runner pre reads inputs only. setup installs ripgrep via apt and

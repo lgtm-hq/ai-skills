@@ -28,7 +28,7 @@ jobs:
     # yamllint disable-line rule:line-length
     uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate-lintro-version.yml@23c79b65490a3307fb08cdefafa22db12f75b9b2  # v0.63.1
     with:
-      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2" # v0.63.1
+      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2"  # v0.63.1
       # Consumer repos must pass lintro-image: resolve-lintro-image.sh
       # defaults to lgtm-ci-owned paths that do not exist here. Keep this
       # digest in lockstep with pyproject.toml's lintro== pin and the

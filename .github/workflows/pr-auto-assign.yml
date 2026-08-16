@@ -14,7 +14,7 @@ jobs:
     uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-pr-auto-assign.yml@23c79b65490a3307fb08cdefafa22db12f75b9b2  # v0.63.1
     with:
       codeowners-path: .github/CODEOWNERS
-      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2" # v0.63.1
+      tooling-ref: "23c79b65490a3307fb08cdefafa22db12f75b9b2"  # v0.63.1
     permissions:
       contents: read
       pull-requests: write
