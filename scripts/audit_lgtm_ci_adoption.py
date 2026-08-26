@@ -10,6 +10,11 @@ The pinned SHA is discovered by scanning ``.github/workflows/*.yml`` for
 available set is fetched via ``gh api`` (so the script is CI-runnable
 and needs no local lgtm-ci checkout).
 
+``reusable-ai-review.yml`` may pin a newer published contract than the
+rest of the repo (the current caller contract landed after the shared
+quality/release SHA). Repo-wide uniqueness excludes that one name.
+Pins *inside* ``reusable-ai-review.yml`` must still be a single SHA.
+
 Output: three sections — the pinned ref, adopted workflows, and
 available-but-unadopted workflows — plus summary counts.
 
@@ -27,10 +32,14 @@ import sys
 from pathlib import Path
 
 LGTM_CI_REPO = "lgtm-hq/lgtm-ci"
+AI_REVIEW_WORKFLOW = "reusable-ai-review.yml"
 
 _USES_RE = re.compile(
     r"uses:\s*lgtm-hq/lgtm-ci/\.github/workflows/(?P<name>[\w.-]+\.ya?ml)"
     r"@(?P<ref>[0-9a-f]{40})",
+)
+_TOOLING_REF_RE = re.compile(
+    r"""tooling-ref:\s*["']?(?P<ref>[0-9a-f]{40})["']?""",
 )
 
 
@@ -63,21 +72,44 @@ def find_lgtm_ci_pins(
 
 def resolve_pinned_ref(
     pins: dict[str, set[str]],
+    exclude: frozenset[str] = frozenset(),
 ) -> str:
     """Resolve the single SHA this repository pins lgtm-ci at.
 
     Args:
         pins: Mapping of workflow name to pinned SHA set, as returned by
             :func:`find_lgtm_ci_pins`.
+        exclude: Workflow names omitted from the uniqueness check so
+            ``reusable-ai-review.yml`` can pin a newer published
+            contract than the rest of the repo.
 
     Returns:
-        The common pinned SHA.
+        The common pinned SHA of non-excluded callers. If every caller
+        is excluded (``reusable-ai-review.yml`` is the only pin), the
+        sole excluded SHA is returned so a one-workflow tree still
+        produces a report.
 
     Raises:
-        ValueError: If no lgtm-ci calls were found, or if callers pin
-            more than one distinct SHA.
+        ValueError: If no lgtm-ci calls were found, or if the resolved
+            set of callers pins more than one distinct SHA.
     """
-    refs = sorted({ref for ref_set in pins.values() for ref in ref_set})
+    refs = sorted(
+        {
+            ref
+            for name, ref_set in pins.items()
+            if name not in exclude
+            for ref in ref_set
+        },
+    )
+    if not refs:
+        refs = sorted(
+            {
+                ref
+                for name, ref_set in pins.items()
+                if name in exclude
+                for ref in ref_set
+            },
+        )
     if not refs:
         msg = "no lgtm-ci reusable-workflow calls found"
         raise ValueError(msg)
@@ -85,6 +117,68 @@ def resolve_pinned_ref(
         msg = f"mixed lgtm-ci pins found: {', '.join(refs)}"
         raise ValueError(msg)
     return refs[0]
+
+
+def assert_single_pin_per_name(
+    pins: dict[str, set[str]],
+    name: str,
+) -> None:
+    """Raise if one reusable workflow name is pinned at two SHAs.
+
+    Args:
+        pins: Mapping of workflow name to pinned SHA set.
+        name: Reusable workflow file name to inspect.
+
+    Raises:
+        ValueError: If ``name`` has more than one SHA.
+    """
+    refs = pins.get(name, set())
+    if len(refs) > 1:
+        joined = ", ".join(sorted(refs))
+        msg = f"mixed lgtm-ci pins inside {name}: {joined}"
+        raise ValueError(msg)
+
+
+def assert_uses_tooling_ref_lockstep(
+    workflows_dir: Path,
+) -> None:
+    """Raise if a caller file pins ``uses`` and ``tooling-ref`` differently.
+
+    Args:
+        workflows_dir: Directory containing this repository's workflow
+            YAML files.
+
+    Raises:
+        ValueError: If a ``reusable-ai-review.yml`` caller has ``uses``
+            but no ``tooling-ref``, or if any file has both pins and
+            they are not the same set of SHAs.
+    """
+    workflow_paths = sorted(
+        {
+            *workflows_dir.glob("*.yml"),
+            *workflows_dir.glob("*.yaml"),
+        },
+    )
+    for path in workflow_paths:
+        text = path.read_text(encoding="utf-8")
+        uses_matches = list(_USES_RE.finditer(string=text))
+        uses = {match.group("ref") for match in uses_matches}
+        names = {match.group("name") for match in uses_matches}
+        tooling = set(_TOOLING_REF_RE.findall(string=text))
+        if AI_REVIEW_WORKFLOW in names and not tooling:
+            msg = (
+                f"{path.name}: {AI_REVIEW_WORKFLOW} requires tooling-ref "
+                "in lockstep with uses"
+            )
+            raise ValueError(msg)
+        if not tooling:
+            continue
+        if uses != tooling:
+            msg = (
+                f"{path.name}: uses and tooling-ref pins differ: "
+                f"{sorted(uses)} vs {sorted(tooling)}"
+            )
+            raise ValueError(msg)
 
 
 def list_available_workflows(
@@ -190,15 +284,31 @@ def main(
     """
     args = _parse_args(argv=sys.argv[1:] if argv is None else argv)
     pins = find_lgtm_ci_pins(workflows_dir=args.workflows_dir)
+    extra_ai_ref: str | None = None
     try:
-        ref = resolve_pinned_ref(pins=pins)
-        available = list_available_workflows(ref=ref)
+        assert_single_pin_per_name(pins=pins, name=AI_REVIEW_WORKFLOW)
+        assert_uses_tooling_ref_lockstep(workflows_dir=args.workflows_dir)
+        ref = resolve_pinned_ref(
+            pins=pins,
+            exclude=frozenset({AI_REVIEW_WORKFLOW}),
+        )
+        available = set(list_available_workflows(ref=ref))
+        ai_refs = pins.get(AI_REVIEW_WORKFLOW, set())
+        if len(ai_refs) == 1:
+            ai_ref = next(iter(ai_refs))
+            if ai_ref != ref:
+                extra_ai_ref = ai_ref
+                ai_available = list_available_workflows(ref=ai_ref)
+                if AI_REVIEW_WORKFLOW in ai_available:
+                    available.add(AI_REVIEW_WORKFLOW)
     except (RuntimeError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(f"lgtm-ci pinned ref: {ref}")
+    if extra_ai_ref is not None:
+        print(f"{AI_REVIEW_WORKFLOW} pinned ref: {extra_ai_ref}")
     print()
-    print(build_report(available=available, called=set(pins)))
+    print(build_report(available=sorted(available), called=set(pins)))
     return 0
 
 

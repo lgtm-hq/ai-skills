@@ -4,7 +4,9 @@ Inventory and adoption plan for [lgtm-hq/lgtm-ci](https://github.com/lgtm-hq/lgt
 reusable workflows, per issue
 [#90](https://github.com/lgtm-hq/ai-skills/issues/90). Generated with
 `scripts/audit_lgtm_ci_adoption.py` against the pinned ref
-`443a687caa93b3afa306a066aae8d8a2b4e60c3c` (v0.59.0).
+`23c79b65490a3307fb08cdefafa22db12f75b9b2` (v0.63.1).
+`reusable-ai-review.yml` is pinned independently at
+`62737ac1e3e0a25bd138d2d77d80ae03fb9741c5` (v0.67.0).
 
 This document is inventory and plan. Adoptions land in focused follow-up
 PRs (one workflow per PR).
@@ -12,9 +14,9 @@ PRs (one workflow per PR).
 ## Summary
 
 - Available reusable workflows at the pinned ref: **57**
-- Adopted: **15**
+- Adopted: **16**
 - Deferred (with rationale): **2**
-- Covered differently: **2**
+- Covered differently: **1**
 - Not applicable: **38**
 
 Regenerate the adopted/unadopted lists and counts with:
@@ -24,7 +26,10 @@ uv run python scripts/audit_lgtm_ci_adoption.py
 ```
 
 The script exits non-zero on mixed pins, so re-running it after any repin
-catches partial updates. All lgtm-ci callers share the single SHA above.
+catches partial updates. All callers except ``reusable-ai-review.yml``
+share `23c79b65490a3307fb08cdefafa22db12f75b9b2` (v0.63.1). Local
+callers of ``reusable-ai-review.yml`` must share one SHA, include a
+``tooling-ref``, and keep ``uses`` / ``tooling-ref`` in lockstep.
 
 ## Classification
 
@@ -48,7 +53,7 @@ catches partial updates. All lgtm-ci callers share the single SHA above.
 | `reusable-required-check.yml` | deferred | Single required-status aggregation; most useful once branch protection exists — blocked on owner action ([#71](https://github.com/lgtm-hq/ai-skills/issues/71)). |
 | `reusable-vuln-suppression-check.yml` | deferred | Keeps vulnerability suppressions reviewed and time-boxed; no suppression files exist in this repo yet — adopt when the first suppression appears. |
 | `reusable-validate-action-pinning.yml` | covered-differently | SHA pinning is enforced by stand-ci convention and review today; automating it is a later hardening candidate. |
-| `reusable-ai-review.yml` | covered-differently | AI diff/branch review is run pre-push through the `coderabbit` and `greptile` skills, not as a CI job. |
+| `reusable-ai-review.yml` | adopted | Called by `ai-review.yml`; same-repo PRs get a `lintro-review[bot]` sticky review. Pins a newer lgtm-ci SHA than the shared quality/release pin because the current reusable contract landed after that pin. Pre-push `coderabbit` / `greptile` skills remain complementary. |
 | `reusable-auto-rerun-on-infra-failure.yml` | not-applicable | Optional flake-recovery hardening; no observed infra-flake problem to warrant it — revisit if one appears. |
 | `reusable-main-failure-notifier.yml` | not-applicable | No notification target wired; revisit if main-branch failure alerting is wanted. |
 | `reusable-build-artifact.yml` | not-applicable | Nothing built or distributed; `scripts/` are repo-internal tooling. |
@@ -121,9 +126,11 @@ SHA-pinned callers. This repo now adopts them per-repo as well:
   to match the CI image override, and `reusable-validate-lintro-version.yml`
   (adopted via `validate-lintro-version.yml`) fails the build on any future
   drift. See [lintro version alignment](#lintro-version-alignment).
-- **Single-SHA pin discipline:** all lgtm-ci callers share one SHA
-  (`443a687caa93b3afa306a066aae8d8a2b4e60c3c`, v0.59.0);
-  `scripts/audit_lgtm_ci_adoption.py` exits non-zero on mixed pins, so
-  re-running it after any repin catches partial updates. Always pin to a SHA
+- **Single-SHA pin discipline:** quality/release callers share one SHA
+  (`23c79b65490a3307fb08cdefafa22db12f75b9b2`, v0.63.1).
+  `ai-review.yml` may pin a newer `reusable-ai-review.yml` SHA;
+  `scripts/audit_lgtm_ci_adoption.py` excludes that name from repo-wide
+  uniqueness. Local callers of `reusable-ai-review.yml` must still share
+  one SHA and keep `uses` / `tooling-ref` in lockstep. Always pin to a SHA
   that is reachable from a tag or `main` — never to a PR-branch or
   squash-orphaned commit.
