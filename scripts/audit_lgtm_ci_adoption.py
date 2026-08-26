@@ -275,6 +275,7 @@ def main(
     """
     args = _parse_args(argv=sys.argv[1:] if argv is None else argv)
     pins = find_lgtm_ci_pins(workflows_dir=args.workflows_dir)
+    extra_ai_ref: str | None = None
     try:
         assert_single_pin_per_name(pins=pins, name=AI_REVIEW_WORKFLOW)
         assert_uses_tooling_ref_lockstep(workflows_dir=args.workflows_dir)
@@ -287,6 +288,7 @@ def main(
         if len(ai_refs) == 1:
             ai_ref = next(iter(ai_refs))
             if ai_ref != ref:
+                extra_ai_ref = ai_ref
                 ai_available = list_available_workflows(ref=ai_ref)
                 if AI_REVIEW_WORKFLOW in ai_available:
                     available.add(AI_REVIEW_WORKFLOW)
@@ -294,6 +296,8 @@ def main(
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(f"lgtm-ci pinned ref: {ref}")
+    if extra_ai_ref is not None:
+        print(f"{AI_REVIEW_WORKFLOW} pinned ref: {extra_ai_ref}")
     print()
     print(build_report(available=sorted(available), called=set(pins)))
     return 0

@@ -339,12 +339,14 @@ def test_main_allows_newer_ai_review_pin(
         name="ci.yml",
         called="reusable-quality.yml",
         sha=SHA_A,
+        tooling_ref=SHA_A,
     )
     _write_workflow(
         workflows_dir=tmp_path,
         name="ai-review.yml",
         called=audit.AI_REVIEW_WORKFLOW,
         sha=SHA_B,
+        tooling_ref=SHA_B,
     )
     monkeypatch.setattr(
         audit.subprocess,
@@ -360,6 +362,7 @@ def test_main_allows_newer_ai_review_pin(
     out = capsys.readouterr().out
     assert_that(code).is_equal_to(0)
     assert_that(out).contains(f"lgtm-ci pinned ref: {SHA_A}")
+    assert_that(out).contains(f"{audit.AI_REVIEW_WORKFLOW} pinned ref: {SHA_B}")
     assert_that(out).contains(f"  {audit.AI_REVIEW_WORKFLOW}")
     assert_that(out).contains("Adopted (2):")
 
@@ -486,3 +489,17 @@ def test_assert_uses_tooling_ref_lockstep_rejects_single_quoted_mismatch(
     )
     with pytest.raises(ValueError, match="tooling-ref"):
         audit.assert_uses_tooling_ref_lockstep(workflows_dir=tmp_path)
+
+
+def test_production_ai_review_uses_tooling_ref_lockstep() -> None:
+    """The committed caller keeps uses and tooling-ref on the same SHA."""
+    workflow = (
+        Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ai-review.yml"
+    )
+    text = workflow.read_text(encoding="utf-8")
+    uses = audit._USES_RE.search(text)
+    tooling = audit._TOOLING_REF_RE.search(text)
+    if uses is None or tooling is None:
+        raise AssertionError("ai-review.yml must pin uses and tooling-ref")
+    assert_that(uses.group("name")).is_equal_to(audit.AI_REVIEW_WORKFLOW)
+    assert_that(uses.group("ref")).is_equal_to(tooling.group("ref"))

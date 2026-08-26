@@ -4,7 +4,9 @@ Inventory and adoption plan for [lgtm-hq/lgtm-ci](https://github.com/lgtm-hq/lgt
 reusable workflows, per issue
 [#90](https://github.com/lgtm-hq/ai-skills/issues/90). Generated with
 `scripts/audit_lgtm_ci_adoption.py` against the pinned ref
-`443a687caa93b3afa306a066aae8d8a2b4e60c3c` (v0.59.0).
+`23c79b65490a3307fb08cdefafa22db12f75b9b2` (v0.63.1).
+`reusable-ai-review.yml` is pinned independently at
+`62737ac1e3e0a25bd138d2d77d80ae03fb9741c5` (v0.67.0).
 
 This document is inventory and plan. Adoptions land in focused follow-up
 PRs (one workflow per PR).
