@@ -1,0 +1,48 @@
+---
+name: AI Review
+
+# Consumer of lgtm-ci reusable-ai-review.yml. Reviews PRs with a
+# pinned published lintro and posts as lintro-review[bot].
+#
+# Provider and transport resolve inside the reusable
+# (input → vars.LINTRO_AI_*). Model and max-cost are input-only
+# on reusable v0.67.0, so this caller forwards the repository
+# variables.
+#
+# Per-PR concurrency and INCOMPLETE coverage-at-HEAD gating
+# live in the reusable. Do not repeat that concurrency group
+# here: the same group with cancel-in-progress would let the
+# called workflow cancel the caller.
+
+"on":
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+jobs:
+  ai-review:
+    # Same-repo PRs only: fork PRs have no secrets and the
+    # reusable skips them anyway.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    # yamllint disable-line rule:line-length
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-ai-review.yml@62737ac1e3e0a25bd138d2d77d80ae03fb9741c5  # v0.67.0
+    permissions:
+      # Checkout + PR diff. Posting uses the lintro-review App
+      # token minted inside the reusable. actions: read lets
+      # the reusable list/download prior review-state artifacts.
+      contents: read
+      pull-requests: read
+      actions: read
+    secrets:
+      LINTRO_REVIEW_APP_ID: ${{ secrets.LINTRO_REVIEW_APP_ID }}
+      LINTRO_REVIEW_APP_PRIVATE_KEY: ${{ secrets.LINTRO_REVIEW_APP_PRIVATE_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+      CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+    with:
+      tooling-ref: "62737ac1e3e0a25bd138d2d77d80ae03fb9741c5"  # v0.67.0
+      model: ${{ vars.LINTRO_AI_MODEL }}
+      max-cost-usd: ${{ vars.LINTRO_AI_MAX_COST_USD }}
