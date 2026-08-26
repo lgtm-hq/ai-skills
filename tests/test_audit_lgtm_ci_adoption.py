@@ -136,6 +136,15 @@ def test_resolve_pinned_ref_excludes_ai_review() -> None:
     assert_that(ref).is_equal_to(SHA_A)
 
 
+def test_resolve_pinned_ref_falls_back_to_sole_ai_review() -> None:
+    """An ai-review-only tree still resolves instead of reporting no pins."""
+    ref = audit.resolve_pinned_ref(
+        pins={audit.AI_REVIEW_WORKFLOW: {SHA_B}},
+        exclude=frozenset({audit.AI_REVIEW_WORKFLOW}),
+    )
+    assert_that(ref).is_equal_to(SHA_B)
+
+
 def test_assert_single_pin_per_name_rejects_internal_mix() -> None:
     """Two SHAs for one reusable name fail even when excluded repo-wide."""
     with pytest.raises(ValueError, match="inside"):
@@ -260,6 +269,31 @@ def test_main_allows_newer_ai_review_pin(
     assert_that(out).contains(f"lgtm-ci pinned ref: {SHA_A}")
     assert_that(out).contains(f"  {audit.AI_REVIEW_WORKFLOW}")
     assert_that(out).contains("Adopted (2):")
+
+
+def test_main_sole_ai_review_caller_reports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """main() reports adoption when reusable-ai-review.yml is the only caller."""
+    _write_workflow(
+        tmp_path,
+        "ai-review.yml",
+        audit.AI_REVIEW_WORKFLOW,
+        SHA_B,
+    )
+    monkeypatch.setattr(
+        audit.subprocess,
+        "run",
+        _fake_gh(names=[audit.AI_REVIEW_WORKFLOW, "reusable-quality.yml"]),
+    )
+    code = audit.main(argv=["--workflows-dir", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert_that(code).is_equal_to(0)
+    assert_that(out).contains(f"lgtm-ci pinned ref: {SHA_B}")
+    assert_that(out).contains("Adopted (1):")
+    assert_that(out).contains(f"  {audit.AI_REVIEW_WORKFLOW}")
 
 
 def test_main_rejects_mixed_pins_inside_ai_review(

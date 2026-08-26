@@ -81,11 +81,14 @@ def resolve_pinned_ref(
             contract than the rest of the repo.
 
     Returns:
-        The common pinned SHA of non-excluded callers.
+        The common pinned SHA of non-excluded callers. If every caller
+        is excluded (``reusable-ai-review.yml`` is the only pin), the
+        sole excluded SHA is returned so a one-workflow tree still
+        produces a report.
 
     Raises:
-        ValueError: If no non-excluded lgtm-ci calls were found, or if
-            those callers pin more than one distinct SHA.
+        ValueError: If no lgtm-ci calls were found, or if the resolved
+            set of callers pins more than one distinct SHA.
     """
     refs = sorted(
         {
@@ -95,6 +98,15 @@ def resolve_pinned_ref(
             for ref in ref_set
         },
     )
+    if not refs:
+        refs = sorted(
+            {
+                ref
+                for name, ref_set in pins.items()
+                if name in exclude
+                for ref in ref_set
+            },
+        )
     if not refs:
         msg = "no lgtm-ci reusable-workflow calls found"
         raise ValueError(msg)
