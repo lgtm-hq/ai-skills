@@ -491,15 +491,9 @@ def test_assert_uses_tooling_ref_lockstep_rejects_single_quoted_mismatch(
         audit.assert_uses_tooling_ref_lockstep(workflows_dir=tmp_path)
 
 
-def test_production_ai_review_uses_tooling_ref_lockstep() -> None:
-    """The committed caller keeps uses and tooling-ref on the same SHA."""
-    workflow = (
-        Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ai-review.yml"
-    )
-    text = workflow.read_text(encoding="utf-8")
-    uses = audit._USES_RE.search(text)
-    tooling = audit._TOOLING_REF_RE.search(text)
-    if uses is None or tooling is None:
-        raise AssertionError("ai-review.yml must pin uses and tooling-ref")
-    assert_that(uses.group("name")).is_equal_to(audit.AI_REVIEW_WORKFLOW)
-    assert_that(uses.group("ref")).is_equal_to(tooling.group("ref"))
+def test_production_workflows_uses_tooling_ref_lockstep() -> None:
+    """Committed callers keep uses and tooling-ref on the same SHA."""
+    workflows_dir = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+    pins = audit.find_lgtm_ci_pins(workflows_dir=workflows_dir)
+    assert_that(pins).contains_key(audit.AI_REVIEW_WORKFLOW)
+    audit.assert_uses_tooling_ref_lockstep(workflows_dir=workflows_dir)
