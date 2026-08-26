@@ -12,7 +12,11 @@ name: AI Review
 # Provider and transport resolve inside the reusable
 # (input → vars.LINTRO_AI_*). Model and max-cost are input-only
 # on reusable v0.67.0, so this caller forwards the repository
-# variables.
+# variables. Those two vars are required: an empty with: value
+# overrides the reusable input default.
+#
+# egress-policy defaults to block inside the reusable, with the
+# ai-review preset plus provider hosts from LINTRO_AI_TRANSPORT.
 #
 # Per-PR concurrency and INCOMPLETE coverage-at-HEAD gating
 # live in the reusable. Do not repeat that concurrency group

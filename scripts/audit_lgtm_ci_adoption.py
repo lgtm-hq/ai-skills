@@ -39,7 +39,7 @@ _USES_RE = re.compile(
     r"@(?P<ref>[0-9a-f]{40})",
 )
 _TOOLING_REF_RE = re.compile(
-    r'tooling-ref:\s*"?(?P<ref>[0-9a-f]{40})"?',
+    r"""tooling-ref:\s*["']?(?P<ref>[0-9a-f]{40})["']?""",
 )
 
 

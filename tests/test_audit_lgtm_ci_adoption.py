@@ -24,6 +24,7 @@ def _write_workflow(
     called: str,
     sha: str,
     tooling_ref: str | None = None,
+    tooling_ref_quote: str = '"',
 ) -> None:
     """Write a minimal caller workflow file.
 
@@ -34,13 +35,17 @@ def _write_workflow(
         sha: SHA the call is pinned at.
         tooling_ref: Optional ``tooling-ref`` SHA. When omitted the
             caller has no tooling-ref key.
+        tooling_ref_quote: Quote character written around
+            ``tooling-ref``. Production callers use both ``"`` and
+            ``'`` (see ``codeql.yml``).
     """
     workflows_dir.mkdir(parents=True, exist_ok=True)
     body = (
         f"jobs:\n  call:\n    uses: lgtm-hq/lgtm-ci/.github/workflows/{called}@{sha}\n"
     )
     if tooling_ref is not None:
-        body += f'    with:\n      tooling-ref: "{tooling_ref}"\n'
+        quoted = f"{tooling_ref_quote}{tooling_ref}{tooling_ref_quote}"
+        body += f"    with:\n      tooling-ref: {quoted}\n"
     (workflows_dir / name).write_text(body, encoding="utf-8")
 
 
@@ -450,3 +455,34 @@ def test_assert_uses_tooling_ref_lockstep_accepts_match(
         tooling_ref=SHA_B,
     )
     audit.assert_uses_tooling_ref_lockstep(workflows_dir=tmp_path)
+
+
+def test_assert_uses_tooling_ref_lockstep_accepts_single_quoted_match(
+    tmp_path: Path,
+) -> None:
+    """Single-quoted tooling-ref is parsed like codeql.yml."""
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="codeql.yml",
+        called="reusable-codeql.yml",
+        sha=SHA_A,
+        tooling_ref=SHA_A,
+        tooling_ref_quote="'",
+    )
+    audit.assert_uses_tooling_ref_lockstep(workflows_dir=tmp_path)
+
+
+def test_assert_uses_tooling_ref_lockstep_rejects_single_quoted_mismatch(
+    tmp_path: Path,
+) -> None:
+    """Single-quoted tooling-ref still fails when it drifts from uses."""
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="codeql.yml",
+        called="reusable-codeql.yml",
+        sha=SHA_A,
+        tooling_ref=SHA_B,
+        tooling_ref_quote="'",
+    )
+    with pytest.raises(ValueError, match="tooling-ref"):
+        audit.assert_uses_tooling_ref_lockstep(workflows_dir=tmp_path)
