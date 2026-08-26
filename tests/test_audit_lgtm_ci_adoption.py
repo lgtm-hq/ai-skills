@@ -23,6 +23,7 @@ def _write_workflow(
     name: str,
     called: str,
     sha: str,
+    tooling_ref: str | None = None,
 ) -> None:
     """Write a minimal caller workflow file.
 
@@ -31,12 +32,16 @@ def _write_workflow(
         name: File name of the caller workflow.
         called: lgtm-ci workflow file name the caller uses.
         sha: SHA the call is pinned at.
+        tooling_ref: Optional ``tooling-ref`` SHA. When omitted the
+            caller has no tooling-ref key.
     """
     workflows_dir.mkdir(parents=True, exist_ok=True)
-    (workflows_dir / name).write_text(
-        f"jobs:\n  call:\n    uses: lgtm-hq/lgtm-ci/.github/workflows/{called}@{sha}\n",
-        encoding="utf-8",
+    body = (
+        f"jobs:\n  call:\n    uses: lgtm-hq/lgtm-ci/.github/workflows/{called}@{sha}\n"
     )
+    if tooling_ref is not None:
+        body += f'    with:\n      tooling-ref: "{tooling_ref}"\n'
+    (workflows_dir / name).write_text(body, encoding="utf-8")
 
 
 def _fake_gh(
@@ -67,10 +72,53 @@ def _fake_gh(
     return run
 
 
+def _fake_gh_by_ref(
+    names_by_ref: dict[str, list[str]],
+    returncode: int = 0,
+    stderr: str = "",
+) -> object:
+    """Build a fake ``gh api`` that returns different listings per ref.
+
+    Args:
+        names_by_ref: Mapping of git SHA to reusable workflow file names
+            available at that ref.
+        returncode: Exit code the fake ``gh`` call reports.
+        stderr: Stderr text for the fake call.
+
+    Returns:
+        A callable usable as a ``subprocess.run`` replacement.
+    """
+
+    def run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        argv = args[0] if args else []
+        url = argv[2] if isinstance(argv, list) and len(argv) > 2 else ""
+        ref = str(url).rsplit("ref=", maxsplit=1)[-1]
+        names = names_by_ref.get(ref, [])
+        return subprocess.CompletedProcess(
+            args=["gh"],
+            returncode=returncode,
+            stdout=json.dumps([{"name": name} for name in names]),
+            stderr=stderr,
+        )
+
+    return run
+
+
 def test_find_pins_collects_names_and_shas(tmp_path: Path) -> None:
     """Callers are mapped to the SHA they pin."""
-    _write_workflow(tmp_path, "ci.yml", "reusable-quality.yml", SHA_A)
-    _write_workflow(tmp_path, "tag.yml", "reusable-release-auto-tag.yml", SHA_A)
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ci.yml",
+        called="reusable-quality.yml",
+        sha=SHA_A,
+    )
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="tag.yml",
+        called="reusable-release-auto-tag.yml",
+        sha=SHA_A,
+    )
     pins = audit.find_lgtm_ci_pins(workflows_dir=tmp_path)
     assert_that(pins).is_equal_to(
         {
@@ -91,8 +139,18 @@ def test_find_pins_empty_dir(tmp_path: Path) -> None:
 
 def test_find_pins_preserves_duplicate_name_mixed_shas(tmp_path: Path) -> None:
     """Same workflow name at two SHAs keeps both refs for mixed detection."""
-    _write_workflow(tmp_path, "ci.yml", "reusable-quality.yml", SHA_A)
-    _write_workflow(tmp_path, "ci-old.yml", "reusable-quality.yml", SHA_B)
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ci.yml",
+        called="reusable-quality.yml",
+        sha=SHA_A,
+    )
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ci-old.yml",
+        called="reusable-quality.yml",
+        sha=SHA_B,
+    )
     pins = audit.find_lgtm_ci_pins(workflows_dir=tmp_path)
     assert_that(pins).is_equal_to({"reusable-quality.yml": {SHA_A, SHA_B}})
     with pytest.raises(ValueError, match="mixed"):
@@ -101,7 +159,12 @@ def test_find_pins_preserves_duplicate_name_mixed_shas(tmp_path: Path) -> None:
 
 def test_find_pins_reads_yaml_extension(tmp_path: Path) -> None:
     """Workflow files ending in .yaml are scanned like .yml."""
-    _write_workflow(tmp_path, "ci.yaml", "reusable-quality.yml", SHA_A)
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ci.yaml",
+        called="reusable-quality.yml",
+        sha=SHA_A,
+    )
     pins = audit.find_lgtm_ci_pins(workflows_dir=tmp_path)
     assert_that(pins).is_equal_to({"reusable-quality.yml": {SHA_A}})
 
@@ -207,7 +270,12 @@ def test_main_end_to_end(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """main() prints ref, adopted, and unadopted sections."""
-    _write_workflow(tmp_path, "ci.yml", "reusable-quality.yml", SHA_A)
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ci.yml",
+        called="reusable-quality.yml",
+        sha=SHA_A,
+    )
     monkeypatch.setattr(
         audit.subprocess,
         "run",
@@ -237,8 +305,18 @@ def test_main_mixed_pins_errors(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """main() exits non-zero when local callers pin mixed SHAs."""
-    _write_workflow(tmp_path, "ci.yml", "reusable-quality.yml", SHA_A)
-    _write_workflow(tmp_path, "ci-old.yml", "reusable-quality.yml", SHA_B)
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ci.yml",
+        called="reusable-quality.yml",
+        sha=SHA_A,
+    )
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ci-old.yml",
+        called="reusable-quality.yml",
+        sha=SHA_B,
+    )
     code = audit.main(argv=["--workflows-dir", str(tmp_path)])
     err = capsys.readouterr().err
     assert_that(code).is_not_equal_to(0)
@@ -251,17 +329,27 @@ def test_main_allows_newer_ai_review_pin(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """main() treats a newer reusable-ai-review SHA as adopted, not mixed."""
-    _write_workflow(tmp_path, "ci.yml", "reusable-quality.yml", SHA_A)
     _write_workflow(
-        tmp_path,
-        "ai-review.yml",
-        audit.AI_REVIEW_WORKFLOW,
-        SHA_B,
+        workflows_dir=tmp_path,
+        name="ci.yml",
+        called="reusable-quality.yml",
+        sha=SHA_A,
+    )
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ai-review.yml",
+        called=audit.AI_REVIEW_WORKFLOW,
+        sha=SHA_B,
     )
     monkeypatch.setattr(
         audit.subprocess,
         "run",
-        _fake_gh(names=["reusable-quality.yml", audit.AI_REVIEW_WORKFLOW]),
+        _fake_gh_by_ref(
+            names_by_ref={
+                SHA_A: ["reusable-quality.yml"],
+                SHA_B: [audit.AI_REVIEW_WORKFLOW],
+            },
+        ),
     )
     code = audit.main(argv=["--workflows-dir", str(tmp_path)])
     out = capsys.readouterr().out
@@ -278,10 +366,10 @@ def test_main_sole_ai_review_caller_reports(
 ) -> None:
     """main() reports adoption when reusable-ai-review.yml is the only caller."""
     _write_workflow(
-        tmp_path,
-        "ai-review.yml",
-        audit.AI_REVIEW_WORKFLOW,
-        SHA_B,
+        workflows_dir=tmp_path,
+        name="ai-review.yml",
+        called=audit.AI_REVIEW_WORKFLOW,
+        sha=SHA_B,
     )
     monkeypatch.setattr(
         audit.subprocess,
@@ -301,20 +389,64 @@ def test_main_rejects_mixed_pins_inside_ai_review(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Two reusable-ai-review SHAs fail even when other callers agree."""
-    _write_workflow(tmp_path, "ci.yml", "reusable-quality.yml", SHA_A)
     _write_workflow(
-        tmp_path,
-        "ai-review.yml",
-        audit.AI_REVIEW_WORKFLOW,
-        SHA_A,
+        workflows_dir=tmp_path,
+        name="ci.yml",
+        called="reusable-quality.yml",
+        sha=SHA_A,
     )
     _write_workflow(
-        tmp_path,
-        "ai-review-old.yml",
-        audit.AI_REVIEW_WORKFLOW,
-        SHA_B,
+        workflows_dir=tmp_path,
+        name="ai-review.yml",
+        called=audit.AI_REVIEW_WORKFLOW,
+        sha=SHA_A,
+    )
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ai-review-old.yml",
+        called=audit.AI_REVIEW_WORKFLOW,
+        sha=SHA_B,
     )
     code = audit.main(argv=["--workflows-dir", str(tmp_path)])
     err = capsys.readouterr().err
     assert_that(code).is_equal_to(2)
     assert_that(err).contains("inside")
+
+
+def test_main_rejects_uses_tooling_ref_mismatch(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Matching uses SHAs still fail when tooling-ref drifts."""
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ci.yml",
+        called="reusable-quality.yml",
+        sha=SHA_A,
+        tooling_ref=SHA_A,
+    )
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ai-review.yml",
+        called=audit.AI_REVIEW_WORKFLOW,
+        sha=SHA_B,
+        tooling_ref=SHA_A,
+    )
+    code = audit.main(argv=["--workflows-dir", str(tmp_path)])
+    err = capsys.readouterr().err
+    assert_that(code).is_equal_to(2)
+    assert_that(err).contains("tooling-ref")
+
+
+def test_assert_uses_tooling_ref_lockstep_accepts_match(
+    tmp_path: Path,
+) -> None:
+    """uses and tooling-ref on the same SHA pass."""
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ai-review.yml",
+        called=audit.AI_REVIEW_WORKFLOW,
+        sha=SHA_B,
+        tooling_ref=SHA_B,
+    )
+    audit.assert_uses_tooling_ref_lockstep(workflows_dir=tmp_path)

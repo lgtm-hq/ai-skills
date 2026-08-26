@@ -38,6 +38,9 @@ _USES_RE = re.compile(
     r"uses:\s*lgtm-hq/lgtm-ci/\.github/workflows/(?P<name>[\w.-]+\.ya?ml)"
     r"@(?P<ref>[0-9a-f]{40})",
 )
+_TOOLING_REF_RE = re.compile(
+    r'tooling-ref:\s*"?(?P<ref>[0-9a-f]{40})"?',
+)
 
 
 def find_lgtm_ci_pins(
@@ -134,6 +137,39 @@ def assert_single_pin_per_name(
         joined = ", ".join(sorted(refs))
         msg = f"mixed lgtm-ci pins inside {name}: {joined}"
         raise ValueError(msg)
+
+
+def assert_uses_tooling_ref_lockstep(
+    workflows_dir: Path,
+) -> None:
+    """Raise if a caller file pins ``uses`` and ``tooling-ref`` differently.
+
+    Args:
+        workflows_dir: Directory containing this repository's workflow
+            YAML files.
+
+    Raises:
+        ValueError: If any file has both pins and they are not the same
+            set of SHAs.
+    """
+    workflow_paths = sorted(
+        {
+            *workflows_dir.glob("*.yml"),
+            *workflows_dir.glob("*.yaml"),
+        },
+    )
+    for path in workflow_paths:
+        text = path.read_text(encoding="utf-8")
+        uses = {match.group("ref") for match in _USES_RE.finditer(text)}
+        tooling = set(_TOOLING_REF_RE.findall(text))
+        if not tooling:
+            continue
+        if uses != tooling:
+            msg = (
+                f"{path.name}: uses and tooling-ref pins differ: "
+                f"{sorted(uses)} vs {sorted(tooling)}"
+            )
+            raise ValueError(msg)
 
 
 def list_available_workflows(
@@ -241,17 +277,25 @@ def main(
     pins = find_lgtm_ci_pins(workflows_dir=args.workflows_dir)
     try:
         assert_single_pin_per_name(pins=pins, name=AI_REVIEW_WORKFLOW)
+        assert_uses_tooling_ref_lockstep(workflows_dir=args.workflows_dir)
         ref = resolve_pinned_ref(
             pins=pins,
             exclude=frozenset({AI_REVIEW_WORKFLOW}),
         )
-        available = list_available_workflows(ref=ref)
+        available = set(list_available_workflows(ref=ref))
+        ai_refs = pins.get(AI_REVIEW_WORKFLOW, set())
+        if len(ai_refs) == 1:
+            ai_ref = next(iter(ai_refs))
+            if ai_ref != ref:
+                ai_available = list_available_workflows(ref=ai_ref)
+                if AI_REVIEW_WORKFLOW in ai_available:
+                    available.add(AI_REVIEW_WORKFLOW)
     except (RuntimeError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(f"lgtm-ci pinned ref: {ref}")
     print()
-    print(build_report(available=available, called=set(pins)))
+    print(build_report(available=sorted(available), called=set(pins)))
     return 0
 
 
