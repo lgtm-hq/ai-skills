@@ -124,6 +124,27 @@ def test_resolve_pinned_ref_rejects_empty_and_mixed() -> None:
         )
 
 
+def test_resolve_pinned_ref_excludes_ai_review() -> None:
+    """A newer reusable-ai-review pin does not fail repo-wide uniqueness."""
+    ref = audit.resolve_pinned_ref(
+        pins={
+            "reusable-quality.yml": {SHA_A},
+            audit.AI_REVIEW_WORKFLOW: {SHA_B},
+        },
+        exclude=frozenset({audit.AI_REVIEW_WORKFLOW}),
+    )
+    assert_that(ref).is_equal_to(SHA_A)
+
+
+def test_assert_single_pin_per_name_rejects_internal_mix() -> None:
+    """Two SHAs for one reusable name fail even when excluded repo-wide."""
+    with pytest.raises(ValueError, match="inside"):
+        audit.assert_single_pin_per_name(
+            pins={audit.AI_REVIEW_WORKFLOW: {SHA_A, SHA_B}},
+            name=audit.AI_REVIEW_WORKFLOW,
+        )
+
+
 def test_list_available_filters_reusable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -213,3 +234,53 @@ def test_main_mixed_pins_errors(
     err = capsys.readouterr().err
     assert_that(code).is_not_equal_to(0)
     assert_that(err).contains("mixed")
+
+
+def test_main_allows_newer_ai_review_pin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """main() treats a newer reusable-ai-review SHA as adopted, not mixed."""
+    _write_workflow(tmp_path, "ci.yml", "reusable-quality.yml", SHA_A)
+    _write_workflow(
+        tmp_path,
+        "ai-review.yml",
+        audit.AI_REVIEW_WORKFLOW,
+        SHA_B,
+    )
+    monkeypatch.setattr(
+        audit.subprocess,
+        "run",
+        _fake_gh(names=["reusable-quality.yml", audit.AI_REVIEW_WORKFLOW]),
+    )
+    code = audit.main(argv=["--workflows-dir", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert_that(code).is_equal_to(0)
+    assert_that(out).contains(f"lgtm-ci pinned ref: {SHA_A}")
+    assert_that(out).contains(f"  {audit.AI_REVIEW_WORKFLOW}")
+    assert_that(out).contains("Adopted (2):")
+
+
+def test_main_rejects_mixed_pins_inside_ai_review(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Two reusable-ai-review SHAs fail even when other callers agree."""
+    _write_workflow(tmp_path, "ci.yml", "reusable-quality.yml", SHA_A)
+    _write_workflow(
+        tmp_path,
+        "ai-review.yml",
+        audit.AI_REVIEW_WORKFLOW,
+        SHA_A,
+    )
+    _write_workflow(
+        tmp_path,
+        "ai-review-old.yml",
+        audit.AI_REVIEW_WORKFLOW,
+        SHA_B,
+    )
+    code = audit.main(argv=["--workflows-dir", str(tmp_path)])
+    err = capsys.readouterr().err
+    assert_that(code).is_equal_to(2)
+    assert_that(err).contains("inside")

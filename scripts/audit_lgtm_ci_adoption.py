@@ -10,6 +10,11 @@ The pinned SHA is discovered by scanning ``.github/workflows/*.yml`` for
 available set is fetched via ``gh api`` (so the script is CI-runnable
 and needs no local lgtm-ci checkout).
 
+``reusable-ai-review.yml`` may pin a newer published contract than the
+rest of the repo (the current caller contract landed after the shared
+quality/release SHA). Repo-wide uniqueness excludes that one name.
+Pins *inside* ``reusable-ai-review.yml`` must still be a single SHA.
+
 Output: three sections — the pinned ref, adopted workflows, and
 available-but-unadopted workflows — plus summary counts.
 
@@ -27,6 +32,7 @@ import sys
 from pathlib import Path
 
 LGTM_CI_REPO = "lgtm-hq/lgtm-ci"
+AI_REVIEW_WORKFLOW = "reusable-ai-review.yml"
 
 _USES_RE = re.compile(
     r"uses:\s*lgtm-hq/lgtm-ci/\.github/workflows/(?P<name>[\w.-]+\.ya?ml)"
@@ -63,21 +69,32 @@ def find_lgtm_ci_pins(
 
 def resolve_pinned_ref(
     pins: dict[str, set[str]],
+    exclude: frozenset[str] = frozenset(),
 ) -> str:
     """Resolve the single SHA this repository pins lgtm-ci at.
 
     Args:
         pins: Mapping of workflow name to pinned SHA set, as returned by
             :func:`find_lgtm_ci_pins`.
+        exclude: Workflow names omitted from the uniqueness check so
+            ``reusable-ai-review.yml`` can pin a newer published
+            contract than the rest of the repo.
 
     Returns:
-        The common pinned SHA.
+        The common pinned SHA of non-excluded callers.
 
     Raises:
-        ValueError: If no lgtm-ci calls were found, or if callers pin
-            more than one distinct SHA.
+        ValueError: If no non-excluded lgtm-ci calls were found, or if
+            those callers pin more than one distinct SHA.
     """
-    refs = sorted({ref for ref_set in pins.values() for ref in ref_set})
+    refs = sorted(
+        {
+            ref
+            for name, ref_set in pins.items()
+            if name not in exclude
+            for ref in ref_set
+        },
+    )
     if not refs:
         msg = "no lgtm-ci reusable-workflow calls found"
         raise ValueError(msg)
@@ -85,6 +102,26 @@ def resolve_pinned_ref(
         msg = f"mixed lgtm-ci pins found: {', '.join(refs)}"
         raise ValueError(msg)
     return refs[0]
+
+
+def assert_single_pin_per_name(
+    pins: dict[str, set[str]],
+    name: str,
+) -> None:
+    """Raise if one reusable workflow name is pinned at two SHAs.
+
+    Args:
+        pins: Mapping of workflow name to pinned SHA set.
+        name: Reusable workflow file name to inspect.
+
+    Raises:
+        ValueError: If ``name`` has more than one SHA.
+    """
+    refs = pins.get(name, set())
+    if len(refs) > 1:
+        joined = ", ".join(sorted(refs))
+        msg = f"mixed lgtm-ci pins inside {name}: {joined}"
+        raise ValueError(msg)
 
 
 def list_available_workflows(
@@ -191,7 +228,11 @@ def main(
     args = _parse_args(argv=sys.argv[1:] if argv is None else argv)
     pins = find_lgtm_ci_pins(workflows_dir=args.workflows_dir)
     try:
-        ref = resolve_pinned_ref(pins=pins)
+        assert_single_pin_per_name(pins=pins, name=AI_REVIEW_WORKFLOW)
+        ref = resolve_pinned_ref(
+            pins=pins,
+            exclude=frozenset({AI_REVIEW_WORKFLOW}),
+        )
         available = list_available_workflows(ref=ref)
     except (RuntimeError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)

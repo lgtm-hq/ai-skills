@@ -4,6 +4,11 @@ name: AI Review
 # Consumer of lgtm-ci reusable-ai-review.yml. Reviews PRs with a
 # pinned published lintro and posts as lintro-review[bot].
 #
+# This file may pin a newer lgtm-ci SHA than the rest of the repo.
+# The current reusable contract landed after the shared quality
+# pin; scripts/audit_lgtm_ci_adoption.py excludes this caller from
+# repo-wide uniqueness and still requires uses/tooling-ref lockstep.
+#
 # Provider and transport resolve inside the reusable
 # (input → vars.LINTRO_AI_*). Model and max-cost are input-only
 # on reusable v0.67.0, so this caller forwards the repository
