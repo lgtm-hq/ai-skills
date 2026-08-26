@@ -28,8 +28,8 @@ uv run python scripts/audit_lgtm_ci_adoption.py
 The script exits non-zero on mixed pins, so re-running it after any repin
 catches partial updates. All callers except ``reusable-ai-review.yml``
 share `23c79b65490a3307fb08cdefafa22db12f75b9b2` (v0.63.1). Local
-callers of ``reusable-ai-review.yml`` must share one SHA and keep
-``uses`` / ``tooling-ref`` in lockstep.
+callers of ``reusable-ai-review.yml`` must share one SHA, include a
+``tooling-ref``, and keep ``uses`` / ``tooling-ref`` in lockstep.
 
 ## Classification
 

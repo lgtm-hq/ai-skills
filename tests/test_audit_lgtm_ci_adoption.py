@@ -378,6 +378,7 @@ def test_main_sole_ai_review_caller_reports(
         name="ai-review.yml",
         called=audit.AI_REVIEW_WORKFLOW,
         sha=SHA_B,
+        tooling_ref=SHA_B,
     )
     monkeypatch.setattr(
         audit.subprocess,
@@ -491,9 +492,42 @@ def test_assert_uses_tooling_ref_lockstep_rejects_single_quoted_mismatch(
         audit.assert_uses_tooling_ref_lockstep(workflows_dir=tmp_path)
 
 
+def test_assert_uses_tooling_ref_lockstep_requires_ai_review_tooling_ref(
+    tmp_path: Path,
+) -> None:
+    """AI-review callers cannot omit tooling-ref."""
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ai-review.yml",
+        called=audit.AI_REVIEW_WORKFLOW,
+        sha=SHA_B,
+    )
+    with pytest.raises(ValueError, match="tooling-ref"):
+        audit.assert_uses_tooling_ref_lockstep(workflows_dir=tmp_path)
+
+
+def test_assert_uses_tooling_ref_lockstep_skips_other_callers_without_tooling_ref(
+    tmp_path: Path,
+) -> None:
+    """Non-AI callers may still omit tooling-ref."""
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="codeql.yml",
+        called="reusable-codeql.yml",
+        sha=SHA_A,
+    )
+    audit.assert_uses_tooling_ref_lockstep(workflows_dir=tmp_path)
+
+
 def test_production_workflows_uses_tooling_ref_lockstep() -> None:
     """Committed callers keep uses and tooling-ref on the same SHA."""
     workflows_dir = Path(__file__).resolve().parents[1] / ".github" / "workflows"
     pins = audit.find_lgtm_ci_pins(workflows_dir=workflows_dir)
     assert_that(pins).contains_key(audit.AI_REVIEW_WORKFLOW)
+    ai_shas = pins[audit.AI_REVIEW_WORKFLOW]
+    assert_that(ai_shas).is_length(1)
+    caller = (workflows_dir / "ai-review.yml").read_text(encoding="utf-8")
+    assert_that(caller).contains("tooling-ref:")
+    for sha in ai_shas:
+        assert_that(caller).contains(sha)
     audit.assert_uses_tooling_ref_lockstep(workflows_dir=workflows_dir)

@@ -149,8 +149,9 @@ def assert_uses_tooling_ref_lockstep(
             YAML files.
 
     Raises:
-        ValueError: If any file has both pins and they are not the same
-            set of SHAs.
+        ValueError: If a ``reusable-ai-review.yml`` caller has ``uses``
+            but no ``tooling-ref``, or if any file has both pins and
+            they are not the same set of SHAs.
     """
     workflow_paths = sorted(
         {
@@ -160,8 +161,16 @@ def assert_uses_tooling_ref_lockstep(
     )
     for path in workflow_paths:
         text = path.read_text(encoding="utf-8")
-        uses = {match.group("ref") for match in _USES_RE.finditer(text)}
-        tooling = set(_TOOLING_REF_RE.findall(text))
+        uses_matches = list(_USES_RE.finditer(string=text))
+        uses = {match.group("ref") for match in uses_matches}
+        names = {match.group("name") for match in uses_matches}
+        tooling = set(_TOOLING_REF_RE.findall(string=text))
+        if AI_REVIEW_WORKFLOW in names and not tooling:
+            msg = (
+                f"{path.name}: {AI_REVIEW_WORKFLOW} requires tooling-ref "
+                "in lockstep with uses"
+            )
+            raise ValueError(msg)
         if not tooling:
             continue
         if uses != tooling:
