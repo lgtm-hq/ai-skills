@@ -184,6 +184,26 @@ def test_generate_marketplace_rejects_empty_version_file(tmp_path: Path) -> None
         mod.generate_marketplace(repo_root=tmp_path)
 
 
+def test_bundle_group_requires_non_empty_kebab_plugin_id() -> None:
+    """Direct construction cannot omit or empty the plugin id."""
+
+    mod = _load_generate_marketplace_module()
+    with pytest.raises(TypeError):
+        mod.BundleGroup(name="Core", skills=("alpha",))
+    with pytest.raises(ValueError, match="plugin_id"):
+        mod.BundleGroup(
+            name="Core",
+            skills=("alpha",),
+            plugin_id="",
+        )
+    with pytest.raises(ValueError, match="plugin_id"):
+        mod.BundleGroup(
+            name="Core",
+            skills=("alpha",),
+            plugin_id="Not_Kebab",
+        )
+
+
 def test_generate_marketplace_rejects_missing_plugin_id(tmp_path: Path) -> None:
     """Each group must declare an explicit kebab-case id."""
 

@@ -38,8 +38,19 @@ class BundleGroup:
 
     name: str
     skills: tuple[str, ...]
+    plugin_id: str
     description: str = ""
-    plugin_id: str = ""
+
+    def __post_init__(self) -> None:
+        """Reject empty or non-kebab plugin ids before marketplace serialization.
+
+        Raises:
+            ValueError: If ``plugin_id`` is empty or not kebab-case.
+        """
+        if not self.plugin_id:
+            msg = "plugin_id must be a non-empty kebab-case identifier"
+            raise ValueError(msg)
+        _require_kebab_case(label="plugin_id", value=self.plugin_id)
 
 
 @dataclass(frozen=True)
