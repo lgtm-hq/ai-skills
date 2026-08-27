@@ -20,6 +20,45 @@ const unattendedOptions = {
   yes: true,
 };
 
+/**
+ * Project-scope v2 lock tracking lint on the given agents.
+ *
+ * @param {string} cwd - Project root.
+ * @param {Record<string, string>} agentHashes - Agent id to expected lint/SKILL.md hash.
+ * @returns {object} Gateway lock.
+ */
+function staleProjectLock(cwd, agentHashes) {
+  const agentRoots = {
+    "claude-code": ".claude/skills",
+    cursor: ".cursor/skills",
+  };
+  const agents = Object.fromEntries(
+    Object.entries(agentHashes).map(([agent, digest]) => [
+      agent,
+      {
+        files: { "lint/SKILL.md": digest },
+        root: join(cwd, agentRoots[agent]),
+      },
+    ]),
+  );
+  return {
+    gatewayVersion: "0.0.0-dev",
+    plugins: {
+      lint: {
+        agents,
+        installedAt: "2026-07-10T16:00:00.000Z",
+        projector: "explode",
+        repo: "lgtm-hq/ai-skills",
+        sha: "v0.0.0-dev",
+        vendor: "lgtm-hq",
+        version: "0.0.0-dev",
+      },
+    },
+    scope: "project",
+    version: 2,
+  };
+}
+
 describe("buildSkillsArguments", () => {
   test("pins a published skills 1.x floor", () => {
     expect(MINIMUM_SKILLS_VERSION).toMatch(/^1\.\d+\.\d+$/);
@@ -70,13 +109,17 @@ describe("install", () => {
       expect(received).toContain("--skill");
       expect(received).toContain("lint");
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.skills.lint).toMatchObject({
-        agents: ["cursor"],
+      expect(lock.version).toBe(2);
+      expect(lock.plugins.review).toMatchObject({
+        projector: "explode",
         repo: "lgtm-hq/ai-skills",
-        skillPath: "skills/lint/SKILL.md",
         vendor: "lgtm-hq",
       });
-      expect(lock.skills.lint.installedAt).toBe("2026-07-10T16:00:00.000Z");
+      expect(lock.plugins.review.installedAt).toBe("2026-07-10T16:00:00.000Z");
+      expect(lock.plugins.review.agents.cursor.files).toMatchObject({
+        "lint/SKILL.md": "",
+        "test/SKILL.md": "",
+      });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -116,12 +159,13 @@ describe("install", () => {
 
       expect(received).toContain("anthropics/skills@9d2f1ae187231d8199c64b5b762e1bdf2244733d");
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.skills.pdf).toMatchObject({
+      expect(lock.plugins.pdf).toMatchObject({
+        projector: "explode",
         repo: "anthropics/skills",
         sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
-        skillPath: "skills/pdf/SKILL.md",
         vendor: "anthropics",
       });
+      expect(lock.plugins.pdf.agents.cursor.files).toEqual({ "pdf/SKILL.md": "" });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -151,11 +195,14 @@ describe("install", () => {
       expect(received).toContain("--skill");
       expect(received).toContain("frontend-design");
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.skills["frontend-design"]).toMatchObject({
+      expect(lock.plugins["frontend-design"]).toMatchObject({
+        projector: "explode",
         repo: "anthropics/claude-code",
         sha: "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2",
-        skillPath: "plugins/frontend-design/skills/frontend-design/SKILL.md",
         vendor: "anthropics-claude-code",
+      });
+      expect(lock.plugins["frontend-design"].agents.cursor.files).toEqual({
+        "frontend-design/SKILL.md": "",
       });
     } finally {
       await rm(cwd, { force: true, recursive: true });
@@ -198,7 +245,8 @@ describe("install", () => {
       expect(received).toContain("-g");
       const lock = JSON.parse(await readFile(join(home, ".ai-skills", "lock.json"), "utf8"));
       expect(lock.scope).toBe("global");
-      expect(lock.skills.lint.vendor).toBe("lgtm-hq");
+      expect(lock.version).toBe(2);
+      expect(lock.plugins.lint.vendor).toBe("lgtm-hq");
     } finally {
       await rm(home, { force: true, recursive: true });
     }
@@ -226,6 +274,168 @@ describe("install", () => {
         ),
       ).rejects.toThrow("Invalid gateway lockfile");
       expect(ran).toBe(false);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("repairs a stale lock whose tracked files are absent", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-repair-"));
+    let received = [];
+    try {
+      await Bun.write(
+        join(cwd, "ai-skills-lock.json"),
+        `${JSON.stringify(staleProjectLock(cwd, { cursor: "abc" }), null, 2)}\n`,
+      );
+      const result = await install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["lint"],
+        },
+        async (args) => {
+          received = args;
+        },
+        () => new Date("2026-07-10T17:00:00.000Z"),
+        {
+          cwd,
+          exists: async () => false,
+          hash: async () => "",
+        },
+      );
+
+      expect(received).toContain("--skill");
+      expect(received).toContain("lint");
+      expect(result).toEqual({ alreadyPresent: 0, installed: 0, repaired: 1 });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("skips a healthy install whose hashes still match disk", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-healthy-"));
+    let ran = false;
+    try {
+      await Bun.write(
+        join(cwd, "ai-skills-lock.json"),
+        `${JSON.stringify(staleProjectLock(cwd, { cursor: "abc" }), null, 2)}\n`,
+      );
+      const result = await install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["lint"],
+        },
+        async () => {
+          ran = true;
+        },
+        undefined,
+        {
+          cwd,
+          exists: async () => true,
+          hash: async () => "abc",
+        },
+      );
+
+      expect(ran).toBe(false);
+      expect(result).toEqual({ alreadyPresent: 1, installed: 0, repaired: 0 });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("repairs only the agent whose tracked files are missing", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-partial-"));
+    let received = [];
+    try {
+      await Bun.write(
+        join(cwd, "ai-skills-lock.json"),
+        `${JSON.stringify(
+          staleProjectLock(cwd, { "claude-code": "abc", cursor: "abc" }),
+          null,
+          2,
+        )}\n`,
+      );
+      const cursorRoot = join(cwd, ".cursor/skills");
+      const result = await install(
+        {
+          ...unattendedOptions,
+          agents: ["claude-code", "cursor"],
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["lint"],
+        },
+        async (args) => {
+          received = args;
+        },
+        undefined,
+        {
+          cwd,
+          exists: async (path) => String(path).startsWith(cursorRoot),
+          hash: async () => "abc",
+        },
+      );
+
+      expect(received).toContain("claude-code");
+      expect(received.includes("cursor")).toBe(false);
+      expect(result).toEqual({ alreadyPresent: 1, installed: 0, repaired: 1 });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("treats a v1 lock as empty and installs instead of skipping", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-v1-"));
+    let ran = false;
+    try {
+      await Bun.write(
+        join(cwd, "ai-skills-lock.json"),
+        `${JSON.stringify(
+          {
+            gatewayVersion: "0.20.0",
+            scope: "project",
+            skills: {
+              lint: {
+                agents: ["cursor"],
+                installedAt: "2026-07-10T16:00:00.000Z",
+                repo: "lgtm-hq/ai-skills",
+                sha: "v0.20.0",
+                skillPath: "skills/lint/SKILL.md",
+                vendor: "lgtm-hq",
+              },
+            },
+            version: 1,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const result = await install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["lint"],
+        },
+        async () => {
+          ran = true;
+        },
+        () => new Date("2026-07-10T17:00:00.000Z"),
+        { cwd },
+      );
+
+      expect(ran).toBe(true);
+      expect(result).toEqual({ alreadyPresent: 0, installed: 1, repaired: 0 });
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.version).toBe(2);
+      expect(lock.plugins.lint.vendor).toBe("lgtm-hq");
+      expect(lock.skills).toBeUndefined();
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

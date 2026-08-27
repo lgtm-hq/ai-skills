@@ -7,6 +7,7 @@ import {
   validateUnattendedCommandOptions,
   validateUnattendedOptions,
 } from "./options.js";
+import { formatInstallCounts } from "./ui.js";
 
 /**
  * Render vendor pins from baked package data.
@@ -21,16 +22,17 @@ async function printVendors() {
 }
 
 /**
- * Render lock-managed skill records.
+ * Render lock-managed plugin records, annotating missing or modified installs.
  *
  * @param {{global: boolean}} options - List command options.
  * @returns {Promise<void>} Resolves after writing lockfile rows.
  */
 async function printLockedSkills(options) {
-  const skills = await listSkills(options);
-  for (const skill of skills) {
+  const plugins = await listSkills(options);
+  for (const plugin of plugins) {
+    const status = plugin.status ? `\t${plugin.status}` : "";
     console.log(
-      `${skill.name}\t${skill.vendor}\t${skill.repo}\t${skill.sha}\t${skill.agents.join(",")}`,
+      `${plugin.name}\t${plugin.vendor}\t${plugin.repo}\t${plugin.sha}\t${plugin.agentNames.join(",")}${status}`,
     );
   }
 }
@@ -69,7 +71,8 @@ export async function runCli(argv) {
   }
   validateUnattendedOptions(options);
   if (options.yes) {
-    await install(options);
+    const counts = await install(options);
+    console.log(formatInstallCounts(counts));
     return;
   }
   await installInteractively(options);

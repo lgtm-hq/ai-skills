@@ -5,7 +5,14 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 
 import { loadVendors } from "./catalog.js";
-import { mergeLockEntries, readLockfile, writeLockfile } from "./lockfile.js";
+import {
+  agentSkillsRoot,
+  mergeLockEntries,
+  pluginAgentNames,
+  PROJECTOR_EXPLODE,
+  readLockfile,
+  writeLockfile,
+} from "./lockfile.js";
 import { resolveScope } from "./options.js";
 
 /**
@@ -110,14 +117,22 @@ export async function scanInstalledSkills(scope, environment = {}) {
 /**
  * Map a stock skills-lock entry into gateway lock provenance.
  *
- * @param {string} name - Skill name.
+ * @param {string} name - Skill name (also the explode plugin id).
  * @param {SkillsLockEntry} entry - Upstream lock entry.
  * @param {string[]} agents - Agents where the skill is installed.
  * @param {Array<{id: string, repo: string}>} vendors - Baked vendor registry.
  * @param {() => Date} now - Clock for installedAt.
- * @returns {{entry: import("./lockfile.js").LockEntry} | {ambiguous: string}} Mapped entry or ambiguity reason.
+ * @param {{cwd?: string, home?: string, scope?: "global" | "project"}} [environment] - Path environment for agent roots.
+ * @returns {{entry: import("./lockfile.js").PluginLockEntry} | {ambiguous: string}} Mapped entry or ambiguity reason.
  */
-export function mapSkillsLockEntry(name, entry, agents, vendors, now = () => new Date()) {
+export function mapSkillsLockEntry(
+  name,
+  entry,
+  agents,
+  vendors,
+  now = () => new Date(),
+  environment = {},
+) {
   const repo = normalizeRepo(entry.sourceUrl ?? entry.source ?? "");
   if (!repo) {
     return { ambiguous: `${name}: skills-lock entry has no usable source/repo` };
@@ -128,14 +143,15 @@ export function mapSkillsLockEntry(name, entry, agents, vendors, now = () => new
   }
   if (repo.toLowerCase() === "lgtm-hq/ai-skills") {
     return {
-      entry: {
-        agents: [...agents].sort(),
+      entry: explodePluginEntry({
+        agents,
+        environment,
         installedAt: now().toISOString(),
+        name,
         repo: "lgtm-hq/ai-skills",
         sha,
-        skillPath: normalizeSkillPath(name, entry.skillPath),
         vendor: "lgtm-hq",
-      },
+      }),
     };
   }
   const vendor = vendors.find((candidate) => candidate.repo.toLowerCase() === repo.toLowerCase());
@@ -145,21 +161,22 @@ export function mapSkillsLockEntry(name, entry, agents, vendors, now = () => new
     };
   }
   return {
-    entry: {
-      agents: [...agents].sort(),
+    entry: explodePluginEntry({
+      agents,
+      environment,
       installedAt: now().toISOString(),
+      name,
       repo: vendor.repo,
       sha,
-      skillPath: normalizeSkillPath(name, entry.skillPath),
       vendor: vendor.id,
-    },
+    }),
   };
 }
 
 /**
  * Build the adopt plan from disk installs and the stock skills lock.
  *
- * @param {{gatewayVersion: string, scope: "global" | "project", skills: Record<string, import("./lockfile.js").LockEntry>, version: number}} lock - Current gateway lock.
+ * @param {import("./lockfile.js").GatewayLock} lock - Current gateway lock.
  * @param {Record<string, string[]>} installed - Skill name to agents.
  * @param {Record<string, SkillsLockEntry>} skillsLock - Upstream lock skills map.
  * @param {Array<{id: string, repo: string}>} vendors - Baked vendors.
@@ -174,16 +191,15 @@ export function planAdopt(lock, installed, skillsLock, vendors, now = () => new 
     ambiguous: [],
     skippedMissingLock: [],
   };
+  const environment = { scope: lock.scope };
 
   for (const [name, agents] of Object.entries(installed)) {
-    const existing = lock.skills[name];
+    const existing = lock.plugins[name];
     if (existing) {
-      const mergedAgents = [...new Set([...existing.agents, ...agents])].sort();
-      if (mergedAgents.join(",") !== existing.agents.join(",")) {
-        plan.adopt[name] = {
-          ...existing,
-          agents: mergedAgents,
-        };
+      const existingAgents = pluginAgentNames(existing);
+      const mergedAgents = [...new Set([...existingAgents, ...agents])].sort();
+      if (mergedAgents.join(",") !== existingAgents.join(",")) {
+        plan.adopt[name] = mergeAdoptedAgents(existing, name, agents, lock.scope);
       } else {
         plan.alreadyTracked.push(name);
       }
@@ -197,7 +213,7 @@ export function planAdopt(lock, installed, skillsLock, vendors, now = () => new 
       continue;
     }
 
-    const mapped = mapSkillsLockEntry(name, stock, agents, vendors, now);
+    const mapped = mapSkillsLockEntry(name, stock, agents, vendors, now, environment);
     if ("ambiguous" in mapped) {
       plan.ambiguous.push(mapped.ambiguous);
       continue;
@@ -299,7 +315,7 @@ export async function adoptSkills(options, dependencies = {}) {
 
 /**
  * @typedef {{source?: string, sourceUrl?: string, sourceType?: string, ref?: string, skillPath?: string}} SkillsLockEntry
- * @typedef {{adopt: Record<string, import("./lockfile.js").LockEntry>, alreadyTracked: string[], ambiguous: string[], skippedMissingLock: string[]}} AdoptPlan
+ * @typedef {{adopt: Record<string, import("./lockfile.js").PluginLockEntry>, alreadyTracked: string[], ambiguous: string[], skippedMissingLock: string[]}} AdoptPlan
  * @typedef {{adopted: string[], alreadyTracked: string[], ambiguous: string[], skippedMissingLock: string[], wrote: boolean}} AdoptResult
  */
 
@@ -339,7 +355,7 @@ function formatAdoptSummary(plan) {
   for (const name of Object.keys(plan.adopt).sort()) {
     const entry = plan.adopt[name];
     lines.push(
-      `  + ${name} <- ${entry.vendor}:${entry.repo}@${entry.sha} [${entry.agents.join(",")}]`,
+      `  + ${name} <- ${entry.vendor}:${entry.repo}@${entry.sha} [${pluginAgentNames(entry).join(",")}]`,
     );
   }
   for (const name of plan.alreadyTracked) {
@@ -386,21 +402,64 @@ function normalizeSha(ref) {
 }
 
 /**
- * Normalize a skill path to `.../SKILL.md`.
+ * Build a v2 explode-projector plugin entry for a scanned skill directory.
  *
- * @param {string} name - Skill name.
- * @param {string | undefined} skillPath - Upstream path.
- * @returns {string} Gateway skillPath.
+ * @param {{
+ *   agents: string[],
+ *   environment: {cwd?: string, home?: string, scope?: "global" | "project"},
+ *   installedAt: string,
+ *   name: string,
+ *   repo: string,
+ *   sha: string,
+ *   vendor: string,
+ * }} options - Provenance and agent list.
+ * @returns {import("./lockfile.js").PluginLockEntry} Plugin lock entry.
  */
-function normalizeSkillPath(name, skillPath) {
-  if (!skillPath) {
-    return `skills/${name}/SKILL.md`;
+function explodePluginEntry(options) {
+  const scope = options.environment.scope ?? "project";
+  const agents = Object.fromEntries(
+    [...options.agents].sort().map((agent) => [
+      agent,
+      {
+        files: { [`${options.name}/SKILL.md`]: "" },
+        root: agentSkillsRoot(scope, agent, options.environment),
+      },
+    ]),
+  );
+  return {
+    agents,
+    installedAt: options.installedAt,
+    projector: PROJECTOR_EXPLODE,
+    repo: options.repo,
+    sha: options.sha,
+    vendor: options.vendor,
+    version: options.sha.replace(/^v/, ""),
+  };
+}
+
+/**
+ * Union newly scanned agents onto an existing plugin entry.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} existing - Current lock entry.
+ * @param {string} name - Plugin id / skill directory name.
+ * @param {string[]} agents - Newly scanned agents.
+ * @param {"global" | "project"} scope - Lock scope.
+ * @returns {import("./lockfile.js").PluginLockEntry} Entry with additional agents.
+ */
+function mergeAdoptedAgents(existing, name, agents, scope) {
+  const nextAgents = { ...existing.agents };
+  for (const agent of agents) {
+    if (!nextAgents[agent]) {
+      nextAgents[agent] = {
+        files: { [`${name}/SKILL.md`]: "" },
+        root: agentSkillsRoot(scope, agent),
+      };
+    }
   }
-  const normalized = skillPath.replace(/\\/g, "/").replace(/\/+$/, "");
-  if (normalized.endsWith("SKILL.md")) {
-    return normalized;
-  }
-  return `${normalized}/SKILL.md`;
+  return {
+    ...existing,
+    agents: nextAgents,
+  };
 }
 
 /**

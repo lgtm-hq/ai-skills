@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `plugin install <id>@ai-skills`, or gateway `sk install --bundle`.
 - **manifests**: stamp Claude marketplace `name` / `owner` so host install
   commands resolve `@ai-skills` (#371).
+- **gateway**: lock schema v2 records plugin-level entries with per-agent
+  file hashes and reconciles them against disk (#372). Existing v1
+  `ai-skills-lock.json` / `~/.ai-skills/lock.json` files are treated as
+  empty — wipe and reinstall (`sk install`) to rebuild. `skill list`
+  annotates MISSING and MODIFIED installs instead of listing them as
+  healthy. Closes #367.
 
 ### Deprecated
 

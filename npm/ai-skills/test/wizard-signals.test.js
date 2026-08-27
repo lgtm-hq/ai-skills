@@ -4,6 +4,7 @@ import { completeInteractively } from "../lib/install.js";
 import { getPackageVersion } from "../lib/package-version.js";
 import {
   formatGatewayUpdateNotice,
+  formatInstallCounts,
   formatInstalledSummary,
   formatSkillStatusSuffix,
   VENDOR_DRIFT_SUFFIX,
@@ -26,29 +27,56 @@ const blankOptions = {
 };
 
 /**
- * Fixture lockfile: one fresh and one drifted first-party skill plus one fresh
- * vendor skill, spread over two agents.
+ * Fixture lockfile: one fresh and one drifted first-party plugin plus one fresh
+ * vendor plugin, spread over two agents.
  *
  * @returns {object} Parsed global-scope lockfile.
  */
 function lockFixture() {
-  const entry = (vendor, sha, agents) => ({
-    agents,
+  const entry = (name, vendor, sha, agents) => ({
+    agents: Object.fromEntries(
+      agents.map((agent) => [
+        agent,
+        {
+          files: { [`${name}/SKILL.md`]: "hash" },
+          root: `/tmp/${agent}/skills`,
+        },
+      ]),
+    ),
     installedAt: "2026-01-01T00:00:00.000Z",
+    projector: "explode",
     repo: vendor === "lgtm-hq" ? "lgtm-hq/ai-skills" : "anthropics/skills",
     sha,
-    skillPath: "skills/x/SKILL.md",
     vendor,
+    version: sha.replace(/^v/, ""),
   });
   return {
     gatewayVersion: getPackageVersion(),
-    scope: "global",
-    version: 1,
-    skills: {
-      commit: entry("lgtm-hq", `v${getPackageVersion()}`, ["claude-code"]),
-      branch: entry("lgtm-hq", "v0.1.0", ["claude-code", "cursor"]),
-      pdf: entry("anthropics", ANTHROPICS_PIN, ["claude-code"]),
+    plugins: {
+      commit: entry("commit", "lgtm-hq", `v${getPackageVersion()}`, ["claude-code"]),
+      branch: entry("branch", "lgtm-hq", "v0.1.0", ["claude-code", "cursor"]),
+      pdf: entry("pdf", "anthropics", ANTHROPICS_PIN, ["claude-code"]),
     },
+    scope: "global",
+    version: 2,
+  };
+}
+
+/**
+ * Minimal plugin entry for status-suffix tests.
+ *
+ * @param {string[]} agents - Agent ids.
+ * @returns {import("../lib/lockfile.js").PluginLockEntry} Plugin lock entry.
+ */
+function suffixEntry(agents) {
+  return {
+    agents: Object.fromEntries(agents.map((agent) => [agent, { files: {}, root: "" }])),
+    installedAt: "2026-01-01T00:00:00.000Z",
+    projector: "explode",
+    repo: "lgtm-hq/ai-skills",
+    sha: "v0.0.0-dev",
+    vendor: "lgtm-hq",
+    version: "0.0.0-dev",
   };
 }
 
@@ -123,10 +151,16 @@ describe("ui signal formatting", () => {
     expect(formatInstalledSummary(lockFixture())).toBe("3 skills installed · 2 agents");
     expect(
       formatInstalledSummary({
-        skills: { solo: { agents: ["cursor"] } },
+        plugins: { solo: suffixEntry(["cursor"]) },
       }),
     ).toBe("1 skill installed · 1 agent");
-    expect(formatInstalledSummary({ skills: {} })).toBeNull();
+    expect(formatInstalledSummary({ plugins: {} })).toBeNull();
+  });
+
+  test("formats install counts for new, present, and repaired agents", () => {
+    expect(formatInstallCounts({ alreadyPresent: 0, installed: 1, repaired: 1 })).toBe(
+      "1 installed · 0 already present · 1 repaired",
+    );
   });
 
   test("renders the gateway notice with both remedies", () => {
@@ -138,21 +172,24 @@ describe("ui signal formatting", () => {
 
   test("formats installed and drifted skill suffixes", () => {
     expect(formatSkillStatusSuffix({ entry: undefined, drifted: false })).toBe("");
-    expect(formatSkillStatusSuffix({ entry: { agents: ["claude-code"] }, drifted: false })).toBe(
+    expect(formatSkillStatusSuffix({ entry: suffixEntry(["claude-code"]), drifted: false })).toBe(
       " ✔ installed (claude-code)",
     );
     expect(
-      formatSkillStatusSuffix({ entry: { agents: ["claude-code", "cursor"] }, drifted: true }),
+      formatSkillStatusSuffix({
+        entry: suffixEntry(["claude-code", "cursor"]),
+        drifted: true,
+      }),
     ).toBe(" ✔ installed (claude-code, cursor) · update available (run skill update)");
   });
 
   test("strips terminal control sequences from lockfile agent names", () => {
     expect(
       formatSkillStatusSuffix({
-        entry: { agents: ["safe", "\u001b]0;attacker\u0007", "\u001b[31mred"] },
+        entry: suffixEntry(["safe", "\u001b]0;attacker\u0007", "\u001b[31mred"]),
         drifted: false,
       }),
-    ).toBe(" ✔ installed (safe, ]0;attacker, [31mred)");
+    ).toBe(" ✔ installed ([31mred, ]0;attacker, safe)");
   });
 });
 
@@ -222,26 +259,38 @@ describe("completeInteractively signals", () => {
     const captured = recordingUi(["browse:first-party", [], "cancel"]);
     const projectLock = {
       gatewayVersion: getPackageVersion(),
-      scope: "project",
-      version: 1,
-      skills: {
+      plugins: {
         pr: {
-          agents: ["cursor"],
+          agents: {
+            cursor: {
+              files: { "pr/SKILL.md": "hash" },
+              root: "/project/.cursor/skills",
+            },
+          },
           installedAt: "2026-01-01T00:00:00.000Z",
+          projector: "explode",
           repo: "lgtm-hq/ai-skills",
           sha: `v${getPackageVersion()}`,
-          skillPath: "skills/pr/SKILL.md",
           vendor: "lgtm-hq",
+          version: getPackageVersion(),
         },
         commit: {
-          agents: ["codex"],
+          agents: {
+            codex: {
+              files: { "commit/SKILL.md": "hash" },
+              root: "/project/.codex/skills",
+            },
+          },
           installedAt: "2026-01-01T00:00:00.000Z",
+          projector: "explode",
           repo: "lgtm-hq/ai-skills",
           sha: `v${getPackageVersion()}`,
-          skillPath: "skills/commit/SKILL.md",
           vendor: "lgtm-hq",
+          version: getPackageVersion(),
         },
       },
+      scope: "project",
+      version: 2,
     };
     const dependencies = {
       env: { AI_SKILLS_NO_UPDATE_CHECK: "1" },

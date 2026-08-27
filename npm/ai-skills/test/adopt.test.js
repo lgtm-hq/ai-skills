@@ -63,12 +63,18 @@ describe("mapSkillsLockEntry", () => {
 
     expect(mapped).toEqual({
       entry: {
-        agents: ["cursor"],
+        agents: {
+          cursor: {
+            files: { "pdf/SKILL.md": "" },
+            root: expect.stringMatching(/[/\\]\.cursor[/\\]skills$/),
+          },
+        },
         installedAt: "2026-07-10T21:00:00.000Z",
+        projector: "explode",
         repo: "anthropics/skills",
         sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
-        skillPath: "skills/pdf/SKILL.md",
         vendor: "anthropics",
+        version: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
       },
     });
   });
@@ -123,8 +129,8 @@ describe("planAdopt", () => {
       {
         gatewayVersion: "0.0.0-dev",
         scope: "project",
-        skills: {},
-        version: 1,
+        plugins: {},
+        version: 2,
       },
       {
         pdf: ["cursor"],
@@ -143,27 +149,34 @@ describe("planAdopt", () => {
 
     expect(plan.adopt.pdf).toMatchObject({
       vendor: "anthropics",
-      skillPath: "skills/pdf/SKILL.md",
+      projector: "explode",
     });
+    expect(plan.adopt.pdf.agents.cursor.files).toEqual({ "pdf/SKILL.md": "" });
     expect(plan.skippedMissingLock).toEqual(["orphan"]);
     expect(plan.ambiguous).toEqual(["orphan: installed on disk but absent from skills-lock.json"]);
   });
 
   test("merges agents into an existing gateway entry without overwriting provenance", () => {
     const existing = {
-      agents: ["claude-code"],
+      agents: {
+        "claude-code": {
+          files: { "pdf/SKILL.md": "" },
+          root: "/tmp/project/.claude/skills",
+        },
+      },
       installedAt: "2026-07-10T16:00:00.000Z",
+      projector: "explode",
       repo: "anthropics/skills",
       sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
-      skillPath: "skills/pdf/SKILL.md",
       vendor: "anthropics",
+      version: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
     };
     const plan = planAdopt(
       {
         gatewayVersion: "0.0.0-dev",
+        plugins: { pdf: existing },
         scope: "project",
-        skills: { pdf: existing },
-        version: 1,
+        version: 2,
       },
       { pdf: ["cursor"] },
       {
@@ -175,10 +188,14 @@ describe("planAdopt", () => {
       vendors,
     );
 
-    expect(plan.adopt.pdf).toEqual({
-      ...existing,
-      agents: ["claude-code", "cursor"],
+    expect(plan.adopt.pdf).toMatchObject({
+      installedAt: existing.installedAt,
+      repo: existing.repo,
+      sha: existing.sha,
+      vendor: existing.vendor,
     });
+    expect(Object.keys(plan.adopt.pdf.agents).sort()).toEqual(["claude-code", "cursor"]);
+    expect(plan.adopt.pdf.agents["claude-code"]).toEqual(existing.agents["claude-code"]);
   });
 });
 
@@ -220,9 +237,9 @@ describe("adoptSkills", () => {
           now: () => new Date("2026-07-10T21:00:00.000Z"),
           readLock: async () => ({
             gatewayVersion: "0.0.0-dev",
+            plugins: {},
             scope: "project",
-            skills: {},
-            version: 1,
+            version: 2,
           }),
           readSkillsLock: async () => readSkillsLock("project", { cwd }),
           scanInstalled: async () => scanInstalledSkills("project", { cwd }),
@@ -236,11 +253,12 @@ describe("adoptSkills", () => {
       expect(result.wrote).toBe(true);
       expect(result.adopted).toEqual(["pdf"]);
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.skills.pdf).toMatchObject({
-        agents: ["cursor"],
+      expect(lock.plugins.pdf).toMatchObject({
+        projector: "explode",
         repo: "anthropics/skills",
         vendor: "anthropics",
       });
+      expect(Object.keys(lock.plugins.pdf.agents)).toEqual(["cursor"]);
       expect(lines.join("\n")).toContain("Adopt plan:");
     } finally {
       await rm(cwd, { force: true, recursive: true });
@@ -259,9 +277,9 @@ describe("adoptSkills", () => {
         loadVendors: async () => ({ vendors }),
         readLock: async () => ({
           gatewayVersion: "0.0.0-dev",
+          plugins: {},
           scope: "project",
-          skills: {},
-          version: 1,
+          version: 2,
         }),
         readSkillsLock: async () => ({ version: 1, skills: {} }),
         scanInstalled: async () => ({ mystery: ["cursor"] }),
