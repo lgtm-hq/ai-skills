@@ -72,6 +72,20 @@ if [[ "$bun_installed" != "$BUN_VERSION" ]]; then
   bash "$tmp_dir/bun-install.sh" "bun-v${BUN_VERSION}"
 fi
 
+# Drop bash's cached command paths so the probes above cannot pin an off-pin
+# executable found before the installers ran, then assert the pins actually
+# resolve before any dependency work uses them.
+hash -r
+uv_final=$(uv --version | awk '{print $2}')
+bun_final=$(bun --version)
+if [[ "$uv_final" != "$UV_VERSION" || "$bun_final" != "$BUN_VERSION" ]]; then
+  echo "Toolchain pin not resolved: uv=${uv_final} (want ${UV_VERSION}), bun=${bun_final} (want ${BUN_VERSION})" >&2
+  exit 1
+fi
+
+# scripts/validate.sh needs ripgrep on PATH; the helper no-ops when present.
+bash scripts/install-ripgrep.sh
+
 uv sync --frozen
 
 (cd npm/ai-skills && bun install --frozen-lockfile)
