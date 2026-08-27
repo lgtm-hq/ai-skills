@@ -52,6 +52,7 @@ describe("gateway maintenance commands", () => {
     const calls = [];
     let written;
     const result = await updateSkills(options, {
+      hash: async () => "refreshed",
       isInstalled: async (name) => name === "pdf",
       now: () => new Date("2026-07-10T17:00:00.000Z"),
       readLock: async () => lock,
@@ -83,6 +84,7 @@ describe("gateway maintenance commands", () => {
       installedAt: "2026-07-10T17:00:00.000Z",
       sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
     });
+    expect(written.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toBe("refreshed");
     expect(written.plugins.lint).toBeUndefined();
     expect(written.skills).toBeUndefined();
   });

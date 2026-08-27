@@ -7,10 +7,12 @@ import { stdin, stdout } from "node:process";
 import { loadVendors } from "./catalog.js";
 import {
   agentSkillsRoot,
+  hashFile,
   mergeLockEntries,
   pluginAgentNames,
   PROJECTOR_EXPLODE,
   readLockfile,
+  refreshPluginFileHashes,
   writeLockfile,
 } from "./lockfile.js";
 import { resolveScope } from "./options.js";
@@ -181,9 +183,17 @@ export function mapSkillsLockEntry(
  * @param {Record<string, SkillsLockEntry>} skillsLock - Upstream lock skills map.
  * @param {Array<{id: string, repo: string}>} vendors - Baked vendors.
  * @param {() => Date} [now] - Clock.
+ * @param {{cwd?: string, home?: string}} [environment] - Path environment for agent roots.
  * @returns {AdoptPlan} Planned adopt/skip/ambiguous actions.
  */
-export function planAdopt(lock, installed, skillsLock, vendors, now = () => new Date()) {
+export function planAdopt(
+  lock,
+  installed,
+  skillsLock,
+  vendors,
+  now = () => new Date(),
+  environment = {},
+) {
   /** @type {AdoptPlan} */
   const plan = {
     adopt: {},
@@ -191,7 +201,7 @@ export function planAdopt(lock, installed, skillsLock, vendors, now = () => new 
     ambiguous: [],
     skippedMissingLock: [],
   };
-  const environment = { scope: lock.scope };
+  const pathEnv = { ...environment, scope: lock.scope };
 
   for (const [name, agents] of Object.entries(installed)) {
     const existing = lock.plugins[name];
@@ -199,7 +209,7 @@ export function planAdopt(lock, installed, skillsLock, vendors, now = () => new 
       const existingAgents = pluginAgentNames(existing);
       const mergedAgents = [...new Set([...existingAgents, ...agents])].sort();
       if (mergedAgents.join(",") !== existingAgents.join(",")) {
-        plan.adopt[name] = mergeAdoptedAgents(existing, name, agents, lock.scope);
+        plan.adopt[name] = mergeAdoptedAgents(existing, name, agents, lock.scope, pathEnv);
       } else {
         plan.alreadyTracked.push(name);
       }
@@ -213,7 +223,7 @@ export function planAdopt(lock, installed, skillsLock, vendors, now = () => new 
       continue;
     }
 
-    const mapped = mapSkillsLockEntry(name, stock, agents, vendors, now, environment);
+    const mapped = mapSkillsLockEntry(name, stock, agents, vendors, now, pathEnv);
     if ("ambiguous" in mapped) {
       plan.ambiguous.push(mapped.ambiguous);
       continue;
@@ -230,6 +240,8 @@ export function planAdopt(lock, installed, skillsLock, vendors, now = () => new 
  * @param {{agents: string[], global: boolean, project: boolean, yes: boolean}} options - Parsed adopt options.
  * @param {{
  *   confirm?: (summary: string) => Promise<boolean>,
+ *   pathEnvironment?: {cwd?: string, home?: string},
+ *   hash?: typeof hashFile,
  *   loadVendors?: typeof loadVendors,
  *   now?: () => Date,
  *   readLock?: typeof readLockfile,
@@ -245,10 +257,12 @@ export async function adoptSkills(options, dependencies = {}) {
     throw new Error("adopt requires an explicit --global or --project scope");
   }
   const scope = resolveScope(options);
+  const pathEnv = dependencies.pathEnvironment ?? {};
   const readLock = dependencies.readLock ?? readLockfile;
   const writeLock = dependencies.writeLock ?? writeLockfile;
-  const readStock = dependencies.readSkillsLock ?? readSkillsLock;
-  const scanInstalled = dependencies.scanInstalled ?? scanInstalledSkills;
+  const readStock = dependencies.readSkillsLock ?? ((target) => readSkillsLock(target, pathEnv));
+  const scanInstalled =
+    dependencies.scanInstalled ?? ((target) => scanInstalledSkills(target, pathEnv));
   const loadVendorCatalog = dependencies.loadVendors ?? loadVendors;
   const now = dependencies.now ?? (() => new Date());
   const write = dependencies.write ?? ((line) => stdout.write(`${line}\n`));
@@ -272,7 +286,7 @@ export async function adoptSkills(options, dependencies = {}) {
   const installed = await scanInstalled(scope);
   const filteredInstalled = filterAgents(installed, options.agents);
   const { vendors } = await loadVendorCatalog();
-  const plan = planAdopt(lock, filteredInstalled, stock.skills, vendors, now);
+  const plan = planAdopt(lock, filteredInstalled, stock.skills, vendors, now, pathEnv);
   const summary = formatAdoptSummary(plan);
 
   if (Object.keys(plan.adopt).length === 0) {
@@ -302,7 +316,7 @@ export async function adoptSkills(options, dependencies = {}) {
     write(summary);
   }
 
-  const next = mergeLockEntries(lock, plan.adopt);
+  const next = mergeLockEntries(lock, await hashAdoptedEntries(plan.adopt, dependencies.hash));
   await writeLock(next);
   return {
     adopted: Object.keys(plan.adopt).sort(),
@@ -444,15 +458,16 @@ function explodePluginEntry(options) {
  * @param {string} name - Plugin id / skill directory name.
  * @param {string[]} agents - Newly scanned agents.
  * @param {"global" | "project"} scope - Lock scope.
+ * @param {{cwd?: string, home?: string}} [environment] - Path environment for new agent roots.
  * @returns {import("./lockfile.js").PluginLockEntry} Entry with additional agents.
  */
-function mergeAdoptedAgents(existing, name, agents, scope) {
+function mergeAdoptedAgents(existing, name, agents, scope, environment = {}) {
   const nextAgents = { ...existing.agents };
   for (const agent of agents) {
     if (!nextAgents[agent]) {
       nextAgents[agent] = {
         files: { [`${name}/SKILL.md`]: "" },
-        root: agentSkillsRoot(scope, agent),
+        root: agentSkillsRoot(scope, agent, environment),
       };
     }
   }
@@ -460,6 +475,21 @@ function mergeAdoptedAgents(existing, name, agents, scope) {
     ...existing,
     agents: nextAgents,
   };
+}
+
+/**
+ * Fill empty adopt digests from disk before writing the gateway lock.
+ *
+ * @param {Record<string, import("./lockfile.js").PluginLockEntry>} entries - Planned adopt entries.
+ * @param {typeof hashFile} [hash] - Injectable hasher.
+ * @returns {Promise<Record<string, import("./lockfile.js").PluginLockEntry>>} Entries with refreshed hashes.
+ */
+async function hashAdoptedEntries(entries, hash = hashFile) {
+  const hashed = {};
+  for (const [pluginId, entry] of Object.entries(entries)) {
+    hashed[pluginId] = await refreshPluginFileHashes(entry, hash);
+  }
+  return hashed;
 }
 
 /**

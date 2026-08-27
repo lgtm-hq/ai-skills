@@ -1,11 +1,13 @@
 import { loadVendors } from "./catalog.js";
 import { getPackageVersion } from "./package-version.js";
 import {
+  hashFile,
   pluginAgentNames,
   pluginSkillNames,
   pruneMissingLockEntries,
   readLockfile,
   reconcileLock,
+  refreshPluginFileHashes,
   writeLockfile,
 } from "./lockfile.js";
 import { resolveScope } from "./options.js";
@@ -17,7 +19,7 @@ import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./s
  * Entries absent from every tracked agent directory are pruned instead of reinstalled.
  *
  * @param {{agents: string[], global: boolean, project: boolean, skills: string[], yes: boolean}} options - Validated command options.
- * @param {{isInstalled?: Parameters<typeof pruneMissingLockEntries>[1], now?: () => Date, readLock?: typeof readLockfile, run?: typeof runSkills, writeLock?: typeof writeLockfile}} [dependencies] - Injectable command dependencies.
+ * @param {{hash?: typeof import("./lockfile.js").hashFile, isInstalled?: Parameters<typeof pruneMissingLockEntries>[1], now?: () => Date, readLock?: typeof readLockfile, run?: typeof runSkills, writeLock?: typeof writeLockfile}} [dependencies] - Injectable command dependencies.
  * @returns {Promise<{pruned: string[], updated: string[]}>} Updated and pruned plugin ids.
  */
 export async function updateSkills(options, dependencies = {}) {
@@ -54,22 +56,24 @@ export async function updateSkills(options, dependencies = {}) {
     );
   }
   const installedAt = now().toISOString();
-  const plugins = Object.fromEntries(
-    Object.entries(prunedLock.plugins).map(([pluginId, entry]) => [
-      pluginId,
-      updated.includes(pluginId)
-        ? {
-            ...entry,
-            installedAt,
-            sha: sourceSha(entry.vendor, entry.sha, vendors),
-            version:
-              entry.vendor === "lgtm-hq"
-                ? getPackageVersion()
-                : sourceSha(entry.vendor, entry.sha, vendors),
-          }
-        : entry,
-    ]),
-  );
+  const hash = dependencies.hash ?? hashFile;
+  const plugins = {};
+  for (const [pluginId, entry] of Object.entries(prunedLock.plugins)) {
+    if (!updated.includes(pluginId)) {
+      plugins[pluginId] = entry;
+      continue;
+    }
+    const hashed = await refreshPluginFileHashes(entry, hash);
+    plugins[pluginId] = {
+      ...hashed,
+      installedAt,
+      sha: sourceSha(entry.vendor, entry.sha, vendors),
+      version:
+        entry.vendor === "lgtm-hq"
+          ? getPackageVersion()
+          : sourceSha(entry.vendor, entry.sha, vendors),
+    };
+  }
   await writeLock({
     ...prunedLock,
     gatewayVersion: getPackageVersion(),

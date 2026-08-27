@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   LOCKFILE_VERSION,
+  isPluginInstalled,
   mergeLockEntries,
   pruneMissingLockEntries,
   readLockfile,
@@ -127,5 +128,34 @@ describe("gateway lockfile", () => {
         read: async () => JSON.stringify({ version: 99 }),
       }),
     ).rejects.toThrow("Invalid gateway lockfile");
+  });
+
+  test("rejects a v2 lock whose plugin entries are malformed", async () => {
+    await expect(
+      readLockfile("project", {
+        cwd: "/tmp/unused",
+        read: async () =>
+          JSON.stringify({
+            gatewayVersion: "0.0.0-dev",
+            plugins: { lint: { agents: null, projector: "explode" } },
+            scope: "project",
+            version: LOCKFILE_VERSION,
+          }),
+      }),
+    ).rejects.toThrow("Invalid gateway lockfile");
+  });
+
+  test("does not prune plugins whose tracked files are modified", async () => {
+    const { lock: kept, pruned: removed } = await pruneMissingLockEntries(
+      lock,
+      async (pluginId, entry, scope) =>
+        isPluginInstalled(pluginId, entry, scope, {
+          exists: async () => true,
+          hash: async () => "zzz",
+        }),
+    );
+
+    expect(removed).toEqual([]);
+    expect(Object.keys(kept.plugins).sort()).toEqual(["pdf", "review"]);
   });
 });

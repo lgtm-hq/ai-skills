@@ -235,6 +235,7 @@ describe("adoptSkills", () => {
         {
           loadVendors: async () => ({ vendors }),
           now: () => new Date("2026-07-10T21:00:00.000Z"),
+          pathEnvironment: { cwd },
           readLock: async () => ({
             gatewayVersion: "0.0.0-dev",
             plugins: {},
@@ -259,6 +260,7 @@ describe("adoptSkills", () => {
         vendor: "anthropics",
       });
       expect(Object.keys(lock.plugins.pdf.agents)).toEqual(["cursor"]);
+      expect(lock.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toMatch(/^[0-9a-f]{64}$/);
       expect(lines.join("\n")).toContain("Adopt plan:");
     } finally {
       await rm(cwd, { force: true, recursive: true });

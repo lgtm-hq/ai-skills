@@ -389,6 +389,35 @@ describe("install", () => {
     }
   });
 
+  test("runs the skills CLI when agents are left empty for detection", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-detect-"));
+    let received = [];
+    try {
+      const result = await install(
+        {
+          ...unattendedOptions,
+          agents: [],
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["lint"],
+        },
+        async (args) => {
+          received = args;
+        },
+        () => new Date("2026-07-10T17:00:00.000Z"),
+        { cwd },
+      );
+
+      expect(received).toContain("--skill");
+      expect(received).toContain("lint");
+      expect(received.includes("-a")).toBe(false);
+      expect(result).toEqual({ alreadyPresent: 0, installed: 1, repaired: 0 });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("treats a v1 lock as empty and installs instead of skipping", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-v1-"));
     let ran = false;

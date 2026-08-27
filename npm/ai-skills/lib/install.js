@@ -704,28 +704,36 @@ export async function install(options, run = runSkills, now = () => new Date(), 
   const lock = await readLockfile(scope, lockEnvironment);
   const pluginId = resolvePluginId(scopedOptions, vendor);
   const existing = lock.plugins[pluginId];
+  const detectAgents = scopedOptions.agents.length === 0;
   const agentsToInstall = await agentsNeedingInstall(
     existing,
     scopedOptions.agents,
     lockEnvironment,
   );
-  const alreadyPresent = scopedOptions.agents.length - agentsToInstall.length;
-  const repaired = existing ? agentsToInstall.filter((agent) => existing.agents[agent]).length : 0;
-  const installed = agentsToInstall.length - repaired;
-  if (agentsToInstall.length === 0) {
+  const alreadyPresent = detectAgents ? 0 : scopedOptions.agents.length - agentsToInstall.length;
+  const repaired = detectAgents
+    ? existing
+      ? 1
+      : 0
+    : existing
+      ? agentsToInstall.filter((agent) => existing.agents[agent]).length
+      : 0;
+  const installed = detectAgents ? (existing ? 0 : 1) : agentsToInstall.length - repaired;
+  if (!detectAgents && agentsToInstall.length === 0) {
     return { alreadyPresent, installed, repaired };
   }
+  const agentsForRun = detectAgents ? [] : agentsToInstall;
   await run(
     buildSkillsArguments(
       {
         ...scopedOptions,
-        agents: agentsToInstall,
+        agents: agentsForRun,
       },
       source,
     ),
   );
   const entries = await createLockEntries(
-    { ...scopedOptions, agents: agentsToInstall },
+    { ...scopedOptions, agents: detectAgents ? scopedOptions.agents : agentsToInstall },
     vendor,
     now,
     lockEnvironment,

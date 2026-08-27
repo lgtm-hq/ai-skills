@@ -85,7 +85,7 @@ export async function readLockfile(scope, environment = {}) {
     if (lock.version !== LOCKFILE_VERSION) {
       throw new Error(`Invalid gateway lockfile: ${path}`);
     }
-    if (lock.scope !== scope || typeof lock.plugins !== "object" || lock.plugins === null) {
+    if (!isValidV2Lock(lock, scope)) {
       throw new Error(`Invalid gateway lockfile: ${path}`);
     }
     return lock;
@@ -214,7 +214,7 @@ export async function isPluginInstalled(pluginId, entry, _scope, environment = {
     },
     environment,
   );
-  return reconciliation.present.length > 0;
+  return reconciliation.present.length + reconciliation.modified.length > 0;
 }
 
 /**
@@ -244,6 +244,25 @@ export function agentSkillsRoot(scope, agent, environment = {}) {
 export async function hashFile(path) {
   const body = await readFile(path);
   return createHash("sha256").update(body).digest("hex");
+}
+
+/**
+ * Re-hash every tracked file on a plugin entry, recording an empty digest when a path is absent.
+ *
+ * @param {PluginLockEntry} entry - Plugin lock entry.
+ * @param {(path: string) => Promise<string>} [hash] - Injectable hasher.
+ * @returns {Promise<PluginLockEntry>} Entry with refreshed file digests.
+ */
+export async function refreshPluginFileHashes(entry, hash = hashFile) {
+  const agents = {};
+  for (const [agent, install] of Object.entries(entry.agents)) {
+    const files = {};
+    for (const relative of Object.keys(install.files)) {
+      files[relative] = await hashTrackedPath(join(install.root, relative), hash);
+    }
+    agents[agent] = { ...install, files };
+  }
+  return { ...entry, agents };
 }
 
 /**
@@ -292,6 +311,52 @@ function createLockfile(scope) {
     scope,
     version: LOCKFILE_VERSION,
   };
+}
+
+/**
+ * Whether a parsed document is a well-formed version-two lock for ``scope``.
+ *
+ * @param {object} lock - Parsed JSON.
+ * @param {"global" | "project"} scope - Expected scope.
+ * @returns {boolean} Whether the lock can be consumed as v2.
+ */
+function isValidV2Lock(lock, scope) {
+  if (lock.scope !== scope || typeof lock.plugins !== "object" || lock.plugins === null) {
+    return false;
+  }
+  for (const entry of Object.values(lock.plugins)) {
+    if (!isValidPluginEntry(entry)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Whether a plugin record has the v2 agent map and projector.
+ *
+ * @param {unknown} entry - Candidate plugin entry.
+ * @returns {boolean} Whether the entry is structurally valid.
+ */
+function isValidPluginEntry(entry) {
+  if (typeof entry !== "object" || entry === null) {
+    return false;
+  }
+  if (entry.projector !== PROJECTOR_EXPLODE && entry.projector !== PROJECTOR_NATIVE) {
+    return false;
+  }
+  if (typeof entry.agents !== "object" || entry.agents === null || Array.isArray(entry.agents)) {
+    return false;
+  }
+  return Object.values(entry.agents).every(
+    (install) =>
+      typeof install === "object" &&
+      install !== null &&
+      typeof install.root === "string" &&
+      typeof install.files === "object" &&
+      install.files !== null &&
+      !Array.isArray(install.files),
+  );
 }
 
 /**
@@ -364,5 +429,20 @@ async function pathExists(path) {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Hash a path, using an empty digest when the file is absent.
+ *
+ * @param {string} path - Absolute file path.
+ * @param {(path: string) => Promise<string>} hash - Hasher.
+ * @returns {Promise<string>} Hex digest, or empty string when missing.
+ */
+async function hashTrackedPath(path, hash) {
+  try {
+    return await hash(path);
+  } catch {
+    return "";
   }
 }
