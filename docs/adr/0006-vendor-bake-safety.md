@@ -24,8 +24,10 @@ vendor-shaped special case at runtime.
 ## Decision
 
 Bake is a **curation contract**, not a mirror. Ingest exactly what the
-registry declares (`skillsRoot` + `"*"` or paths, `extraSkills`,
-`agents`). No semantic guessing: location carries meaning.
+vendor-plugin registry (issue #377) declares. The lab used `skillsRoot` +
+`"*"` or paths, `extraSkills`, and `agents` — that is the #377 schema,
+not today's index-only `skillRoots` list in `vendors.yaml`. No semantic
+guessing: location carries meaning.
 
 **Never execute vendor content** during bake or install. Hooks and other
 runnable vendor files are an explicit trust decision; default is omit

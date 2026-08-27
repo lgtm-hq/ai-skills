@@ -23,17 +23,18 @@ truth.
 
 Canonical format is **neutral metadata**. All host dirs
 (`.claude-plugin/`, `.cursor-plugin/`, `.codex-plugin/`, root
-`plugin.json` when emitted) are **generated adapters** behind a CI drift
-gate, marked do-not-edit.
+`plugin.json` when emitted) **shall be** generated adapters behind a CI
+drift gate, marked do-not-edit. Issue #369 emits the Claude and Cursor
+adapters; later hosts follow the same generator.
 
-The README rewrite (issue #371) states the catalog is harness-agnostic by
-construction — host adapters are build outputs. Contributors edit
+Issue #371 rewrites the README to state the catalog is harness-agnostic
+by construction — host adapters are build outputs. Contributors edit
 `bundles.yaml` (and vendor registry entries), then run
 `scripts/generate_marketplace.py`. Validation fails if any emitted
 adapter is stale or missing.
 
-`$generated` lives where each host schema allows it: top-level on Claude
-marketplace JSON; under `metadata` on Cursor (root
+Issue #369 places `$generated` where each host schema allows it:
+top-level on Claude marketplace JSON; under `metadata` on Cursor (root
 `additionalProperties: false`).
 
 ## Consequences
