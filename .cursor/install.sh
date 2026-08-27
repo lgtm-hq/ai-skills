@@ -15,7 +15,14 @@ set -euo pipefail
 # Agent setups resolve the same interpreter and tooling.
 UV_VERSION="0.11.26"
 
+# Resolve the repo root so the script is safe to invoke from any working
+# directory, not only via the .cursor/environment.json install hook.
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$repo_root"
+
 export PATH="${HOME}/.local/bin:${HOME}/.bun/bin:${PATH}"
+# uv hardlink warnings are noisy across the VM's separate filesystems.
+export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
 
 if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
@@ -27,4 +34,4 @@ fi
 
 uv sync --frozen
 
-(cd npm/ai-skills && bun install)
+(cd npm/ai-skills && bun install --frozen-lockfile)
