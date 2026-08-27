@@ -96,6 +96,9 @@ def test_rewrites_marketplace_plugin_versions(tmp_path: Path) -> None:
     assert_that(content).contains('"version": "2.3.4"')
     assert_that(content).does_not_contain("0.1.10")
     assert_that(marketplace.with_suffix(".json.bak").exists()).is_false()
+
+
+def test_rejects_missing_next_version(tmp_path: Path) -> None:
     """The script fails fast when NEXT_VERSION is unset."""
 
     readme = tmp_path / "README.md"
