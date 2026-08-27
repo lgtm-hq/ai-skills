@@ -1,6 +1,6 @@
 import * as clack from "@clack/prompts";
 
-import { pluginAgentNames } from "./lockfile.js";
+import { pluginAgentNames, pluginSkillNames } from "./lockfile.js";
 
 /**
  * Agents the gateway surfaces in interactive install.
@@ -34,9 +34,10 @@ export function formatInstalledSummary(lock) {
     return null;
   }
   const agents = new Set(entries.flatMap((entry) => pluginAgentNames(entry)));
-  const skillLabel = entries.length === 1 ? "skill" : "skills";
+  const skills = new Set(entries.flatMap((entry) => pluginSkillNames(entry)));
+  const skillLabel = skills.size === 1 ? "skill" : "skills";
   const agentLabel = agents.size === 1 ? "agent" : "agents";
-  return `${entries.length} ${skillLabel} installed · ${agents.size} ${agentLabel}`;
+  return `${skills.size} ${skillLabel} installed · ${agents.size} ${agentLabel}`;
 }
 
 /**

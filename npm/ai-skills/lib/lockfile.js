@@ -10,7 +10,7 @@ export const LOCKFILE_VERSION = 2;
 export const PROJECTOR_EXPLODE = "explode";
 export const PROJECTOR_NATIVE = "native";
 
-const AGENT_SKILL_PATHS = {
+export const AGENT_SKILL_PATHS = {
   "claude-code": ".claude/skills",
   cursor: ".cursor/skills",
   codex: ".codex/skills",
@@ -321,7 +321,12 @@ function createLockfile(scope) {
  * @returns {boolean} Whether the lock can be consumed as v2.
  */
 function isValidV2Lock(lock, scope) {
-  if (lock.scope !== scope || typeof lock.plugins !== "object" || lock.plugins === null) {
+  if (
+    lock.scope !== scope ||
+    typeof lock.plugins !== "object" ||
+    lock.plugins === null ||
+    Array.isArray(lock.plugins)
+  ) {
     return false;
   }
   for (const entry of Object.values(lock.plugins)) {

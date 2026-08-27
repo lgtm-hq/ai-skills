@@ -151,9 +151,34 @@ describe("ui signal formatting", () => {
     expect(formatInstalledSummary(lockFixture())).toBe("3 skills installed · 2 agents");
     expect(
       formatInstalledSummary({
-        plugins: { solo: suffixEntry(["cursor"]) },
+        plugins: {
+          solo: {
+            ...suffixEntry(["cursor"]),
+            agents: {
+              cursor: {
+                files: { "solo/SKILL.md": "hash" },
+                root: "/tmp/cursor/skills",
+              },
+            },
+          },
+        },
       }),
     ).toBe("1 skill installed · 1 agent");
+    expect(
+      formatInstalledSummary({
+        plugins: {
+          review: {
+            ...suffixEntry(["cursor"]),
+            agents: {
+              cursor: {
+                files: { "lint/SKILL.md": "hash", "test/SKILL.md": "hash" },
+                root: "/tmp/cursor/skills",
+              },
+            },
+          },
+        },
+      }),
+    ).toBe("2 skills installed · 1 agent");
     expect(formatInstalledSummary({ plugins: {} })).toBeNull();
   });
 

@@ -147,11 +147,12 @@ describe("planAdopt", () => {
       () => new Date("2026-07-10T21:00:00.000Z"),
     );
 
-    expect(plan.adopt.pdf).toMatchObject({
+    expect(plan.adopt.anthropics).toMatchObject({
       vendor: "anthropics",
       projector: "explode",
     });
-    expect(plan.adopt.pdf.agents.cursor.files).toEqual({ "pdf/SKILL.md": "" });
+    expect(plan.adopt.anthropics.agents.cursor.files).toEqual({ "pdf/SKILL.md": "" });
+    expect(plan.adopt.pdf).toBeUndefined();
     expect(plan.skippedMissingLock).toEqual(["orphan"]);
     expect(plan.ambiguous).toEqual(["orphan: installed on disk but absent from skills-lock.json"]);
   });
@@ -196,6 +197,76 @@ describe("planAdopt", () => {
     });
     expect(Object.keys(plan.adopt.pdf.agents).sort()).toEqual(["claude-code", "cursor"]);
     expect(plan.adopt.pdf.agents["claude-code"]).toEqual(existing.agents["claude-code"]);
+  });
+
+  test("merges adopted explode skills into the plugin that already tracks them", () => {
+    const review = {
+      agents: {
+        cursor: {
+          files: { "lint/SKILL.md": "abc", "test/SKILL.md": "abc" },
+          root: "/tmp/project/.cursor/skills",
+        },
+      },
+      installedAt: "2026-07-10T16:00:00.000Z",
+      projector: "explode",
+      repo: "lgtm-hq/ai-skills",
+      sha: "v0.0.0-dev",
+      vendor: "lgtm-hq",
+      version: "0.0.0-dev",
+    };
+    const plan = planAdopt(
+      {
+        gatewayVersion: "0.0.0-dev",
+        plugins: { review },
+        scope: "project",
+        version: 2,
+      },
+      { lint: ["cursor"] },
+      {},
+      vendors,
+    );
+
+    expect(plan.alreadyTracked).toEqual(["lint"]);
+    expect(plan.adopt).toEqual({});
+  });
+
+  test("keys vendor skills by vendor id and unions later directories onto that plugin", () => {
+    const existing = {
+      agents: {
+        cursor: {
+          files: { "pdf/SKILL.md": "abc" },
+          root: "/tmp/project/.cursor/skills",
+        },
+      },
+      installedAt: "2026-07-10T16:00:00.000Z",
+      projector: "explode",
+      repo: "anthropics/skills",
+      sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+      vendor: "anthropics",
+      version: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+    };
+    const plan = planAdopt(
+      {
+        gatewayVersion: "0.0.0-dev",
+        plugins: { anthropics: existing },
+        scope: "project",
+        version: 2,
+      },
+      { xlsx: ["cursor"] },
+      {
+        xlsx: {
+          sourceUrl: "anthropics/skills",
+          ref: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+        },
+      },
+      vendors,
+    );
+
+    expect(plan.adopt.anthropics.agents.cursor.files).toEqual({
+      "pdf/SKILL.md": "abc",
+      "xlsx/SKILL.md": "",
+    });
+    expect(plan.adopt.xlsx).toBeUndefined();
   });
 });
 
@@ -252,16 +323,63 @@ describe("adoptSkills", () => {
       );
 
       expect(result.wrote).toBe(true);
-      expect(result.adopted).toEqual(["pdf"]);
+      expect(result.adopted).toEqual(["anthropics"]);
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.plugins.pdf).toMatchObject({
+      expect(lock.plugins.anthropics).toMatchObject({
         projector: "explode",
         repo: "anthropics/skills",
         vendor: "anthropics",
       });
-      expect(Object.keys(lock.plugins.pdf.agents)).toEqual(["cursor"]);
-      expect(lock.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toMatch(/^[0-9a-f]{64}$/);
+      expect(Object.keys(lock.plugins.anthropics.agents)).toEqual(["cursor"]);
+      expect(lock.plugins.anthropics.agents.cursor.files["pdf/SKILL.md"]).toMatch(/^[0-9a-f]{64}$/);
       expect(lines.join("\n")).toContain("Adopt plan:");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("default lock reader and writer honor pathEnvironment", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-adopt-path-"));
+    try {
+      await mkdir(join(cwd, ".cursor/skills/pdf"), { recursive: true });
+      await writeFile(join(cwd, ".cursor/skills/pdf/SKILL.md"), "# pdf\n");
+      await writeFile(
+        join(cwd, "skills-lock.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            skills: {
+              pdf: {
+                sourceType: "github",
+                sourceUrl: "https://github.com/anthropics/skills",
+                ref: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+                skillPath: "skills/pdf/SKILL.md",
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+
+      const result = await adoptSkills(
+        {
+          agents: [],
+          global: false,
+          project: true,
+          yes: true,
+        },
+        {
+          loadVendors: async () => ({ vendors }),
+          now: () => new Date("2026-07-10T21:00:00.000Z"),
+          pathEnvironment: { cwd },
+          write: () => {},
+        },
+      );
+
+      expect(result.wrote).toBe(true);
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.anthropics.vendor).toBe("anthropics");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

@@ -185,6 +185,21 @@ describe("gateway lockfile", () => {
     ).rejects.toThrow("Invalid gateway lockfile");
   });
 
+  test("rejects a v2 lock whose plugins value is an array", async () => {
+    await expect(
+      readLockfile("project", {
+        cwd: "/tmp/unused",
+        read: async () =>
+          JSON.stringify({
+            gatewayVersion: "0.0.0-dev",
+            plugins: [],
+            scope: "project",
+            version: LOCKFILE_VERSION,
+          }),
+      }),
+    ).rejects.toThrow("Invalid gateway lockfile");
+  });
+
   test("does not prune plugins whose tracked files are modified", async () => {
     const { lock: kept, pruned: removed } = await pruneMissingLockEntries(
       lock,

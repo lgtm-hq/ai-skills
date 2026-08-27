@@ -6,26 +6,18 @@ import { stdin, stdout } from "node:process";
 
 import { loadVendors } from "./catalog.js";
 import {
+  AGENT_SKILL_PATHS,
   agentSkillsRoot,
   hashFile,
   mergeLockEntries,
   pluginAgentNames,
+  pluginSkillNames,
   PROJECTOR_EXPLODE,
   readLockfile,
   refreshPluginFileHashes,
   writeLockfile,
 } from "./lockfile.js";
 import { resolveScope } from "./options.js";
-
-/**
- * Agent skill directory layouts known to the gateway.
- *
- * Keep this aligned with `lockfile.js` so adopt and prune agree on presence.
- */
-export const ADOPT_AGENT_SKILL_PATHS = {
-  "claude-code": ".claude/skills",
-  cursor: ".cursor/skills",
-};
 
 /**
  * Resolve the stock upstream skills lock path for a scope.
@@ -86,7 +78,7 @@ export async function scanInstalledSkills(scope, environment = {}) {
   /** @type {Record<string, Set<string>>} */
   const installed = {};
 
-  for (const [agent, relativePath] of Object.entries(ADOPT_AGENT_SKILL_PATHS)) {
+  for (const [agent, relativePath] of Object.entries(AGENT_SKILL_PATHS)) {
     const skillsRoot = join(root, relativePath);
     let entries = [];
     try {
@@ -202,16 +194,18 @@ export function planAdopt(
     skippedMissingLock: [],
   };
   const pathEnv = { ...environment, scope: lock.scope };
+  const plugins = { ...lock.plugins };
 
   for (const [name, agents] of Object.entries(installed)) {
-    const existing = lock.plugins[name];
-    if (existing) {
-      const existingAgents = pluginAgentNames(existing);
-      const mergedAgents = [...new Set([...existingAgents, ...agents])].sort();
-      if (mergedAgents.join(",") !== existingAgents.join(",")) {
-        plan.adopt[name] = mergeAdoptedAgents(existing, name, agents, lock.scope, pathEnv);
-      } else {
+    const existingId = pluginIdTrackingSkill(plugins, name);
+    if (existingId) {
+      const existing = plugins[existingId];
+      const merged = mergeSkillIntoPlugin(existing, name, agents, lock.scope, pathEnv);
+      if (adoptEntryUnchanged(existing, merged)) {
         plan.alreadyTracked.push(name);
+      } else {
+        plan.adopt[existingId] = merged;
+        plugins[existingId] = merged;
       }
       continue;
     }
@@ -228,7 +222,13 @@ export function planAdopt(
       plan.ambiguous.push(mapped.ambiguous);
       continue;
     }
-    plan.adopt[name] = mapped.entry;
+    const pluginId = pluginIdForMappedEntry(name, mapped.entry);
+    const existingPlugin = plugins[pluginId];
+    const next = existingPlugin
+      ? mergeSkillIntoPlugin(existingPlugin, name, agents, lock.scope, pathEnv)
+      : mapped.entry;
+    plan.adopt[pluginId] = next;
+    plugins[pluginId] = next;
   }
 
   return plan;
@@ -258,8 +258,8 @@ export async function adoptSkills(options, dependencies = {}) {
   }
   const scope = resolveScope(options);
   const pathEnv = dependencies.pathEnvironment ?? {};
-  const readLock = dependencies.readLock ?? readLockfile;
-  const writeLock = dependencies.writeLock ?? writeLockfile;
+  const readLock = dependencies.readLock ?? ((target) => readLockfile(target, pathEnv));
+  const writeLock = dependencies.writeLock ?? ((next) => writeLockfile(next, pathEnv));
   const readStock = dependencies.readSkillsLock ?? ((target) => readSkillsLock(target, pathEnv));
   const scanInstalled =
     dependencies.scanInstalled ?? ((target) => scanInstalledSkills(target, pathEnv));
@@ -452,22 +452,63 @@ function explodePluginEntry(options) {
 }
 
 /**
- * Union newly scanned agents onto an existing plugin entry.
+ * Plugin id that already tracks this exploded skill directory, if any.
+ *
+ * @param {Record<string, import("./lockfile.js").PluginLockEntry>} plugins - Lock or planned plugins.
+ * @param {string} skillName - On-disk skill directory.
+ * @returns {string | null} Owning plugin id.
+ */
+function pluginIdTrackingSkill(plugins, skillName) {
+  if (plugins[skillName]) {
+    return skillName;
+  }
+  for (const [pluginId, entry] of Object.entries(plugins)) {
+    if (pluginSkillNames(entry).includes(skillName)) {
+      return pluginId;
+    }
+  }
+  return null;
+}
+
+/**
+ * Lock key for a newly mapped explode skill.
+ *
+ * First-party skills stay keyed by directory name. Vendor skills share the vendor id.
+ *
+ * @param {string} skillName - On-disk skill directory.
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Mapped provenance.
+ * @returns {string} Plugin id.
+ */
+function pluginIdForMappedEntry(skillName, entry) {
+  return entry.vendor === "lgtm-hq" ? skillName : entry.vendor;
+}
+
+/**
+ * Union a scanned skill directory onto an existing plugin entry.
  *
  * @param {import("./lockfile.js").PluginLockEntry} existing - Current lock entry.
- * @param {string} name - Plugin id / skill directory name.
+ * @param {string} name - Skill directory name.
  * @param {string[]} agents - Newly scanned agents.
  * @param {"global" | "project"} scope - Lock scope.
  * @param {{cwd?: string, home?: string}} [environment] - Path environment for new agent roots.
- * @returns {import("./lockfile.js").PluginLockEntry} Entry with additional agents.
+ * @returns {import("./lockfile.js").PluginLockEntry} Entry with additional agents and files.
  */
-function mergeAdoptedAgents(existing, name, agents, scope, environment = {}) {
+function mergeSkillIntoPlugin(existing, name, agents, scope, environment = {}) {
+  const relative = `${name}/SKILL.md`;
   const nextAgents = { ...existing.agents };
   for (const agent of agents) {
-    if (!nextAgents[agent]) {
+    const previous = nextAgents[agent];
+    if (!previous) {
       nextAgents[agent] = {
-        files: { [`${name}/SKILL.md`]: "" },
+        files: { [relative]: "" },
         root: agentSkillsRoot(scope, agent, environment),
+      };
+      continue;
+    }
+    if (!previous.files[relative]) {
+      nextAgents[agent] = {
+        ...previous,
+        files: { ...previous.files, [relative]: "" },
       };
     }
   }
@@ -475,6 +516,20 @@ function mergeAdoptedAgents(existing, name, agents, scope, environment = {}) {
     ...existing,
     agents: nextAgents,
   };
+}
+
+/**
+ * Whether a merge left plugin ownership and tracked files unchanged.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} existing - Entry before merge.
+ * @param {import("./lockfile.js").PluginLockEntry} merged - Entry after merge.
+ * @returns {boolean} True when agents and skill names are identical.
+ */
+function adoptEntryUnchanged(existing, merged) {
+  return (
+    pluginAgentNames(existing).join(",") === pluginAgentNames(merged).join(",") &&
+    pluginSkillNames(existing).join(",") === pluginSkillNames(merged).join(",")
+  );
 }
 
 /**

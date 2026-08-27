@@ -826,9 +826,6 @@ function resolvePluginId(options, vendor) {
   if (options.bundle) {
     return options.bundle;
   }
-  if (vendor && options.skills.length === 1) {
-    return options.skills[0];
-  }
   if (vendor) {
     return vendor.id;
   }

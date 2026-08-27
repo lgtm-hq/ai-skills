@@ -159,13 +159,13 @@ describe("install", () => {
 
       expect(received).toContain("anthropics/skills@9d2f1ae187231d8199c64b5b762e1bdf2244733d");
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.plugins.pdf).toMatchObject({
+      expect(lock.plugins.anthropics).toMatchObject({
         projector: "explode",
         repo: "anthropics/skills",
         sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
         vendor: "anthropics",
       });
-      expect(lock.plugins.pdf.agents.cursor.files).toEqual({ "pdf/SKILL.md": "" });
+      expect(lock.plugins.anthropics.agents.cursor.files).toEqual({ "pdf/SKILL.md": "" });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -195,13 +195,13 @@ describe("install", () => {
       expect(received).toContain("--skill");
       expect(received).toContain("frontend-design");
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.plugins["frontend-design"]).toMatchObject({
+      expect(lock.plugins["anthropics-claude-code"]).toMatchObject({
         projector: "explode",
         repo: "anthropics/claude-code",
         sha: "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2",
         vendor: "anthropics-claude-code",
       });
-      expect(lock.plugins["frontend-design"].agents.cursor.files).toEqual({
+      expect(lock.plugins["anthropics-claude-code"].agents.cursor.files).toEqual({
         "frontend-design/SKILL.md": "",
       });
     } finally {
@@ -303,6 +303,41 @@ describe("install", () => {
           cwd,
           exists: async () => false,
           hash: async () => "",
+        },
+      );
+
+      expect(received).toContain("--skill");
+      expect(received).toContain("lint");
+      expect(result).toEqual({ alreadyPresent: 0, installed: 0, repaired: 1 });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("repairs a lock whose tracked hashes no longer match disk", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-modified-"));
+    let received = [];
+    try {
+      await Bun.write(
+        join(cwd, "ai-skills-lock.json"),
+        `${JSON.stringify(staleProjectLock(cwd, { cursor: "old" }), null, 2)}\n`,
+      );
+      const result = await install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["lint"],
+        },
+        async (args) => {
+          received = args;
+        },
+        () => new Date("2026-07-10T17:00:00.000Z"),
+        {
+          cwd,
+          exists: async () => true,
+          hash: async () => "new",
         },
       );
 
@@ -582,6 +617,59 @@ describe("install", () => {
 
       expect(received).toContain("xlsx");
       expect(result).toEqual({ alreadyPresent: 0, installed: 1, repaired: 0 });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("keeps a stable vendor plugin id when adding a second skill", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-vendor-id-"));
+    const env = {
+      cwd,
+      exists: async () => true,
+      hash: async () => "abc",
+    };
+    try {
+      await install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["pdf"],
+          vendor: "anthropics",
+        },
+        async () => {},
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        env,
+      );
+      const first = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(first.plugins.pdf).toBeUndefined();
+      expect(first.plugins.anthropics.agents.cursor.files).toEqual({ "pdf/SKILL.md": "abc" });
+
+      let received = [];
+      await install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["pdf", "xlsx"],
+          vendor: "anthropics",
+        },
+        async (args) => {
+          received = args;
+        },
+        () => new Date("2026-07-10T17:00:00.000Z"),
+        env,
+      );
+
+      expect(received).toContain("xlsx");
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.anthropics.agents.cursor.files).toMatchObject({
+        "pdf/SKILL.md": "abc",
+        "xlsx/SKILL.md": "abc",
+      });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
