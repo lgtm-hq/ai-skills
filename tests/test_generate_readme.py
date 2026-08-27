@@ -132,6 +132,9 @@ def test_render_readme_omits_ungrouped_from_plugin_table(tmp_path: Path) -> None
         "Skills listed under `ungrouped` in `bundles.yaml` "
         "are not marketplace plugins.",
     )
+    assert_that(rendered).contains(
+        "See [AGENTS.md](./AGENTS.md) for the full skill index.",
+    )
     assert_that(rendered).does_not_contain("### Other")
     assert_that(rendered).does_not_contain("| `beta` |")
     assert_that(rendered).does_not_contain("[beta](skills/beta/SKILL.md)")
@@ -188,6 +191,7 @@ def test_repo_readme_install_paths_are_plugin_level() -> None:
     assert_that(readme).contains("sk install -y --global -a cursor --bundle review")
     assert_that(readme).contains("git clone https://github.com/lgtm-hq/ai-skills.git")
     assert_that(readme).contains("~/.cursor/plugins/local/ai-skills")
+    assert_that(readme).contains("mkdir -p ~/.cursor/plugins/local")
     assert_that(readme).contains("Harness-agnostic by construction")
     assert_that(readme).does_not_contain("--skill")
     assert_that(readme).does_not_contain("--all")

@@ -25,9 +25,9 @@ document:
   **`.cursor-plugin/marketplace.json`** with
   `uv run python scripts/generate_marketplace.py`. Both files are generated
   adapters (do not edit by hand).
-- **README plugin table:** the `## Plugins` table in `README.md` and its
-  release-tag pins are generated from `bundles.yaml` and `pyproject.toml`.
-  Regenerate with `uv run python scripts/generate_readme.py`.
+- **README plugin table:** the `## Plugins` table in `README.md` is generated
+  from `bundles.yaml`. Release-tag / npm-version pins are generated from
+  `pyproject.toml`. Regenerate with `uv run python scripts/generate_readme.py`.
 - **Architecture decisions:** settled plugin-canonical *why* lives in
   [`docs/adr/`](docs/adr/README.md). Implementation PRs follow accepted ADRs;
   a superseding ADR is the way to change one.

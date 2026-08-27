@@ -60,6 +60,7 @@ lives in the Claude-format adapter
 
 ```bash
 git clone https://github.com/lgtm-hq/ai-skills.git
+mkdir -p ~/.cursor/plugins/local
 ln -s "$(pwd)/ai-skills" ~/.cursor/plugins/local/ai-skills
 ```
 
@@ -105,7 +106,7 @@ First-party plugins, generated from `bundles.yaml`:
 | Subagents | `subagents` | Autonomous agents that shepherd PRs and work issue backlogs. | [babysit-pr](skills/babysit-pr/SKILL.md), [backlog](skills/backlog/SKILL.md), [implement-issues](skills/implement-issues/SKILL.md), [which-pr](skills/which-pr/SKILL.md) |
 | Testing | `testing` | Playwright and BATS test-writing standards. | [test-api](skills/test-api/SKILL.md), [test-ui](skills/test-ui/SKILL.md), [test-ui-qsf](skills/test-ui-qsf/SKILL.md), [test-shell](skills/test-shell/SKILL.md) |
 
-Skills listed under `ungrouped` in `bundles.yaml` are not marketplace plugins.
+Skills listed under `ungrouped` in `bundles.yaml` are not marketplace plugins. See [AGENTS.md](./AGENTS.md) for the full skill index.
 
 <!-- markdownlint-enable MD013 -->
 <!-- plugins:end -->

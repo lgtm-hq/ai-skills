@@ -35,7 +35,8 @@ _GENERATED_NOTE = (
 )
 
 _UNGROUPED_NOTE = (
-    "Skills listed under `ungrouped` in `bundles.yaml` are not marketplace plugins."
+    "Skills listed under `ungrouped` in `bundles.yaml` are not marketplace "
+    "plugins. See [AGENTS.md](./AGENTS.md) for the full skill index."
 )
 
 _VERSION_PIN_PATTERNS = (
