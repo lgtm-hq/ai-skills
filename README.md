@@ -50,10 +50,10 @@ the same kebab-case plugin ids as the table below.
 
 ### Cursor
 
-**Local:** clone this repo and symlink it into Cursor's local plugin dir
-(`~/.cursor/plugins/local/<plugin>`). This catalog is a multi-plugin
-marketplace (`.cursor-plugin/marketplace.json`); skill-list slicing still
-lives in the Claude-format adapter
+**Local:** clone this repo and symlink the catalog into Cursor's local
+plugin dir (`~/.cursor/plugins/local/ai-skills`). Cursor discovers this
+multi-plugin marketplace from `.cursor-plugin/marketplace.json`; skill-list
+slicing still lives in the Claude-format adapter
 ([ADR 0003](./docs/adr/0003-upstream-native-slicing.md)).
 
 ```bash

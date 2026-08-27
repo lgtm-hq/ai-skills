@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -157,12 +158,28 @@ def test_repo_readme_install_paths_are_plugin_level() -> None:
     assert_that(readme).contains("copilot plugin install git-pr@ai-skills")
     assert_that(readme).contains("sk install -y --global -a cursor --bundle review")
     assert_that(readme).contains("git clone https://github.com/lgtm-hq/ai-skills.git")
-    assert_that(readme).contains("~/.cursor/plugins/local")
+    assert_that(readme).contains("~/.cursor/plugins/local/ai-skills")
     assert_that(readme).contains("Harness-agnostic by construction")
     assert_that(readme).does_not_contain("--skill")
     assert_that(readme).does_not_contain("--all")
     assert_that(readme).does_not_contain("Toggle skills")
     assert_that(readme).does_not_contain("The seven first-party plugins")
+
+
+def test_repo_readme_plugin_suffix_matches_marketplace_name() -> None:
+    """Host install suffixes match the generated Claude marketplace name."""
+
+    repo_root = Path(__file__).resolve().parents[1]
+    readme = (repo_root / "README.md").read_text(encoding="utf-8")
+    marketplace_path = repo_root / ".claude-plugin" / "marketplace.json"
+    marketplace = json.loads(
+        marketplace_path.read_text(encoding="utf-8"),
+    )
+    name = str(marketplace["name"])
+
+    assert_that(readme).contains(f"claude plugin install git-pr@{name}")
+    assert_that(readme).contains(f"copilot plugin install git-pr@{name}")
+    assert_that(readme).contains(f"~/.cursor/plugins/local/{name}")
 
 
 def test_render_readme_syncs_version_pins_to_pyproject(tmp_path: Path) -> None:
