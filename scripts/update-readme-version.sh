@@ -62,5 +62,9 @@ if [[ -f "${marketplace_path}" ]]; then
     -e "s|(\"version\": \")[0-9]+\.[0-9]+\.[0-9]+(\")|\1${next_version}\2|g" \
     "${marketplace_path}"
   rm -f "${marketplace_path}.bak"
+  if ! grep -Fq "\"version\": \"${next_version}\"" "${marketplace_path}"; then
+    echo "Failed to restamp plugin versions in ${marketplace_path} to ${next_version}." >&2
+    exit 1
+  fi
   echo "Pinned marketplace plugin versions to ${next_version}."
 fi

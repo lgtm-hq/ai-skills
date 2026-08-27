@@ -110,6 +110,29 @@ def test_rejects_missing_next_version(tmp_path: Path) -> None:
     assert_that(result.stderr).contains("NEXT_VERSION is required")
 
 
+def test_rejects_marketplace_restamp_without_semver_versions(tmp_path: Path) -> None:
+    """A marketplace.json that cannot be restamped is a hard error."""
+
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "bunx skills add lgtm-hq/ai-skills@v0.1.10 -g\n",
+        encoding="utf-8",
+    )
+    marketplace = tmp_path / ".claude-plugin" / "marketplace.json"
+    marketplace.parent.mkdir()
+    marketplace.write_text(
+        '{\n  "plugins": [\n    {\n      "name": "review",\n'
+        '      "version": "dev"\n    }\n  ]\n}\n',
+        encoding="utf-8",
+    )
+
+    result = _run(args=[str(readme)], env_version="2.3.4")
+
+    assert_that(result.returncode).is_not_equal_to(0)
+    assert_that(result.stderr).contains("Failed to restamp plugin versions")
+    assert_that(marketplace.read_text(encoding="utf-8")).contains('"version": "dev"')
+
+
 def test_accepts_v_prefixed_next_version(tmp_path: Path) -> None:
     """A leading v on NEXT_VERSION is stripped, not rejected."""
 
