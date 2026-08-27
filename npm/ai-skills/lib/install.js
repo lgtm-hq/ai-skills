@@ -750,7 +750,11 @@ export async function install(options, run = runSkills, now = () => new Date(), 
     now,
     lockEnvironment,
     pluginId,
+    detectAgents,
   );
+  if (Object.keys(entries).length === 0) {
+    return { alreadyPresent: 0, installed: 0, repaired: 0 };
+  }
   try {
     await writeLockfile(mergeLockEntries(lock, entries), lockEnvironment);
   } catch (error) {
@@ -771,21 +775,40 @@ export async function install(options, run = runSkills, now = () => new Date(), 
  * @param {() => Date} now - Clock for installation metadata.
  * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable path/hash environment.
  * @param {string} pluginId - Plugin id to record.
+ * @param {boolean} [onlyExistingFiles] - When true, omit missing SKILL.md paths instead of empty digests.
  * @returns {Promise<Record<string, import("./lockfile.js").PluginLockEntry>>} Entries keyed by plugin id.
  */
-async function createLockEntries(options, vendor, now, lockEnvironment, pluginId) {
+async function createLockEntries(
+  options,
+  vendor,
+  now,
+  lockEnvironment,
+  pluginId,
+  onlyExistingFiles = false,
+) {
   const installedAt = now().toISOString();
   const scope = resolveScope(options);
   const packageVersion = getPackageVersion();
+  const exists = lockEnvironment.exists ?? pathExists;
   const agents = {};
   for (const agent of options.agents) {
     const root = agentSkillsRoot(scope, agent, lockEnvironment);
     const files = {};
     for (const name of options.skills) {
       const relative = `${name}/SKILL.md`;
-      files[relative] = await hashTrackedFile(join(root, relative), lockEnvironment);
+      const absolute = join(root, relative);
+      if (onlyExistingFiles && !(await exists(absolute))) {
+        continue;
+      }
+      files[relative] = await hashTrackedFile(absolute, lockEnvironment);
+    }
+    if (Object.keys(files).length === 0) {
+      continue;
     }
     agents[agent] = { files, root };
+  }
+  if (Object.keys(agents).length === 0) {
+    return {};
   }
   const entry = {
     agents,

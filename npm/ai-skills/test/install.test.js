@@ -486,6 +486,35 @@ describe("install", () => {
     }
   });
 
+  test("detect mode records only skills that exist on a discovered agent", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-detect-partial-"));
+    const cursorLint = join(cwd, ".cursor/skills/lint/SKILL.md");
+    try {
+      await install(
+        {
+          ...unattendedOptions,
+          agents: [],
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["lint", "test"],
+        },
+        async () => {},
+        () => new Date("2026-07-10T17:00:00.000Z"),
+        {
+          cwd,
+          exists: async (path) => path === cursorLint,
+          hash: async () => "abc",
+        },
+      );
+
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.lint.agents.cursor.files).toEqual({ "lint/SKILL.md": "abc" });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("does not write a lock when detect-mode finds no installed agents", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-detect-empty-"));
     try {
