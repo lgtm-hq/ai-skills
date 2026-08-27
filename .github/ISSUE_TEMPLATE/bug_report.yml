@@ -21,11 +21,13 @@ body:
       label: Steps to reproduce
       description: Exact steps and observed output
       placeholder: |
-        1. Run one of (same install flow):
-           bunx skills add lgtm-hq/ai-skills -g --all
-           npx skills add lgtm-hq/ai-skills -g --all
-           pnpm dlx skills add lgtm-hq/ai-skills -g --all
-        2. Open Codex
+        1. Install a plugin (see README Install), for example:
+           claude plugin marketplace add lgtm-hq/ai-skills
+           claude plugin install git-pr@ai-skills
+           copilot plugin marketplace add lgtm-hq/ai-skills
+           copilot plugin install git-pr@ai-skills
+           sk install -y --global -a cursor --bundle review
+        2. Open the agent
         3. See error ...
     validations:
       required: true

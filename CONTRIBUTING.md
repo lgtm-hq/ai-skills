@@ -196,8 +196,7 @@ and `release-auto-tag.yml`).
 
 Skill retirements and other deletions belong under **`### Removed`** in
 `CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)), not
-under Other Changes or Previously Unreleased — the README upgrade FAQ points
-readers at those Removed sections.
+under Other Changes or Previously Unreleased.
 
 ### CHANGELOG entry format
 
