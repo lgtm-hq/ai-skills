@@ -140,8 +140,22 @@ def test_generate_marketplace_stamps_version_from_pyproject(tmp_path: Path) -> N
     assert_that(manifest["plugins"][0]["version"]).is_equal_to("9.9.9")
 
 
-def test_generate_marketplace_prefers_version_file(tmp_path: Path) -> None:
-    """A VERSION file wins over pyproject.toml when both exist."""
+def test_generate_marketplace_stamps_version_from_version_file(tmp_path: Path) -> None:
+    """A VERSION file stamps plugins when pyproject.toml is absent."""
+
+    mod = _load_generate_marketplace_module()
+    _write_skill(repo_root=tmp_path, skill_id="alpha")
+    _write_skill(repo_root=tmp_path, skill_id="beta")
+    _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
+    _write_version(repo_root=tmp_path, version="4.5.6")
+
+    manifest = json.loads(mod.generate_marketplace(repo_root=tmp_path))
+
+    assert_that(manifest["plugins"][0]["version"]).is_equal_to("4.5.6")
+
+
+def test_generate_marketplace_rejects_version_mismatch(tmp_path: Path) -> None:
+    """VERSION and pyproject.toml must agree when both are present."""
 
     mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
@@ -153,9 +167,43 @@ def test_generate_marketplace_prefers_version_file(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    manifest = json.loads(mod.generate_marketplace(repo_root=tmp_path))
+    with pytest.raises(ValueError, match="does not match pyproject.toml"):
+        mod.generate_marketplace(repo_root=tmp_path)
 
-    assert_that(manifest["plugins"][0]["version"]).is_equal_to("4.5.6")
+
+def test_generate_marketplace_rejects_empty_version_file(tmp_path: Path) -> None:
+    """An empty VERSION file is a hard error, not a fall-through."""
+
+    mod = _load_generate_marketplace_module()
+    _write_skill(repo_root=tmp_path, skill_id="alpha")
+    _write_skill(repo_root=tmp_path, skill_id="beta")
+    _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
+    tmp_path.joinpath("VERSION").write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="VERSION file is empty"):
+        mod.generate_marketplace(repo_root=tmp_path)
+
+
+def test_generate_marketplace_rejects_missing_plugin_id(tmp_path: Path) -> None:
+    """Each group must declare an explicit kebab-case id."""
+
+    mod = _load_generate_marketplace_module()
+    _write_skill(repo_root=tmp_path, skill_id="alpha")
+    _write_version(repo_root=tmp_path, version="1.0.0")
+    _write_bundles(
+        repo_root=tmp_path,
+        body="""
+groups:
+  core:
+    name: Core
+    skills:
+      - alpha
+ungrouped: []
+""",
+    )
+
+    with pytest.raises(TypeError, match="must have a string 'id'"):
+        mod.generate_marketplace(repo_root=tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -270,6 +318,7 @@ def test_validate_bundles_rejects_missing_skill(tmp_path: Path) -> None:
         body="""
 groups:
   core:
+    id: core
     name: Core
     skills: []
 ungrouped: []
@@ -291,10 +340,12 @@ def test_validate_bundles_rejects_duplicate_assignment(tmp_path: Path) -> None:
         body="""
 groups:
   one:
+    id: one
     name: One
     skills:
       - dup
   two:
+    id: two
     name: Two
     skills:
       - dup
@@ -337,14 +388,14 @@ def test_repo_plugin_ids_are_kebab_case_and_match_slicing() -> None:
     assert_that(set(plugins)).is_equal_to(
         {group.plugin_id for group in bundles.groups.values()},
     )
-    assert_that("review" in plugins).is_true()
-    assert_that("subagents" in plugins).is_true()
-    assert_that("pre-push" in plugins).is_false()
-    assert_that("agents" in plugins).is_false()
+    assert_that(plugins).contains_key("review")
+    assert_that(plugins).contains_key("subagents")
+    assert_that(plugins).does_not_contain_key("pre-push")
+    assert_that(plugins).does_not_contain_key("agents")
 
     for group in bundles.groups.values():
         plugin = plugins[group.plugin_id]
-        assert_that(mod._KEBAB_ID_PATTERN.fullmatch(plugin["name"])).is_not_none()
+        assert_that(plugin["name"]).matches(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
         assert_that(plugin["displayName"]).is_equal_to(group.name)
         assert_that(plugin["description"]).is_equal_to(group.description)
         assert_that(plugin["source"]).is_equal_to("./")

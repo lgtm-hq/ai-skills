@@ -72,7 +72,30 @@ def test_rewrites_all_pin_patterns(tmp_path: Path) -> None:
     assert_that(readme.with_suffix(".md.bak").exists()).is_false()
 
 
-def test_rejects_missing_next_version(tmp_path: Path) -> None:
+def test_rewrites_marketplace_plugin_versions(tmp_path: Path) -> None:
+    """Marketplace stamps next to the README are rewritten with README pins."""
+
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "bunx skills add lgtm-hq/ai-skills@v0.1.10 -g\n",
+        encoding="utf-8",
+    )
+    marketplace = tmp_path / ".claude-plugin" / "marketplace.json"
+    marketplace.parent.mkdir()
+    marketplace.write_text(
+        '{\n  "plugins": [\n    {\n      "name": "review",\n'
+        '      "version": "0.1.10"\n    }\n  ]\n}\n',
+        encoding="utf-8",
+    )
+
+    result = _run(args=[str(readme)], env_version="2.3.4")
+    content = marketplace.read_text(encoding="utf-8")
+
+    assert_that(result.returncode).is_equal_to(0)
+    assert_that(result.stdout).contains("Pinned marketplace plugin versions to 2.3.4")
+    assert_that(content).contains('"version": "2.3.4"')
+    assert_that(content).does_not_contain("0.1.10")
+    assert_that(marketplace.with_suffix(".json.bak").exists()).is_false()
     """The script fails fast when NEXT_VERSION is unset."""
 
     readme = tmp_path / "README.md"

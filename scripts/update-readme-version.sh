@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
-# Rewrite release-tag and scoped npm pins in README.md to a new version.
+# Rewrite release-tag pins in README.md and plugin versions in
+# .claude-plugin/marketplace.json to a new version.
 #
 # Runs as the repo-specific version-update-script in the release version-PR
 # workflow (after the ecosystem updater bumps pyproject.toml), keeping the
-# README install examples pinned to the release being cut. Mirrors the pin
-# patterns in scripts/generate_readme.py (git-tag, @lgtm-hq/ai-skills@, gh,
-# and the prose npm↔tag pair).
+# README install examples and generated marketplace stamps pinned to the
+# release being cut. README patterns mirror scripts/generate_readme.py
+# (git-tag, @lgtm-hq/ai-skills@, gh, and the prose npm↔tag pair).
 #
 # Required environment variables:
 #   NEXT_VERSION Semver to pin, without the v prefix (e.g. 0.1.23)
 #
 # Optional arguments:
-#   $1 Path to the README to rewrite (default: README.md in the repo root)
+#   $1 Path to the README to rewrite (default: README.md in the repo root).
+#      Marketplace.json is rewritten when it sits next to that README.
 set -euo pipefail
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-  sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -49,3 +51,16 @@ sed -E -i.bak \
   "${readme_path}"
 rm -f "${readme_path}.bak"
 echo "Pinned README install examples to v${next_version}."
+
+# Marketplace plugin versions are stamped at generation from the repo
+# version. Restamp them here so the release version PR stays drift-clean
+# without needing uv/python in the updater environment.
+readme_dir=$(cd -- "$(dirname -- "${readme_path}")" && pwd)
+marketplace_path="${readme_dir}/.claude-plugin/marketplace.json"
+if [[ -f "${marketplace_path}" ]]; then
+  sed -E -i.bak \
+    -e "s|(\"version\": \")[0-9]+\.[0-9]+\.[0-9]+(\")|\1${next_version}\2|g" \
+    "${marketplace_path}"
+  rm -f "${marketplace_path}.bak"
+  echo "Pinned marketplace plugin versions to ${next_version}."
+fi

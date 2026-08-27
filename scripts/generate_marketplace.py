@@ -8,7 +8,8 @@ Skills listed under ``ungrouped`` are omitted from the manifest and appear in
 the installer's "Other" bucket.
 
 Plugin ``version`` is stamped from a root ``VERSION`` file when present,
-otherwise ``pyproject.toml`` ``project.version``.
+otherwise ``pyproject.toml`` ``project.version``. When both exist they
+must match — the two files are not independent sources of truth.
 
 Usage:
     uv run python scripts/generate_marketplace.py          # write manifest
@@ -150,20 +151,29 @@ def _read_repo_version(*, repo_root: Path) -> str:
         ValueError: If neither source yields a non-empty version.
     """
     version_path = repo_root / "VERSION"
+    file_version: str | None = None
     if version_path.is_file():
-        version = version_path.read_text(encoding="utf-8").splitlines()[0].strip()
-        if version:
-            return version
-        msg = "VERSION file is empty"
-        raise ValueError(msg)
+        lines = version_path.read_text(encoding="utf-8").splitlines()
+        file_version = lines[0].strip() if lines else ""
+        if not file_version:
+            msg = "VERSION file is empty"
+            raise ValueError(msg)
     pyproject_path = repo_root / "pyproject.toml"
+    pyproject_version: str | None = None
     if pyproject_path.is_file():
         data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-        version = data.get("project", {}).get("version")
-        if isinstance(version, str) and version:
-            return version
-        msg = "pyproject.toml is missing project.version"
+        raw_version = data.get("project", {}).get("version")
+        if isinstance(raw_version, str) and raw_version:
+            pyproject_version = raw_version
+    if file_version and pyproject_version and file_version != pyproject_version:
+        msg = (
+            f"VERSION {file_version!r} does not match pyproject.toml "
+            f"project.version {pyproject_version!r}"
+        )
         raise ValueError(msg)
+    version = file_version or pyproject_version
+    if version:
+        return version
     msg = "No VERSION file or pyproject.toml project.version to stamp plugins"
     raise ValueError(msg)
 
@@ -198,7 +208,10 @@ def _parse_bundle_group(*, group_id: str, group: object) -> BundleGroup:
     if not isinstance(description, str):
         msg = f"Group {group_id!r} 'description' must be a string"
         raise TypeError(msg)
-    raw_id = group.get("id", group_id)
+    if "id" not in group:
+        msg = f"Group {group_id!r} must have a string 'id'"
+        raise TypeError(msg)
+    raw_id = group["id"]
     if not isinstance(raw_id, str) or not raw_id:
         msg = f"Group {group_id!r} must have a string 'id'"
         raise TypeError(msg)
