@@ -333,7 +333,7 @@ function isValidV2Lock(lock, scope) {
 }
 
 /**
- * Whether a plugin record has the v2 agent map and projector.
+ * Whether a plugin record has the v2 agent map, projector, and string provenance.
  *
  * @param {unknown} entry - Candidate plugin entry.
  * @returns {boolean} Whether the entry is structurally valid.
@@ -343,6 +343,15 @@ function isValidPluginEntry(entry) {
     return false;
   }
   if (entry.projector !== PROJECTOR_EXPLODE && entry.projector !== PROJECTOR_NATIVE) {
+    return false;
+  }
+  if (
+    typeof entry.vendor !== "string" ||
+    typeof entry.repo !== "string" ||
+    typeof entry.sha !== "string" ||
+    typeof entry.version !== "string" ||
+    typeof entry.installedAt !== "string"
+  ) {
     return false;
   }
   if (typeof entry.agents !== "object" || entry.agents === null || Array.isArray(entry.agents)) {
@@ -355,7 +364,8 @@ function isValidPluginEntry(entry) {
       typeof install.root === "string" &&
       typeof install.files === "object" &&
       install.files !== null &&
-      !Array.isArray(install.files),
+      !Array.isArray(install.files) &&
+      Object.values(install.files).every((digest) => typeof digest === "string"),
   );
 }
 

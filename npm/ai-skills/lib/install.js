@@ -1,3 +1,4 @@
+import { access } from "node:fs/promises";
 import { join } from "node:path";
 
 import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
@@ -737,8 +738,14 @@ export async function install(options, run = runSkills, now = () => new Date(), 
       source,
     ),
   );
+  const agentsForLock = detectAgents
+    ? await discoverInstalledAgents(scopedOptions, lockEnvironment)
+    : agentsToInstall;
+  if (agentsForLock.length === 0) {
+    return { alreadyPresent, installed, repaired };
+  }
   const entries = await createLockEntries(
-    { ...scopedOptions, agents: detectAgents ? scopedOptions.agents : agentsToInstall },
+    { ...scopedOptions, agents: agentsForLock },
     vendor,
     now,
     lockEnvironment,
@@ -878,6 +885,47 @@ function agentCoversSkills(install, requestedSkills) {
       .filter(Boolean),
   );
   return requestedSkills.every((name) => tracked.has(name));
+}
+
+/**
+ * Agents that actually received requested skills after an untargeted install.
+ *
+ * @param {{agents: string[], skills: string[], global: boolean, project: boolean}} options - Install options.
+ * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable fs.
+ * @returns {Promise<string[]>} Detected agent ids.
+ */
+async function discoverInstalledAgents(options, lockEnvironment = {}) {
+  const exists = lockEnvironment.exists ?? pathExists;
+  const found = [];
+  for (const { value: agent } of KNOWN_AGENTS) {
+    const root = agentSkillsRoot(resolveScope(options), agent, lockEnvironment);
+    let present = false;
+    for (const name of options.skills) {
+      if (await exists(join(root, name, "SKILL.md"))) {
+        present = true;
+        break;
+      }
+    }
+    if (present) {
+      found.push(agent);
+    }
+  }
+  return found;
+}
+
+/**
+ * Test whether a path exists.
+ *
+ * @param {string} path - File path.
+ * @returns {Promise<boolean>} Whether the path exists.
+ */
+async function pathExists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

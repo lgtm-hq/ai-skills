@@ -42,14 +42,16 @@ export async function updateSkills(options, dependencies = {}) {
   const updated = Object.keys(selected);
   const { vendors } = await loadVendors();
   const sources = resolveSources(selected, vendors);
-  for (const [source, names] of sources) {
+  for (const [source, group] of sources) {
+    const agents = [...group.agents].sort();
     await run(
       buildSkillsArguments(
         {
           ...scopedOptions,
+          agents: agents.length > 0 ? agents : scopedOptions.agents,
           copy: false,
           onConflict: "overwrite",
-          skills: names,
+          skills: group.skills,
         },
         source,
       ),
@@ -173,19 +175,31 @@ function selectPlugins(plugins, names) {
  *
  * @param {Record<string, import("./lockfile.js").PluginLockEntry>} plugins - Selected lock entries.
  * @param {Array<{id: string, repo: string, sha: string}>} vendors - Current vendor registry.
- * @returns {Map<string, string[]>} Source string to exploded skill names.
+ * @returns {Map<string, {agents: Set<string>, skills: string[]}>} Source string to tracked agents and exploded skill names.
  */
 function resolveSources(plugins, vendors) {
+  /** @type {Map<string, {agents: Set<string>, skills: Set<string>}>} */
   const sources = new Map();
   for (const entry of Object.values(plugins)) {
     const source =
       entry.vendor === "lgtm-hq"
         ? `lgtm-hq/ai-skills@v${getPackageVersion()}`
         : resolveVendorSource(entry, vendors);
-    const names = new Set([...(sources.get(source) ?? []), ...pluginSkillNames(entry)]);
-    sources.set(source, [...names].sort());
+    const group = sources.get(source) ?? { agents: new Set(), skills: new Set() };
+    for (const agent of pluginAgentNames(entry)) {
+      group.agents.add(agent);
+    }
+    for (const name of pluginSkillNames(entry)) {
+      group.skills.add(name);
+    }
+    sources.set(source, group);
   }
-  return sources;
+  return new Map(
+    [...sources].map(([source, group]) => [
+      source,
+      { agents: group.agents, skills: [...group.skills].sort() },
+    ]),
+  );
 }
 
 /**

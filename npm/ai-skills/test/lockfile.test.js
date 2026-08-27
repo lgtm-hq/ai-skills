@@ -145,6 +145,46 @@ describe("gateway lockfile", () => {
     ).rejects.toThrow("Invalid gateway lockfile");
   });
 
+  test("rejects a v2 lock whose tracked file digests are not strings", async () => {
+    await expect(
+      readLockfile("project", {
+        cwd: "/tmp/unused",
+        read: async () =>
+          JSON.stringify({
+            gatewayVersion: "0.0.0-dev",
+            plugins: {
+              lint: {
+                ...explodeEntry,
+                agents: {
+                  cursor: {
+                    files: { "lint/SKILL.md": 12 },
+                    root: "/tmp/project/.cursor/skills",
+                  },
+                },
+              },
+            },
+            scope: "project",
+            version: LOCKFILE_VERSION,
+          }),
+      }),
+    ).rejects.toThrow("Invalid gateway lockfile");
+  });
+
+  test("rejects a v2 lock whose provenance fields are not strings", async () => {
+    await expect(
+      readLockfile("project", {
+        cwd: "/tmp/unused",
+        read: async () =>
+          JSON.stringify({
+            gatewayVersion: "0.0.0-dev",
+            plugins: { lint: { ...explodeEntry, vendor: 1 } },
+            scope: "project",
+            version: LOCKFILE_VERSION,
+          }),
+      }),
+    ).rejects.toThrow("Invalid gateway lockfile");
+  });
+
   test("does not prune plugins whose tracked files are modified", async () => {
     const { lock: kept, pruned: removed } = await pruneMissingLockEntries(
       lock,

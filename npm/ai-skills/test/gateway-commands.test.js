@@ -89,6 +89,60 @@ describe("gateway maintenance commands", () => {
     expect(written.skills).toBeUndefined();
   });
 
+  test("updates every tracked agent on a plugin even when -a is a subset", async () => {
+    const calls = [];
+    let written;
+    const multiAgentLock = {
+      ...lock,
+      plugins: {
+        pdf: pluginEntry({
+          agents: {
+            "claude-code": {
+              files: { "pdf/SKILL.md": "abc" },
+              root: "/tmp/project/.claude/skills",
+            },
+            cursor: {
+              files: { "pdf/SKILL.md": "abc" },
+              root: "/tmp/project/.cursor/skills",
+            },
+          },
+        }),
+      },
+    };
+
+    await updateSkills(
+      { ...options, agents: ["cursor"] },
+      {
+        hash: async () => "refreshed",
+        isInstalled: async () => true,
+        now: () => new Date("2026-07-10T17:00:00.000Z"),
+        readLock: async () => multiAgentLock,
+        run: async (args) => {
+          calls.push(args);
+        },
+        writeLock: async (next) => {
+          written = next;
+        },
+      },
+    );
+
+    expect(calls).toEqual([
+      [
+        "skills@^1.5.0",
+        "add",
+        "anthropics/skills@9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+        "-a",
+        "claude-code",
+        "cursor",
+        "--skill",
+        "pdf",
+        "-y",
+      ],
+    ]);
+    expect(written.plugins.pdf.agents["claude-code"].files["pdf/SKILL.md"]).toBe("refreshed");
+    expect(written.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toBe("refreshed");
+  });
+
   test("removes only lock-managed selections after mocked CLI success", async () => {
     const calls = [];
     let written;
