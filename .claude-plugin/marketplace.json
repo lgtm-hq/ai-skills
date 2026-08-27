@@ -4,7 +4,7 @@
       "name": "git-pr",
       "displayName": "Git & PR Workflow",
       "description": "Branching, commits, rebases, and pull requests.",
-      "version": "0.19.0",
+      "version": "0.20.0",
       "source": "./",
       "strict": false,
       "skills": [
@@ -20,7 +20,7 @@
       "name": "review",
       "displayName": "Review",
       "description": "Lint, test, and AI review before pushing or opening a PR.",
-      "version": "0.19.0",
+      "version": "0.20.0",
       "source": "./",
       "strict": false,
       "skills": [
@@ -34,7 +34,7 @@
       "name": "standards",
       "displayName": "Standards",
       "description": "Language and CI coding standards applied while writing code.",
-      "version": "0.19.0",
+      "version": "0.20.0",
       "source": "./",
       "strict": false,
       "skills": [
@@ -50,7 +50,7 @@
       "name": "raycast",
       "displayName": "Raycast",
       "description": "Raycast extension development and store submissions.",
-      "version": "0.19.0",
+      "version": "0.20.0",
       "source": "./",
       "strict": false,
       "skills": [
@@ -62,7 +62,7 @@
       "name": "analysis",
       "displayName": "Analysis",
       "description": "Manual pre-review analysis of code, projects, and test suites.",
-      "version": "0.19.0",
+      "version": "0.20.0",
       "source": "./",
       "strict": false,
       "skills": [
@@ -77,7 +77,7 @@
       "name": "subagents",
       "displayName": "Subagents",
       "description": "Autonomous agents that shepherd PRs and work issue backlogs.",
-      "version": "0.19.0",
+      "version": "0.20.0",
       "source": "./",
       "strict": false,
       "skills": [
@@ -91,7 +91,7 @@
       "name": "testing",
       "displayName": "Testing",
       "description": "Playwright and BATS test-writing standards.",
-      "version": "0.19.0",
+      "version": "0.20.0",
       "source": "./",
       "strict": false,
       "skills": [
