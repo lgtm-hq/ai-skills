@@ -325,7 +325,8 @@ vendors.yaml                    # SHA-pinned third-party vendor registry
 vendor-indexes/                 # Baked skill indexes for the gateway picker
 NOTICE.md                       # Third-party license notices for the npm package
 npm/ai-skills/                  # @lgtm-hq/ai-skills gateway package
-.claude-plugin/marketplace.json # Generated grouped picker manifest
+.claude-plugin/marketplace.json # Generated Claude marketplace adapter
+.cursor-plugin/marketplace.json # Generated Cursor marketplace adapter
 docs/adr/                       # Plugin-canonical architecture decision records
 AGENTS.md                       # Human- and agent-readable skill index
 scripts/validate.sh             # Frontmatter, AGENTS, bundles, README, marketplace checks

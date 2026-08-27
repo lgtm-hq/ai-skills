@@ -121,6 +121,7 @@ def test_generate_marketplace_builds_plugin_groups(tmp_path: Path) -> None:
 
     assert_that(manifest).is_equal_to(
         {
+            "$generated": mod.GENERATED_NOTICE,
             "plugins": [
                 {
                     "name": "core",
@@ -134,6 +135,33 @@ def test_generate_marketplace_builds_plugin_groups(tmp_path: Path) -> None:
             ],
         },
     )
+
+
+def test_generate_cursor_marketplace_mirrors_groups(tmp_path: Path) -> None:
+    """Cursor adapter lists the same plugin ids with name/owner/metadata."""
+
+    mod = _load_generate_marketplace_module()
+    _write_skill(repo_root=tmp_path, skill_id="alpha")
+    _write_skill(repo_root=tmp_path, skill_id="beta")
+    _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
+    _write_pyproject(repo_root=tmp_path, version="1.2.3")
+
+    manifest = json.loads(mod.generate_cursor_marketplace(repo_root=tmp_path))
+
+    assert_that(manifest["name"]).is_equal_to("ai-skills")
+    assert_that(manifest["owner"]).is_equal_to({"name": "lgtm-hq"})
+    assert_that(manifest["metadata"]["version"]).is_equal_to("1.2.3")
+    assert_that(manifest["metadata"]["$generated"]).is_equal_to(mod.GENERATED_NOTICE)
+    assert_that(manifest["plugins"]).is_equal_to(
+        [
+            {
+                "name": "core",
+                "source": "./",
+                "description": "Everyday workflow skills.",
+            },
+        ],
+    )
+    assert_that(manifest).does_not_contain_key("$generated")
 
 
 def test_generate_marketplace_stamps_version_from_pyproject(tmp_path: Path) -> None:
@@ -321,17 +349,40 @@ ungrouped: []
         mod.generate_marketplace(repo_root=tmp_path)
 
 
+def _write_generated_adapters(*, repo_root: Path, mod: ModuleType) -> None:
+    """Write both generated marketplace adapters for a fake repo.
+
+    Args:
+        repo_root: Fake repository root.
+        mod: Loaded generate_marketplace module.
+    """
+    claude_path = repo_root / ".claude-plugin" / "marketplace.json"
+    cursor_path = repo_root / ".cursor-plugin" / "marketplace.json"
+    claude_path.parent.mkdir(parents=True, exist_ok=True)
+    cursor_path.parent.mkdir(parents=True, exist_ok=True)
+    claude_path.write_text(
+        mod.generate_marketplace(repo_root=repo_root),
+        encoding="utf-8",
+    )
+    cursor_path.write_text(
+        mod.generate_cursor_marketplace(repo_root=repo_root),
+        encoding="utf-8",
+    )
+
+
 def test_marketplace_drift_message_detects_stale_file(tmp_path: Path) -> None:
-    """Drift check fails when marketplace.json does not match the generator."""
+    """Drift check fails when a marketplace adapter does not match the generator."""
 
     mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
     _write_pyproject(repo_root=tmp_path, version="1.2.3")
-    output_path = tmp_path / ".claude-plugin" / "marketplace.json"
-    output_path.parent.mkdir(parents=True)
-    output_path.write_text("{}\n", encoding="utf-8")
+    _write_generated_adapters(repo_root=tmp_path, mod=mod)
+    (tmp_path / ".claude-plugin" / "marketplace.json").write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
 
     message = mod.marketplace_drift_message(repo_root=tmp_path)
 
@@ -340,21 +391,40 @@ def test_marketplace_drift_message_detects_stale_file(tmp_path: Path) -> None:
 
 
 def test_marketplace_drift_message_passes_when_current(tmp_path: Path) -> None:
-    """Drift check is silent when marketplace.json matches the generator."""
+    """Drift check is silent when every marketplace adapter matches."""
 
     mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
     _write_pyproject(repo_root=tmp_path, version="1.2.3")
-    output_path = tmp_path / ".claude-plugin" / "marketplace.json"
-    output_path.parent.mkdir(parents=True)
-    output_path.write_text(
+    _write_generated_adapters(repo_root=tmp_path, mod=mod)
+
+    assert_that(mod.marketplace_drift_message(repo_root=tmp_path)).is_none()
+
+
+def test_marketplace_drift_message_detects_missing_cursor_adapter(
+    tmp_path: Path,
+) -> None:
+    """Drift check fails when the Cursor adapter has not been generated."""
+
+    mod = _load_generate_marketplace_module()
+    _write_skill(repo_root=tmp_path, skill_id="alpha")
+    _write_skill(repo_root=tmp_path, skill_id="beta")
+    _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
+    _write_pyproject(repo_root=tmp_path, version="1.2.3")
+    claude_path = tmp_path / ".claude-plugin" / "marketplace.json"
+    claude_path.parent.mkdir(parents=True)
+    claude_path.write_text(
         mod.generate_marketplace(repo_root=tmp_path),
         encoding="utf-8",
     )
 
-    assert_that(mod.marketplace_drift_message(repo_root=tmp_path)).is_none()
+    message = mod.marketplace_drift_message(repo_root=tmp_path)
+
+    assert_that(message).is_not_none()
+    assert_that(message).contains(".cursor-plugin/marketplace.json")
+    assert_that(message).contains("Missing")
 
 
 def test_marketplace_drift_message_detects_missing_file(tmp_path: Path) -> None:
@@ -433,7 +503,7 @@ def test_repo_bundles_cover_all_skills() -> None:
 
 
 def test_repo_marketplace_is_current() -> None:
-    """Committed marketplace.json must match the generator (drift gate)."""
+    """Committed host-adapter manifests must match the generator (drift gate)."""
 
     mod = _load_generate_marketplace_module()
     repo_root = Path(__file__).resolve().parents[1]
@@ -468,3 +538,19 @@ def test_repo_plugin_ids_are_kebab_case_and_match_slicing() -> None:
         assert_that(plugin["skills"]).is_equal_to(
             [f"./skills/{name}" for name in group.skills],
         )
+
+
+def test_repo_cursor_marketplace_mirrors_claude_plugin_ids() -> None:
+    """Cursor adapter plugin names match Claude marketplace plugin names."""
+
+    mod = _load_generate_marketplace_module()
+    repo_root = Path(__file__).resolve().parents[1]
+    claude = json.loads(mod.generate_marketplace(repo_root=repo_root))
+    cursor = json.loads(mod.generate_cursor_marketplace(repo_root=repo_root))
+    claude_names = [plugin["name"] for plugin in claude["plugins"]]
+    cursor_names = [plugin["name"] for plugin in cursor["plugins"]]
+
+    assert_that(cursor_names).is_equal_to(claude_names)
+    assert_that(cursor["name"]).is_equal_to("ai-skills")
+    assert_that(cursor["owner"]["name"]).is_equal_to("lgtm-hq")
+    assert_that(cursor["metadata"]["$generated"]).is_equal_to(mod.GENERATED_NOTICE)

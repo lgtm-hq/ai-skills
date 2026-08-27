@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""Generate ``.claude-plugin/marketplace.json`` from ``bundles.yaml``.
+"""Generate host-adapter marketplace manifests from ``bundles.yaml``.
+
+Writes ``.claude-plugin/marketplace.json`` (Claude plugin marketplace) and
+``.cursor-plugin/marketplace.json`` (Cursor marketplace). Both are generated
+adapters: do not edit them by hand; regenerate with this script.
 
 Each bundle group is one installable plugin: kebab-case ``id`` as ``name``,
-display name, description, repo version, ``source: "./"``, ``strict: false``,
-and a ``skills`` array of ``./skills/<id>`` paths (upstream-native slicing).
-Skills listed under ``ungrouped`` are omitted from the manifest and appear in
-the installer's "Other" bucket.
+display name, description, repo version, and host-specific slicing. Skills
+listed under ``ungrouped`` are omitted from the manifests and appear in the
+installer's "Other" bucket.
 
 Plugin ``version`` is stamped from a root ``VERSION`` file when present,
 otherwise ``pyproject.toml`` ``project.version``. When both exist they
 must match — the two files are not independent sources of truth.
 
 Usage:
-    uv run python scripts/generate_marketplace.py          # write manifest
+    uv run python scripts/generate_marketplace.py          # write manifests
     uv run python scripts/generate_marketplace.py --check  # fail if stale
 """
 
@@ -30,6 +33,10 @@ from typing import Any
 import yaml
 
 _KEBAB_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+GENERATED_NOTICE = "do not edit — regenerate via scripts/generate_marketplace.py"
+_MARKETPLACE_NAME = "ai-skills"
+_MARKETPLACE_OWNER_NAME = "lgtm-hq"
+_MARKETPLACE_DESCRIPTION = "Harness-agnostic agent skills generated from bundles.yaml."
 
 
 @dataclass(frozen=True)
@@ -102,7 +109,10 @@ class MarketplaceManifest:
         Returns:
             Manifest object suitable for ``json.dumps``.
         """
-        return {"plugins": [plugin.to_dict() for plugin in self.plugins]}
+        return {
+            "$generated": GENERATED_NOTICE,
+            "plugins": [plugin.to_dict() for plugin in self.plugins],
+        }
 
 
 def _repo_root() -> Path:
@@ -339,6 +349,58 @@ def _validate_bundles(
         raise ValueError(msg)
 
 
+@dataclass(frozen=True)
+class CursorPluginEntry:
+    """One Cursor marketplace plugin index entry."""
+
+    name: str
+    source: str
+    description: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable Cursor plugin entry.
+
+        Returns:
+            Plugin object suitable for ``json.dumps``.
+        """
+        return {
+            "name": self.name,
+            "source": self.source,
+            "description": self.description,
+        }
+
+
+@dataclass(frozen=True)
+class CursorMarketplaceManifest:
+    """Top-level Cursor marketplace manifest object."""
+
+    name: str
+    owner_name: str
+    description: str
+    version: str
+    plugins: tuple[CursorPluginEntry, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable Cursor marketplace mapping.
+
+        ``$generated`` lives under ``metadata`` because Cursor's marketplace
+        schema sets ``additionalProperties: false`` at the top level.
+
+        Returns:
+            Manifest object suitable for ``json.dumps``.
+        """
+        return {
+            "name": self.name,
+            "owner": {"name": self.owner_name},
+            "metadata": {
+                "description": self.description,
+                "version": self.version,
+                "$generated": GENERATED_NOTICE,
+            },
+            "plugins": [plugin.to_dict() for plugin in self.plugins],
+        }
+
+
 def _build_marketplace(
     *,
     bundles: BundlesDocument,
@@ -368,16 +430,47 @@ def _build_marketplace(
     return MarketplaceManifest(plugins=plugins)
 
 
-def _render_marketplace(*, manifest: MarketplaceManifest) -> str:
-    """Serialize manifest JSON with a stable trailing newline.
+def _render_json(*, payload: dict[str, Any]) -> str:
+    """Serialize a mapping as JSON with a stable trailing newline.
 
     Args:
-        manifest: Marketplace manifest object.
+        payload: JSON-serializable mapping.
 
     Returns:
         UTF-8 JSON text ending with a newline.
     """
-    return json.dumps(manifest.to_dict(), indent=2, ensure_ascii=False) + "\n"
+    return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+
+
+def _build_cursor_marketplace(
+    *,
+    bundles: BundlesDocument,
+    version: str,
+) -> CursorMarketplaceManifest:
+    """Build the Cursor marketplace manifest object.
+
+    Args:
+        bundles: Parsed bundle document.
+        version: Repo version stamped onto marketplace metadata.
+
+    Returns:
+        Cursor marketplace manifest ready for JSON serialization.
+    """
+    plugins = tuple(
+        CursorPluginEntry(
+            name=group.plugin_id,
+            source="./",
+            description=group.description,
+        )
+        for group in bundles.groups.values()
+    )
+    return CursorMarketplaceManifest(
+        name=_MARKETPLACE_NAME,
+        owner_name=_MARKETPLACE_OWNER_NAME,
+        description=_MARKETPLACE_DESCRIPTION,
+        version=version,
+        plugins=plugins,
+    )
 
 
 def load_validated_bundles(*, repo_root: Path) -> BundlesDocument:
@@ -398,7 +491,7 @@ def load_validated_bundles(*, repo_root: Path) -> BundlesDocument:
 
 
 def generate_marketplace(*, repo_root: Path) -> str:
-    """Validate bundles and return rendered ``marketplace.json`` content.
+    """Validate bundles and return rendered Claude marketplace JSON.
 
     Args:
         repo_root: Repository root path.
@@ -409,7 +502,22 @@ def generate_marketplace(*, repo_root: Path) -> str:
     bundles = load_validated_bundles(repo_root=repo_root)
     version = _read_repo_version(repo_root=repo_root)
     manifest = _build_marketplace(bundles=bundles, version=version)
-    return _render_marketplace(manifest=manifest)
+    return _render_json(payload=manifest.to_dict())
+
+
+def generate_cursor_marketplace(*, repo_root: Path) -> str:
+    """Validate bundles and return rendered Cursor marketplace JSON.
+
+    Args:
+        repo_root: Repository root path.
+
+    Returns:
+        Rendered JSON for ``.cursor-plugin/marketplace.json``.
+    """
+    bundles = load_validated_bundles(repo_root=repo_root)
+    version = _read_repo_version(repo_root=repo_root)
+    manifest = _build_cursor_marketplace(bundles=bundles, version=version)
+    return _render_json(payload=manifest.to_dict())
 
 
 def marketplace_output_path(*, repo_root: Path) -> Path:
@@ -424,17 +532,34 @@ def marketplace_output_path(*, repo_root: Path) -> Path:
     return repo_root / ".claude-plugin" / "marketplace.json"
 
 
-def marketplace_drift_message(*, repo_root: Path) -> str | None:
-    """Return a drift error if the generated marketplace is missing or stale.
+def cursor_marketplace_output_path(*, repo_root: Path) -> Path:
+    """Return the Cursor marketplace adapter path.
 
     Args:
         repo_root: Repository root path.
 
     Returns:
-        Error message, or ``None`` when the file matches the generator.
+        Absolute path to ``.cursor-plugin/marketplace.json``.
     """
-    output_path = marketplace_output_path(repo_root=repo_root)
-    rendered = generate_marketplace(repo_root=repo_root)
+    return repo_root / ".cursor-plugin" / "marketplace.json"
+
+
+def _adapter_drift_message(
+    *,
+    repo_root: Path,
+    output_path: Path,
+    rendered: str,
+) -> str | None:
+    """Return a drift error for one generated adapter file.
+
+    Args:
+        repo_root: Repository root path.
+        output_path: Expected generated file path.
+        rendered: Canonical generator output.
+
+    Returns:
+        Error message, or ``None`` when the file matches.
+    """
     relative = output_path.relative_to(repo_root)
     if not output_path.is_file():
         return f"Missing {relative}; run uv run python scripts/generate_marketplace.py"
@@ -447,15 +572,48 @@ def marketplace_drift_message(*, repo_root: Path) -> str | None:
     return None
 
 
+def marketplace_drift_message(*, repo_root: Path) -> str | None:
+    """Return a drift error if any generated marketplace adapter is stale.
+
+    Args:
+        repo_root: Repository root path.
+
+    Returns:
+        Error message, or ``None`` when every adapter matches the generator.
+    """
+    adapters = (
+        (
+            marketplace_output_path(repo_root=repo_root),
+            generate_marketplace(repo_root=repo_root),
+        ),
+        (
+            cursor_marketplace_output_path(repo_root=repo_root),
+            generate_cursor_marketplace(repo_root=repo_root),
+        ),
+    )
+    for output_path, rendered in adapters:
+        message = _adapter_drift_message(
+            repo_root=repo_root,
+            output_path=output_path,
+            rendered=rendered,
+        )
+        if message is not None:
+            return message
+    return None
+
+
 def main() -> None:
-    """CLI entry: write or check ``.claude-plugin/marketplace.json``."""
+    """CLI entry: write or check host-adapter marketplace manifests."""
     parser = argparse.ArgumentParser(
-        description="Generate .claude-plugin/marketplace.json from bundles.yaml",
+        description=(
+            "Generate .claude-plugin/marketplace.json and "
+            ".cursor-plugin/marketplace.json from bundles.yaml"
+        ),
     )
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Exit 1 if marketplace.json is missing or out of date",
+        help="Exit 1 if a marketplace adapter is missing or out of date",
     )
     args = parser.parse_args()
 
@@ -468,10 +626,19 @@ def main() -> None:
             sys.exit(1)
         return
 
-    rendered = generate_marketplace(repo_root=repo_root)
-    output_path = marketplace_output_path(repo_root=repo_root)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(rendered, encoding="utf-8")
+    adapters = (
+        (
+            marketplace_output_path(repo_root=repo_root),
+            generate_marketplace(repo_root=repo_root),
+        ),
+        (
+            cursor_marketplace_output_path(repo_root=repo_root),
+            generate_cursor_marketplace(repo_root=repo_root),
+        ),
+    )
+    for output_path, rendered in adapters:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered, encoding="utf-8")
 
 
 if __name__ == "__main__":

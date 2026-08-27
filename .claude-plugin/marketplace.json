@@ -1,4 +1,5 @@
 {
+  "$generated": "do not edit — regenerate via scripts/generate_marketplace.py",
   "plugins": [
     {
       "name": "git-pr",
