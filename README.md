@@ -50,14 +50,15 @@ the same kebab-case plugin ids as the table below.
 
 ### Cursor
 
-**Local:** clone this repo and add that directory as a marketplace in
-Customize. Slicing uses the Claude-format
-`.claude-plugin/marketplace.json`; the generated
-`.cursor-plugin/marketplace.json` is a name-list mirror and does not isolate
-skills by itself.
+**Local:** clone this repo and symlink it into Cursor's local plugin dir
+(`~/.cursor/plugins/local/<plugin>`). This catalog is a multi-plugin
+marketplace (`.cursor-plugin/marketplace.json`); skill-list slicing still
+lives in the Claude-format adapter
+([ADR 0003](./docs/adr/0003-upstream-native-slicing.md)).
 
 ```bash
 git clone https://github.com/lgtm-hq/ai-skills.git
+ln -s "$(pwd)/ai-skills" ~/.cursor/plugins/local/ai-skills
 ```
 
 **Native:** on Teams/Enterprise, import `lgtm-hq/ai-skills` from
@@ -186,8 +187,9 @@ tests/                          # Pytest wraps for scripts
 .github/workflows/              # CI + org reusable workflows + npm publish
 ```
 
-The plugin table above and the release-tag / npm-version pins in install
-examples are generated — edit `bundles.yaml`, then run
+The plugin table above is generated from `bundles.yaml`. The release-tag /
+npm-version pins in install examples are generated from `pyproject.toml`.
+Edit the relevant source, then run
 `uv run python scripts/generate_readme.py`. Architecture diagrams, CI
 details, npm publish, and release mechanics live in
 **[CONTRIBUTING.md](./CONTRIBUTING.md)**.

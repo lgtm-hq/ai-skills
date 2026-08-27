@@ -35,8 +35,7 @@ _GENERATED_NOTE = (
 )
 
 _UNGROUPED_NOTE = (
-    "Skills listed under `ungrouped` in `bundles.yaml` are not "
-    "marketplace plugins."
+    "Skills listed under `ungrouped` in `bundles.yaml` are not marketplace plugins."
 )
 
 _VERSION_PIN_PATTERNS = (
@@ -61,15 +60,18 @@ def _repo_root() -> Path:
 
 
 def _pipe_cell(text: str) -> str:
-    """Escape pipe characters so a value is safe in a Markdown table cell.
+    """Collapse whitespace and escape pipes for a Markdown table cell.
+
+    YAML folded or literal scalars can embed newlines; a raw newline would
+    split the generated table row.
 
     Args:
         text: Raw cell text.
 
     Returns:
-        Text with ``|`` escaped.
+        Single-line text with ``|`` escaped.
     """
-    return text.replace("|", "\\|")
+    return " ".join(text.split()).replace("|", "\\|")
 
 
 def _render_plugin_table(*, bundles: BundlesDocument) -> str:
