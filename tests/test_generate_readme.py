@@ -127,7 +127,9 @@ def test_render_readme_omits_ungrouped_from_plugin_table(tmp_path: Path) -> None
 
     rendered = mod.render_readme(repo_root=tmp_path)
 
-    assert_that(rendered).contains(mod._UNGROUPED_NOTE)
+    assert_that(rendered).contains(
+        "Skills listed under `ungrouped` in `bundles.yaml` are not marketplace plugins.",
+    )
     assert_that(rendered).does_not_contain("### Other")
     assert_that(rendered).does_not_contain("| `beta` |")
     assert_that(rendered).does_not_contain("[beta](skills/beta/SKILL.md)")
@@ -190,16 +192,34 @@ def test_render_readme_requires_markers(tmp_path: Path) -> None:
         mod.render_readme(repo_root=tmp_path)
 
 
-def test_pipe_cell_escapes_pipes() -> None:
-    """Table cells collapse whitespace and escape pipe characters."""
+def test_render_readme_table_cells_are_single_line(tmp_path: Path) -> None:
+    """Plugin table cells collapse YAML newlines and escape pipes."""
 
     mod = _load_generate_readme_module()
+    _write_fake_repo(repo_root=tmp_path)
+    tmp_path.joinpath("bundles.yaml").write_text(
+        """
+groups:
+  core:
+    id: core
+    name: Core Workflow
+    description: |
+      Everyday | workflow
+      skills.
+    skills:
+      - alpha
+ungrouped:
+  - beta
+""",
+        encoding="utf-8",
+    )
 
-    escaped = mod._pipe_cell("left|right")
-    folded = mod._pipe_cell("line one\nline two")
+    rendered = mod.render_readme(repo_root=tmp_path)
 
-    assert_that(escaped).is_equal_to("left\\|right")
-    assert_that(folded).is_equal_to("line one line two")
+    assert_that(rendered).contains(
+        "| Core Workflow | `core` | Everyday \\| workflow skills. |",
+    )
+    assert_that(rendered).does_not_contain("Everyday | workflow\n")
 
 
 def test_repo_readme_is_up_to_date() -> None:
