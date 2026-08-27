@@ -54,7 +54,8 @@ echo "Pinned README install examples to v${next_version}."
 
 # Marketplace plugin versions are stamped at generation from the repo
 # version. Restamp them here so the release version PR stays drift-clean
-# without needing uv/python in the updater environment.
+# without needing uv/python in the updater environment. A missing sibling
+# marketplace.json is skipped so README-only invocations still succeed.
 readme_dir=$(cd -- "$(dirname -- "${readme_path}")" && pwd)
 marketplace_path="${readme_dir}/.claude-plugin/marketplace.json"
 if [[ -f "${marketplace_path}" ]]; then

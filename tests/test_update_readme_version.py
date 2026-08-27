@@ -110,6 +110,22 @@ def test_rejects_missing_next_version(tmp_path: Path) -> None:
     assert_that(result.stderr).contains("NEXT_VERSION is required")
 
 
+def test_missing_marketplace_does_not_fail_readme_pin(tmp_path: Path) -> None:
+    """README-only invocations skip restamp when marketplace.json is absent."""
+
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "bunx skills add lgtm-hq/ai-skills@v0.1.10 -g\n",
+        encoding="utf-8",
+    )
+
+    result = _run(args=[str(readme)], env_version="2.3.4")
+
+    assert_that(result.returncode).is_equal_to(0)
+    assert_that(result.stdout).contains("Pinned README install examples to v2.3.4")
+    assert_that(result.stdout).does_not_contain("Pinned marketplace")
+
+
 def test_rejects_marketplace_restamp_without_semver_versions(tmp_path: Path) -> None:
     """A marketplace.json that cannot be restamped is a hard error."""
 

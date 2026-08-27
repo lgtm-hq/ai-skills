@@ -88,6 +88,12 @@ describe("install", () => {
     ).rejects.toThrow("Unknown first-party bundle: pre-push");
   });
 
+  test("rejects the retired agents bundle key", async () => {
+    await expect(
+      batchesFromCliOptions({ bundle: "agents", skills: [], vendor: null }),
+    ).rejects.toThrow("Unknown first-party bundle: agents");
+  });
+
   test("uses the pinned vendor source from baked data", async () => {
     let received = [];
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-install-"));
