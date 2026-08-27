@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **docs**: rewrite README for plugin marketplace installs, generated plugin
-  table, and harness-agnostic framing (#371).
+  table, and harness-agnostic framing (#371). Former `bunx skills add --all`
+  / Clack wizard users should switch to host `plugin marketplace add` plus
+  `plugin install <id>@ai-skills`, or gateway `sk install --bundle`.
 - **manifests**: stamp Claude marketplace `name` / `owner` so host install
   commands resolve `@ai-skills` (#371).
 

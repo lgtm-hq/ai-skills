@@ -137,6 +137,35 @@ def test_render_readme_omits_ungrouped_from_plugin_table(tmp_path: Path) -> None
     assert_that(rendered).does_not_contain("[beta](skills/beta/SKILL.md)")
 
 
+def test_render_readme_omits_ungrouped_note_when_empty(tmp_path: Path) -> None:
+    """An empty ungrouped list does not emit the marketplace-plugin note."""
+
+    mod = _load_generate_readme_module()
+    _write_fake_repo(repo_root=tmp_path)
+    tmp_path.joinpath("bundles.yaml").write_text(
+        """
+groups:
+  core:
+    id: core
+    name: Core Workflow
+    description: Everyday workflow skills.
+    skills:
+      - alpha
+      - beta
+ungrouped: []
+""",
+        encoding="utf-8",
+    )
+
+    rendered = mod.render_readme(repo_root=tmp_path)
+
+    assert_that(rendered).does_not_contain(
+        "Skills listed under `ungrouped` in `bundles.yaml` "
+        "are not marketplace plugins.",
+    )
+    assert_that(rendered).contains("[beta](skills/beta/SKILL.md)")
+
+
 def test_repo_readme_install_paths_are_plugin_level() -> None:
     """Production README documents host plugin installs, not skill cherry-picks."""
 
@@ -220,7 +249,8 @@ def test_render_readme_table_cells_are_single_line(tmp_path: Path) -> None:
 groups:
   core:
     id: core
-    name: Core Workflow
+    name: |
+      Core | Workflow
     description: |
       Everyday | workflow
       skills.
@@ -235,9 +265,10 @@ ungrouped:
     rendered = mod.render_readme(repo_root=tmp_path)
 
     assert_that(rendered).contains(
-        "| Core Workflow | `core` | Everyday \\| workflow skills. |",
+        "| Core \\| Workflow | `core` | Everyday \\| workflow skills. |",
     )
     assert_that(rendered).does_not_contain("Everyday | workflow\n")
+    assert_that(rendered).does_not_contain("Core | Workflow\n")
 
 
 def test_repo_readme_is_up_to_date() -> None:

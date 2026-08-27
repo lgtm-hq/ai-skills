@@ -166,16 +166,16 @@ flowchart LR
   add --> x
 ```
 
-The recommended installer is the **gateway** package `@lgtm-hq/ai-skills`, which
-installs the `skill` / `sk` binaries when added globally (`bun add -g
-@lgtm-hq/ai-skills`); for a pinned, install-free run use
-`bunx --package=@lgtm-hq/ai-skills@X.Y.Z skill`.
-Its Clack home/cart UI loads baked `data/bundles.json` and vendor indexes shipped
-inside the npm package (produced from `bundles.yaml` / `vendors.yaml` at publish
-time), writes a gateway lockfile, and installs into agent skill directories.
-The [Vercel Labs `skills` CLI](https://github.com/vercel-labs/skills) remains the
-escape hatch for direct catalog installs; first-party skill paths stay flat
-(`skills/<name>/`).
+Native hosts install **plugins** (see README Install). The **gateway** package
+`@lgtm-hq/ai-skills` (`sk` / `skill`) currently projects a plugin through
+`--bundle`; install globally with `bun add -g @lgtm-hq/ai-skills`, or for a
+pinned, install-free run use `bunx --package=@lgtm-hq/ai-skills@X.Y.Z sk`.
+Its Clack home/cart UI still loads baked `data/bundles.json` and vendor indexes
+shipped inside the npm package (produced from `bundles.yaml` / `vendors.yaml`
+at publish time), writes a gateway lockfile, and installs into agent skill
+directories. The [Vercel Labs `skills` CLI](https://github.com/vercel-labs/skills)
+remains the escape hatch for direct catalog installs; first-party skill paths
+stay flat (`skills/<name>/`).
 
 ## CI and releases
 

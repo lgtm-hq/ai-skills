@@ -26,6 +26,7 @@ body:
            claude plugin install git-pr@ai-skills
            copilot plugin marketplace add lgtm-hq/ai-skills
            copilot plugin install git-pr@ai-skills
+          gateway (not native Cursor):
            sk install -y --global -a cursor --bundle review
         2. Open the agent
         3. See error ...

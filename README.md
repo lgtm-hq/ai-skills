@@ -26,6 +26,8 @@ The unit of install is a **plugin**. A plugin is a named group of skills (and,
 later, other components). Contents stay visible; native hosts install the
 plugin as a whole. The gateway (`sk`) currently projects a plugin through
 `--bundle <id>` (native projectors and plugin-only UX are later issues).
+If you previously used the skills CLI or the gateway wizard, switch to a
+host plugin marketplace command below, or `sk install --bundle`.
 
 Pin the gateway to a release. Native `marketplace add` tracks the default
 branch unless you append a git tag. The npm version matches the git tag
