@@ -224,6 +224,13 @@ export function planAdopt(
     }
     const pluginId = pluginIdForMappedEntry(name, mapped.entry);
     const existingPlugin = plugins[pluginId];
+    const conflict = existingPlugin
+      ? conflictingProvenanceReason(existingPlugin, mapped.entry, name, pluginId)
+      : null;
+    if (conflict) {
+      plan.ambiguous.push(conflict);
+      continue;
+    }
     const next = existingPlugin
       ? mergeSkillIntoPlugin(existingPlugin, name, agents, lock.scope, pathEnv)
       : mapped.entry;
@@ -498,19 +505,19 @@ function mergeSkillIntoPlugin(existing, name, agents, scope, environment = {}) {
   const nextAgents = { ...existing.agents };
   for (const agent of agents) {
     const previous = nextAgents[agent];
+    const root = agentSkillsRoot(scope, agent, environment);
     if (!previous) {
       nextAgents[agent] = {
         files: { [relative]: "" },
-        root: agentSkillsRoot(scope, agent, environment),
+        root,
       };
       continue;
     }
-    if (!previous.files[relative]) {
-      nextAgents[agent] = {
-        ...previous,
-        files: { ...previous.files, [relative]: "" },
-      };
-    }
+    nextAgents[agent] = {
+      ...previous,
+      files: previous.files[relative] ? previous.files : { ...previous.files, [relative]: "" },
+      root,
+    };
   }
   return {
     ...existing,
@@ -526,9 +533,36 @@ function mergeSkillIntoPlugin(existing, name, agents, scope, environment = {}) {
  * @returns {boolean} True when agents and skill names are identical.
  */
 function adoptEntryUnchanged(existing, merged) {
+  const agents = pluginAgentNames(existing);
+  if (
+    agents.join(",") !== pluginAgentNames(merged).join(",") ||
+    pluginSkillNames(existing).join(",") !== pluginSkillNames(merged).join(",")
+  ) {
+    return false;
+  }
+  return agents.every((agent) => existing.agents[agent].root === merged.agents[agent].root);
+}
+
+/**
+ * Reason a mapped skill cannot share an existing vendor plugin.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} existing - Plugin already in the lock.
+ * @param {import("./lockfile.js").PluginLockEntry} mapped - Newly mapped skills-lock entry.
+ * @param {string} skillName - On-disk skill directory.
+ * @param {string} pluginId - Vendor plugin id.
+ * @returns {string | null} Ambiguity reason, or null when provenance matches.
+ */
+function conflictingProvenanceReason(existing, mapped, skillName, pluginId) {
+  if (
+    existing.projector === mapped.projector &&
+    existing.repo === mapped.repo &&
+    existing.sha === mapped.sha
+  ) {
+    return null;
+  }
   return (
-    pluginAgentNames(existing).join(",") === pluginAgentNames(merged).join(",") &&
-    pluginSkillNames(existing).join(",") === pluginSkillNames(merged).join(",")
+    `${skillName}: vendor ${pluginId} provenance ${existing.repo}@${existing.sha}` +
+    ` (${existing.projector}) conflicts with ${mapped.repo}@${mapped.sha} (${mapped.projector})`
   );
 }
 

@@ -224,6 +224,8 @@ describe("planAdopt", () => {
       { lint: ["cursor"] },
       {},
       vendors,
+      undefined,
+      { cwd: "/tmp/project" },
     );
 
     expect(plan.alreadyTracked).toEqual(["lint"]);
@@ -260,13 +262,119 @@ describe("planAdopt", () => {
         },
       },
       vendors,
+      undefined,
+      { cwd: "/tmp/project" },
     );
 
     expect(plan.adopt.anthropics.agents.cursor.files).toEqual({
       "pdf/SKILL.md": "abc",
       "xlsx/SKILL.md": "",
     });
+    expect(plan.adopt.anthropics.sha).toBe("9d2f1ae187231d8199c64b5b762e1bdf2244733d");
     expect(plan.adopt.xlsx).toBeUndefined();
+  });
+
+  test("reports same-vendor skills at different refs as ambiguous", () => {
+    const existing = {
+      agents: {
+        cursor: {
+          files: { "pdf/SKILL.md": "abc" },
+          root: "/tmp/project/.cursor/skills",
+        },
+      },
+      installedAt: "2026-07-10T16:00:00.000Z",
+      projector: "explode",
+      repo: "anthropics/skills",
+      sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+      vendor: "anthropics",
+      version: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+    };
+    const plan = planAdopt(
+      {
+        gatewayVersion: "0.0.0-dev",
+        plugins: { anthropics: existing },
+        scope: "project",
+        version: 2,
+      },
+      { xlsx: ["cursor"] },
+      {
+        xlsx: {
+          sourceUrl: "anthropics/skills",
+          ref: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        },
+      },
+      vendors,
+      undefined,
+      { cwd: "/tmp/project" },
+    );
+
+    expect(plan.adopt).toEqual({});
+    expect(plan.ambiguous).toEqual([
+      "xlsx: vendor anthropics provenance anthropics/skills@9d2f1ae187231d8199c64b5b762e1bdf2244733d (explode) conflicts with anthropics/skills@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb (explode)",
+    ]);
+  });
+
+  test("does not union two same-vendor skills that pin different refs", () => {
+    const plan = planAdopt(
+      {
+        gatewayVersion: "0.0.0-dev",
+        plugins: {},
+        scope: "project",
+        version: 2,
+      },
+      { pdf: ["cursor"], xlsx: ["cursor"] },
+      {
+        pdf: {
+          sourceUrl: "anthropics/skills",
+          ref: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+        },
+        xlsx: {
+          sourceUrl: "anthropics/skills",
+          ref: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        },
+      },
+      vendors,
+      () => new Date("2026-07-10T21:00:00.000Z"),
+      { cwd: "/tmp/project" },
+    );
+
+    expect(Object.keys(plan.adopt.anthropics.agents.cursor.files)).toHaveLength(1);
+    expect(plan.ambiguous).toHaveLength(1);
+    expect(plan.ambiguous[0]).toContain("conflicts with");
+  });
+
+  test("rewrites stale agent roots after the project directory moves", () => {
+    const existing = {
+      agents: {
+        cursor: {
+          files: { "lint/SKILL.md": "abc" },
+          root: "/old/project/.cursor/skills",
+        },
+      },
+      installedAt: "2026-07-10T16:00:00.000Z",
+      projector: "explode",
+      repo: "lgtm-hq/ai-skills",
+      sha: "v0.0.0-dev",
+      vendor: "lgtm-hq",
+      version: "0.0.0-dev",
+    };
+    const plan = planAdopt(
+      {
+        gatewayVersion: "0.0.0-dev",
+        plugins: { review: existing },
+        scope: "project",
+        version: 2,
+      },
+      { lint: ["cursor"] },
+      {},
+      vendors,
+      undefined,
+      { cwd: "/new/project" },
+    );
+
+    expect(plan.alreadyTracked).toEqual([]);
+    expect(plan.adopt.review.agents.cursor.root).toBe(join("/new/project", ".cursor/skills"));
+    expect(plan.adopt.review.agents.cursor.files).toEqual({ "lint/SKILL.md": "abc" });
   });
 });
 
