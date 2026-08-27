@@ -327,6 +327,7 @@ NOTICE.md                       # Third-party license notices for the npm packag
 npm/ai-skills/                  # @lgtm-hq/ai-skills gateway package
 .claude-plugin/marketplace.json # Generated Claude marketplace adapter
 .cursor-plugin/marketplace.json # Generated Cursor marketplace adapter
+docs/adr/                       # Plugin-canonical architecture decision records
 AGENTS.md                       # Human- and agent-readable skill index
 scripts/validate.sh             # Frontmatter, AGENTS, bundles, README, marketplace checks
 tests/                          # Pytest wraps for scripts
