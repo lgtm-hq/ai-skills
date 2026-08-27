@@ -18,15 +18,15 @@ document:
 - **Index:** after adding, renaming, or removing skills, **`AGENTS.md` must stay in
   sync**. CI runs `scripts/generate_agents_md.py` / validation; run the same checks
   locally before opening a PR (see below).
-- **Installer groups:** assign each skill to a bundle in **`bundles.yaml`** (or list it
-  under `ungrouped` for the installer's "Other" bucket). Each group needs a kebab-case
-  **`id`** (the installable plugin name). Regenerate
+- **Plugins:** assign each skill to a plugin group in **`bundles.yaml`** (or
+  list it under `ungrouped` until it joins a plugin). Each group needs a
+  kebab-case **`id`** (the installable plugin name). Regenerate
   **`.claude-plugin/marketplace.json`** and
   **`.cursor-plugin/marketplace.json`** with
   `uv run python scripts/generate_marketplace.py`. Both files are generated
   adapters (do not edit by hand).
-- **README skills section:** the `## Skills` section of `README.md` and its
-  release-tag pins are generated from `bundles.yaml`, SKILL.md frontmatter, and
+- **README plugin table:** the `## Plugins` table in `README.md` is generated
+  from `bundles.yaml`. Release-tag / npm-version pins are generated from
   `pyproject.toml`. Regenerate with `uv run python scripts/generate_readme.py`.
 - **Architecture decisions:** settled plugin-canonical *why* lives in
   [`docs/adr/`](docs/adr/README.md). Implementation PRs follow accepted ADRs;
@@ -166,16 +166,16 @@ flowchart LR
   add --> x
 ```
 
-The recommended installer is the **gateway** package `@lgtm-hq/ai-skills`, which
-installs the `skill` / `sk` binaries when added globally (`bun add -g
-@lgtm-hq/ai-skills`); for a pinned, install-free run use
-`bunx --package=@lgtm-hq/ai-skills@X.Y.Z skill`.
-Its Clack home/cart UI loads baked `data/bundles.json` and vendor indexes shipped
-inside the npm package (produced from `bundles.yaml` / `vendors.yaml` at publish
-time), writes a gateway lockfile, and installs into agent skill directories.
-The [Vercel Labs `skills` CLI](https://github.com/vercel-labs/skills) remains the
-escape hatch for direct catalog installs; first-party skill paths stay flat
-(`skills/<name>/`).
+Native hosts install **plugins** (see README Install). The **gateway** package
+`@lgtm-hq/ai-skills` (`sk` / `skill`) currently projects a plugin through
+`--bundle`; install globally with `bun add -g @lgtm-hq/ai-skills`, or for a
+pinned, install-free run use `bunx --package=@lgtm-hq/ai-skills@X.Y.Z sk`.
+Its Clack home/cart UI still loads baked `data/bundles.json` and vendor indexes
+shipped inside the npm package (produced from `bundles.yaml` / `vendors.yaml`
+at publish time), writes a gateway lockfile, and installs into agent skill
+directories. The [Vercel Labs `skills` CLI](https://github.com/vercel-labs/skills)
+remains the escape hatch for direct catalog installs; first-party skill paths
+stay flat (`skills/<name>/`).
 
 ## CI and releases
 
@@ -196,8 +196,7 @@ and `release-auto-tag.yml`).
 
 Skill retirements and other deletions belong under **`### Removed`** in
 `CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)), not
-under Other Changes or Previously Unreleased — the README upgrade FAQ points
-readers at those Removed sections.
+under Other Changes or Previously Unreleased.
 
 ### CHANGELOG entry format
 

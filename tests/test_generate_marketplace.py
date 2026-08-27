@@ -121,6 +121,8 @@ def test_generate_marketplace_builds_plugin_groups(tmp_path: Path) -> None:
 
     assert_that(manifest).is_equal_to(
         {
+            "name": "ai-skills",
+            "owner": {"name": "lgtm-hq"},
             "$generated": mod.GENERATED_NOTICE,
             "plugins": [
                 {
@@ -551,6 +553,8 @@ def test_repo_cursor_marketplace_mirrors_claude_plugin_ids() -> None:
     cursor_names = [plugin["name"] for plugin in cursor["plugins"]]
 
     assert_that(cursor_names).is_equal_to(claude_names)
+    assert_that(claude["name"]).is_equal_to("ai-skills")
+    assert_that(claude["owner"]).is_equal_to({"name": "lgtm-hq"})
     assert_that(cursor["name"]).is_equal_to("ai-skills")
     assert_that(cursor["owner"]["name"]).is_equal_to("lgtm-hq")
     assert_that(cursor["metadata"]["$generated"]).is_equal_to(mod.GENERATED_NOTICE)

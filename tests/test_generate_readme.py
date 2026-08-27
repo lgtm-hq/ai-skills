@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -96,42 +97,122 @@ ungrouped:
         "```bash\nbunx --package=@lgtm-hq/ai-skills@0.0.1 skill\n"
         "bunx skills add lgtm-hq/ai-skills@v0.0.1 -g\n"
         "gh release download v0.0.1 -R lgtm-hq/ai-skills\n```\n\n"
-        "## Skills\n\n"
-        "<!-- skills:start -->\nstale\n<!-- skills:end -->\n\n"
+        "## Plugins\n\n"
+        "<!-- plugins:start -->\nstale\n<!-- plugins:end -->\n\n"
         "## License\n",
         encoding="utf-8",
     )
 
 
-def test_render_readme_builds_hyperlinked_groups(tmp_path: Path) -> None:
-    """Groups render as headings with skills linked to their SKILL.md."""
+def test_render_readme_builds_plugin_table(tmp_path: Path) -> None:
+    """Groups render as a plugin table with ids and skill links."""
 
     mod = _load_generate_readme_module()
     _write_fake_repo(repo_root=tmp_path)
 
     rendered = mod.render_readme(repo_root=tmp_path)
 
-    assert_that(rendered).contains("### Core Workflow")
+    assert_that(rendered).contains("| Plugin | Id | Description | Skills |")
+    assert_that(rendered).contains("| Core Workflow | `core` |")
     assert_that(rendered).contains("Everyday workflow skills.")
-    assert_that(rendered).contains(
-        "- **[alpha](skills/alpha/SKILL.md)** — Do alpha things.",
-    )
+    assert_that(rendered).contains("[alpha](skills/alpha/SKILL.md)")
     assert_that(rendered).does_not_contain("Use when asked for alpha.")
     assert_that(rendered).does_not_contain("stale")
 
 
-def test_render_readme_puts_ungrouped_skills_under_other(tmp_path: Path) -> None:
-    """Ungrouped skills appear under the Other heading, hyperlinked."""
+def test_render_readme_omits_ungrouped_from_plugin_table(tmp_path: Path) -> None:
+    """Ungrouped skills are noted, not listed as marketplace plugins."""
 
     mod = _load_generate_readme_module()
     _write_fake_repo(repo_root=tmp_path)
 
     rendered = mod.render_readme(repo_root=tmp_path)
 
-    assert_that(rendered).contains("### Other")
     assert_that(rendered).contains(
-        "- **[beta](skills/beta/SKILL.md)** — Do beta things.",
+        "Skills listed under `ungrouped` in `bundles.yaml` "
+        "are not marketplace plugins.",
     )
+    assert_that(rendered).contains(
+        "See [AGENTS.md](./AGENTS.md) for the full skill index.",
+    )
+    assert_that(rendered).does_not_contain("### Other")
+    assert_that(rendered).does_not_contain("| `beta` |")
+    assert_that(rendered).does_not_contain("[beta](skills/beta/SKILL.md)")
+
+
+def test_render_readme_omits_ungrouped_note_when_empty(tmp_path: Path) -> None:
+    """An empty ungrouped list does not emit the marketplace-plugin note."""
+
+    mod = _load_generate_readme_module()
+    _write_fake_repo(repo_root=tmp_path)
+    tmp_path.joinpath("bundles.yaml").write_text(
+        """
+groups:
+  core:
+    id: core
+    name: Core Workflow
+    description: Everyday workflow skills.
+    skills:
+      - alpha
+      - beta
+ungrouped: []
+""",
+        encoding="utf-8",
+    )
+
+    rendered = mod.render_readme(repo_root=tmp_path)
+
+    assert_that(rendered).does_not_contain(
+        "Skills listed under `ungrouped` in `bundles.yaml` "
+        "are not marketplace plugins.",
+    )
+    assert_that(rendered).contains("[beta](skills/beta/SKILL.md)")
+
+
+def test_repo_readme_install_paths_are_plugin_level() -> None:
+    """Production README documents host plugin installs, not skill cherry-picks."""
+
+    readme = (
+        Path(__file__)
+        .resolve()
+        .parents[1]
+        .joinpath("README.md")
+        .read_text(
+            encoding="utf-8",
+        )
+    )
+
+    assert_that(readme).contains(
+        "claude plugin marketplace add lgtm-hq/ai-skills@v",
+    )
+    assert_that(readme).contains("claude plugin install git-pr@ai-skills")
+    assert_that(readme).contains("copilot plugin marketplace add lgtm-hq/ai-skills")
+    assert_that(readme).contains("copilot plugin install git-pr@ai-skills")
+    assert_that(readme).contains("sk install -y --global -a cursor --bundle review")
+    assert_that(readme).contains("git clone https://github.com/lgtm-hq/ai-skills.git")
+    assert_that(readme).contains("~/.cursor/plugins/local/ai-skills")
+    assert_that(readme).contains("mkdir -p ~/.cursor/plugins/local")
+    assert_that(readme).contains("Harness-agnostic by construction")
+    assert_that(readme).does_not_contain("--skill")
+    assert_that(readme).does_not_contain("--all")
+    assert_that(readme).does_not_contain("Toggle skills")
+    assert_that(readme).does_not_contain("The seven first-party plugins")
+
+
+def test_repo_readme_plugin_suffix_matches_marketplace_name() -> None:
+    """Host install suffixes match the generated Claude marketplace name."""
+
+    repo_root = Path(__file__).resolve().parents[1]
+    readme = (repo_root / "README.md").read_text(encoding="utf-8")
+    marketplace_path = repo_root / ".claude-plugin" / "marketplace.json"
+    marketplace = json.loads(
+        marketplace_path.read_text(encoding="utf-8"),
+    )
+    name = str(marketplace["name"])
+
+    assert_that(readme).contains(f"claude plugin install git-pr@{name}")
+    assert_that(readme).contains(f"copilot plugin install git-pr@{name}")
+    assert_that(readme).contains(f"~/.cursor/plugins/local/{name}")
 
 
 def test_render_readme_syncs_version_pins_to_pyproject(tmp_path: Path) -> None:
@@ -152,7 +233,7 @@ def test_render_readme_syncs_version_pins_to_pyproject(tmp_path: Path) -> None:
 
 
 def test_render_readme_requires_markers(tmp_path: Path) -> None:
-    """A README without skills markers is rejected."""
+    """A README without plugin markers is rejected."""
 
     mod = _load_generate_readme_module()
     _write_fake_repo(repo_root=tmp_path)
@@ -162,16 +243,36 @@ def test_render_readme_requires_markers(tmp_path: Path) -> None:
         mod.render_readme(repo_root=tmp_path)
 
 
-def test_first_sentence_keeps_abbreviations() -> None:
-    """Sentence splitting does not truncate at lowercase abbreviations."""
+def test_render_readme_table_cells_are_single_line(tmp_path: Path) -> None:
+    """Plugin table cells collapse YAML newlines and escape pipes."""
 
     mod = _load_generate_readme_module()
-
-    first = mod._first_sentence(
-        "Run checks (e.g. lint) before pushing. Use when asked.",
+    _write_fake_repo(repo_root=tmp_path)
+    tmp_path.joinpath("bundles.yaml").write_text(
+        """
+groups:
+  core:
+    id: core
+    name: |
+      Core | Workflow
+    description: |
+      Everyday | workflow
+      skills.
+    skills:
+      - alpha
+ungrouped:
+  - beta
+""",
+        encoding="utf-8",
     )
 
-    assert_that(first).is_equal_to("Run checks (e.g. lint) before pushing.")
+    rendered = mod.render_readme(repo_root=tmp_path)
+
+    assert_that(rendered).contains(
+        "| Core \\| Workflow | `core` | Everyday \\| workflow skills. |",
+    )
+    assert_that(rendered).does_not_contain("Everyday | workflow\n")
+    assert_that(rendered).does_not_contain("Core | Workflow\n")
 
 
 def test_repo_readme_is_up_to_date() -> None:

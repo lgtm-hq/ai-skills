@@ -8,17 +8,18 @@
 
 ## Skill CLI and agents
 
-Install/update flows use the upstream [**Vercel Labs `skills` CLI**][skills-cli]. For
-CLI-only bugs or agent detection issues, check upstream documentation and issues first;
-open an issue here if the fix belongs in our **`skills/`** tree or documented install
-steps.
+Native hosts install **plugins** — see [README](./README.md#install). The gateway
+(`sk`) still shells out to the upstream [**Vercel Labs `skills` CLI**][skills-cli].
+For CLI-only bugs or agent detection issues, check upstream documentation and
+issues first; open an issue here if the fix belongs in our **`skills/`** tree or
+documented install steps.
 
-**Updates:** use scope-based commands (for example `bunx skills update -g` for all
-global skills, or `bunx skills update lint -g` for named skills). The package slug
-form (`skills update lgtm-hq/ai-skills`) is not supported by the current CLI — see
-[README](./README.md) and [issue #22](https://github.com/lgtm-hq/ai-skills/issues/22).
-For partial `--all` install failures and cleaning up retired skills after an upgrade,
-see [Known limitations](./README.md#known-limitations) in the README.
+**Updates:** use host plugin update, or `sk update -y --global -a cursor`.
+The package slug form (`skills update lgtm-hq/ai-skills`) is
+not supported by the current CLI — see
+[issue #22](https://github.com/lgtm-hq/ai-skills/issues/22).
+For retired skills after an upgrade, see **Removed** entries in
+[CHANGELOG.md](./CHANGELOG.md).
 
 [skills-cli]: https://github.com/vercel-labs/skills
 

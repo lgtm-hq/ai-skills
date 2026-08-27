@@ -15,7 +15,7 @@ Checks:
      uv run python scripts/generate_agents_md.py)
   4. bundles.yaml covers all skills and both marketplace adapters are in sync
      (regenerate via: uv run python scripts/generate_marketplace.py)
-  5. README.md generated skills section and release-tag pins are in sync
+  5. README.md generated plugin table and release-tag pins are in sync
      (regenerate via: uv run python scripts/generate_readme.py)
   6. skills-manifest generator is deterministic (two runs produce identical
      output; see scripts/generate_skills_manifest.py)
