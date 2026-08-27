@@ -420,9 +420,7 @@ def marketplace_drift_message(*, repo_root: Path) -> str | None:
     rendered = generate_marketplace(repo_root=repo_root)
     relative = output_path.relative_to(repo_root)
     if not output_path.is_file():
-        return (
-            f"Missing {relative}; run uv run python scripts/generate_marketplace.py"
-        )
+        return f"Missing {relative}; run uv run python scripts/generate_marketplace.py"
     existing = output_path.read_text(encoding="utf-8")
     if existing != rendered:
         return (
