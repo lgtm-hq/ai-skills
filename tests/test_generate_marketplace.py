@@ -167,7 +167,7 @@ def test_generate_marketplace_rejects_version_mismatch(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="does not match pyproject.toml"):
+    with pytest.raises(ValueError, match=r"does not match pyproject\.toml"):
         mod.generate_marketplace(repo_root=tmp_path)
 
 
