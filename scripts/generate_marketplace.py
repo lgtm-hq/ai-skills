@@ -291,7 +291,8 @@ def _validate_bundles(
         bundles: Parsed bundle document.
 
     Raises:
-        ValueError: On missing, duplicate, or unknown skill references.
+        ValueError: On missing, duplicate, or unknown skill references, or
+            when a group's plugin id does not match its YAML key.
     """
     discovered = _discover_skill_names(repo_root=repo_root)
     assigned: dict[str, str] = {}
@@ -305,6 +306,11 @@ def _validate_bundles(
             )
             raise ValueError(msg)
         plugin_ids[group.plugin_id] = group_id
+
+    for group_id, group in bundles.groups.items():
+        if group.plugin_id != group_id:
+            msg = f"Group {group_id!r} id {group.plugin_id!r} must match the group key"
+            raise ValueError(msg)
         for skill_name in group.skills:
             if skill_name in assigned:
                 msg = (

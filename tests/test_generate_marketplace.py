@@ -75,6 +75,19 @@ def _write_version(*, repo_root: Path, version: str) -> None:
     repo_root.joinpath("VERSION").write_text(f"{version}\n", encoding="utf-8")
 
 
+def _write_pyproject(*, repo_root: Path, version: str) -> None:
+    """Write a minimal ``pyproject.toml`` with ``project.version``.
+
+    Args:
+        repo_root: Fake repository root.
+        version: Version string to stamp.
+    """
+    repo_root.joinpath("pyproject.toml").write_text(
+        f'[project]\nname = "fake"\nversion = "{version}"\n',
+        encoding="utf-8",
+    )
+
+
 def _core_bundles_yaml() -> str:
     """Return a two-skill catalog with one grouped plugin.
 
@@ -101,7 +114,7 @@ def test_generate_marketplace_builds_plugin_groups(tmp_path: Path) -> None:
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
-    _write_version(repo_root=tmp_path, version="1.2.3")
+    _write_pyproject(repo_root=tmp_path, version="1.2.3")
 
     rendered = mod.generate_marketplace(repo_root=tmp_path)
     manifest = json.loads(rendered)
@@ -130,10 +143,7 @@ def test_generate_marketplace_stamps_version_from_pyproject(tmp_path: Path) -> N
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
-    tmp_path.joinpath("pyproject.toml").write_text(
-        '[project]\nname = "fake"\nversion = "9.9.9"\n',
-        encoding="utf-8",
-    )
+    _write_pyproject(repo_root=tmp_path, version="9.9.9")
 
     manifest = json.loads(mod.generate_marketplace(repo_root=tmp_path))
 
@@ -162,10 +172,7 @@ def test_generate_marketplace_rejects_version_mismatch(tmp_path: Path) -> None:
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
     _write_version(repo_root=tmp_path, version="4.5.6")
-    tmp_path.joinpath("pyproject.toml").write_text(
-        '[project]\nname = "fake"\nversion = "9.9.9"\n',
-        encoding="utf-8",
-    )
+    _write_pyproject(repo_root=tmp_path, version="9.9.9")
 
     with pytest.raises(ValueError, match=r"does not match pyproject\.toml"):
         mod.generate_marketplace(repo_root=tmp_path)
@@ -209,7 +216,7 @@ def test_generate_marketplace_rejects_missing_plugin_id(tmp_path: Path) -> None:
 
     mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
-    _write_version(repo_root=tmp_path, version="1.0.0")
+    _write_pyproject(repo_root=tmp_path, version="1.0.0")
     _write_bundles(
         repo_root=tmp_path,
         body="""
@@ -244,7 +251,7 @@ def test_generate_marketplace_rejects_non_kebab_ids(
 
     mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
-    _write_version(repo_root=tmp_path, version="1.0.0")
+    _write_pyproject(repo_root=tmp_path, version="1.0.0")
     _write_bundles(
         repo_root=tmp_path,
         body=f"""
@@ -268,7 +275,7 @@ def test_generate_marketplace_rejects_duplicate_plugin_ids(tmp_path: Path) -> No
     mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
-    _write_version(repo_root=tmp_path, version="1.0.0")
+    _write_pyproject(repo_root=tmp_path, version="1.0.0")
     _write_bundles(
         repo_root=tmp_path,
         body="""
@@ -291,6 +298,29 @@ ungrouped: []
         mod.generate_marketplace(repo_root=tmp_path)
 
 
+def test_generate_marketplace_rejects_plugin_id_mismatch(tmp_path: Path) -> None:
+    """A group's plugin id must match its YAML key so --bundle and marketplace agree."""
+
+    mod = _load_generate_marketplace_module()
+    _write_skill(repo_root=tmp_path, skill_id="alpha")
+    _write_pyproject(repo_root=tmp_path, version="1.0.0")
+    _write_bundles(
+        repo_root=tmp_path,
+        body="""
+groups:
+  core:
+    id: other
+    name: Core
+    skills:
+      - alpha
+ungrouped: []
+""",
+    )
+
+    with pytest.raises(ValueError, match="must match the group key"):
+        mod.generate_marketplace(repo_root=tmp_path)
+
+
 def test_marketplace_drift_message_detects_stale_file(tmp_path: Path) -> None:
     """Drift check fails when marketplace.json does not match the generator."""
 
@@ -298,7 +328,7 @@ def test_marketplace_drift_message_detects_stale_file(tmp_path: Path) -> None:
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
-    _write_version(repo_root=tmp_path, version="1.2.3")
+    _write_pyproject(repo_root=tmp_path, version="1.2.3")
     output_path = tmp_path / ".claude-plugin" / "marketplace.json"
     output_path.parent.mkdir(parents=True)
     output_path.write_text("{}\n", encoding="utf-8")
@@ -316,7 +346,7 @@ def test_marketplace_drift_message_passes_when_current(tmp_path: Path) -> None:
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
-    _write_version(repo_root=tmp_path, version="1.2.3")
+    _write_pyproject(repo_root=tmp_path, version="1.2.3")
     output_path = tmp_path / ".claude-plugin" / "marketplace.json"
     output_path.parent.mkdir(parents=True)
     output_path.write_text(
@@ -327,12 +357,27 @@ def test_marketplace_drift_message_passes_when_current(tmp_path: Path) -> None:
     assert_that(mod.marketplace_drift_message(repo_root=tmp_path)).is_none()
 
 
+def test_marketplace_drift_message_detects_missing_file(tmp_path: Path) -> None:
+    """Drift check fails when marketplace.json has not been generated."""
+
+    mod = _load_generate_marketplace_module()
+    _write_skill(repo_root=tmp_path, skill_id="alpha")
+    _write_skill(repo_root=tmp_path, skill_id="beta")
+    _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
+    _write_pyproject(repo_root=tmp_path, version="1.2.3")
+
+    message = mod.marketplace_drift_message(repo_root=tmp_path)
+
+    assert_that(message).is_not_none()
+    assert_that(message).contains("Missing")
+
+
 def test_validate_bundles_rejects_missing_skill(tmp_path: Path) -> None:
     """Every skill directory must appear in bundles.yaml."""
 
     mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="only-one")
-    _write_version(repo_root=tmp_path, version="1.0.0")
+    _write_pyproject(repo_root=tmp_path, version="1.0.0")
     _write_bundles(
         repo_root=tmp_path,
         body="""
@@ -354,7 +399,7 @@ def test_validate_bundles_rejects_duplicate_assignment(tmp_path: Path) -> None:
 
     mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="dup")
-    _write_version(repo_root=tmp_path, version="1.0.0")
+    _write_pyproject(repo_root=tmp_path, version="1.0.0")
     _write_bundles(
         repo_root=tmp_path,
         body="""
