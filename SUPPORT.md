@@ -14,8 +14,8 @@ For CLI-only bugs or agent detection issues, check upstream documentation and
 issues first; open an issue here if the fix belongs in our **`skills/`** tree or
 documented install steps.
 
-**Updates:** use host plugin install/update, or `sk install -y --global -a cursor
---bundle review`. The package slug form (`skills update lgtm-hq/ai-skills`) is
+**Updates:** use host plugin update, or `sk update -y --global -a cursor`.
+The package slug form (`skills update lgtm-hq/ai-skills`) is
 not supported by the current CLI — see
 [issue #22](https://github.com/lgtm-hq/ai-skills/issues/22).
 For retired skills after an upgrade, see **Removed** entries in

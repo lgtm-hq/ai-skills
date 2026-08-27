@@ -12,7 +12,7 @@ body:
     attributes:
       label: Bug summary
       description: Concise summary of the bug
-      placeholder: Example - Skill install fails in Codex
+      placeholder: Example - Plugin install fails in GitHub Copilot
     validations:
       required: true
   - type: textarea
@@ -49,6 +49,7 @@ body:
       label: Agent tool
       options:
         - Claude Code
+        - GitHub Copilot
         - Cursor
         - Codex
         - Other
