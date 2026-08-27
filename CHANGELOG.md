@@ -13,11 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **bundles**: kebab-case plugin ids, `pre-push` → `review`, `agents` →
-  `subagents`, and metadata-sliced marketplace entries (#368). Gateway
-  `--bundle pre-push` / `--bundle agents` become `--bundle review` /
-  `--bundle subagents`.
-
 ### Deprecated
 
 ### Removed
@@ -25,6 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.20.0] - 2026-08-27
+
+### Added
+
+- **bundles**: add kebab-case plugin ids and sliced marketplace (#388) (b719476)
+
+### Changed
+
+- add Cloud Agent development environment config (#387) (83613f8)
+- **bundles**: kebab-case plugin ids, `pre-push` → `review`, `agents` →
+  `subagents`, and metadata-sliced marketplace entries (#368). Gateway
+  `--bundle pre-push` / `--bundle agents` become `--bundle review` /
+  `--bundle subagents`.
 
 ## [0.19.0] - 2026-08-26
 
@@ -755,7 +764,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.16.1...v0.17.0
