@@ -469,6 +469,65 @@ describe("install", () => {
       await rm(cwd, { force: true, recursive: true });
     }
   });
+
+  test("installs newly requested skills on an otherwise healthy plugin", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-add-skill-"));
+    let received = [];
+    try {
+      await Bun.write(
+        join(cwd, "ai-skills-lock.json"),
+        `${JSON.stringify(
+          {
+            gatewayVersion: "0.0.0-dev",
+            plugins: {
+              anthropics: {
+                agents: {
+                  cursor: {
+                    files: { "pdf/SKILL.md": "abc" },
+                    root: join(cwd, ".cursor/skills"),
+                  },
+                },
+                installedAt: "2026-07-10T16:00:00.000Z",
+                projector: "explode",
+                repo: "anthropics/skills",
+                sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+                vendor: "anthropics",
+                version: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+              },
+            },
+            scope: "project",
+            version: 2,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const result = await install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["pdf", "xlsx"],
+          vendor: "anthropics",
+        },
+        async (args) => {
+          received = args;
+        },
+        undefined,
+        {
+          cwd,
+          exists: async () => true,
+          hash: async () => "abc",
+        },
+      );
+
+      expect(received).toContain("xlsx");
+      expect(result).toEqual({ alreadyPresent: 0, installed: 1, repaired: 0 });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
 });
 
 describe("install conflict policy", () => {

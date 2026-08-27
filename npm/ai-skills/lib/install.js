@@ -708,6 +708,7 @@ export async function install(options, run = runSkills, now = () => new Date(), 
   const agentsToInstall = await agentsNeedingInstall(
     existing,
     scopedOptions.agents,
+    scopedOptions.skills,
     lockEnvironment,
   );
   const alreadyPresent = detectAgents ? 0 : scopedOptions.agents.length - agentsToInstall.length;
@@ -716,7 +717,11 @@ export async function install(options, run = runSkills, now = () => new Date(), 
       ? 1
       : 0
     : existing
-      ? agentsToInstall.filter((agent) => existing.agents[agent]).length
+      ? agentsToInstall.filter(
+          (agent) =>
+            existing.agents[agent] &&
+            agentCoversSkills(existing.agents[agent], scopedOptions.skills),
+        ).length
       : 0;
   const installed = detectAgents ? (existing ? 0 : 1) : agentsToInstall.length - repaired;
   if (!detectAgents && agentsToInstall.length === 0) {
@@ -824,14 +829,15 @@ function resolvePluginId(options, vendor) {
 }
 
 /**
- * Agents that are missing or modified on disk for an existing plugin entry.
+ * Agents that are missing, modified, or missing requested skills for an existing plugin.
  *
  * @param {import("./lockfile.js").PluginLockEntry | undefined} existing - Current lock entry.
  * @param {string[]} requestedAgents - Agents requested for this install.
+ * @param {string[]} requestedSkills - Skills requested for this install.
  * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable fs.
  * @returns {Promise<string[]>} Agents that must be materialized.
  */
-async function agentsNeedingInstall(existing, requestedAgents, lockEnvironment) {
+async function agentsNeedingInstall(existing, requestedAgents, requestedSkills, lockEnvironment) {
   if (!existing) {
     return requestedAgents;
   }
@@ -847,7 +853,31 @@ async function agentsNeedingInstall(existing, requestedAgents, lockEnvironment) 
   const healthy = new Set(
     reconciliation.present.filter((item) => item.pluginId === "plugin").map((item) => item.agent),
   );
-  return requestedAgents.filter((agent) => !healthy.has(agent));
+  return requestedAgents.filter((agent) => {
+    if (!healthy.has(agent)) {
+      return true;
+    }
+    return !agentCoversSkills(existing.agents[agent], requestedSkills);
+  });
+}
+
+/**
+ * Whether an agent install already tracks every requested skill directory.
+ *
+ * @param {import("./lockfile.js").AgentInstall | undefined} install - Per-agent lock record.
+ * @param {string[]} requestedSkills - Skills requested for this install.
+ * @returns {boolean} True when every requested skill is already tracked.
+ */
+function agentCoversSkills(install, requestedSkills) {
+  if (!install) {
+    return false;
+  }
+  const tracked = new Set(
+    Object.keys(install.files)
+      .map((relative) => relative.split("/")[0])
+      .filter(Boolean),
+  );
+  return requestedSkills.every((name) => tracked.has(name));
 }
 
 /**
