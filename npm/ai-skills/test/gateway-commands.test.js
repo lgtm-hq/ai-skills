@@ -143,6 +143,73 @@ describe("gateway maintenance commands", () => {
     expect(written.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toBe("refreshed");
   });
 
+  test("updates same-source plugins against only their own tracked agents", async () => {
+    const calls = [];
+    const mixed = {
+      ...lock,
+      plugins: {
+        lint: pluginEntry({
+          agents: {
+            cursor: {
+              files: { "lint/SKILL.md": "abc" },
+              root: "/tmp/project/.cursor/skills",
+            },
+          },
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.0.0-dev",
+          vendor: "lgtm-hq",
+          version: "0.0.0-dev",
+        }),
+        test: pluginEntry({
+          agents: {
+            "claude-code": {
+              files: { "test/SKILL.md": "abc" },
+              root: "/tmp/project/.claude/skills",
+            },
+          },
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.0.0-dev",
+          vendor: "lgtm-hq",
+          version: "0.0.0-dev",
+        }),
+      },
+    };
+
+    await updateSkills(options, {
+      hash: async () => "refreshed",
+      isInstalled: async () => true,
+      now: () => new Date("2026-07-10T17:00:00.000Z"),
+      readLock: async () => mixed,
+      run: async (args) => {
+        calls.push(args);
+      },
+      writeLock: async () => {},
+    });
+
+    expect(calls).toEqual([
+      [
+        "skills@^1.5.0",
+        "add",
+        `lgtm-hq/ai-skills@v0.0.0-dev`,
+        "-a",
+        "cursor",
+        "--skill",
+        "lint",
+        "-y",
+      ],
+      [
+        "skills@^1.5.0",
+        "add",
+        `lgtm-hq/ai-skills@v0.0.0-dev`,
+        "-a",
+        "claude-code",
+        "--skill",
+        "test",
+        "-y",
+      ],
+    ]);
+  });
+
   test("removes only lock-managed selections after mocked CLI success", async () => {
     const calls = [];
     let written;

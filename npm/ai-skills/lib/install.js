@@ -742,7 +742,7 @@ export async function install(options, run = runSkills, now = () => new Date(), 
     ? await discoverInstalledAgents(scopedOptions, lockEnvironment)
     : agentsToInstall;
   if (agentsForLock.length === 0) {
-    return { alreadyPresent, installed, repaired };
+    return { alreadyPresent: 0, installed: 0, repaired: 0 };
   }
   const entries = await createLockEntries(
     { ...scopedOptions, agents: agentsForLock },

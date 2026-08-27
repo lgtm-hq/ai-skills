@@ -344,6 +344,9 @@ describe("install", () => {
       expect(received).toContain("--skill");
       expect(received).toContain("lint");
       expect(result).toEqual({ alreadyPresent: 0, installed: 0, repaired: 1 });
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.lint.agents.cursor.files["lint/SKILL.md"]).toBe("new");
+      expect(lock.plugins.lint.installedAt).toBe("2026-07-10T17:00:00.000Z");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -447,7 +450,7 @@ describe("install", () => {
       expect(received).toContain("--skill");
       expect(received).toContain("lint");
       expect(received.includes("-a")).toBe(false);
-      expect(result).toEqual({ alreadyPresent: 0, installed: 1, repaired: 0 });
+      expect(result).toEqual({ alreadyPresent: 0, installed: 0, repaired: 0 });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -617,6 +620,11 @@ describe("install", () => {
 
       expect(received).toContain("xlsx");
       expect(result).toEqual({ alreadyPresent: 0, installed: 1, repaired: 0 });
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.anthropics.agents.cursor.files).toMatchObject({
+        "pdf/SKILL.md": "abc",
+        "xlsx/SKILL.md": "abc",
+      });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

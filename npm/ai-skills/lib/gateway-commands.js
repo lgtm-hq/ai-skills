@@ -41,9 +41,12 @@ export async function updateSkills(options, dependencies = {}) {
   const selected = selectPlugins(prunedLock.plugins, options.skills);
   const updated = Object.keys(selected);
   const { vendors } = await loadVendors();
-  const sources = resolveSources(selected, vendors);
-  for (const [source, group] of sources) {
-    const agents = [...group.agents].sort();
+  for (const entry of Object.values(selected)) {
+    const source =
+      entry.vendor === "lgtm-hq"
+        ? `lgtm-hq/ai-skills@v${getPackageVersion()}`
+        : resolveVendorSource(entry, vendors);
+    const agents = pluginAgentNames(entry);
     await run(
       buildSkillsArguments(
         {
@@ -51,7 +54,7 @@ export async function updateSkills(options, dependencies = {}) {
           agents: agents.length > 0 ? agents : scopedOptions.agents,
           copy: false,
           onConflict: "overwrite",
-          skills: group.skills,
+          skills: pluginSkillNames(entry),
         },
         source,
       ),
@@ -106,10 +109,18 @@ export async function removeSkills(options, dependencies = {}) {
   if (selected.length === 0) {
     return [];
   }
-  const skillNames = [
-    ...new Set(selected.flatMap((pluginId) => pluginSkillNames(lock.plugins[pluginId]))),
-  ].sort();
-  await run(buildSkillsRemoveArguments(scopedOptions, skillNames));
+  for (const pluginId of selected) {
+    const entry = lock.plugins[pluginId];
+    await run(
+      buildSkillsRemoveArguments(
+        {
+          ...scopedOptions,
+          agents: pluginAgentNames(entry),
+        },
+        pluginSkillNames(entry),
+      ),
+    );
+  }
   const plugins = { ...lock.plugins };
   selected.forEach((pluginId) => delete plugins[pluginId]);
   await writeLock({
@@ -167,38 +178,6 @@ function selectPlugins(plugins, names) {
       }
       return [name, plugins[name]];
     }),
-  );
-}
-
-/**
- * Resolve updated source strings grouped by their lock entries.
- *
- * @param {Record<string, import("./lockfile.js").PluginLockEntry>} plugins - Selected lock entries.
- * @param {Array<{id: string, repo: string, sha: string}>} vendors - Current vendor registry.
- * @returns {Map<string, {agents: Set<string>, skills: string[]}>} Source string to tracked agents and exploded skill names.
- */
-function resolveSources(plugins, vendors) {
-  /** @type {Map<string, {agents: Set<string>, skills: Set<string>}>} */
-  const sources = new Map();
-  for (const entry of Object.values(plugins)) {
-    const source =
-      entry.vendor === "lgtm-hq"
-        ? `lgtm-hq/ai-skills@v${getPackageVersion()}`
-        : resolveVendorSource(entry, vendors);
-    const group = sources.get(source) ?? { agents: new Set(), skills: new Set() };
-    for (const agent of pluginAgentNames(entry)) {
-      group.agents.add(agent);
-    }
-    for (const name of pluginSkillNames(entry)) {
-      group.skills.add(name);
-    }
-    sources.set(source, group);
-  }
-  return new Map(
-    [...sources].map(([source, group]) => [
-      source,
-      { agents: group.agents, skills: [...group.skills].sort() },
-    ]),
   );
 }
 
