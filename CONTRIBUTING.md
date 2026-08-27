@@ -25,6 +25,9 @@ document:
 - **README skills section:** the `## Skills` section of `README.md` and its
   release-tag pins are generated from `bundles.yaml`, SKILL.md frontmatter, and
   `pyproject.toml`. Regenerate with `uv run python scripts/generate_readme.py`.
+- **Architecture decisions:** settled plugin-canonical *why* lives in
+  [`docs/adr/`](docs/adr/README.md). Implementation PRs follow accepted ADRs;
+  a superseding ADR is the way to change one.
 - **No secrets:** do not add API keys, tokens, or environment-specific paths in skill
   bodies or examples.
 - **No project-session context dumps:** one-off session notes for a single project do
