@@ -1,6 +1,6 @@
 ---
-# Source of truth for skill installer groups (generated host-adapter
-# marketplace manifests) and the README ## Skills section
+# Source of truth for first-party plugins (generated host-adapter
+# marketplace manifests) and the README plugin table
 # (scripts/generate_readme.py).
 # Each group is one plugin: kebab-case `id` is the installable name.
 # Regenerate: uv run python scripts/generate_marketplace.py

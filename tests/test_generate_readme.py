@@ -96,42 +96,41 @@ ungrouped:
         "```bash\nbunx --package=@lgtm-hq/ai-skills@0.0.1 skill\n"
         "bunx skills add lgtm-hq/ai-skills@v0.0.1 -g\n"
         "gh release download v0.0.1 -R lgtm-hq/ai-skills\n```\n\n"
-        "## Skills\n\n"
-        "<!-- skills:start -->\nstale\n<!-- skills:end -->\n\n"
+        "## Plugins\n\n"
+        "<!-- plugins:start -->\nstale\n<!-- plugins:end -->\n\n"
         "## License\n",
         encoding="utf-8",
     )
 
 
-def test_render_readme_builds_hyperlinked_groups(tmp_path: Path) -> None:
-    """Groups render as headings with skills linked to their SKILL.md."""
+def test_render_readme_builds_plugin_table(tmp_path: Path) -> None:
+    """Groups render as a plugin table with ids and skill links."""
 
     mod = _load_generate_readme_module()
     _write_fake_repo(repo_root=tmp_path)
 
     rendered = mod.render_readme(repo_root=tmp_path)
 
-    assert_that(rendered).contains("### Core Workflow")
+    assert_that(rendered).contains("| Plugin | Id | Description | Skills |")
+    assert_that(rendered).contains("| Core Workflow | `core` |")
     assert_that(rendered).contains("Everyday workflow skills.")
-    assert_that(rendered).contains(
-        "- **[alpha](skills/alpha/SKILL.md)** — Do alpha things.",
-    )
+    assert_that(rendered).contains("[alpha](skills/alpha/SKILL.md)")
     assert_that(rendered).does_not_contain("Use when asked for alpha.")
     assert_that(rendered).does_not_contain("stale")
 
 
-def test_render_readme_puts_ungrouped_skills_under_other(tmp_path: Path) -> None:
-    """Ungrouped skills appear under the Other heading, hyperlinked."""
+def test_render_readme_omits_ungrouped_from_plugin_table(tmp_path: Path) -> None:
+    """Ungrouped skills are noted, not listed as marketplace plugins."""
 
     mod = _load_generate_readme_module()
     _write_fake_repo(repo_root=tmp_path)
 
     rendered = mod.render_readme(repo_root=tmp_path)
 
-    assert_that(rendered).contains("### Other")
-    assert_that(rendered).contains(
-        "- **[beta](skills/beta/SKILL.md)** — Do beta things.",
-    )
+    assert_that(rendered).contains(mod._UNGROUPED_NOTE)
+    assert_that(rendered).does_not_contain("### Other")
+    assert_that(rendered).does_not_contain("| `beta` |")
+    assert_that(rendered).does_not_contain("[beta](skills/beta/SKILL.md)")
 
 
 def test_render_readme_syncs_version_pins_to_pyproject(tmp_path: Path) -> None:
@@ -152,7 +151,7 @@ def test_render_readme_syncs_version_pins_to_pyproject(tmp_path: Path) -> None:
 
 
 def test_render_readme_requires_markers(tmp_path: Path) -> None:
-    """A README without skills markers is rejected."""
+    """A README without plugin markers is rejected."""
 
     mod = _load_generate_readme_module()
     _write_fake_repo(repo_root=tmp_path)
@@ -162,16 +161,14 @@ def test_render_readme_requires_markers(tmp_path: Path) -> None:
         mod.render_readme(repo_root=tmp_path)
 
 
-def test_first_sentence_keeps_abbreviations() -> None:
-    """Sentence splitting does not truncate at lowercase abbreviations."""
+def test_pipe_cell_escapes_pipes() -> None:
+    """Table cells escape pipe characters."""
 
     mod = _load_generate_readme_module()
 
-    first = mod._first_sentence(
-        "Run checks (e.g. lint) before pushing. Use when asked.",
-    )
+    escaped = mod._pipe_cell("left|right")
 
-    assert_that(first).is_equal_to("Run checks (e.g. lint) before pushing.")
+    assert_that(escaped).is_equal_to("left\\|right")
 
 
 def test_repo_readme_is_up_to_date() -> None:

@@ -18,16 +18,16 @@ document:
 - **Index:** after adding, renaming, or removing skills, **`AGENTS.md` must stay in
   sync**. CI runs `scripts/generate_agents_md.py` / validation; run the same checks
   locally before opening a PR (see below).
-- **Installer groups:** assign each skill to a bundle in **`bundles.yaml`** (or list it
-  under `ungrouped` for the installer's "Other" bucket). Each group needs a kebab-case
-  **`id`** (the installable plugin name). Regenerate
+- **Plugins:** assign each skill to a plugin group in **`bundles.yaml`** (or
+  list it under `ungrouped` until it joins a plugin). Each group needs a
+  kebab-case **`id`** (the installable plugin name). Regenerate
   **`.claude-plugin/marketplace.json`** and
   **`.cursor-plugin/marketplace.json`** with
   `uv run python scripts/generate_marketplace.py`. Both files are generated
   adapters (do not edit by hand).
-- **README skills section:** the `## Skills` section of `README.md` and its
-  release-tag pins are generated from `bundles.yaml`, SKILL.md frontmatter, and
-  `pyproject.toml`. Regenerate with `uv run python scripts/generate_readme.py`.
+- **README plugin table:** the `## Plugins` table in `README.md` and its
+  release-tag pins are generated from `bundles.yaml` and `pyproject.toml`.
+  Regenerate with `uv run python scripts/generate_readme.py`.
 - **Architecture decisions:** settled plugin-canonical *why* lives in
   [`docs/adr/`](docs/adr/README.md). Implementation PRs follow accepted ADRs;
   a superseding ADR is the way to change one.

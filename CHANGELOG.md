@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **docs**: rewrite README for plugin-only installs, generated plugin table,
+  and harness-agnostic framing (#371).
+
 ### Deprecated
 
 ### Removed
