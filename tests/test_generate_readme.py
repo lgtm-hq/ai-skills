@@ -128,7 +128,8 @@ def test_render_readme_omits_ungrouped_from_plugin_table(tmp_path: Path) -> None
     rendered = mod.render_readme(repo_root=tmp_path)
 
     assert_that(rendered).contains(
-        "Skills listed under `ungrouped` in `bundles.yaml` are not marketplace plugins.",
+        "Skills listed under `ungrouped` in `bundles.yaml` "
+        "are not marketplace plugins.",
     )
     assert_that(rendered).does_not_contain("### Other")
     assert_that(rendered).does_not_contain("| `beta` |")
