@@ -75,6 +75,7 @@ def _write_fake_repo(*, repo_root: Path) -> None:
         """
 groups:
   core:
+    id: core
     name: Core Workflow
     description: Everyday workflow skills.
     skills:

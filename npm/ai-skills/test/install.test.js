@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { loadVendorIndex } from "../lib/catalog.js";
-import { install } from "../lib/install.js";
+import { batchesFromCliOptions, install } from "../lib/install.js";
 import { MINIMUM_SKILLS_VERSION } from "../lib/options.js";
 import { buildSkillsArguments } from "../lib/skills-runner.js";
 
 const unattendedOptions = {
   agents: ["cursor"],
-  bundle: "pre-push",
+  bundle: "review",
   copy: false,
   global: true,
   onConflict: "overwrite",
@@ -80,6 +80,18 @@ describe("install", () => {
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
+  });
+
+  test("rejects the retired pre-push bundle key", async () => {
+    await expect(
+      batchesFromCliOptions({ bundle: "pre-push", skills: [], vendor: null }),
+    ).rejects.toThrow("Unknown first-party bundle: pre-push");
+  });
+
+  test("rejects the retired agents bundle key", async () => {
+    await expect(
+      batchesFromCliOptions({ bundle: "agents", skills: [], vendor: null }),
+    ).rejects.toThrow("Unknown first-party bundle: agents");
   });
 
   test("uses the pinned vendor source from baked data", async () => {

@@ -72,6 +72,32 @@ def test_rewrites_all_pin_patterns(tmp_path: Path) -> None:
     assert_that(readme.with_suffix(".md.bak").exists()).is_false()
 
 
+def test_rewrites_marketplace_plugin_versions(tmp_path: Path) -> None:
+    """Marketplace stamps next to the README are rewritten with README pins."""
+
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "bunx skills add lgtm-hq/ai-skills@v0.1.10 -g\n",
+        encoding="utf-8",
+    )
+    marketplace = tmp_path / ".claude-plugin" / "marketplace.json"
+    marketplace.parent.mkdir()
+    marketplace.write_text(
+        '{\n  "plugins": [\n    {\n      "name": "review",\n'
+        '      "version": "0.1.10"\n    }\n  ]\n}\n',
+        encoding="utf-8",
+    )
+
+    result = _run(args=[str(readme)], env_version="2.3.4")
+    content = marketplace.read_text(encoding="utf-8")
+
+    assert_that(result.returncode).is_equal_to(0)
+    assert_that(result.stdout).contains("Pinned marketplace plugin versions to 2.3.4")
+    assert_that(content).contains('"version": "2.3.4"')
+    assert_that(content).does_not_contain("0.1.10")
+    assert_that(marketplace.with_suffix(".json.bak").exists()).is_false()
+
+
 def test_rejects_missing_next_version(tmp_path: Path) -> None:
     """The script fails fast when NEXT_VERSION is unset."""
 
@@ -82,6 +108,45 @@ def test_rejects_missing_next_version(tmp_path: Path) -> None:
 
     assert_that(result.returncode).is_not_equal_to(0)
     assert_that(result.stderr).contains("NEXT_VERSION is required")
+
+
+def test_missing_marketplace_does_not_fail_readme_pin(tmp_path: Path) -> None:
+    """README-only invocations skip restamp when marketplace.json is absent."""
+
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "bunx skills add lgtm-hq/ai-skills@v0.1.10 -g\n",
+        encoding="utf-8",
+    )
+
+    result = _run(args=[str(readme)], env_version="2.3.4")
+
+    assert_that(result.returncode).is_equal_to(0)
+    assert_that(result.stdout).contains("Pinned README install examples to v2.3.4")
+    assert_that(result.stdout).does_not_contain("Pinned marketplace")
+
+
+def test_rejects_marketplace_restamp_without_semver_versions(tmp_path: Path) -> None:
+    """A marketplace.json that cannot be restamped is a hard error."""
+
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "bunx skills add lgtm-hq/ai-skills@v0.1.10 -g\n",
+        encoding="utf-8",
+    )
+    marketplace = tmp_path / ".claude-plugin" / "marketplace.json"
+    marketplace.parent.mkdir()
+    marketplace.write_text(
+        '{\n  "plugins": [\n    {\n      "name": "review",\n'
+        '      "version": "dev"\n    }\n  ]\n}\n',
+        encoding="utf-8",
+    )
+
+    result = _run(args=[str(readme)], env_version="2.3.4")
+
+    assert_that(result.returncode).is_not_equal_to(0)
+    assert_that(result.stderr).contains("Failed to restamp plugin versions")
+    assert_that(marketplace.read_text(encoding="utf-8")).contains('"version": "dev"')
 
 
 def test_accepts_v_prefixed_next_version(tmp_path: Path) -> None:

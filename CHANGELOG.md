@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **bundles**: kebab-case plugin ids, `pre-push` → `review`, `agents` →
+  `subagents`, and metadata-sliced marketplace entries (#368). Gateway
+  `--bundle pre-push` / `--bundle agents` become `--bundle review` /
+  `--bundle subagents`.
+
 ### Deprecated
 
 ### Removed

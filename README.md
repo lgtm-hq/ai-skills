@@ -70,7 +70,7 @@ closed. For a pinned, install-free run, front the command with
 ```bash
 bunx --package=@lgtm-hq/ai-skills@0.19.0 skill install -y --global \
   -a claude-code -a cursor -a codex \
-  --bundle pre-push
+  --bundle review
 ```
 
 <!-- markdownlint-disable MD033 -- collapsible install variants -->
@@ -134,7 +134,7 @@ Branching, commits, rebases, and pull requests.
 - **[reconcile](skills/reconcile/SKILL.md)** — Consolidate worktrees and clean up stale branches.
 - **[issue](skills/issue/SKILL.md)** — Create GitHub issues with proper formatting, labels, and AI implementation prompts.
 
-### Pre-Push Review
+### Review
 
 Lint, test, and AI review before pushing or opening a PR.
 
@@ -171,7 +171,7 @@ Manual pre-review analysis of code, projects, and test suites.
 - **[audit-merges](skills/audit-merges/SKILL.md)** — Deep retrospective audit of everything merged to main over a window - code quality against the stand-* skills, introduced bugs, unsafe changes, merges over red signals, hollow thread resolutions, and untracked deferrals - with a tabbed HTML report as the deliverable.
 - **[sweep-prs](skills/sweep-prs/SKILL.md)** — Retrospective audit of recently merged/closed PRs for anomalies that slipped through - merges without green builds, merges onto red main, unresolved or post-merge review threads, hollow resolutions.
 
-### Agents
+### Subagents
 
 Autonomous agents that shepherd PRs and work issue backlogs.
 
@@ -228,7 +228,7 @@ upstream CLI escape hatch:
 ```bash
 # Gateway: unattended first-party bundle (globally installed → `skill`)
 skill install -y --global -a cursor \
-  --bundle pre-push
+  --bundle review
 
 # Gateway: unattended vendor skill at the baked SHA, pinned + install-free
 bunx --package=@lgtm-hq/ai-skills@0.19.0 skill install -y --global -a cursor \
