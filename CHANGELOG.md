@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `subagents`, and metadata-sliced marketplace entries (#368). Gateway
   `--bundle pre-push` / `--bundle agents` become `--bundle review` /
   `--bundle subagents`.
+- **manifests**: generated Cursor marketplace adapter at
+  `.cursor-plugin/marketplace.json`, plus `$generated` do-not-edit markers
+  on both host adapters (#369).
 
 ### Deprecated
 

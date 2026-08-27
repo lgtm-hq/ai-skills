@@ -1,6 +1,7 @@
 ---
-# Source of truth for skill installer groups (.claude-plugin/marketplace.json)
-# and the README ## Skills section (scripts/generate_readme.py).
+# Source of truth for skill installer groups (generated host-adapter
+# marketplace manifests) and the README ## Skills section
+# (scripts/generate_readme.py).
 # Each group is one plugin: kebab-case `id` is the installable name.
 # Regenerate: uv run python scripts/generate_marketplace.py
 #             uv run python scripts/generate_readme.py

@@ -1,0 +1,48 @@
+{
+  "name": "ai-skills",
+  "owner": {
+    "name": "lgtm-hq"
+  },
+  "metadata": {
+    "description": "Harness-agnostic agent skills generated from bundles.yaml.",
+    "version": "0.19.0",
+    "$generated": "do not edit — regenerate via scripts/generate_marketplace.py"
+  },
+  "plugins": [
+    {
+      "name": "git-pr",
+      "source": "./",
+      "description": "Branching, commits, rebases, and pull requests."
+    },
+    {
+      "name": "review",
+      "source": "./",
+      "description": "Lint, test, and AI review before pushing or opening a PR."
+    },
+    {
+      "name": "standards",
+      "source": "./",
+      "description": "Language and CI coding standards applied while writing code."
+    },
+    {
+      "name": "raycast",
+      "source": "./",
+      "description": "Raycast extension development and store submissions."
+    },
+    {
+      "name": "analysis",
+      "source": "./",
+      "description": "Manual pre-review analysis of code, projects, and test suites."
+    },
+    {
+      "name": "subagents",
+      "source": "./",
+      "description": "Autonomous agents that shepherd PRs and work issue backlogs."
+    },
+    {
+      "name": "testing",
+      "source": "./",
+      "description": "Playwright and BATS test-writing standards."
+    }
+  ]
+}
