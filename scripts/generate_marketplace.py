@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Generate ``.claude-plugin/marketplace.json`` from ``bundles.yaml``.
 
-The Vercel ``skills`` CLI reads ``marketplace.json`` to group skills in the
-interactive installer (checkbox picker). Each group becomes a named section;
-skills listed under ``ungrouped`` are omitted from the manifest and appear in
+Each bundle group is one installable plugin: kebab-case ``id`` as ``name``,
+display name, description, repo version, ``source: "./"``, ``strict: false``,
+and a ``skills`` array of ``./skills/<id>`` paths (upstream-native slicing).
+Skills listed under ``ungrouped`` are omitted from the manifest and appear in
 the installer's "Other" bucket.
+
+Plugin ``version`` is stamped from a root ``VERSION`` file when present,
+otherwise ``pyproject.toml`` ``project.version``.
 
 Usage:
     uv run python scripts/generate_marketplace.py          # write manifest
@@ -15,12 +19,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+_KEBAB_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 @dataclass(frozen=True)
@@ -30,6 +38,7 @@ class BundleGroup:
     name: str
     skills: tuple[str, ...]
     description: str = ""
+    plugin_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -45,8 +54,12 @@ class MarketplacePlugin:
     """One plugin entry written to ``marketplace.json``."""
 
     name: str
+    display_name: str
+    description: str
+    version: str
     source: str
     skills: tuple[str, ...]
+    strict: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable mapping for this plugin.
@@ -56,7 +69,11 @@ class MarketplacePlugin:
         """
         return {
             "name": self.name,
+            "displayName": self.display_name,
+            "description": self.description,
+            "version": self.version,
             "source": self.source,
+            "strict": self.strict,
             "skills": list(self.skills),
         }
 
@@ -102,6 +119,55 @@ def _discover_skill_names(*, repo_root: Path) -> set[str]:
     return names
 
 
+def _require_kebab_case(*, label: str, value: str) -> None:
+    """Reject identifiers that are not kebab-case.
+
+    Args:
+        label: Human-readable field name for the error.
+        value: Identifier to validate.
+
+    Raises:
+        ValueError: If ``value`` is not kebab-case.
+    """
+    if not _KEBAB_ID_PATTERN.fullmatch(value):
+        msg = f"{label} {value!r} must be kebab-case"
+        raise ValueError(msg)
+
+
+def _read_repo_version(*, repo_root: Path) -> str:
+    """Return the repo version stamped onto marketplace plugins.
+
+    Prefers a root ``VERSION`` file (first line, stripped). Falls back to
+    ``pyproject.toml`` ``project.version``.
+
+    Args:
+        repo_root: Repository root path.
+
+    Returns:
+        Version string, for example ``0.19.0``.
+
+    Raises:
+        ValueError: If neither source yields a non-empty version.
+    """
+    version_path = repo_root / "VERSION"
+    if version_path.is_file():
+        version = version_path.read_text(encoding="utf-8").splitlines()[0].strip()
+        if version:
+            return version
+        msg = "VERSION file is empty"
+        raise ValueError(msg)
+    pyproject_path = repo_root / "pyproject.toml"
+    if pyproject_path.is_file():
+        data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+        version = data.get("project", {}).get("version")
+        if isinstance(version, str) and version:
+            return version
+        msg = "pyproject.toml is missing project.version"
+        raise ValueError(msg)
+    msg = "No VERSION file or pyproject.toml project.version to stamp plugins"
+    raise ValueError(msg)
+
+
 def _parse_bundle_group(*, group_id: str, group: object) -> BundleGroup:
     """Parse one bundle group mapping from YAML.
 
@@ -116,6 +182,7 @@ def _parse_bundle_group(*, group_id: str, group: object) -> BundleGroup:
         TypeError: If the group structure is invalid.
         ValueError: If required fields are missing or malformed.
     """
+    _require_kebab_case(label="Group key", value=group_id)
     if not isinstance(group, dict):
         msg = f"Group {group_id!r} must be a mapping"
         raise TypeError(msg)
@@ -131,6 +198,11 @@ def _parse_bundle_group(*, group_id: str, group: object) -> BundleGroup:
     if not isinstance(description, str):
         msg = f"Group {group_id!r} 'description' must be a string"
         raise TypeError(msg)
+    raw_id = group.get("id", group_id)
+    if not isinstance(raw_id, str) or not raw_id:
+        msg = f"Group {group_id!r} must have a string 'id'"
+        raise TypeError(msg)
+    _require_kebab_case(label=f"Group {group_id!r} id", value=raw_id)
     parsed_skills: list[str] = []
     for skill_name in skills:
         if not isinstance(skill_name, str):
@@ -141,6 +213,7 @@ def _parse_bundle_group(*, group_id: str, group: object) -> BundleGroup:
         name=display_name,
         skills=tuple(parsed_skills),
         description=description,
+        plugin_id=raw_id,
     )
 
 
@@ -198,8 +271,16 @@ def _validate_bundles(
     """
     discovered = _discover_skill_names(repo_root=repo_root)
     assigned: dict[str, str] = {}
+    plugin_ids: dict[str, str] = {}
 
     for group_id, group in bundles.groups.items():
+        if group.plugin_id in plugin_ids:
+            msg = (
+                f"Plugin id {group.plugin_id!r} is used by both "
+                f"{plugin_ids[group.plugin_id]!r} and {group_id!r}"
+            )
+            raise ValueError(msg)
+        plugin_ids[group.plugin_id] = group_id
         for skill_name in group.skills:
             if skill_name in assigned:
                 msg = (
@@ -228,20 +309,29 @@ def _validate_bundles(
         raise ValueError(msg)
 
 
-def _build_marketplace(*, bundles: BundlesDocument) -> MarketplaceManifest:
+def _build_marketplace(
+    *,
+    bundles: BundlesDocument,
+    version: str,
+) -> MarketplaceManifest:
     """Build the marketplace manifest object.
 
     Args:
         bundles: Parsed bundle document.
+        version: Repo version stamped onto every plugin entry.
 
     Returns:
         Marketplace manifest ready for JSON serialization.
     """
     plugins = tuple(
         MarketplacePlugin(
-            name=group.name,
+            name=group.plugin_id,
+            display_name=group.name,
+            description=group.description,
+            version=version,
             source="./",
             skills=tuple(f"./skills/{name}" for name in group.skills),
+            strict=False,
         )
         for group in bundles.groups.values()
     )
@@ -287,8 +377,46 @@ def generate_marketplace(*, repo_root: Path) -> str:
         Rendered JSON for ``.claude-plugin/marketplace.json``.
     """
     bundles = load_validated_bundles(repo_root=repo_root)
-    manifest = _build_marketplace(bundles=bundles)
+    version = _read_repo_version(repo_root=repo_root)
+    manifest = _build_marketplace(bundles=bundles, version=version)
     return _render_marketplace(manifest=manifest)
+
+
+def marketplace_output_path(*, repo_root: Path) -> Path:
+    """Return the Claude marketplace adapter path.
+
+    Args:
+        repo_root: Repository root path.
+
+    Returns:
+        Absolute path to ``.claude-plugin/marketplace.json``.
+    """
+    return repo_root / ".claude-plugin" / "marketplace.json"
+
+
+def marketplace_drift_message(*, repo_root: Path) -> str | None:
+    """Return a drift error if the generated marketplace is missing or stale.
+
+    Args:
+        repo_root: Repository root path.
+
+    Returns:
+        Error message, or ``None`` when the file matches the generator.
+    """
+    output_path = marketplace_output_path(repo_root=repo_root)
+    rendered = generate_marketplace(repo_root=repo_root)
+    relative = output_path.relative_to(repo_root)
+    if not output_path.is_file():
+        return (
+            f"Missing {relative}; run uv run python scripts/generate_marketplace.py"
+        )
+    existing = output_path.read_text(encoding="utf-8")
+    if existing != rendered:
+        return (
+            f"{relative} is out of date; "
+            "run uv run python scripts/generate_marketplace.py"
+        )
+    return None
 
 
 def main() -> None:
@@ -304,27 +432,16 @@ def main() -> None:
     args = parser.parse_args()
 
     repo_root = _repo_root()
-    rendered = generate_marketplace(repo_root=repo_root)
-    output_path = repo_root / ".claude-plugin" / "marketplace.json"
 
     if args.check:
-        if not output_path.is_file():
-            print(
-                f"Missing {output_path.relative_to(repo_root)}; "
-                "run uv run python scripts/generate_marketplace.py",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        existing = output_path.read_text(encoding="utf-8")
-        if existing != rendered:
-            print(
-                f"{output_path.relative_to(repo_root)} is out of date; "
-                "run uv run python scripts/generate_marketplace.py",
-                file=sys.stderr,
-            )
+        message = marketplace_drift_message(repo_root=repo_root)
+        if message is not None:
+            print(message, file=sys.stderr)
             sys.exit(1)
         return
 
+    rendered = generate_marketplace(repo_root=repo_root)
+    output_path = marketplace_output_path(repo_root=repo_root)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(rendered, encoding="utf-8")
 

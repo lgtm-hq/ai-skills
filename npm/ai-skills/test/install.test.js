@@ -10,7 +10,7 @@ import { buildSkillsArguments } from "../lib/skills-runner.js";
 
 const unattendedOptions = {
   agents: ["cursor"],
-  bundle: "pre-push",
+  bundle: "review",
   copy: false,
   global: true,
   onConflict: "overwrite",

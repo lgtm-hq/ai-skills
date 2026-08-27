@@ -1,6 +1,7 @@
 {
   "groups": {
     "git-pr": {
+      "id": "git-pr",
       "name": "Git & PR Workflow",
       "description": "Branching, commits, rebases, and pull requests.",
       "skills": [
@@ -12,8 +13,9 @@
         "issue"
       ]
     },
-    "pre-push": {
-      "name": "Pre-Push Review",
+    "review": {
+      "id": "review",
+      "name": "Review",
       "description": "Lint, test, and AI review before pushing or opening a PR.",
       "skills": [
         "lint",
@@ -23,6 +25,7 @@
       ]
     },
     "standards": {
+      "id": "standards",
       "name": "Standards",
       "description": "Language and CI coding standards applied while writing code.",
       "skills": [
@@ -35,6 +38,7 @@
       ]
     },
     "raycast": {
+      "id": "raycast",
       "name": "Raycast",
       "description": "Raycast extension development and store submissions.",
       "skills": [
@@ -43,6 +47,7 @@
       ]
     },
     "analysis": {
+      "id": "analysis",
       "name": "Analysis",
       "description": "Manual pre-review analysis of code, projects, and test suites.",
       "skills": [
@@ -53,8 +58,9 @@
         "sweep-prs"
       ]
     },
-    "agents": {
-      "name": "Agents",
+    "subagents": {
+      "id": "subagents",
+      "name": "Subagents",
       "description": "Autonomous agents that shepherd PRs and work issue backlogs.",
       "skills": [
         "babysit-pr",
@@ -64,6 +70,7 @@
       ]
     },
     "testing": {
+      "id": "testing",
       "name": "Testing",
       "description": "Playwright and BATS test-writing standards.",
       "skills": [

@@ -1,6 +1,7 @@
 ---
 # Source of truth for skill installer groups (.claude-plugin/marketplace.json)
 # and the README ## Skills section (scripts/generate_readme.py).
+# Each group is one plugin: kebab-case `id` is the installable name.
 # Regenerate: uv run python scripts/generate_marketplace.py
 #             uv run python scripts/generate_readme.py
 #
@@ -9,6 +10,7 @@
 
 groups:
   git-pr:
+    id: git-pr
     name: Git & PR Workflow
     description: Branching, commits, rebases, and pull requests.
     skills:
@@ -19,8 +21,9 @@ groups:
       - reconcile
       - issue
 
-  pre-push:
-    name: Pre-Push Review
+  review:
+    id: review
+    name: Review
     description: Lint, test, and AI review before pushing or opening a PR.
     skills:
       - lint
@@ -29,6 +32,7 @@ groups:
       - coderabbit
 
   standards:
+    id: standards
     name: Standards
     description: Language and CI coding standards applied while writing code.
     skills:
@@ -40,6 +44,7 @@ groups:
       - stand-ci
 
   raycast:
+    id: raycast
     name: Raycast
     description: Raycast extension development and store submissions.
     skills:
@@ -47,6 +52,7 @@ groups:
       - pr-raycast
 
   analysis:
+    id: analysis
     name: Analysis
     description: Manual pre-review analysis of code, projects, and test suites.
     skills:
@@ -56,8 +62,9 @@ groups:
       - audit-merges
       - sweep-prs
 
-  agents:
-    name: Agents
+  subagents:
+    id: subagents
+    name: Subagents
     description: Autonomous agents that shepherd PRs and work issue backlogs.
     skills:
       - babysit-pr
@@ -66,6 +73,7 @@ groups:
       - which-pr
 
   testing:
+    id: testing
     name: Testing
     description: Playwright and BATS test-writing standards.
     skills:

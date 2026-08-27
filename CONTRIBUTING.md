@@ -19,7 +19,8 @@ document:
   sync**. CI runs `scripts/generate_agents_md.py` / validation; run the same checks
   locally before opening a PR (see below).
 - **Installer groups:** assign each skill to a bundle in **`bundles.yaml`** (or list it
-  under `ungrouped` for the installer's "Other" bucket). Regenerate
+  under `ungrouped` for the installer's "Other" bucket). Each group needs a kebab-case
+  **`id`** (the installable plugin name). Regenerate
   **`.claude-plugin/marketplace.json`** with `uv run python scripts/generate_marketplace.py`.
 - **README skills section:** the `## Skills` section of `README.md` and its
   release-tag pins are generated from `bundles.yaml`, SKILL.md frontmatter, and

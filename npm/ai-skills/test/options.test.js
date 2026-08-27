@@ -8,11 +8,11 @@ import {
 
 describe("parseArguments", () => {
   test("defaults to the install command", () => {
-    expect(parseArguments(["--global", "--bundle", "pre-push"])).toEqual({
+    expect(parseArguments(["--global", "--bundle", "review"])).toEqual({
       command: "install",
       options: {
         agents: [],
-        bundle: "pre-push",
+        bundle: "review",
         copy: false,
         global: true,
         onConflict: null,
@@ -47,7 +47,7 @@ describe("parseArguments", () => {
       "-a",
       "cursor",
       "--bundle",
-      "pre-push",
+      "review",
       "--on-conflict",
       "skip",
     ]);
@@ -58,14 +58,14 @@ describe("parseArguments", () => {
   });
 
   test("allows overwrite or omitted conflict policy", () => {
-    const omitted = parseArguments(["-y", "--global", "-a", "cursor", "--bundle", "pre-push"]);
+    const omitted = parseArguments(["-y", "--global", "-a", "cursor", "--bundle", "review"]);
     const overwrite = parseArguments([
       "-y",
       "--global",
       "-a",
       "cursor",
       "--bundle",
-      "pre-push",
+      "review",
       "--on-conflict",
       "overwrite",
     ]);
@@ -79,7 +79,7 @@ describe("parseArguments", () => {
   });
 
   test("rejects competing sources", () => {
-    expect(() => parseArguments(["--vendor", "anthropics", "--bundle", "pre-push"])).toThrow(
+    expect(() => parseArguments(["--vendor", "anthropics", "--bundle", "review"])).toThrow(
       "Choose only one source",
     );
   });
