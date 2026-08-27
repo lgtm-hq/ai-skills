@@ -87,15 +87,25 @@ def test_rewrites_marketplace_plugin_versions(tmp_path: Path) -> None:
         '      "version": "0.1.10"\n    }\n  ]\n}\n',
         encoding="utf-8",
     )
+    cursor_marketplace = tmp_path / ".cursor-plugin" / "marketplace.json"
+    cursor_marketplace.parent.mkdir()
+    cursor_marketplace.write_text(
+        '{\n  "metadata": {\n    "version": "0.1.10"\n  }\n}\n',
+        encoding="utf-8",
+    )
 
     result = _run(args=[str(readme)], env_version="2.3.4")
     content = marketplace.read_text(encoding="utf-8")
+    cursor_content = cursor_marketplace.read_text(encoding="utf-8")
 
     assert_that(result.returncode).is_equal_to(0)
     assert_that(result.stdout).contains("Pinned marketplace plugin versions to 2.3.4")
     assert_that(content).contains('"version": "2.3.4"')
     assert_that(content).does_not_contain("0.1.10")
+    assert_that(cursor_content).contains('"version": "2.3.4"')
+    assert_that(cursor_content).does_not_contain("0.1.10")
     assert_that(marketplace.with_suffix(".json.bak").exists()).is_false()
+    assert_that(cursor_marketplace.with_suffix(".json.bak").exists()).is_false()
 
 
 def test_rejects_missing_next_version(tmp_path: Path) -> None:

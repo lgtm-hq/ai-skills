@@ -13,8 +13,8 @@ Checks:
      uv run python scripts/validate_skills.py
   3. AGENTS.md entries match skills/ directories (regenerate skills list via:
      uv run python scripts/generate_agents_md.py)
-  4. bundles.yaml covers all skills and marketplace.json is in sync (regenerate via:
-     uv run python scripts/generate_marketplace.py)
+  4. bundles.yaml covers all skills and both marketplace adapters are in sync
+     (regenerate via: uv run python scripts/generate_marketplace.py)
   5. README.md generated skills section and release-tag pins are in sync
      (regenerate via: uv run python scripts/generate_readme.py)
   6. skills-manifest generator is deterministic (two runs produce identical

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Rewrite release-tag pins in README.md and plugin versions in
-# .claude-plugin/marketplace.json to a new version.
+# .claude-plugin/marketplace.json and .cursor-plugin/marketplace.json.
 #
 # Runs as the repo-specific version-update-script in the release version-PR
 # workflow (after the ecosystem updater bumps pyproject.toml), keeping the
@@ -13,7 +13,7 @@
 #
 # Optional arguments:
 #   $1 Path to the README to rewrite (default: README.md in the repo root).
-#      Marketplace.json is rewritten when it sits next to that README.
+#      Marketplace.json files are rewritten when they sit next to that README.
 set -euo pipefail
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -57,15 +57,18 @@ echo "Pinned README install examples to v${next_version}."
 # without needing uv/python in the updater environment. A missing sibling
 # marketplace.json is skipped so README-only invocations still succeed.
 readme_dir=$(cd -- "$(dirname -- "${readme_path}")" && pwd)
-marketplace_path="${readme_dir}/.claude-plugin/marketplace.json"
-if [[ -f "${marketplace_path}" ]]; then
-  sed -E -i.bak \
-    -e "s|(\"version\": \")[0-9]+\.[0-9]+\.[0-9]+(\")|\1${next_version}\2|g" \
-    "${marketplace_path}"
-  rm -f "${marketplace_path}.bak"
-  if ! grep -Fq "\"version\": \"${next_version}\"" "${marketplace_path}"; then
-    echo "Failed to restamp plugin versions in ${marketplace_path} to ${next_version}." >&2
-    exit 1
+for marketplace_path in \
+  "${readme_dir}/.claude-plugin/marketplace.json" \
+  "${readme_dir}/.cursor-plugin/marketplace.json"; do
+  if [[ -f "${marketplace_path}" ]]; then
+    sed -E -i.bak \
+      -e "s|(\"version\": \")[0-9]+\.[0-9]+\.[0-9]+(\")|\1${next_version}\2|g" \
+      "${marketplace_path}"
+    rm -f "${marketplace_path}.bak"
+    if ! grep -Fq "\"version\": \"${next_version}\"" "${marketplace_path}"; then
+      echo "Failed to restamp plugin versions in ${marketplace_path} to ${next_version}." >&2
+      exit 1
+    fi
+    echo "Pinned marketplace plugin versions to ${next_version}."
   fi
-  echo "Pinned marketplace plugin versions to ${next_version}."
-fi
+done
