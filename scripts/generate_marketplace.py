@@ -106,10 +106,16 @@ class MarketplaceManifest:
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable mapping for the manifest.
 
+        Top-level ``name`` / ``owner`` are the marketplace registration key
+        hosts use in ``plugin install <id>@ai-skills``. ``$generated`` is
+        allowed at the root because Claude's schema is open there.
+
         Returns:
             Manifest object suitable for ``json.dumps``.
         """
         return {
+            "name": _MARKETPLACE_NAME,
+            "owner": {"name": _MARKETPLACE_OWNER_NAME},
             "$generated": GENERATED_NOTICE,
             "plugins": [plugin.to_dict() for plugin in self.plugins],
         }

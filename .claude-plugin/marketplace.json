@@ -1,4 +1,8 @@
 {
+  "name": "ai-skills",
+  "owner": {
+    "name": "lgtm-hq"
+  },
   "$generated": "do not edit — regenerate via scripts/generate_marketplace.py",
   "plugins": [
     {

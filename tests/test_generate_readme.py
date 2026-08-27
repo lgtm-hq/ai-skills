@@ -133,6 +133,28 @@ def test_render_readme_omits_ungrouped_from_plugin_table(tmp_path: Path) -> None
     assert_that(rendered).does_not_contain("[beta](skills/beta/SKILL.md)")
 
 
+def test_repo_readme_install_paths_are_plugin_level() -> None:
+    """Production README documents host plugin installs, not skill cherry-picks."""
+
+    readme = Path(__file__).resolve().parents[1].joinpath("README.md").read_text(
+        encoding="utf-8",
+    )
+
+    assert_that(readme).contains(
+        "claude plugin marketplace add lgtm-hq/ai-skills@v",
+    )
+    assert_that(readme).contains("claude plugin install git-pr@ai-skills")
+    assert_that(readme).contains("copilot plugin marketplace add lgtm-hq/ai-skills")
+    assert_that(readme).contains("copilot plugin install git-pr@ai-skills")
+    assert_that(readme).contains("sk install -y --global -a cursor --bundle review")
+    assert_that(readme).contains("git clone https://github.com/lgtm-hq/ai-skills.git")
+    assert_that(readme).contains("Harness-agnostic by construction")
+    assert_that(readme).does_not_contain("--skill")
+    assert_that(readme).does_not_contain("--all")
+    assert_that(readme).does_not_contain("Toggle skills")
+    assert_that(readme).does_not_contain("The seven first-party plugins")
+
+
 def test_render_readme_syncs_version_pins_to_pyproject(tmp_path: Path) -> None:
     """Release-tag pins are rewritten to the pyproject.toml version."""
 

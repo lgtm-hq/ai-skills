@@ -15,25 +15,26 @@ Canonical <a href="https://agentskills.io">Agent Skills</a> library — content 
 
 <!-- markdownlint-enable MD033 MD013 -->
 
-Validated, semver-pinned **plugins** for real engineering workflows — commit,
-review, PR, and language standards. Claude Code, Cursor, and GitHub Copilot
-are verified hosts. Third-party vendor catalogs ship SHA-pinned via the
-gateway; curated content stays first-party only.
+Validated **plugins** for real engineering workflows — commit, review, PR, and
+language standards. Claude Code, Cursor, and GitHub Copilot are verified
+hosts. Third-party vendor catalogs ship SHA-pinned via the gateway; curated
+content stays first-party only.
 
 ## Install
 
 The unit of install is a **plugin**. A plugin is a named group of skills (and,
-later, other components). Hosts load plugins from this repo's generated
-marketplace adapters. Contents stay visible; installs are atomic.
+later, other components). Contents stay visible; native hosts install the
+plugin as a whole. The gateway (`sk`) currently projects a plugin through
+`--bundle <id>` (native projectors and plugin-only UX are later issues).
 
-Pin the gateway (and marketplace clones) to a release. Floating `main`
-installs pull instructions you have not reviewed. The npm version matches
-the git tag (`@0.21.0` ↔ `v0.21.0`).
+Pin the gateway to a release. Native `marketplace add` tracks the default
+branch unless you append a git tag. The npm version matches the git tag
+(`@0.21.0` ↔ `v0.21.0`).
 
 ### Claude Code
 
 ```bash
-claude plugin marketplace add lgtm-hq/ai-skills
+claude plugin marketplace add lgtm-hq/ai-skills@v0.21.0
 claude plugin install git-pr@ai-skills
 ```
 
@@ -41,23 +42,26 @@ claude plugin install git-pr@ai-skills
 
 ```bash
 copilot plugin marketplace add lgtm-hq/ai-skills
+copilot plugin install git-pr@ai-skills
 ```
 
-Then install a plugin from that marketplace (same kebab-case ids as the
-table below).
+Copilot's add takes `OWNER/REPO` and tracks the default branch; install uses
+the same kebab-case plugin ids as the table below.
 
 ### Cursor
 
-**Local:** clone this repo and add the clone as a marketplace (Claude-format
-`.claude-plugin/marketplace.json`; Cursor also ships a generated
-`.cursor-plugin/marketplace.json` name-list mirror).
-
-**Native:** import `lgtm-hq/ai-skills` from **Dashboard → Plugins** (team
-marketplace).
+**Local:** clone this repo and add that directory as a marketplace in
+Customize. Slicing uses the Claude-format
+`.claude-plugin/marketplace.json`; the generated
+`.cursor-plugin/marketplace.json` is a name-list mirror and does not isolate
+skills by itself.
 
 ```bash
 git clone https://github.com/lgtm-hq/ai-skills.git
 ```
+
+**Native:** on Teams/Enterprise, import `lgtm-hq/ai-skills` from
+**Dashboard → Plugins**, then install a plugin from Customize.
 
 ### Gateway (`sk`)
 
@@ -82,7 +86,7 @@ plugin id from the table below (`git-pr`, `review`, `standards`, …).
 
 ## Plugins
 
-The seven first-party plugins, generated from `bundles.yaml`:
+First-party plugins, generated from `bundles.yaml`:
 
 <!-- plugins:start -->
 <!-- markdownlint-disable MD013 -->
