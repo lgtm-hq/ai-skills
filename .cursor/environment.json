@@ -1,0 +1,4 @@
+{
+  "name": "ai-skills",
+  "install": "bash .cursor/install.sh"
+}
