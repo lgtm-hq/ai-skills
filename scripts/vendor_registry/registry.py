@@ -172,6 +172,7 @@ def _parse_vendor(*, raw_vendor: object, position: int) -> Vendor:
             f" and may include optional: {', '.join(sorted(_VENDOR_OPTIONAL_FIELDS))}"
         )
         raise ValueError(msg)
+    display_ref: str | None = None
     if "displayRef" in raw_vendor:
         display_ref = _required_string(
             value=raw_vendor["displayRef"],
@@ -237,6 +238,7 @@ def _parse_vendor(*, raw_vendor: object, position: int) -> Vendor:
         skill_roots=skill_roots,
         license=license_name,
         homepage=homepage,
+        display_ref=display_ref,
         plugins=plugins,
     )
 

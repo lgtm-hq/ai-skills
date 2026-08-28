@@ -178,6 +178,7 @@ def test_load_registry_accepts_optional_display_ref(
 
     assert_that(vendors).is_length(1)
     assert_that(vendors[0].id).is_equal_to("example-vendor")
+    assert_that(vendors[0].display_ref).is_equal_to("latest")
 
 
 def test_load_registry_rejects_sha_display_ref(

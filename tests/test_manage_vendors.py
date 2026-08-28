@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import bake_vendor_indexes
+import bake_vendor_plugins
 import manage_vendors
 import pytest
 import yaml
@@ -31,6 +32,42 @@ def _fake_tree(*, vendor: Vendor) -> list[str]:
     return list(_FETCHED_TREE)
 
 
+def _write_skill(*, directory: Path, name: str) -> None:
+    """Write a minimal SKILL.md into ``directory``.
+
+    Args:
+        directory: Skill directory to create.
+        name: Frontmatter ``name`` value.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    directory.joinpath("SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: {name} skill.\n---\n",
+        encoding="utf-8",
+    )
+
+
+def _fake_vendor_plugin_tree(*, vendor: Vendor, dest: Path) -> None:
+    """Populate a local vendor tree used when plugin slices are baked.
+
+    Args:
+        vendor: Vendor whose archive would normally be fetched.
+        dest: Directory that receives the unpacked tree.
+    """
+    del vendor
+    dest.mkdir(parents=True, exist_ok=True)
+    _write_skill(directory=dest / "skills" / "alpha", name="alpha")
+    _write_skill(directory=dest / "skills" / "gamma", name="gamma")
+    _write_skill(directory=dest / "skills" / "teach", name="teach")
+    _write_skill(directory=dest / "skills" / "nested" / "beta", name="beta")
+    _write_skill(directory=dest / "extras" / "bonus", name="bonus")
+    agents = dest / "agents"
+    agents.mkdir()
+    agents.joinpath("comment-sicko.md").write_text(
+        "# comment-sicko\n",
+        encoding="utf-8",
+    )
+
+
 @pytest.fixture
 def repo_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Build an isolated repository root with baked, synchronized artifacts.
@@ -43,6 +80,11 @@ def repo_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         Path to a repository root ready for management commands.
     """
     monkeypatch.setattr(bake_vendor_indexes, "_fetch_tree_paths", _fake_tree)
+    monkeypatch.setattr(
+        bake_vendor_plugins,
+        "_fetch_vendor_tree",
+        _fake_vendor_plugin_tree,
+    )
     tmp_path.joinpath("vendors.yaml").write_text(
         "---\n"
         "vendors:\n"
@@ -432,6 +474,11 @@ def test_update_preserves_plugin_slices(repo_root: Path) -> None:
     assert_that(plugin.skills).is_equal_to("*")
     assert_that(plugin.rename_skills).is_equal_to((("teach", "teach-existing"),))
     assert_that(plugin.agents).is_equal_to(("comment-sicko",))
+    assert_that(
+        (repo_root / "plugins-baked" / "existing-plugin" / "skills" / "teach-existing")
+        .joinpath("SKILL.md")
+        .is_file(),
+    ).is_true()
     dumped = registry_path.read_text(encoding="utf-8")
     assert_that(dumped).contains(
         "    plugins:\n"

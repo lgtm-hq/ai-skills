@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 import bake_vendor_indexes
+import bake_vendor_plugins
 import yaml
 from vendor_registry.registry import load_registry
 
@@ -397,6 +398,7 @@ def _generated_artifact_paths(*, repo_root: Path) -> tuple[Path, ...]:
     return (
         repo_root / "vendor-indexes",
         repo_root / "NOTICE.md",
+        repo_root / "plugins-baked",
         package_root / "data",
         package_root / "NOTICE.md",
         package_root / "package.json",
@@ -554,7 +556,9 @@ def _print_summary(*, action: str, vendor_id: str) -> None:
         vendor_id: Vendor slug that was changed.
     """
     print(f"{action} vendor '{vendor_id}' in vendors.yaml.")
-    print("Rebaked vendor indexes and synchronized ai-skills npm package data.")
+    print(
+        "Rebaked vendor indexes, plugin trees, and synchronized ai-skills npm package data."
+    )
     print()
     print("Manual follow-up still required (not automated):")
     print("  - Add or update the vendor bullet in README.md.")
@@ -562,17 +566,18 @@ def _print_summary(*, action: str, vendor_id: str) -> None:
 
 
 def refresh(*, repo_root: Path) -> None:
-    """Rebake every vendor index and synchronize npm package data.
+    """Rebake every vendor index and plugin tree, then synchronize npm data.
 
     Args:
         repo_root: Repository root containing ``vendors.yaml``.
     """
     bake_vendor_indexes.bake(repo_root=repo_root)
+    bake_vendor_plugins.bake(repo_root=repo_root)
     _sync_artifacts(repo_root=repo_root, check_only=False)
 
 
 def check(*, repo_root: Path) -> int:
-    """Verify baked indexes and npm package data are current and consistent.
+    """Verify baked indexes, plugin trees, and npm package data are current.
 
     Args:
         repo_root: Repository root containing generated artifacts.
@@ -581,8 +586,9 @@ def check(*, repo_root: Path) -> int:
         ``0`` when nothing is stale, otherwise ``1``.
     """
     bake_status = int(bake_vendor_indexes.check(repo_root=repo_root))
+    plugin_status = int(bake_vendor_plugins.check(repo_root=repo_root))
     sync_status = _sync_artifacts(repo_root=repo_root, check_only=True)
-    return max(bake_status, sync_status)
+    return max(bake_status, plugin_status, sync_status)
 
 
 def add(

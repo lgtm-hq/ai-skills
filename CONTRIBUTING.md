@@ -64,8 +64,9 @@ bash scripts/validate.sh
 
 Third-party vendors live in root **`vendors.yaml`** (SHA-pinned). Use
 `scripts/manage_vendors.py` to mutate the registry and regenerate every derived
-artifact (baked `vendor-indexes/`, `NOTICE.md`, and the embedded npm package data)
-in one step — never hand-edit the baked indexes.
+artifact (baked `vendor-indexes/`, `plugins-baked/`, `NOTICE.md`, and the
+embedded npm package data) in one step — never hand-edit the baked indexes or
+plugin trees.
 
 ```bash
 # Add a vendor (all fields required; --display-ref defaults to latest)
@@ -79,11 +80,11 @@ uv run python scripts/manage_vendors.py add \
 uv run python scripts/manage_vendors.py update --id owner-skills \
   --sha 89abcdef0123456789abcdef0123456789abcdef
 
-# Rebake indexes + resync npm data without touching vendors.yaml
+# Rebake indexes + plugin trees + resync npm data without touching vendors.yaml
 # (this is the Renovate path for automated vendor SHA bumps)
 uv run python scripts/manage_vendors.py refresh
 
-# Verify baked indexes and npm data are current (exits non-zero on drift)
+# Verify baked indexes, plugin trees, and npm data are current (exits non-zero on drift)
 uv run python scripts/manage_vendors.py check
 ```
 
@@ -115,7 +116,7 @@ Per plugin:
   addition (no globs; omit the key rather than `null`)
 - `renameSkills` — optional `{old: new}` kebab-case map; targets are unique
   across **all** vendors. Collisions against first-party skill directory
-  names are reported at bake/CI (issue #378), not at schema load. Every
+  names are reported at bake/CI, not at schema load. Every
   collision rename is a reviewed registry edit, never a bake/install
   guess. Duplicate YAML keys are rejected.
 - `agents` — optional non-empty list of kebab-case agent markdown
@@ -138,7 +139,36 @@ Per plugin:
 ```
 
 `scripts/manage_vendors.py` round-trips `plugins` when refreshing SHAs. Do
-not hand-edit baked indexes to encode a slice.
+not hand-edit baked indexes or `plugins-baked/` to encode a slice.
+
+### Vendor plugin bake
+
+`scripts/bake_vendor_plugins.py` turns declared slices into canonical
+plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-safety.md)):
+
+- Ingest exactly the registry slice (`skillsRoot` + `"*"` or paths,
+  `extraSkills`, `agents` from `{repo}/agents/<stem>.md`).
+- Apply `renameSkills` to the skill directory **and** the SKILL.md
+  frontmatter `name:`.
+- Reject symlinks, path escapes, and missing `SKILL.md`. Never execute
+  vendor content.
+- Write coverage (`plugins-baked/COVERAGE.md`: every un-ingested
+  `SKILL.md` listed as `SKIPPED`) and fail CI on unresolved explode-name
+  or agent-stem collisions against other baked plugins or first-party
+  `skills/` names.
+- Stage the complete tree in a temp directory and swap children into
+  `plugins-baked/` so a partial tree is never published.
+- Stamp plugin versions from `displayRef` when it is a tag; floating
+  pins such as `latest` use the short SHA.
+
+```bash
+uv run python scripts/bake_vendor_plugins.py
+uv run python scripts/bake_vendor_plugins.py --check
+```
+
+Production `vendors.yaml` stays index-only until plugin slices are
+filled; bake still emits an empty marketplace + coverage file so
+`--check` has a drift gate.
 
 ## Pull requests
 
@@ -186,6 +216,7 @@ flowchart LR
   end
   subgraph bake [Bake / publish]
     DATA["npm data/: bundles.json, vendors.json, vendor-indexes/"]
+    BAKED["plugins-baked/"]
     PKG["@lgtm-hq/ai-skills"]
   end
   subgraph gateway [Gateway CLI]
@@ -203,6 +234,7 @@ flowchart LR
   SK --> BY
   BY --> DATA
   VY --> DATA
+  VY --> BAKED
   DATA --> PKG
   PKG --> UI
   UI --> LOCK

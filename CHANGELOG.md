@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **vendors**: bake pipeline for registry plugin slices — `plugins-baked/`
+  marketplace-shaped output with symlink/path-escape rejection, coverage
+  report, global explode-name collision guard, pin-derived versions, and
+  atomic staging (ADR-0005, ADR-0006).
+
 ### Changed
 
 ### Deprecated

@@ -9,8 +9,11 @@ delimiters are detected reliably.
 
 from __future__ import annotations
 
+import re
+
 _FENCE_OPEN = "---\n"
 _FENCE_CLOSE = "\n---\n"
+_NAME_LINE = re.compile(r"^name:\s*.*$", re.MULTILINE)
 
 
 def split_frontmatter(
@@ -47,3 +50,33 @@ def split_frontmatter(
     if alt != -1 and normalized[alt + len("\n---") :].strip() == "":
         return normalized[len(_FENCE_OPEN) : alt], ""
     return None, normalized
+
+
+def rewrite_frontmatter_name(*, text: str, name: str) -> str:
+    """Rewrite the YAML frontmatter ``name`` field, preserving other keys.
+
+    Line endings are normalized the same way as ``split_frontmatter``. Only
+    the first ``name:`` line inside the frontmatter block is replaced so
+    bake-time collision renames (ADR-0005) stay reviewable diffs instead of
+    a full YAML dump.
+
+    Args:
+        text: Full SKILL.md document content.
+        name: New skill name to write into frontmatter.
+
+    Returns:
+        The document with a rewritten ``name:`` line and Unix newlines.
+
+    Raises:
+        ValueError: If the document has no complete frontmatter block or no
+            ``name:`` field.
+    """
+    frontmatter, body = split_frontmatter(text)
+    if frontmatter is None:
+        msg = "SKILL.md is missing YAML frontmatter"
+        raise ValueError(msg)
+    if _NAME_LINE.search(frontmatter) is None:
+        msg = "SKILL.md frontmatter is missing name"
+        raise ValueError(msg)
+    updated = _NAME_LINE.sub(repl=f"name: {name}", string=frontmatter, count=1)
+    return f"---\n{updated}\n---\n{body}"

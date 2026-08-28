@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from assertpy import assert_that
-from skill_frontmatter import split_frontmatter
+from skill_frontmatter import rewrite_frontmatter_name, split_frontmatter
 
 
 @pytest.mark.parametrize(
@@ -79,3 +79,30 @@ def test_split_frontmatter_empty_frontmatter_is_not_none() -> None:
 
     assert_that(frontmatter).is_empty()
     assert_that(body).is_equal_to("body\n")
+
+
+def test_rewrite_frontmatter_name_preserves_other_keys() -> None:
+    """Rename rewrites only the name line and keeps remaining frontmatter."""
+    rewritten = rewrite_frontmatter_name(
+        text="---\nname: teach\ndescription: Old name.\n---\n\n# Body\n",
+        name="teach-example",
+    )
+
+    assert_that(rewritten).is_equal_to(
+        "---\nname: teach-example\ndescription: Old name.\n---\n\n# Body\n",
+    )
+
+
+def test_rewrite_frontmatter_name_rejects_missing_block() -> None:
+    """Documents without frontmatter cannot be renamed at bake time."""
+    with pytest.raises(ValueError, match="missing YAML frontmatter"):
+        rewrite_frontmatter_name(text="# No fence\n", name="renamed")
+
+
+def test_rewrite_frontmatter_name_rejects_missing_name_field() -> None:
+    """Frontmatter without a name field cannot be renamed at bake time."""
+    with pytest.raises(ValueError, match="missing name"):
+        rewrite_frontmatter_name(
+            text="---\ndescription: No name.\n---\n",
+            name="renamed",
+        )
