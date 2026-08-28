@@ -1178,14 +1178,20 @@ def _assert_canonical_plugin_tree(*, plugin_dir: Path, plugin: VendorPlugin) -> 
             undeclared top-level paths, extra adapter files, or
             non-markdown agent files.
     """
+    allowed_extra = {PurePosixPath(path).name for path in plugin.extra_files}
     unexpected = sorted(
         child.name
         for child in plugin_dir.iterdir()
-        if child.name not in _PLUGIN_TOP_LEVEL
+        if child.name not in _PLUGIN_TOP_LEVEL and child.name not in allowed_extra
     )
     if unexpected:
         msg = f"baked plugin {plugin.id} has unexpected path {unexpected[0]!r}"
         raise ValueError(msg)
+    for name in sorted(allowed_extra):
+        extra_path = plugin_dir / name
+        if extra_path.is_symlink() or not extra_path.is_file():
+            msg = f"baked plugin {plugin.id} missing extra file {name!r}"
+            raise ValueError(msg)
     for adapter in _ADAPTER_DIRECTORIES:
         adapter_dir = plugin_dir / adapter
         if not adapter_dir.is_dir():

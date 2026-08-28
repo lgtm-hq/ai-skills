@@ -473,6 +473,8 @@ _PLUGIN_SLICE = """
         skills: "*"
         extraSkills:
           - extras/bonus
+        extraFiles:
+          - README.md
         renameSkills:
           teach: teach-example
         agents:
@@ -516,12 +518,13 @@ def test_load_registry_accepts_plugin_slice(valid_registry_path: Path) -> None:
     assert_that(plugin.skills_root).is_equal_to("skills")
     assert_that(plugin.skills).is_equal_to("*")
     assert_that(plugin.extra_skills).is_equal_to(("extras/bonus",))
+    assert_that(plugin.extra_files).is_equal_to(("README.md",))
     assert_that(plugin.rename_skills).is_equal_to((("teach", "teach-example"),))
     assert_that(plugin.agents).is_equal_to(("comment-sicko", "code-reviewer"))
 
 
 def test_load_registry_accepts_omitted_plugins(valid_registry_path: Path) -> None:
-    """Keep current vendors.yaml valid before bake-the-vendors fills slices."""
+    """Keep vendors.yaml valid when a vendor has no plugin slices yet."""
     vendors = load_registry(registry_path=valid_registry_path)
 
     assert_that(vendors[0].plugins).is_equal_to(())
@@ -641,10 +644,22 @@ def test_load_registry_accepts_skill_path_list(valid_registry_path: Path) -> Non
             id="null-agents",
         ),
         pytest.param(
-            "extraSkills:\n          - extras/bonus",
-            "extraSkills: null",
-            "extraSkills must be a list",
-            id="null-extra-skills",
+            "extraFiles:\n          - README.md",
+            "extraFiles: []",
+            "extraFiles must be a non-empty list",
+            id="empty-extra-files",
+        ),
+        pytest.param(
+            "extraFiles:\n          - README.md",
+            "extraFiles:\n          - README.md\n          - docs/README.md",
+            "extraFiles basenames must be unique",
+            id="duplicate-extra-file-basename",
+        ),
+        pytest.param(
+            "extraFiles:\n          - README.md",
+            "extraFiles: null",
+            "extraFiles must be a list",
+            id="null-extra-files",
         ),
         pytest.param(
             "renameSkills:\n          teach: teach-example",

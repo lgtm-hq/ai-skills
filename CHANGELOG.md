@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **vendors**: define and bake the five registered vendors as plugins —
+  reviewed `plugins:` slices in `vendors.yaml`, collision `renameSkills`,
+  `plugins-baked/` marketplace output, and gateway catalog merge so
+  `sk install --skill` / the TUI install baked vendor plugins with
+  pin-derived versions and `[baked from vendor 'id']` provenance.
+
 ### Changed
 
 ### Deprecated

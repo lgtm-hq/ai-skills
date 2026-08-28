@@ -213,6 +213,7 @@ def _bake_lock_plugin(*, plugin: VendorPlugin) -> dict[str, object]:
         "skillsRoot": plugin.skills_root,
         "skills": skills,
         "extraSkills": list(plugin.extra_skills),
+        "extraFiles": list(plugin.extra_files),
         "renameSkills": dict(plugin.rename_skills),
         "agents": list(plugin.agents),
     }

@@ -1,0 +1,11 @@
+{
+  "name": "claude-code-frontend-design",
+  "version": "15a21e1",
+  "description": "Claude Code frontend design skill. [baked from vendor 'anthropics-claude-code']",
+  "author": {
+    "name": "anthropics"
+  },
+  "displayName": "claude-code-frontend-design",
+  "license": "Commercial",
+  "skills": "./skills/"
+}

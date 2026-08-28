@@ -44,6 +44,12 @@ class _SyncModule(Protocol):
     @staticmethod
     def check_rendered(files: dict[Path, str]) -> int: ...
 
+    @staticmethod
+    def check_plugins_baked() -> int: ...
+
+    @staticmethod
+    def write_plugins_baked() -> None: ...
+
 
 _SYNC_SCRIPT = (
     Path(__file__).resolve().parent / "ci" / "npm" / "sync_ai_skills_package.py"
@@ -64,6 +70,7 @@ _PLUGIN_FIELD_ORDER = (
     "skillsRoot",
     "skills",
     "extraSkills",
+    "extraFiles",
     "renameSkills",
     "agents",
 )
@@ -134,8 +141,11 @@ def _sync_artifacts(*, repo_root: Path, check_only: bool) -> int:
     _configure_sync(sync=sync, repo_root=repo_root)
     files = sync.rendered_files(version="0.0.0-dev")
     if check_only:
-        return int(sync.check_rendered(files=files))
+        return int(
+            bool(sync.check_rendered(files=files) or sync.check_plugins_baked()),
+        )
     sync.write_rendered(files=files)
+    sync.write_plugins_baked()
     return 0
 
 
@@ -295,7 +305,7 @@ def _dump_plugin(*, plugin: dict[str, Any]) -> list[str]:
                 msg = 'skills must be "*" or a list'
                 raise TypeError(msg)
             continue
-        if field in {"extraSkills", "agents"} and isinstance(value, list):
+        if field in {"extraSkills", "extraFiles", "agents"} and isinstance(value, list):
             if not value:
                 lines.append(f"{prefix}{field}: []")
                 continue

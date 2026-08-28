@@ -1,0 +1,8 @@
+{
+  "name": "hookify",
+  "version": "15a21e1",
+  "description": "Claude Code hookify writing-rules skill. [baked from vendor 'anthropics-claude-code']",
+  "author": {
+    "name": "anthropics"
+  }
+}

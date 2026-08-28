@@ -213,6 +213,108 @@ def test_bake_slices_renames_and_reports_skipped(
     assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
 
 
+def test_bake_rewrites_title_case_frontmatter_to_directory(
+    tmp_path: Path,
+) -> None:
+    """Display-case SKILL.md names become the explode directory identity."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(
+        directory=vendor_root / "skills" / "writing-rules",
+        name="Writing Hookify Rules",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    skill_markdown = (
+        tmp_path / "plugins-baked" / "example-plugin" / "skills" / "writing-rules"
+    ).joinpath("SKILL.md")
+    assert_that(skill_markdown.read_text(encoding="utf-8")).contains(
+        "name: writing-rules",
+    )
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
+
+
+def test_bake_copies_extra_files_for_skill_doc_links(
+    tmp_path: Path,
+) -> None:
+    """Declared extraFiles land on the plugin root for in-skill doc links."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    (vendor_root / "README.md").write_text("# Vendor\n", encoding="utf-8")
+    (vendor_root / "skills" / "alpha" / "notes.md").write_text(
+        "[overview](../../README.md)\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+            "        extraFiles:\n"
+            "          - README.md\n"
+        ),
+    )
+
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    plugin = tmp_path / "plugins-baked" / "example-plugin"
+    assert_that((plugin / "README.md").read_text(encoding="utf-8")).is_equal_to(
+        "# Vendor\n",
+    )
+    assert_that((plugin / "skills" / "alpha" / "README.md").exists()).is_false()
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
+
+
+def test_bake_drops_vendor_skill_readmes(
+    tmp_path: Path,
+) -> None:
+    """Skill README.md files with repo-root links are not ingested."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    (vendor_root / "skills" / "alpha" / "README.md").write_text(
+        "[overview](../../README.md)\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    plugin = tmp_path / "plugins-baked" / "example-plugin"
+    assert_that((plugin / "skills" / "alpha" / "README.md").exists()).is_false()
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
+
+
 def test_bake_rejects_symlinks(
     tmp_path: Path,
 ) -> None:
@@ -1671,10 +1773,10 @@ def test_bake_rejects_duplicate_frontmatter_name_keys(
         )
 
 
-def test_bake_rejects_frontmatter_name_mismatch(
+def test_bake_rewrites_mismatched_frontmatter_to_directory(
     tmp_path: Path,
 ) -> None:
-    """Hosts index frontmatter name; a mismatch with the directory fails."""
+    """Explode identity is the directory; bake rewrites frontmatter to match."""
     vendor_root = tmp_path / "vendor-src"
     _write_skill(directory=vendor_root / "skills" / "alpha", name="branch")
     _write_registry(
@@ -1688,11 +1790,19 @@ def test_bake_rejects_frontmatter_name_mismatch(
         ),
     )
 
-    with pytest.raises(ValueError, match="does not match directory 'alpha'"):
-        bake_vendor_plugins.bake(
-            repo_root=tmp_path,
-            vendor_trees={"example-vendor": vendor_root},
-        )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    skill_markdown = (
+        tmp_path / "plugins-baked" / "example-plugin" / "skills" / "alpha" / "SKILL.md"
+    )
+    assert_that(skill_markdown.read_text(encoding="utf-8")).contains("name: alpha")
+    assert_that(skill_markdown.read_text(encoding="utf-8")).does_not_contain(
+        "name: branch",
+    )
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
 
 
 def test_check_rejects_frontmatter_directory_mismatch(
@@ -3086,3 +3196,40 @@ def test_bake_fetches_github_tarball_when_vendor_trees_omitted(
     plugin = tmp_path / "plugins-baked" / "example-plugin"
     assert_that((plugin / "skills" / "alpha" / "SKILL.md").is_file()).is_true()
     assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
+
+
+def test_committed_five_vendor_bake_is_namespace_clean() -> None:
+    """The five registered vendors bake into a collision-free marketplace."""
+    repo_root = Path(__file__).resolve().parents[1]
+    coverage = (repo_root / "plugins-baked" / "COVERAGE.md").read_text(
+        encoding="utf-8",
+    )
+    assert_that(coverage).contains(
+        "Global namespace clean (118 unique skill names)",
+    )
+    assert_that(coverage).contains("SKIPPED `template/SKILL.md`")
+    assert_that(coverage).contains(
+        "SKIPPED `plugins/caveman/skills/caveman/SKILL.md`",
+    )
+    marketplace = json.loads(
+        (repo_root / "plugins-baked" / ".claude-plugin" / "marketplace.json").read_text(
+            encoding="utf-8"
+        ),
+    )
+    assert_that(
+        [plugin["name"] for plugin in marketplace["plugins"]],
+    ).is_equal_to(
+        [
+            "mattpocock-skills",
+            "document-skills",
+            "example-skills",
+            "claude-api",
+            "claude-opus-4-5-migration",
+            "claude-code-frontend-design",
+            "hookify",
+            "plugin-dev",
+            "caveman",
+            "davidondrej-skills",
+        ],
+    )
+    assert_that(bake_vendor_plugins.check(repo_root=repo_root)).is_equal_to(0)

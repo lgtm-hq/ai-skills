@@ -1,0 +1,8 @@
+{
+  "name": "claude-opus-4-5-migration",
+  "version": "15a21e1",
+  "description": "Claude Code Opus 4.5 migration skill. [baked from vendor 'anthropics-claude-code']",
+  "author": {
+    "name": "anthropics"
+  }
+}

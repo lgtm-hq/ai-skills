@@ -1,0 +1,11 @@
+{
+  "name": "claude-api",
+  "version": "9d2f1ae",
+  "description": "Anthropic Claude API and SDK documentation skill. [baked from vendor 'anthropics']",
+  "author": {
+    "name": "anthropics"
+  },
+  "displayName": "claude-api",
+  "license": "Apache-2.0",
+  "skills": "./skills/"
+}

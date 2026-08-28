@@ -98,8 +98,8 @@ Each vendor may declare `plugins:` — reviewed bake slices, not runtime
 improvisation ([ADR-0005](docs/adr/0005-collision-doctrine.md),
 [ADR-0006](docs/adr/0006-vendor-bake-safety.md)). Omit the field or use
 `plugins: []` until a slice is declared; `plugins: null` is rejected.
-Filling the five registered vendors is a separate issue; this schema is
-validated whenever `vendors.yaml` loads.
+The five registered vendors declare reviewed slices that bake into
+`plugins-baked/`.
 
 Per plugin:
 
@@ -114,6 +114,8 @@ Per plugin:
   list must not contain `"*"`)
 - `extraSkills` — optional repo-relative canonical paths to ingest in
   addition (no globs; omit the key rather than `null`)
+- `extraFiles` — optional repo-relative files copied to the plugin root
+  (no globs; basenames must be unique; omit the key rather than `null`)
 - `renameSkills` — optional `{old: new}` kebab-case map; targets are unique
   across **all** vendors. Collisions against first-party skill directory
   names are reported at bake/CI, not at schema load. Every
@@ -131,6 +133,8 @@ Per plugin:
         skills: "*"
         extraSkills:
           - extras/bonus
+        extraFiles:
+          - README.md
         renameSkills:
           teach: teach-example
         agents:
@@ -184,13 +188,13 @@ uv run python scripts/bake_vendor_plugins.py
 uv run python scripts/bake_vendor_plugins.py --check
 ```
 
-Production `vendors.yaml` stays index-only until plugin slices are
-filled; bake still emits an empty marketplace, coverage file, and
-`BAKE.json` lock so `--check` has a drift gate. ``--check`` compares
+Declared plugin slices bake into ``plugins-baked/``. ``--check`` compares
 that lock to `vendors.yaml` (SHA, displayRef, plugin slices) and
 cross-checks coverage inputs against the baked tree. A path→digest
 inventory in `BAKE.json` rejects extra, missing, or modified generated
 files. Extra lock keys and a non-mapping `BAKE.json` fail closed.
+Ingested vendor trees stay out of lintro (`.lintro-ignore`); bake
+`--check` is the quality gate for that output.
 
 ## Pull requests
 
@@ -237,7 +241,7 @@ flowchart LR
     VY["vendors.yaml"]
   end
   subgraph bake [Bake / publish]
-    DATA["npm data/: bundles.json, vendors.json, vendor-indexes/"]
+    DATA["npm data/: bundles.json, vendors.json, vendor-indexes/, plugins-baked/"]
     BAKED["plugins-baked/"]
     PKG["@lgtm-hq/ai-skills"]
   end
@@ -257,6 +261,7 @@ flowchart LR
   BY --> DATA
   VY --> DATA
   VY --> BAKED
+  BAKED --> DATA
   DATA --> PKG
   PKG --> UI
   UI --> LOCK
@@ -273,10 +278,10 @@ Native hosts install **plugins** (see README Install). The **gateway** package
 `@lgtm-hq/ai-skills` (`sk` / `skill`) currently projects a plugin through
 `--bundle`; install globally with `bun add -g @lgtm-hq/ai-skills`, or for a
 pinned, install-free run use `bunx --package=@lgtm-hq/ai-skills@X.Y.Z sk`.
-Its Clack home/cart UI still loads baked `data/bundles.json` and vendor indexes
-shipped inside the npm package (produced from `bundles.yaml` / `vendors.yaml`
-at publish time), writes a gateway lockfile, and installs into agent skill
-directories. The [Vercel Labs `skills` CLI](https://github.com/vercel-labs/skills)
+Its Clack home/cart UI still loads baked `data/bundles.json` and
+`data/plugins-baked/` shipped inside the npm package (produced from
+`bundles.yaml` / `vendors.yaml` at publish time), writes a gateway lockfile, and
+installs into agent skill directories. The [Vercel Labs `skills` CLI](https://github.com/vercel-labs/skills)
 remains the escape hatch for direct catalog installs; first-party skill paths
 stay flat (`skills/<name>/`).
 

@@ -96,7 +96,7 @@ export async function runCli(argv) {
       try {
         const counts = await install({
           ...options,
-          bundle: batch.vendor ? null : batch.pluginId,
+          bundle: batch.pluginId,
           vendor: batch.vendor,
           skills: batch.skills,
         });

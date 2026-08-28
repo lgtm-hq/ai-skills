@@ -12,5 +12,9 @@ env
 # Sparse lgtm-ci tooling checkout for reusable workflow scripts (not project source)
 .lgtm-ci-tooling
 
+# Third-party vendor bake output (do not lint or format ingested trees)
+plugins-baked/
+npm/ai-skills/data/plugins-baked/
+
 __pycache__
 .lintro/*

@@ -36,6 +36,7 @@ def test_generated_package_is_current() -> None:
     module = load_sync_module()
 
     assert_that(module.check_rendered(module.rendered_files("0.0.0-dev"))).is_zero()
+    assert_that(module.check_plugins_baked()).is_zero()
 
 
 def test_normalize_version_removes_tag_prefix() -> None:

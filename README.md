@@ -26,7 +26,7 @@ The unit of install is a **plugin**. A plugin is a named group of skills (and,
 later, other components). Contents stay visible; native hosts install the
 plugin as a whole. The gateway (`sk`) installs plugins atomically — the
 TUI is a plugin checklist, `--skill` / `--bundle` name a plugin, and
-`--vendor` installs that vendor plugin whole. Native projectors are the
+`--vendor` installs every baked plugin from that vendor. Native projectors are the
 default for Cursor, Claude Code, and GitHub Copilot when the doctor cache
 (`~/.ai-skills/doctor.json`) says native — install probes and writes that
 cache on a miss. Ambiguous Claude Code / Copilot probes ask once; `-y`
@@ -89,7 +89,9 @@ bunx --package=@lgtm-hq/ai-skills@0.28.0 sk install -y --global \
 
 Unattended installs need an explicit scope and agent. `--bundle` and
 `--skill` take a plugin id from the table below (`git-pr`, `review`,
-`standards`, …). `--vendor <id>` installs that vendor plugin whole.
+`standards`, …) or a baked vendor plugin id (`document-skills`,
+`hookify`, `caveman`, …). `--vendor <id>` installs every baked plugin
+slice for that vendor.
 `--projector native|explode` overrides delivery. Without it, install consults
 `sk doctor`'s host cache (`~/.ai-skills/doctor.json`) for hosts that are not
 already locked: probe Claude Code / Copilot for a working `plugin`
@@ -152,7 +154,8 @@ JSON as build output. Settled *why* lives in
 - **Vendors (v1):** `mattpocock/skills`, `anthropics/skills`,
   `anthropics/claude-code`, `JuliusBrussee/caveman`, and `davidondrej/skills`,
   full trees at a **commit SHA** (Renovate bumps SHAs). Discovery uses baked
-  indexes shipped inside the npm package — no GitHub API at install time.
+  plugin trees in `plugins-baked/` shipped inside the npm package — no GitHub
+  API at install time. Collision renames are reviewed `renameSkills` entries.
 - **Licenses:** see root [`NOTICE.md`](./NOTICE.md) and `vendors.yaml`.
 - **Gateway lockfiles** (schema v2; do not overwrite stock `skills-lock.json`):
   - Global: `~/.ai-skills/lock.json`
@@ -206,6 +209,7 @@ Use the host's plugin or skills directory for `<install-dir>`.
 skills/<name>/SKILL.md          # Canonical first-party skill definitions
 bundles.yaml                    # Plugin groups + README table source of truth
 vendors.yaml                    # SHA-pinned third-party vendor registry
+plugins-baked/                  # Baked vendor plugin trees (gateway catalog)
 vendor-indexes/                 # Baked skill indexes for the gateway picker
 NOTICE.md                       # Third-party license notices for the npm package
 npm/ai-skills/                  # @lgtm-hq/ai-skills gateway package

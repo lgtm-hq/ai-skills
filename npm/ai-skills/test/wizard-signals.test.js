@@ -55,7 +55,7 @@ function lockFixture() {
     plugins: {
       review: entry("review", "lgtm-hq", `v${getPackageVersion()}`, ["claude-code"]),
       "git-pr": entry("git-pr", "lgtm-hq", "v0.1.0", ["claude-code", "cursor"]),
-      anthropics: entry("anthropics", "anthropics", ANTHROPICS_PIN, ["claude-code"]),
+      "document-skills": entry("document-skills", "anthropics", ANTHROPICS_PIN, ["claude-code"]),
     },
     scope: "global",
     version: 2,
@@ -269,7 +269,7 @@ describe("completeInteractively signals", () => {
     ).toBe(true);
     expect(
       pluginLabels.some(
-        (label) => label.includes("anthropics/skills") && label.includes("installed"),
+        (label) => label.includes("document-skills") && label.includes("installed"),
       ),
     ).toBe(true);
   });

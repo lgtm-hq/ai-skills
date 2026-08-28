@@ -1,0 +1,9 @@
+{
+  "name": "document-skills",
+  "version": "9d2f1ae",
+  "description": "Anthropic document suite for Excel, Word, PowerPoint, and PDF. [baked from vendor 'anthropics']",
+  "author": {
+    "name": "anthropics"
+  },
+  "skills": "./skills/"
+}

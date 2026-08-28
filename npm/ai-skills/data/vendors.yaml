@@ -8,6 +8,11 @@ vendors:
       - skills
     license: MIT
     homepage: https://github.com/mattpocock/skills
+    plugins:
+      - id: mattpocock-skills
+        description: Matt Pocock engineering, productivity, and writing skills.
+        skillsRoot: skills
+        skills: "*"
   - id: anthropics
     repo: anthropics/skills
     sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d"
@@ -16,6 +21,36 @@ vendors:
       - skills
     license: Apache-2.0
     homepage: https://github.com/anthropics/skills
+    plugins:
+      - id: document-skills
+        description: Anthropic document suite for Excel, Word, PowerPoint, and PDF.
+        skillsRoot: skills
+        skills:
+          - xlsx
+          - docx
+          - pptx
+          - pdf
+      - id: example-skills
+        description: Anthropic example skills for design, testing, and skill authoring.
+        skillsRoot: skills
+        skills:
+          - algorithmic-art
+          - brand-guidelines
+          - canvas-design
+          - doc-coauthoring
+          - frontend-design
+          - internal-comms
+          - mcp-builder
+          - skill-creator
+          - slack-gif-creator
+          - theme-factory
+          - web-artifacts-builder
+          - webapp-testing
+      - id: claude-api
+        description: Anthropic Claude API and SDK documentation skill.
+        skillsRoot: skills
+        skills:
+          - claude-api
   - id: anthropics-claude-code
     repo: anthropics/claude-code
     sha: "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2"
@@ -24,6 +59,25 @@ vendors:
       - plugins/*/skills
     license: Commercial
     homepage: https://github.com/anthropics/claude-code
+    plugins:
+      - id: claude-opus-4-5-migration
+        description: Claude Code Opus 4.5 migration skill.
+        skillsRoot: plugins/claude-opus-4-5-migration/skills
+        skills: "*"
+      - id: claude-code-frontend-design
+        description: Claude Code frontend design skill.
+        skillsRoot: plugins/frontend-design/skills
+        skills: "*"
+        renameSkills:
+          frontend-design: frontend-design-claude-code
+      - id: hookify
+        description: Claude Code hookify writing-rules skill.
+        skillsRoot: plugins/hookify/skills
+        skills: "*"
+      - id: plugin-dev
+        description: Claude Code plugin development skills.
+        skillsRoot: plugins/plugin-dev/skills
+        skills: "*"
   - id: caveman
     repo: JuliusBrussee/caveman
     sha: "0d95a81d35a9f2d123a5e9430d1cfc43d55f1bb0"
@@ -32,6 +86,11 @@ vendors:
       - skills
     license: MIT
     homepage: https://github.com/JuliusBrussee/caveman
+    plugins:
+      - id: caveman
+        description: Caveman compressed-communication skills.
+        skillsRoot: skills
+        skills: "*"
   - id: davidondrej
     repo: davidondrej/skills
     sha: "6e5545081c888b89576a620d9b2e54e9a6590f68"
@@ -40,3 +99,11 @@ vendors:
       - skills/*
     license: MIT
     homepage: https://github.com/davidondrej/skills
+    plugins:
+      - id: davidondrej-skills
+        description: David Ondrej research, orchestration, and authoring skills.
+        skillsRoot: skills/*
+        skills: "*"
+        renameSkills:
+          teach: teach-davidondrej
+          handoff: handoff-davidondrej

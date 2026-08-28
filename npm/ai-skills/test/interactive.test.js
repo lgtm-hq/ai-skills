@@ -246,18 +246,37 @@ describe("cart helpers", () => {
     await expect(
       batchesFromCliOptions({ vendor: "anthropics", skills: ["pdf"], bundle: null }),
     ).rejects.toThrow(/plugin-atomic/);
-    const [batch] = await batchesFromCliOptions({
+    const batches = await batchesFromCliOptions({
       vendor: "anthropics",
       skills: [],
       bundle: null,
     });
-    expect(batch.pluginId).toBe("anthropics");
-    expect(batch.vendor).toBe("anthropics");
-    expect(batch.skills).toContain("pdf");
-    expect(batch.skills.length).toBeGreaterThan(1);
+    expect(batches.map((batch) => batch.pluginId)).toEqual([
+      "document-skills",
+      "example-skills",
+      "claude-api",
+    ]);
+    expect(batches[0]).toMatchObject({
+      pluginId: "document-skills",
+      vendor: "anthropics",
+    });
+    expect(batches[0]?.skills).toEqual(["docx", "pdf", "pptx", "xlsx"]);
   });
 
-  test("lists first-party and vendor plugins on one checklist", async () => {
+  test("expands a baked plugin id from --skill", async () => {
+    const [batch] = await batchesFromCliOptions({
+      vendor: null,
+      skills: ["document-skills"],
+      bundle: null,
+    });
+    expect(batch).toEqual({
+      pluginId: "document-skills",
+      vendor: "anthropics",
+      skills: ["docx", "pdf", "pptx", "xlsx"],
+    });
+  });
+
+  test("lists first-party and baked vendor plugins on one checklist", async () => {
     const { loadBundles, loadVendors } = await import("../lib/catalog.js");
     const bundles = await loadBundles();
     const vendors = await loadVendors();
@@ -266,8 +285,11 @@ describe("cart helpers", () => {
     });
     expect(options.some((option) => option.value === "review")).toBe(true);
     expect(options.find((option) => option.value === "review")?.label).toContain("4 skills");
-    expect(options.some((option) => option.value === "vendor:anthropics")).toBe(true);
-    expect(options.find((option) => option.value === "vendor:davidondrej")?.label).toContain(
+    expect(options.some((option) => option.value === "document-skills")).toBe(true);
+    expect(options.find((option) => option.value === "document-skills")?.label).toContain(
+      "[baked from vendor 'anthropics']",
+    );
+    expect(options.find((option) => option.value === "davidondrej-skills")?.label).toContain(
       "newer commits",
     );
   });
@@ -281,9 +303,13 @@ describe("completeInteractively", () => {
       offlineDependencies,
     );
 
-    expect(options.installBatches[0]?.pluginId).toBe("anthropics");
+    expect(options.installBatches[0]?.pluginId).toBe("document-skills");
     expect(options.installBatches[0]?.vendor).toBe("anthropics");
-    expect(options.installBatches[0]?.skills).toContain("pdf");
+    expect(options.installBatches.map((batch) => batch.pluginId)).toEqual([
+      "document-skills",
+      "example-skills",
+      "claude-api",
+    ]);
     expect(options.vendor).toBeNull();
     expect(options.skills).toEqual([]);
     expect(options.agents).toEqual(["cursor"]);
@@ -315,7 +341,7 @@ describe("completeInteractively", () => {
     const options = await completeInteractively(
       { ...blankOptions },
       scriptedUi([
-        ["review", "vendor:anthropics"],
+        ["review", "document-skills"],
         KNOWN_AGENTS.map((agent) => agent.value),
         "global",
         false,
@@ -328,9 +354,9 @@ describe("completeInteractively", () => {
       vendor: null,
       skills: ["lint", "test", "greptile", "coderabbit"],
     });
-    expect(options.installBatches[1]?.pluginId).toBe("anthropics");
+    expect(options.installBatches[1]?.pluginId).toBe("document-skills");
     expect(options.installBatches[1]?.vendor).toBe("anthropics");
-    expect(options.installBatches[1]?.skills).toContain("pdf");
+    expect(options.installBatches[1]?.skills).toEqual(["docx", "pdf", "pptx", "xlsx"]);
   });
 
   test("empty plugin selection cancels", async () => {

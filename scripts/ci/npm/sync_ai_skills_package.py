@@ -13,6 +13,7 @@ import argparse
 import difflib
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_ROOT = PROJECT_ROOT / "npm" / "ai-skills"
 DATA_ROOT = PACKAGE_ROOT / "data"
 PACKAGE_MANIFEST = PACKAGE_ROOT / "package.json"
+PLUGINS_BAKED_NAME = "plugins-baked"
 SOURCE_DATA = {
     PROJECT_ROOT / "vendors.yaml": DATA_ROOT / "vendors.yaml",
     PROJECT_ROOT / "bundles.yaml": DATA_ROOT / "bundles.yaml",
@@ -134,6 +136,92 @@ def check_rendered(files: dict[Path, str]) -> int:
     return int(has_drift)
 
 
+def plugins_baked_source() -> Path:
+    """Return the repository bake output directory.
+
+    Returns:
+        Absolute ``plugins-baked`` path at the repository root.
+    """
+    return PROJECT_ROOT / PLUGINS_BAKED_NAME
+
+
+def plugins_baked_destination() -> Path:
+    """Return the npm package copy of bake output.
+
+    Returns:
+        Absolute ``data/plugins-baked`` path inside the gateway package.
+    """
+    return DATA_ROOT / PLUGINS_BAKED_NAME
+
+
+def _tree_file_map(*, root: Path) -> dict[str, Path]:
+    """Index regular files under ``root`` by POSIX relative path.
+
+    Args:
+        root: Directory to walk.
+
+    Returns:
+        Relative path to absolute file path.
+    """
+    files: dict[str, Path] = {}
+    if not root.is_dir():
+        return files
+    for path in root.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        files[path.relative_to(root).as_posix()] = path
+    return files
+
+
+def check_plugins_baked() -> int:
+    """Report when the packaged bake tree drifts from repository output.
+
+    Returns:
+        Zero when the trees match (including both absent), otherwise one.
+    """
+    source = plugins_baked_source()
+    dest = plugins_baked_destination()
+    if not source.is_dir() and not dest.exists():
+        return 0
+    if not source.is_dir() or not dest.is_dir():
+        dest_rel = dest.relative_to(PROJECT_ROOT)
+        sys.stderr.write(f"{dest_rel}: plugins-baked tree is out of date\n")
+        return 1
+    expected = _tree_file_map(root=source)
+    actual = _tree_file_map(root=dest)
+    if expected.keys() != actual.keys():
+        missing = sorted(expected.keys() - actual.keys())
+        extra = sorted(actual.keys() - expected.keys())
+        dest_rel = dest.relative_to(PROJECT_ROOT)
+        if missing:
+            sys.stderr.write(f"{dest_rel}: missing {missing[0]}\n")
+        if extra:
+            sys.stderr.write(f"{dest_rel}: extra {extra[0]}\n")
+        return 1
+    for rel_path, expected_path in expected.items():
+        if expected_path.read_bytes() != actual[rel_path].read_bytes():
+            sys.stderr.write(
+                f"{dest.relative_to(PROJECT_ROOT) / rel_path}: "
+                "plugins-baked file is out of date\n",
+            )
+            return 1
+    return 0
+
+
+def write_plugins_baked() -> None:
+    """Copy repository bake output into the npm package data tree."""
+    source = plugins_baked_source()
+    dest = plugins_baked_destination()
+    if dest.is_symlink() or dest.is_file():
+        dest.unlink()
+    elif dest.is_dir():
+        shutil.rmtree(dest)
+    if not source.is_dir():
+        return
+    shutil.copytree(src=source, dst=dest, symlinks=False)
+    print(f"Wrote {dest.relative_to(PROJECT_ROOT)}")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Synchronize package artifacts or verify they are current.
 
@@ -157,8 +245,9 @@ def main(argv: list[str] | None = None) -> int:
     args: Any = parser.parse_args(argv)
     files = rendered_files(version=normalize_version(args.version))
     if args.check:
-        return check_rendered(files)
+        return int(bool(check_rendered(files) or check_plugins_baked()))
     write_rendered(files)
+    write_plugins_baked()
     return 0
 
 

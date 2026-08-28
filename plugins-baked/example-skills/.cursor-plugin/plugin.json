@@ -1,0 +1,11 @@
+{
+  "name": "example-skills",
+  "version": "9d2f1ae",
+  "description": "Anthropic example skills for design, testing, and skill authoring. [baked from vendor 'anthropics']",
+  "author": {
+    "name": "anthropics"
+  },
+  "displayName": "example-skills",
+  "license": "Apache-2.0",
+  "skills": "./skills/"
+}
