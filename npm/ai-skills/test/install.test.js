@@ -1962,7 +1962,7 @@ describe("native projectors", () => {
     }
   });
 
-  test("remove unlinks dest skill symlink and deletes the unmodified store", async () => {
+  test("remove unlinks dest skill symlink and leaves the managed store", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-store-keep-"));
     try {
       const sourceRoot = join(cwd, "catalog");
@@ -2003,7 +2003,7 @@ describe("native projectors", () => {
         },
       );
       await expect(lstat(dest)).rejects.toMatchObject({ code: "ENOENT" });
-      await expect(lstat(store)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(join(store, "SKILL.md"), "utf8")).toBe("# test\n");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

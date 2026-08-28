@@ -271,16 +271,12 @@ export async function updateSkills(options, dependencies = {}) {
         warn(`Warning: could not discard Cursor plugin backup after update (${detail})`);
       }
     }
-    const storeRoot =
-      dependencies.storeRoot ?? defaultStoreRoot(scope, dependencies.lockEnvironment);
     for (const pluginId of updated) {
       const entry = selected[pluginId];
       await removeStalePluginSkills(pluginId, entry, catalogSkills[pluginId] ?? [], {
         hash,
-        keepStoreSkills: keepStoreSkillNames(prunedLock, [pluginId], catalogSkills[pluginId] ?? []),
         removeDir,
         removeFile,
-        storeRoot,
         warn,
       });
     }
@@ -360,11 +356,9 @@ export async function removeSkills(options, dependencies = {}) {
       await removeExplodedFiles({
         files: explodeFiles,
         hash,
-        keepStoreSkills: keepStoreSkillNames(lock, selected),
         pluginId,
         removeDir,
         removeFile,
-        storeRoot: dependencies.storeRoot ?? defaultStoreRoot(scope, dependencies.lockEnvironment),
         warn,
       });
     }
@@ -550,10 +544,8 @@ function resolveVendorSource(entry, vendors) {
  * @param {string[]} currentSkills - Skill names in the current catalog.
  * @param {{
  *   hash: typeof hashFile,
- *   keepStoreSkills?: Set<string>,
  *   removeDir: typeof rmdir,
  *   removeFile: typeof unlink,
- *   storeRoot?: string,
  *   warn: (message: string) => void,
  * }} io - Injectable command dependencies.
  * @returns {Promise<void>} Resolves when stale members are removed or left with a warning.
@@ -586,11 +578,9 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
     await removeExplodedFiles({
       files: explodeFiles,
       hash: io.hash,
-      keepStoreSkills: io.keepStoreSkills,
       pluginId,
       removeDir: io.removeDir,
       removeFile: io.removeFile,
-      storeRoot: io.storeRoot,
       warn: io.warn,
     });
   }
@@ -710,29 +700,6 @@ function sourceSha(vendor, currentSha, vendors) {
     return `v${getPackageVersion()}`;
   }
   return vendors.find((candidate) => candidate.id === vendor)?.sha ?? currentSha;
-}
-
-/**
- * Skill names whose managed store trees must stay because another lock plugin
- * still owns them, or because this plugin is only dropping a subset.
- *
- * @param {import("./lockfile.js").GatewayLock} lock - Current lock.
- * @param {string[]} removingPluginIds - Plugins whose dests are being removed.
- * @param {string[]} [retainSkills] - Skills the listed plugins still own.
- * @returns {Set<string>} Skill names that must not have their store deleted.
- */
-function keepStoreSkillNames(lock, removingPluginIds, retainSkills = []) {
-  const removing = new Set(removingPluginIds);
-  const keep = new Set(retainSkills);
-  for (const [pluginId, entry] of Object.entries(lock.plugins)) {
-    if (removing.has(pluginId)) {
-      continue;
-    }
-    for (const name of pluginSkillNames(entry)) {
-      keep.add(name);
-    }
-  }
-  return keep;
 }
 
 /**

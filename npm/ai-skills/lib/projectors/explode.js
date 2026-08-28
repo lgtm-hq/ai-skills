@@ -370,9 +370,6 @@ export async function restoreExplodeInstall(result, io = {}) {
  * @param {typeof unlink} [args.removeFile] - Injectable unlink.
  * @param {typeof rmdir} [args.removeDir] - Injectable rmdir.
  * @param {(dir: string) => Promise<import("node:fs").Dirent[]>} [args.readDir] - Injectable readdir.
- * @param {typeof rm} [args.removeTree] - Injectable recursive rm for unused store trees.
- * @param {string} [args.storeRoot] - Managed store root; unlinked dests may drop matching store trees.
- * @param {Set<string>} [args.keepStoreSkills] - Skill names still owned by another lock plugin.
  * @param {(message: string) => void} [args.warn] - Warning sink.
  * @returns {Promise<{modified: string[], removed: string[]}>} Relative paths kept vs deleted.
  */
@@ -382,9 +379,6 @@ export async function removeExplodedFiles(args) {
   const removeDir = args.removeDir ?? rmdir;
   const readDir = args.readDir ?? ((dir) => readdir(dir, { withFileTypes: true }));
   const warn = args.warn ?? ((message) => console.warn(message));
-  const storeRoot = args.storeRoot;
-  const keepStoreSkills = args.keepStoreSkills ?? new Set();
-  const removeTree = args.removeTree ?? rm;
   /** @type {string[]} */
   const modified = [];
   /** @type {string[]} */
@@ -400,23 +394,8 @@ export async function removeExplodedFiles(args) {
   }
   /** @type {Map<string, string>} */
   const skillDirs = new Map();
-  /** @type {Map<string, {files: typeof args.files, storeTarget: string}>} */
-  const releasedStores = new Map();
   for (const [skillDir, group] of groups) {
     if (skillDir !== group.root) {
-      const skillName = group.files[0]?.relative.split("/")[0] ?? "";
-      let storeTarget = null;
-      try {
-        const info = await lstat(skillDir);
-        if (info.isSymbolicLink()) {
-          storeTarget = await readlink(skillDir);
-        }
-      } catch (error) {
-        if (!isAbsentFsError(error)) {
-          throw error;
-        }
-      }
-      const modifiedBefore = modified.length;
       const unlinked = await unlinkDestSkillIfUnmodified(
         skillDir,
         group,
@@ -427,16 +406,6 @@ export async function removeExplodedFiles(args) {
         modified,
         removed,
       );
-      if (
-        unlinked &&
-        storeTarget &&
-        skillName &&
-        storeRoot &&
-        !keepStoreSkills.has(skillName) &&
-        modified.length === modifiedBefore
-      ) {
-        releasedStores.set(skillName, { files: group.files, storeTarget });
-      }
       if (unlinked) {
         continue;
       }
@@ -471,20 +440,6 @@ export async function removeExplodedFiles(args) {
   }
   for (const file of args.files) {
     await pruneEmptyAncestors(dirname(join(file.root, file.relative)), file.root, removeDir);
-  }
-  if (storeRoot) {
-    for (const [skillName, released] of releasedStores) {
-      await removeMatchingStoreTree({
-        expectedFiles: released.files,
-        hash,
-        pluginId: args.pluginId,
-        removeTree,
-        skillName,
-        storeRoot,
-        storeTarget: released.storeTarget,
-        warn,
-      });
-    }
   }
   return { modified, removed };
 }
@@ -813,12 +768,10 @@ async function planExplodeCommits(args) {
       if (!copy && args.storeRoot && !owned.has(skill) && (await pathExists(storeDir))) {
         const storeHashes = await hashExistingTree(storeDir, args.hash);
         const storeEmpty = Object.keys(storeHashes).length === 0;
-        if (!storeEmpty && !sameHashes(storeHashes, args.stagedHashes[skill])) {
-          throw new Error(
-            `Explode collision at ${storeDir}: existing store content differs from incoming ${skill}`,
-          );
-        }
-        if (storeEmpty) {
+        if (storeEmpty || !sameHashes(storeHashes, args.stagedHashes[skill])) {
+          // Dest is absent or empty here. An unowned leftover store is
+          // replaceable so remove-then-reinstall cannot poison; identical
+          // stores are reused without claiming exclusive ownership.
           replace = true;
         }
       }
@@ -944,46 +897,6 @@ async function walkRejectingEscapes(dir, root) {
       await walkRejectingEscapes(absolute, root);
     }
   }
-}
-
-/**
- * Hash-verify and drop a managed store tree released by dest-symlink unlink.
- *
- * @param {object} args - Named arguments.
- * @param {Array<{digest: string, relative: string}>} args.expectedFiles - Lock-owned dest files for this skill.
- * @param {(path: string) => Promise<string>} args.hash - Hasher.
- * @param {string} args.pluginId - Plugin id for warning text.
- * @param {typeof rm} args.removeTree - Recursive rm.
- * @param {string} args.skillName - Skill directory name.
- * @param {string} args.storeRoot - Managed store root.
- * @param {string} args.storeTarget - Dest symlink target captured before unlink.
- * @param {(message: string) => void} args.warn - Warning sink.
- * @returns {Promise<void>} Resolves when the store is removed or left in place.
- */
-async function removeMatchingStoreTree(args) {
-  const storeDir = join(args.storeRoot, args.skillName);
-  assertInsideRoot(args.storeRoot, storeDir);
-  if (resolve(args.storeTarget) !== resolve(storeDir)) {
-    return;
-  }
-  if (!(await pathExists(storeDir))) {
-    return;
-  }
-  const prefix = `${args.skillName}/`;
-  /** @type {Record<string, string>} */
-  const expected = {};
-  for (const file of args.expectedFiles) {
-    const relative = file.relative.startsWith(prefix)
-      ? file.relative.slice(prefix.length)
-      : file.relative;
-    expected[relative] = file.digest;
-  }
-  const actual = await hashExistingTree(storeDir, args.hash);
-  if (!sameHashes(actual, expected)) {
-    args.warn(`left modified ${args.pluginId} store ${args.skillName}`);
-    return;
-  }
-  await args.removeTree(storeDir, { force: true, recursive: true });
 }
 
 /**

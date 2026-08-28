@@ -398,22 +398,23 @@ describe("explodePlugin", () => {
     }
   });
 
-  test("different existing store content is a hard collision", async () => {
+  test("unowned leftover store with different content is replaced when dest is absent", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-store-"));
     try {
       const { dest, source, store } = await layout(root);
       await mkdir(join(store, "lint"), { recursive: true });
       await writeFile(join(store, "lint/SKILL.md"), "# store lint\n");
-      await expect(
-        explodePlugin({
-          agents: [{ id: "cursor", root: dest }],
-          skills: ["lint"],
-          sourceSkills: { lint: join(source, "lint") },
-          storeRoot: store,
-        }),
-      ).rejects.toThrow("existing store content differs");
-      expect(await readFile(join(store, "lint/SKILL.md"), "utf8")).toBe("# store lint\n");
-      await expect(lstat(join(dest, "lint"))).rejects.toMatchObject({ code: "ENOENT" });
+      const result = await explodePlugin({
+        agents: [{ id: "cursor", root: dest }],
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+        storeRoot: store,
+      });
+      expect(await readFile(join(store, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      expect(await readlink(join(dest, "lint"))).toBe(join(store, "lint"));
+      expect(result.claimed.cursor["lint/SKILL.md"]).toBe(
+        await hashFile(join(source, "lint/SKILL.md")),
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -533,36 +534,6 @@ describe("removeExplodedFiles", () => {
       expect(result.modified).toEqual(["lint/SKILL.md"]);
       expect(warnings).toEqual(["left modified review file lint/SKILL.md"]);
       expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# dirty\n");
-    } finally {
-      await rm(root, { force: true, recursive: true });
-    }
-  });
-
-  test("unlinks a dest skill symlink and deletes a matching unshared store", async () => {
-    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-store-rm-"));
-    try {
-      const dest = join(root, ".cursor/skills");
-      const store = join(root, ".agents/skills");
-      await mkdir(join(store, "lint"), { recursive: true });
-      await writeFile(join(store, "lint/SKILL.md"), "# lint\n");
-      await mkdir(dest, { recursive: true });
-      await symlink(join(store, "lint"), join(dest, "lint"));
-      const digest = await hashFile(join(store, "lint/SKILL.md"));
-      const result = await removeExplodedFiles({
-        files: [
-          {
-            absolute: join(dest, "lint/SKILL.md"),
-            digest,
-            relative: "lint/SKILL.md",
-            root: dest,
-          },
-        ],
-        pluginId: "review",
-        storeRoot: store,
-      });
-      expect(result.removed).toEqual(["lint/SKILL.md"]);
-      await expect(lstat(join(dest, "lint"))).rejects.toMatchObject({ code: "ENOENT" });
-      await expect(lstat(join(store, "lint"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await rm(root, { force: true, recursive: true });
     }

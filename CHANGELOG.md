@@ -17,12 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without following into the managed store, hash-verifies copied trees,
   leaves modified files, and prunes nested empty directory trees. Dangling
   dest skill symlinks are treated as empty (replaceable on explode, unlinked
-  on remove) so they cannot poison later installs. Remove also hash-verifies
-  and deletes an unshared managed store tree. Update preserves `--copy` dest
-  directories instead of rewriting them as store symlinks, including the
-  skills-CLI fallback path. Vendor installs and first-party installs without
-  a catalog checkout still use the skills CLI (no collision doctrine until
-  bake).
+  on remove) so they cannot poison later installs. An unowned leftover store
+  is replaced when dest is absent, so remove-then-reinstall cannot collide.
+  Update preserves `--copy` dest directories instead of rewriting them as
+  store symlinks, including the skills-CLI fallback path. Vendor installs
+  and first-party installs without a catalog checkout still use the skills
+  CLI (no collision doctrine until bake).
 
 ### Changed
 
