@@ -121,10 +121,12 @@ function isAlreadyPresent(result) {
  */
 function isAlreadyAbsent(result) {
   const text = `${result.stdout} ${result.stderr}`.toLowerCase();
+  if (/\balready (uninstalled|removed|absent)\b/.test(text)) {
+    return true;
+  }
   return (
-    /\bnot (found|installed)\b/.test(text) ||
-    /\bdoes not exist\b/.test(text) ||
-    /\balready (uninstalled|removed|absent)\b/.test(text)
+    /\bplugin\b/.test(text) &&
+    (/\bnot (found|installed)\b/.test(text) || /\bdoes not exist\b/.test(text))
   );
 }
 
