@@ -675,6 +675,55 @@ describe("gateway maintenance commands", () => {
     );
   });
 
+  test("keeps a successful update lock when stale cleanup cannot unlink", async () => {
+    const warnings = [];
+    let written;
+    const stale = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            cursor: {
+              files: {
+                "lint/SKILL.md": "abc",
+                "retired/SKILL.md": "abc",
+              },
+              root: "/tmp/project/.cursor/skills",
+            },
+          },
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.21.0",
+          vendor: "lgtm-hq",
+          version: "0.21.0",
+        }),
+      },
+    };
+
+    const result = await updateSkills(options, {
+      hash: async () => "abc",
+      isInstalled: async () => true,
+      now: () => new Date("2026-07-10T17:00:00.000Z"),
+      readLock: async () => stale,
+      run: async () => {},
+      sourceRoot: null,
+      unlink: async () => {
+        const error = new Error("EACCES: permission denied");
+        error.code = "EACCES";
+        throw error;
+      },
+      warn: (message) => warnings.push(message),
+      writeLock: async (next) => {
+        written = next;
+      },
+    });
+
+    expect(result.updated).toContain("review");
+    expect(Object.keys(written.plugins.review.agents.cursor.files)).not.toContain(
+      "retired/SKILL.md",
+    );
+    expect(warnings.some((message) => message.includes("stale review skills"))).toBe(true);
+  });
+
   test("drops only catalog-removed skills when the lock lists a v2 skills array", async () => {
     const calls = [];
     const unlinked = [];

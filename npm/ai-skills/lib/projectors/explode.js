@@ -989,29 +989,39 @@ async function assertSafeSourceTree(root) {
 /**
  * @param {string} dir - Directory to walk.
  * @param {string} root - Skill root that must contain every realpath.
+ * @param {Set<string>} [visiting] - Resolved dirs on the current walk path.
  * @returns {Promise<void>} Resolves when this directory is safe.
  */
-async function walkRejectingEscapes(dir, root) {
-  const entries = await readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const absolute = join(dir, entry.name);
-    if (entry.isSymbolicLink()) {
-      let target;
-      try {
-        target = await realpath(absolute);
-      } catch {
-        throw new Error(`Refusing dangling symlink in explode source: ${absolute}`);
+async function walkRejectingEscapes(dir, root, visiting = new Set()) {
+  const resolvedDir = await realpath(dir);
+  if (visiting.has(resolvedDir)) {
+    throw new Error(`Refusing cyclic symlink in explode source: ${dir}`);
+  }
+  visiting.add(resolvedDir);
+  try {
+    const entries = await readdir(resolvedDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const absolute = join(resolvedDir, entry.name);
+      if (entry.isSymbolicLink()) {
+        let target;
+        try {
+          target = await realpath(absolute);
+        } catch {
+          throw new Error(`Refusing dangling symlink in explode source: ${absolute}`);
+        }
+        assertInsideRoot(root, target);
+        const info = await lstat(target);
+        if (info.isDirectory()) {
+          await walkRejectingEscapes(target, root, visiting);
+        }
+        continue;
       }
-      assertInsideRoot(root, target);
-      const info = await lstat(target);
-      if (info.isDirectory()) {
-        await walkRejectingEscapes(target, root);
+      if (entry.isDirectory()) {
+        await walkRejectingEscapes(absolute, root, visiting);
       }
-      continue;
     }
-    if (entry.isDirectory()) {
-      await walkRejectingEscapes(absolute, root);
-    }
+  } finally {
+    visiting.delete(resolvedDir);
   }
 }
 

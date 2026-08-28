@@ -146,6 +146,25 @@ describe("explodePlugin", () => {
     }
   });
 
+  test("rejects a cyclic directory symlink in the explode source", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-cycle-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      await symlink(".", join(source, "lint/loop"));
+      await expect(
+        explodePlugin({
+          agents: [{ id: "cursor", root: dest }],
+          skills: ["lint"],
+          sourceSkills: { lint: join(source, "lint") },
+          storeRoot: store,
+        }),
+      ).rejects.toThrow("cyclic symlink");
+      await expect(lstat(join(dest, "lint"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   test("symlinks dest into the managed store and claims hashed files", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-link-"));
     try {

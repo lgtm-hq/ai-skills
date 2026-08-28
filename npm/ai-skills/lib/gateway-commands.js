@@ -277,12 +277,17 @@ export async function updateSkills(options, dependencies = {}) {
     }
     for (const pluginId of updated) {
       const entry = selected[pluginId];
-      await removeStalePluginSkills(pluginId, entry, catalogSkills[pluginId] ?? [], {
-        hash,
-        removeDir,
-        removeFile,
-        warn,
-      });
+      try {
+        await removeStalePluginSkills(pluginId, entry, catalogSkills[pluginId] ?? [], {
+          hash,
+          removeDir,
+          removeFile,
+          warn,
+        });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        warn(`Warning: could not remove stale ${pluginId} skills after update (${detail})`);
+      }
     }
     return { pruned, updated };
   } catch (error) {
