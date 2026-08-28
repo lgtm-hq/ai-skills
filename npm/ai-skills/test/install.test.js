@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -707,6 +707,75 @@ describe("install", () => {
         "pdf/SKILL.md": "abc",
         "xlsx/SKILL.md": "abc",
       });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("rolls back newly written skill directories when the skills CLI fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-atomic-cli-"));
+    const lintDir = join(cwd, ".cursor/skills/lint");
+    const testDir = join(cwd, ".cursor/skills/test");
+    try {
+      await mkdir(lintDir, { recursive: true });
+      await writeFile(join(lintDir, "SKILL.md"), "keep\n");
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            bundle: null,
+            global: false,
+            project: true,
+            skills: ["lint", "test"],
+          },
+          async () => {
+            await mkdir(testDir, { recursive: true });
+            await writeFile(join(testDir, "SKILL.md"), "partial\n");
+            throw new Error("skills CLI failed");
+          },
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          { cwd },
+        ),
+      ).rejects.toThrow("skills CLI failed");
+
+      expect(await readFile(join(lintDir, "SKILL.md"), "utf8")).toBe("keep\n");
+      await expect(access(testDir)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(access(join(cwd, "ai-skills-lock.json"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("rolls back newly written skill directories when lock update fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-atomic-lock-"));
+    const lintDir = join(cwd, ".cursor/skills/lint");
+    try {
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            bundle: null,
+            global: false,
+            project: true,
+            skills: ["lint"],
+          },
+          async () => {
+            await mkdir(lintDir, { recursive: true });
+            await writeFile(join(lintDir, "SKILL.md"), "partial\n");
+          },
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          {
+            cwd,
+            write: async () => {
+              throw new Error("disk full");
+            },
+          },
+        ),
+      ).rejects.toThrow("gateway lock update failed");
+
+      await expect(access(lintDir)).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

@@ -1,4 +1,4 @@
-import { access } from "node:fs/promises";
+import { access, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
@@ -691,42 +691,53 @@ export async function install(
     return { alreadyPresent, installed, repaired };
   }
   const agentsForRun = detectAgents ? [] : agentsToInstall;
-  await run(
-    buildSkillsArguments(
-      {
-        ...scopedOptions,
-        agents: agentsForRun,
-      },
-      source,
-    ),
-  );
-  const agentsForLock = detectAgents
-    ? await discoverInstalledAgents(scopedOptions, lockEnvironment)
-    : agentsToInstall;
-  if (agentsForLock.length === 0) {
-    return { alreadyPresent: 0, installed: 0, repaired: 0 };
-  }
-  const entries = await createLockEntries(
-    { ...scopedOptions, agents: agentsForLock },
-    vendor,
-    now,
+  const rollbackAgents = detectAgents ? KNOWN_AGENTS.map((agent) => agent.value) : agentsToInstall;
+  const preexisting = await snapshotExistingSkillDirs(
+    scopedOptions,
+    rollbackAgents,
     lockEnvironment,
-    pluginId,
-    detectAgents,
   );
-  if (Object.keys(entries).length === 0) {
-    return { alreadyPresent: 0, installed: 0, repaired: 0 };
-  }
   try {
-    await writeLockfile(mergeLockEntries(lock, entries), lockEnvironment);
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Skills installed but gateway lock update failed (${detail}). ` +
-        "Fix the lockfile path permissions and re-run install, or use adopt once available.",
+    await run(
+      buildSkillsArguments(
+        {
+          ...scopedOptions,
+          agents: agentsForRun,
+        },
+        source,
+      ),
     );
+    const agentsForLock = detectAgents
+      ? await discoverInstalledAgents(scopedOptions, lockEnvironment)
+      : agentsToInstall;
+    if (agentsForLock.length === 0) {
+      return { alreadyPresent: 0, installed: 0, repaired: 0 };
+    }
+    const entries = await createLockEntries(
+      { ...scopedOptions, agents: agentsForLock },
+      vendor,
+      now,
+      lockEnvironment,
+      pluginId,
+      detectAgents,
+    );
+    if (Object.keys(entries).length === 0) {
+      return { alreadyPresent: 0, installed: 0, repaired: 0 };
+    }
+    try {
+      await writeLockfile(mergeLockEntries(lock, entries), lockEnvironment);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Skills installed but gateway lock update failed (${detail}). ` +
+          "Fix the lockfile path permissions and re-run install, or use adopt once available.",
+      );
+    }
+    return { alreadyPresent, installed, repaired };
+  } catch (error) {
+    await rollbackNewSkillDirs(scopedOptions, rollbackAgents, preexisting, lockEnvironment);
+    throw error;
   }
-  return { alreadyPresent, installed, repaired };
 }
 
 /**
@@ -894,6 +905,58 @@ async function discoverInstalledAgents(options, lockEnvironment = {}) {
     }
   }
   return found;
+}
+
+/**
+ * Snapshot skill directories that already exist for the agents in this install.
+ *
+ * Used so a failed install can delete only the trees it created.
+ *
+ * @param {{skills: string[], global: boolean, project: boolean}} options - Install options.
+ * @param {string[]} agents - Agents that may receive new skill directories.
+ * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable fs.
+ * @returns {Promise<Set<string>>} Absolute skill directories present before the run.
+ */
+async function snapshotExistingSkillDirs(options, agents, lockEnvironment = {}) {
+  const exists = lockEnvironment.exists ?? pathExists;
+  /** @type {Set<string>} */
+  const existing = new Set();
+  for (const agent of agents) {
+    const root = agentSkillsRoot(resolveScope(options), agent, lockEnvironment);
+    for (const name of options.skills) {
+      const dir = join(root, name);
+      if (await exists(dir)) {
+        existing.add(dir);
+      }
+    }
+  }
+  return existing;
+}
+
+/**
+ * Remove skill directories created by a failed plugin install.
+ *
+ * Directories that existed before the run are left in place.
+ *
+ * @param {{skills: string[], global: boolean, project: boolean}} options - Install options.
+ * @param {string[]} agents - Agents that may have received new skill directories.
+ * @param {Set<string>} preexisting - Absolute skill directories present before the run.
+ * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable fs.
+ * @returns {Promise<void>} Resolves when newly created trees are gone.
+ */
+async function rollbackNewSkillDirs(options, agents, preexisting, lockEnvironment = {}) {
+  const exists = lockEnvironment.exists ?? pathExists;
+  const remove = lockEnvironment.rm ?? rm;
+  for (const agent of agents) {
+    const root = agentSkillsRoot(resolveScope(options), agent, lockEnvironment);
+    for (const name of options.skills) {
+      const dir = join(root, name);
+      if (preexisting.has(dir) || !(await exists(dir))) {
+        continue;
+      }
+      await remove(dir, { force: true, recursive: true });
+    }
+  }
 }
 
 /**
