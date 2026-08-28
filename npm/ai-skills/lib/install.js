@@ -852,6 +852,7 @@ export async function install(
           created: !cursorExisted,
           destRoot,
           pluginId,
+          swapped: cursorExisted,
         });
       } catch (rollbackError) {
         rollbackErrors.push(rollbackError);

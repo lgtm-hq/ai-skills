@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { rmdir, unlink } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 
@@ -107,14 +108,14 @@ export async function updateSkills(options, dependencies = {}) {
         );
       }
       if (lanes.cursorNative.length > 0) {
-        const destRoot = await rematerializeCursorPlugin(
+        const cursorBackup = await rematerializeCursorPlugin(
           pluginId,
           entry,
           skills,
           dependencies,
           prunedLock.scope,
         );
-        cursorBackups.push({ destRoot, pluginId });
+        cursorBackups.push(cursorBackup);
       }
       for (const agent of lanes.cliNative) {
         await installCliPlugin({
@@ -169,7 +170,10 @@ export async function updateSkills(options, dependencies = {}) {
     const restoreErrors = [];
     for (const item of cursorBackups) {
       try {
-        await restoreCursorPluginInstall({ ...item, created: false });
+        await restoreCursorPluginInstall({
+          ...item,
+          created: !item.swapped,
+        });
       } catch (restoreError) {
         restoreErrors.push(restoreError);
       }
@@ -749,7 +753,7 @@ async function siblingLockHasCliNative(pluginId, agent, scope, readLock, lockEnv
  *   sourceRoot?: string | null,
  * }} dependencies - Injectable catalog root and paths.
  * @param {"global" | "project"} scope - Installation scope.
- * @returns {Promise<string>} Destination `plugins/local` directory.
+ * @returns {Promise<{destRoot: string, pluginId: string, swapped: boolean}>} Dest root and whether dest was swapped aside.
  */
 async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, scope) {
   if (entry.vendor !== "lgtm-hq") {
@@ -771,6 +775,7 @@ async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, 
     home: dependencies.lockEnvironment?.home,
     scope,
   });
+  const swapped = existsSync(join(destRoot, pluginId));
   const bundles = await loadBundles();
   await installCursorPlugin({
     commit: false,
@@ -782,7 +787,7 @@ async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, 
     sourceRoot,
     version: getPackageVersion(),
   });
-  return destRoot;
+  return { destRoot, pluginId, swapped };
 }
 
 /**

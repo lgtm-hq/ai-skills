@@ -176,6 +176,7 @@ export async function removeCursorPlugin(args) {
  * @param {string} args.pluginId - Plugin id.
  * @param {string} args.destRoot - `plugins/local` directory.
  * @param {boolean} [args.created=false] - Whether this operation created dest.
+ * @param {boolean} [args.swapped=false] - Whether this operation moved dest to `.bak`.
  * @param {typeof rm} [args.remove] - Injectable rm.
  * @param {typeof rename} [args.move] - Injectable rename.
  * @returns {Promise<void>} Resolves when dest matches the pre-install tree.
@@ -184,11 +185,12 @@ export async function restoreCursorPluginInstall(args) {
   const remove = args.remove ?? rm;
   const move = args.move ?? rename;
   const paths = cursorPluginPaths(args.destRoot, args.pluginId);
-  if (existsSync(paths.backup)) {
+  if (args.swapped && existsSync(paths.backup)) {
     await remove(paths.pluginDir, { force: true, recursive: true });
     await move(paths.backup, paths.pluginDir);
   } else if (args.created) {
     await remove(paths.pluginDir, { force: true, recursive: true });
+    await remove(paths.backup, { force: true, recursive: true });
   }
   await remove(paths.staging, { force: true, recursive: true });
 }

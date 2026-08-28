@@ -580,7 +580,11 @@ async function hashTrackedPath(path, hash) {
  */
 function mergeAgentInstalls(previous, incoming) {
   const projector = incoming.projector ?? previous.projector;
-  const replaceFiles = previous.root !== incoming.root || previous.projector !== incoming.projector;
+  const replaceFiles =
+    previous.root !== incoming.root ||
+    (previous.projector !== undefined &&
+      incoming.projector !== undefined &&
+      previous.projector !== incoming.projector);
   return {
     files: replaceFiles ? { ...incoming.files } : { ...previous.files, ...incoming.files },
     root: incoming.root,

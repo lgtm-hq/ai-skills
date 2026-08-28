@@ -16,6 +16,7 @@ import {
   findCatalogSourceRoot,
   installCursorPlugin,
   removeCursorPlugin,
+  restoreCursorPluginInstall,
 } from "../lib/projectors/native-cursor.js";
 
 describe("resolveProjector", () => {
@@ -201,6 +202,32 @@ describe("native Cursor projector", () => {
         }),
       ).rejects.toThrow("copy failed");
       expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("does not restore a leftover backup when this run did not swap", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-cursor-restore-stale-bak-"));
+    try {
+      const destRoot = cursorPluginsRoot({ cwd: root, home: root, scope: "project" });
+      const pluginDir = join(destRoot, "review");
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(join(pluginDir, "USER-DATA.txt"), "fresh\n");
+      await mkdir(`${pluginDir}.bak`, { recursive: true });
+      await writeFile(join(`${pluginDir}.bak`, "USER-DATA.txt"), "stale\n");
+      await restoreCursorPluginInstall({
+        created: true,
+        destRoot,
+        pluginId: "review",
+        swapped: false,
+      });
+      await expect(readFile(join(pluginDir, "USER-DATA.txt"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expect(readFile(join(`${pluginDir}.bak`, "USER-DATA.txt"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     } finally {
       await rm(root, { force: true, recursive: true });
     }

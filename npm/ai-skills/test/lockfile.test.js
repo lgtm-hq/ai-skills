@@ -92,6 +92,25 @@ describe("gateway lockfile", () => {
     );
   });
 
+  test("unions agent files when a previous projector field is omitted", () => {
+    const merged = mergeLockEntries(lock, {
+      review: {
+        ...explodeEntry,
+        agents: {
+          cursor: {
+            files: { "test/SKILL.md": "new" },
+            projector: "explode",
+            root: "/tmp/project/.cursor/skills",
+          },
+        },
+      },
+    });
+    expect(merged.plugins.review.agents.cursor.files).toEqual({
+      "lint/SKILL.md": "abc",
+      "test/SKILL.md": "new",
+    });
+  });
+
   test("prunes entries that conflict with disk state", async () => {
     const { lock: pruned, pruned: names } = await pruneMissingLockEntries(
       lock,
