@@ -577,51 +577,64 @@ describe("gateway maintenance commands", () => {
   });
 
   test("keeps nested tracked files for remaining skills on update", async () => {
-    let written;
-    const stale = {
-      ...lock,
-      plugins: {
-        review: pluginEntry({
-          agents: {
-            cursor: {
-              files: {
-                "lint/SKILL.md": "abc",
-                "lint/docs/guide.md": "abc",
-                "retired/docs/old.md": "abc",
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-update-nested-"));
+    try {
+      const dest = join(cwd, ".cursor/skills");
+      await mkdir(join(dest, "lint/docs"), { recursive: true });
+      await mkdir(join(dest, "retired/docs"), { recursive: true });
+      await writeFile(join(dest, "lint/SKILL.md"), "# lint\n");
+      await writeFile(join(dest, "lint/docs/guide.md"), "guide\n");
+      await writeFile(join(dest, "retired/docs/old.md"), "old\n");
+      const lintHash = await hashFile(join(dest, "lint/SKILL.md"));
+      const guideHash = await hashFile(join(dest, "lint/docs/guide.md"));
+      const retiredHash = await hashFile(join(dest, "retired/docs/old.md"));
+      let written;
+      await updateSkills(options, {
+        hash: hashFile,
+        isInstalled: async () => true,
+        now: () => new Date("2026-07-10T17:00:00.000Z"),
+        readLock: async () => ({
+          ...lock,
+          plugins: {
+            review: pluginEntry({
+              agents: {
+                cursor: {
+                  files: {
+                    "lint/SKILL.md": lintHash,
+                    "lint/docs/guide.md": guideHash,
+                    "retired/docs/old.md": retiredHash,
+                  },
+                  projector: "explode",
+                  root: dest,
+                },
               },
-              root: "/tmp/project/.cursor/skills",
-            },
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.21.0",
+              vendor: "lgtm-hq",
+              version: "0.21.0",
+            }),
           },
-          repo: "lgtm-hq/ai-skills",
-          sha: "v0.21.0",
-          vendor: "lgtm-hq",
-          version: "0.21.0",
         }),
-      },
-    };
-
-    await updateSkills(options, {
-      hash: async () => "refreshed",
-      isInstalled: async () => true,
-      now: () => new Date("2026-07-10T17:00:00.000Z"),
-      readLock: async () => stale,
-      rmdir: async () => {},
-      run: async () => {},
-      sourceRoot: null,
-      unlink: async () => {},
-      warn: () => {},
-      writeLock: async (next) => {
-        written = next;
-      },
-    });
-
-    expect(written.plugins.review.agents.cursor.files).toMatchObject({
-      "lint/SKILL.md": "refreshed",
-      "lint/docs/guide.md": "refreshed",
-    });
-    expect(Object.keys(written.plugins.review.agents.cursor.files)).not.toContain(
-      "retired/docs/old.md",
-    );
+        rmdir: async () => {},
+        run: async () => {},
+        sourceRoot: null,
+        unlink: async () => {},
+        warn: () => {},
+        writeLock: async (next) => {
+          written = next;
+        },
+      });
+      expect(written.plugins.review.agents.cursor.files).toMatchObject({
+        "lint/SKILL.md": lintHash,
+        "lint/docs/guide.md": guideHash,
+      });
+      expect(Object.keys(written.plugins.review.agents.cursor.files)).not.toContain(
+        "retired/docs/old.md",
+      );
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
   });
 
   test("hash-verifies and drops skills removed from the catalog on update", async () => {
@@ -774,6 +787,93 @@ describe("gateway maintenance commands", () => {
       const { readdir } = await import("node:fs/promises");
       const names = await readdir(dest);
       expect(names.filter((name) => name.includes(".bak."))).toEqual([]);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("CLI fallback update hashes nested dest files so remove deletes them", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cli-update-nested-"));
+    try {
+      const dest = join(cwd, ".cursor/skills");
+      await mkdir(join(dest, "lint"), { recursive: true });
+      await writeFile(join(dest, "lint/SKILL.md"), "# lint\n");
+      const lintHash = await hashFile(join(dest, "lint/SKILL.md"));
+      const lockEnvironment = { cwd };
+      await writeFile(
+        join(cwd, "ai-skills-lock.json"),
+        `${JSON.stringify(
+          {
+            gatewayVersion: "0.0.0-old",
+            plugins: {
+              leftover: {
+                agents: {
+                  cursor: {
+                    files: { "lint/SKILL.md": lintHash },
+                    projector: "explode",
+                    root: dest,
+                  },
+                },
+                installedAt: "2026-07-10T16:00:00.000Z",
+                projector: "explode",
+                repo: "lgtm-hq/ai-skills",
+                sha: "v0.0.0-old",
+                skills: ["lint"],
+                vendor: "lgtm-hq",
+                version: "0.0.0-old",
+              },
+            },
+            scope: "project",
+            version: 2,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      await updateSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: ["leftover"],
+          yes: true,
+        },
+        {
+          isInstalled: async () => true,
+          lockEnvironment,
+          readLock: (scope) => readLockfile(scope, lockEnvironment),
+          run: async () => {
+            await writeFile(join(dest, "lint/notes.md"), "notes\n");
+          },
+          sourceRoot: null,
+          writeLock: (next) => writeLockfile(next, lockEnvironment),
+        },
+      );
+      const updated = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(Object.keys(updated.plugins.leftover.agents.cursor.files).sort()).toEqual([
+        "lint/SKILL.md",
+        "lint/notes.md",
+      ]);
+      await removeSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: ["leftover"],
+          yes: true,
+        },
+        {
+          lockEnvironment,
+          readLock: (scope) => readLockfile(scope, lockEnvironment),
+          run: async () => {
+            throw new Error("skills CLI must not run for explode remove");
+          },
+          writeLock: (next) => writeLockfile(next, lockEnvironment),
+        },
+      );
+      await expect(readFile(join(dest, "lint/notes.md"), "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

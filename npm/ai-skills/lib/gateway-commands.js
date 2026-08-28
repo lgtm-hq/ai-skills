@@ -658,7 +658,8 @@ async function currentPluginSkills(pluginId, entry) {
  * @param {string[]} skillNames - Skill directory names to hash.
  * @param {typeof hashFile} hash - Injectable hasher.
  * @param {Record<string, Record<string, string>>} [explodeClaims] - Owned explode
- *   files from this update (skipped dests omitted). Absent when the CLI fallback ran.
+ *   files from this update (skipped dests omitted). Absent when the CLI fallback ran,
+ *   in which case explode dests are hashed as full skill trees.
  * @returns {Promise<import("./lockfile.js").PluginLockEntry>} Entry with rebuilt file maps.
  */
 async function rematerializePluginFiles(entry, skillNames, hash, explodeClaims) {
@@ -666,20 +667,27 @@ async function rematerializePluginFiles(entry, skillNames, hash, explodeClaims) 
   const agents = {};
   for (const [agent, install] of Object.entries(entry.agents)) {
     const projector = agentProjector(entry, agent);
-    if (explodeClaims && projector === PROJECTOR_EXPLODE) {
-      const claimed = explodeClaims[agent];
-      if (claimed && Object.keys(claimed).length > 0) {
-        agents[agent] = { ...install, files: claimed };
+    if (projector === PROJECTOR_EXPLODE) {
+      if (explodeClaims) {
+        const claimed = explodeClaims[agent];
+        if (claimed && Object.keys(claimed).length > 0) {
+          agents[agent] = { ...install, files: claimed };
+          continue;
+        }
+        const retained = {};
+        for (const [relative, digest] of Object.entries(install.files)) {
+          if (current.has(relative.split("/")[0])) {
+            retained[relative] = digest;
+          }
+        }
+        if (Object.keys(retained).length > 0) {
+          agents[agent] = { ...install, files: retained };
+        }
         continue;
       }
-      const retained = {};
-      for (const [relative, digest] of Object.entries(install.files)) {
-        if (current.has(relative.split("/")[0])) {
-          retained[relative] = digest;
-        }
-      }
-      if (Object.keys(retained).length > 0) {
-        agents[agent] = { ...install, files: retained };
+      const files = await hashCliExplodeDestFiles(install.root, skillNames, hash);
+      if (Object.keys(files).length > 0) {
+        agents[agent] = { ...install, files };
       }
       continue;
     }
@@ -729,6 +737,59 @@ async function rematerializePluginFiles(entry, skillNames, hash, explodeClaims) 
     agents[agent] = { ...install, files };
   }
   return { ...entry, agents };
+}
+
+/**
+ * Hash explode dest skill trees after a skills-CLI fallback update.
+ *
+ * Matches install ``createLockEntries``: walk each current skill directory so
+ * nested files are locked. An empty or missing dest falls back to a
+ * ``SKILL.md`` sentinel (detect-mode mocks). A dest that is a file hashes as
+ * ``SKILL.md``.
+ *
+ * @param {string} root - Agent skills root from the lock.
+ * @param {string[]} skillNames - Current catalog skill names.
+ * @param {typeof hashFile} hash - Injectable hasher.
+ * @returns {Promise<Record<string, string>>} Relative path to digest.
+ */
+async function hashCliExplodeDestFiles(root, skillNames, hash) {
+  const files = {};
+  for (const name of skillNames) {
+    const skillDir = join(root, name);
+    let tree = {};
+    try {
+      tree = await hashTree(skillDir, hash);
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOTDIR") {
+        try {
+          files[`${name}/SKILL.md`] = await hash(skillDir);
+        } catch (hashError) {
+          if (!isAbsentFsError(hashError)) {
+            throw hashError;
+          }
+          files[`${name}/SKILL.md`] = "";
+        }
+        continue;
+      }
+      throw error;
+    }
+    if (Object.keys(tree).length === 0) {
+      const relative = `${name}/SKILL.md`;
+      try {
+        files[relative] = await hash(join(skillDir, "SKILL.md"));
+      } catch (error) {
+        if (!isAbsentFsError(error)) {
+          throw error;
+        }
+        files[relative] = "";
+      }
+      continue;
+    }
+    for (const [relative, digest] of Object.entries(tree)) {
+      files[`${name}/${relative}`] = digest;
+    }
+  }
+  return files;
 }
 
 /**
