@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { access, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -109,6 +119,7 @@ describe("install", () => {
         },
         () => new Date("2026-07-10T16:00:00.000Z"),
         { cwd },
+        { sourceRoot: null },
       );
 
       expect(received).toContain("--skill");
@@ -262,6 +273,7 @@ describe("install", () => {
         },
         () => new Date("2026-07-10T16:00:00.000Z"),
         { home },
+        { sourceRoot: null },
       );
 
       expect(received).toContain("-g");
@@ -326,6 +338,7 @@ describe("install", () => {
           exists: async () => false,
           hash: async () => "",
         },
+        { sourceRoot: null },
       );
 
       expect(received).toContain("--skill");
@@ -361,6 +374,7 @@ describe("install", () => {
           exists: async () => true,
           hash: async () => "new",
         },
+        { sourceRoot: null },
       );
 
       expect(received).toContain("--skill");
@@ -439,6 +453,7 @@ describe("install", () => {
           exists: async (path) => String(path).startsWith(cursorRoot),
           hash: async () => "abc",
         },
+        { sourceRoot: null },
       );
 
       expect(received).toContain("claude-code");
@@ -645,6 +660,7 @@ describe("install", () => {
         },
         () => new Date("2026-07-10T17:00:00.000Z"),
         { cwd },
+        { sourceRoot: null },
       );
 
       expect(ran).toBe(true);
@@ -795,6 +811,7 @@ describe("install", () => {
           },
           () => new Date("2026-07-10T16:00:00.000Z"),
           { cwd },
+          { sourceRoot: null },
         ),
       ).rejects.toThrow("Plugin install incomplete");
 
@@ -828,6 +845,7 @@ describe("install", () => {
           },
           () => new Date("2026-07-10T16:00:00.000Z"),
           { cwd },
+          { sourceRoot: null },
         ),
       ).rejects.toThrow("skills CLI failed");
 
@@ -865,6 +883,7 @@ describe("install", () => {
               throw new Error("disk full");
             },
           },
+          { sourceRoot: null },
         ),
       ).rejects.toThrow("gateway lock update failed");
 
@@ -899,6 +918,7 @@ describe("install", () => {
               throw new Error("rm denied");
             },
           },
+          { sourceRoot: null },
         ),
       ).rejects.toThrow("skills CLI failed (rollback also failed: rm denied)");
 
@@ -925,6 +945,8 @@ describe("install", () => {
         },
         async () => {},
         () => new Date("2026-07-10T16:00:00.000Z"),
+        undefined,
+        { sourceRoot: null },
       );
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
       expect(lock.plugins.lint.agents.cursor.files["lint/SKILL.md"]).toMatch(/^[a-f0-9]{64}$/);
@@ -952,6 +974,7 @@ describe("install", () => {
         async () => {},
         () => new Date("2026-07-10T16:00:00.000Z"),
         null,
+        { sourceRoot: null },
       );
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
       expect(lock.plugins.lint.agents.cursor.files["lint/SKILL.md"]).toMatch(/^[a-f0-9]{64}$/);
@@ -1267,9 +1290,8 @@ describe("native projectors", () => {
         { cwd },
         { sourceRoot },
       );
-      expect(received[0]).toContain("-a");
-      expect(received[0]).toContain("codex");
-      expect(received[0]).not.toContain("cursor");
+      expect(received).toEqual([]);
+      expect(await readFile(join(cwd, ".codex/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
       expect(lock.plugins.review.agents.cursor.projector).toBe("native");
       expect(lock.plugins.review.agents.codex.projector).toBe("explode");
@@ -1401,8 +1423,8 @@ describe("native projectors", () => {
         },
         { sourceRoot },
       );
-      expect(received).toContain("cursor");
-      expect(received).toContain("--skill");
+      expect(received).toEqual([]);
+      expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
       await expect(access(join(cwd, ".cursor/plugins/local/lint"))).rejects.toMatchObject({
         code: "ENOENT",
       });
@@ -1836,6 +1858,152 @@ describe("native projectors", () => {
       ).rejects.toThrow();
       expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("fresh\n");
       expect(await readFile(join(`${pluginDir}.bak`, "USER-DATA.txt"), "utf8")).toBe("stale\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("explodes transactionally and leaves an identical unowned dest after remove", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-unowned-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      await mkdir(join(cwd, ".cursor/skills/lint"), { recursive: true });
+      await writeFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "# lint\n");
+      await install(
+        {
+          ...unattendedOptions,
+          agents: ["cursor"],
+          bundle: null,
+          global: false,
+          projector: "explode",
+          project: true,
+          skills: ["lint", "test"],
+        },
+        async () => {
+          throw new Error("skills CLI must not run when catalog sources resolve");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(Object.keys(lock.plugins.lint.agents.cursor.files)).toEqual(["test/SKILL.md"]);
+      await removeSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: ["lint"],
+          yes: true,
+        },
+        {
+          lockEnvironment: { cwd },
+          readLock: (scope) => readLockfile(scope, { cwd }),
+          writeLock: (next) => writeLockfile(next, { cwd }),
+        },
+      );
+      expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      await expect(
+        readFile(join(cwd, ".cursor/skills/test/SKILL.md"), "utf8"),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("second explode install still does not claim a skipped identical dest", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-second-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      await mkdir(join(cwd, ".cursor/skills/lint"), { recursive: true });
+      await writeFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "# lint\n");
+      const options = {
+        ...unattendedOptions,
+        agents: ["cursor"],
+        bundle: null,
+        global: false,
+        projector: "explode",
+        project: true,
+        skills: ["lint", "test"],
+      };
+      const extras = { sourceRoot };
+      const environment = { cwd };
+      await install(
+        options,
+        async () => {
+          throw new Error("skills CLI must not run when catalog sources resolve");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        environment,
+        extras,
+      );
+      await install(
+        options,
+        async () => {
+          throw new Error("skills CLI must not run when catalog sources resolve");
+        },
+        () => new Date("2026-07-10T17:00:00.000Z"),
+        environment,
+        extras,
+      );
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(Object.keys(lock.plugins.lint.agents.cursor.files).sort()).toEqual(["test/SKILL.md"]);
+      expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("remove unlinks dest skill symlink and leaves the managed store", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-store-keep-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      await install(
+        {
+          ...unattendedOptions,
+          agents: ["cursor"],
+          bundle: null,
+          global: false,
+          projector: "explode",
+          project: true,
+          skills: ["test"],
+        },
+        async () => {
+          throw new Error("skills CLI must not run when catalog sources resolve");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      const dest = join(cwd, ".cursor/skills/test");
+      const store = join(cwd, ".agents/skills/test");
+      expect(await readlink(dest)).toBe(store);
+      await removeSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: ["test"],
+          yes: true,
+        },
+        {
+          lockEnvironment: { cwd },
+          readLock: (scope) => readLockfile(scope, { cwd }),
+          writeLock: (next) => writeLockfile(next, { cwd }),
+        },
+      );
+      await expect(lstat(dest)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(join(store, "SKILL.md"), "utf8")).toBe("# test\n");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

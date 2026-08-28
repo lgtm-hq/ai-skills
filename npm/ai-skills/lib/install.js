@@ -21,6 +21,11 @@ import {
 import { resolveScope } from "./options.js";
 import { getPackageVersion } from "./package-version.js";
 import { assertProjectorSupported, resolveProjector } from "./projectors/defaults.js";
+import {
+  defaultStoreRoot,
+  explodePlugin,
+  resolveExplodeSourceSkills,
+} from "./projectors/explode.js";
 import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
 import {
   cursorDestHasFiles,
@@ -628,7 +633,7 @@ async function cancelable(ui, valuePromise) {
  * @param {(args: string[]) => Promise<void>} [run] - Injectable skills process runner.
  * @param {() => Date} [now] - Injectable clock.
  * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable lockfile environment.
- * @param {{exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>, move?: typeof import("node:fs/promises").rename, remove?: typeof rm, sourceRoot?: string | null, warn?: (message: string) => void}} [extras] - Native projector dependencies.
+ * @param {{exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>, explode?: typeof explodePlugin, failAfter?: "stage" | "commit", move?: typeof import("node:fs/promises").rename, remove?: typeof rm, sourceRoot?: string | null, sourceSkills?: Record<string, string>, storeRoot?: string, warn?: (message: string) => void}} [extras] - Projector dependencies.
  * @returns {Promise<{alreadyPresent: number, installed: number, repaired: number}>} Install summary counts.
  */
 export async function install(
@@ -758,6 +763,8 @@ export async function install(
     rollbackAgents,
     lockEnvironment,
   );
+  /** @type {Record<string, Record<string, string>>} */
+  let explodeClaims = {};
   const destRoot = cursorPluginsRoot({
     cwd: lockEnvironment.cwd,
     home: lockEnvironment.home,
@@ -772,15 +779,49 @@ export async function install(
   const cliCreated = [];
   try {
     if (detectAgents || lanes.explode.length > 0) {
-      await run(
-        buildSkillsArguments(
-          {
-            ...scopedOptions,
-            agents: agentsForRun.length > 0 ? lanes.explode : agentsForRun,
-          },
-          source,
-        ),
-      );
+      const explodeSources = detectAgents
+        ? null
+        : resolveExplodeSourceSkills(
+            scopedOptions.skills,
+            extras,
+            vendor
+              ? null
+              : extras.sourceRoot !== undefined
+                ? extras.sourceRoot
+                : findCatalogSourceRoot(lockEnvironment.cwd ?? process.cwd()),
+          );
+      if (explodeSources && lanes.explode.length > 0) {
+        const explode = extras.explode ?? explodePlugin;
+        const exploded = await explode({
+          agents: lanes.explode.map((agent) => ({
+            id: agent,
+            replace: existing?.agents?.[agent]
+              ? new Set(skillNamesFromFiles(existing.agents[agent].files))
+              : new Set(),
+            root: agentSkillsRoot(scope, agent, lockEnvironment),
+          })),
+          copy: scopedOptions.copy,
+          failAfter: extras.failAfter,
+          hash: lockEnvironment.hash ?? hashFile,
+          skills: scopedOptions.skills,
+          sourceSkills: explodeSources,
+          storeRoot: extras.storeRoot ?? defaultStoreRoot(scope, lockEnvironment),
+        });
+        explodeClaims = exploded.claimed;
+      } else {
+        // Vendor installs and first-party installs without a catalog checkout
+        // still shell out to the skills CLI. That path is not transactional and
+        // does not enforce ADR-0005 until bake (#378) ships vendor trees.
+        await run(
+          buildSkillsArguments(
+            {
+              ...scopedOptions,
+              agents: agentsForRun.length > 0 ? lanes.explode : agentsForRun,
+            },
+            source,
+          ),
+        );
+      }
     }
     if (lanes.cursorNative.length > 0) {
       const replace = Boolean(
@@ -832,6 +873,7 @@ export async function install(
       detectAgents,
       existing,
       new Set(lanes.explode),
+      explodeClaims,
     );
     if (Object.keys(entries).length === 0) {
       return { alreadyPresent: 0, installed: 0, repaired: 0 };
@@ -914,6 +956,8 @@ export async function install(
  * @param {import("./lockfile.js").PluginLockEntry} [existing] - Previously locked plugin, if any.
  * @param {Set<string>} [explodeLockAgents] - Agents delivered via explode this run
  *   (including implicit Cursor native → explode when the catalog is absent).
+ * @param {Record<string, Record<string, string>>} [explodeClaims] - Owned explode
+ *   files (skipped identical dests are omitted).
  * @returns {Promise<Record<string, import("./lockfile.js").PluginLockEntry>>} Entries keyed by plugin id.
  */
 async function createLockEntries(
@@ -925,6 +969,7 @@ async function createLockEntries(
   onlyExistingFiles = false,
   existing,
   explodeLockAgents = new Set(),
+  explodeClaims = {},
 ) {
   lockEnvironment = lockEnvironment ?? {};
   const installedAt = now().toISOString();
@@ -965,6 +1010,14 @@ async function createLockEntries(
       continue;
     }
     const root = agentSkillsRoot(scope, agent, lockEnvironment);
+    const claimed = explodeClaims[agent];
+    if (claimed) {
+      if (Object.keys(claimed).length === 0) {
+        continue;
+      }
+      agents[agent] = { files: claimed, projector, root };
+      continue;
+    }
     const files = {};
     for (const name of options.skills) {
       const relative = `${name}/SKILL.md`;

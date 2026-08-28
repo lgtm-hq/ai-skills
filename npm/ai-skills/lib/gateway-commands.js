@@ -1,5 +1,5 @@
-import { rmdir, unlink } from "node:fs/promises";
-import { dirname, join, resolve, sep } from "node:path";
+import { readdir, rmdir, unlink } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
 import {
@@ -21,6 +21,15 @@ import {
 } from "./lockfile.js";
 import { resolveScope } from "./options.js";
 import { getPackageVersion } from "./package-version.js";
+import {
+  defaultStoreRoot,
+  explodePlugin,
+  pruneEmptyAncestors,
+  pruneEmptyDirTrees,
+  resolveExplodeSourceSkills,
+  resolveTrackedPath,
+  unlinkDestSkillSymlink,
+} from "./projectors/explode.js";
 import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
 import {
   cursorPluginsRoot,
@@ -29,7 +38,7 @@ import {
   installCursorPlugin,
   restoreCursorPluginInstall,
 } from "./projectors/native-cursor.js";
-import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./skills-runner.js";
+import { buildSkillsArguments, runSkills } from "./skills-runner.js";
 
 /**
  * Refresh lock-managed plugins using the current package tag or vendor registry pins.
@@ -39,6 +48,7 @@ import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./s
  * @param {{agents: string[], global: boolean, project: boolean, skills: string[], yes: boolean}} options - Validated command options.
  * @param {{
  *   exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>,
+ *   explode?: typeof explodePlugin,
  *   hash?: typeof import("./lockfile.js").hashFile,
  *   isInstalled?: Parameters<typeof pruneMissingLockEntries>[1],
  *   lockEnvironment?: Parameters<typeof reconcileLock>[1],
@@ -48,6 +58,8 @@ import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./s
  *   rmdir?: typeof rmdir,
  *   run?: typeof runSkills,
  *   sourceRoot?: string | null,
+ *   sourceSkills?: Record<string, string>,
+ *   storeRoot?: string,
  *   unlink?: typeof unlink,
  *   warn?: (message: string) => void,
  *   writeLock?: typeof writeLockfile,
@@ -79,6 +91,8 @@ export async function updateSkills(options, dependencies = {}) {
     }
   }
   const catalogSkills = {};
+  /** @type {Record<string, Record<string, Record<string, string>>>} */
+  const explodeClaimsByPlugin = {};
   const hash = dependencies.hash ?? hashFile;
   const removeFile = dependencies.unlink ?? unlink;
   const removeDir = dependencies.rmdir ?? rmdir;
@@ -95,18 +109,46 @@ export async function updateSkills(options, dependencies = {}) {
           : resolveVendorSource(entry, vendors);
       const lanes = partitionLockedLanes(entry);
       if (lanes.explode.length > 0) {
-        await run(
-          buildSkillsArguments(
-            {
-              ...scopedOptions,
-              agents: lanes.explode,
-              copy: false,
-              onConflict: "overwrite",
-              skills,
-            },
-            source,
-          ),
+        const explodeSources = resolveExplodeSourceSkills(
+          skills,
+          dependencies,
+          entry.vendor === "lgtm-hq"
+            ? dependencies.sourceRoot !== undefined
+              ? dependencies.sourceRoot
+              : findCatalogSourceRoot()
+            : null,
         );
+        if (explodeSources) {
+          const explode = dependencies.explode ?? explodePlugin;
+          const exploded = await explode({
+            agents: lanes.explode.map((agent) => ({
+              id: agent,
+              replace: new Set(skillNamesFromFiles(entry.agents[agent]?.files ?? {})),
+              root: entry.agents[agent].root,
+            })),
+            copy: false,
+            hash,
+            skills,
+            sourceSkills: explodeSources,
+            storeRoot:
+              dependencies.storeRoot ?? defaultStoreRoot(scope, dependencies.lockEnvironment),
+          });
+          explodeClaimsByPlugin[pluginId] = exploded.claimed;
+        } else {
+          // Vendor / non-checkout first-party still uses the skills CLI.
+          await run(
+            buildSkillsArguments(
+              {
+                ...scopedOptions,
+                agents: lanes.explode,
+                copy: false,
+                onConflict: "overwrite",
+                skills,
+              },
+              source,
+            ),
+          );
+        }
       }
       if (lanes.cursorNative.length > 0) {
         const cursorProgress = { swapped: false };
@@ -160,6 +202,7 @@ export async function updateSkills(options, dependencies = {}) {
         entry,
         catalogSkills[pluginId] ?? pluginSkillNames(entry),
         hash,
+        explodeClaimsByPlugin[pluginId],
       );
       plugins[pluginId] = {
         ...hashed,
@@ -229,14 +272,8 @@ export async function updateSkills(options, dependencies = {}) {
  */
 export async function removeSkills(options, dependencies = {}) {
   const scope = resolveScope(options);
-  const scopedOptions = {
-    ...options,
-    global: scope === "global",
-    project: scope === "project",
-  };
   const readLock = dependencies.readLock ?? readLockfile;
   const writeLock = dependencies.writeLock ?? writeLockfile;
-  const run = dependencies.run ?? runSkills;
   const hash = dependencies.hash ?? hashFile;
   const removeFile = dependencies.unlink ?? unlink;
   const removeDir = dependencies.rmdir ?? rmdir;
@@ -252,17 +289,6 @@ export async function removeSkills(options, dependencies = {}) {
     const entry = lock.plugins[pluginId];
     const classified = await classifyPluginFiles(pluginId, entry, { hash, warn });
     const lanes = partitionLockedLanes(entry);
-    if (lanes.explode.length > 0 && classified.removableSkills.length > 0) {
-      await run(
-        buildSkillsRemoveArguments(
-          {
-            ...scopedOptions,
-            agents: lanes.explode,
-          },
-          classified.removableSkills,
-        ),
-      );
-    }
     await deleteVerifiedFiles(classified.verified, { removeDir, removeFile });
     for (const agent of lanes.cursorNative) {
       const pluginDir = entry.agents[agent]?.root;
@@ -471,9 +497,6 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
     ),
   };
   const classified = await classifyPluginFiles(pluginId, stale, { hash: io.hash, warn: io.warn });
-  if (classified.removableSkills.length > 0 && io.scopedOptions.agents.length > 0) {
-    await io.run(buildSkillsRemoveArguments(io.scopedOptions, classified.removableSkills));
-  }
   await deleteVerifiedFiles(classified.verified, {
     removeDir: io.removeDir,
     removeFile: io.removeFile,
@@ -510,13 +533,19 @@ async function currentPluginSkills(pluginId, entry) {
  * @param {import("./lockfile.js").PluginLockEntry} entry - Lock entry.
  * @param {string[]} skillNames - Skill directory names to hash.
  * @param {typeof hashFile} hash - Injectable hasher.
+ * @param {Record<string, Record<string, string>>} [explodeClaims] - Owned explode
+ *   files from this update (skipped dests omitted). Absent when the CLI fallback ran.
  * @returns {Promise<import("./lockfile.js").PluginLockEntry>} Entry with rebuilt file maps.
  */
-async function rematerializePluginFiles(entry, skillNames, hash) {
+async function rematerializePluginFiles(entry, skillNames, hash, explodeClaims) {
   const current = new Set(skillNames);
   const agents = {};
   for (const [agent, install] of Object.entries(entry.agents)) {
     const projector = agentProjector(entry, agent);
+    if (explodeClaims && projector === PROJECTOR_EXPLODE) {
+      agents[agent] = { ...install, files: explodeClaims[agent] ?? {} };
+      continue;
+    }
     if (projector === PROJECTOR_NATIVE && agent === "cursor") {
       agents[agent] = {
         ...install,
@@ -591,7 +620,7 @@ function sourceSha(vendor, currentSha, vendors) {
  * }} io - Injectable hasher and warning sink.
  * @returns {Promise<{
  *   removableSkills: string[],
- *   verified: Array<{absolute: string, root: string}>,
+ *   verified: Array<{absolute: string, relative: string, root: string}>,
  * }>} Skills safe to pass upstream and files safe to unlink.
  */
 async function classifyPluginFiles(pluginId, entry, io) {
@@ -614,7 +643,7 @@ async function classifyPluginFiles(pluginId, entry, io) {
           }
           continue;
         }
-        verified.push({ absolute, root: install.root });
+        verified.push({ absolute, relative, root: install.root });
       } catch (error) {
         if (isAbsentFsError(error)) {
           continue;
@@ -631,9 +660,9 @@ async function classifyPluginFiles(pluginId, entry, io) {
 }
 
 /**
- * Unlink hash-matching files and prune empty ancestor directories.
+ * Unlink hash-matching files and prune empty directory trees.
  *
- * @param {Array<{absolute: string, root: string}>} verified - Files that matched the lock digest.
+ * @param {Array<{absolute: string, relative?: string, root: string}>} verified - Files that matched the lock digest.
  * @param {{
  *   removeDir: typeof rmdir,
  *   removeFile: typeof unlink,
@@ -641,9 +670,27 @@ async function classifyPluginFiles(pluginId, entry, io) {
  * @returns {Promise<void>} Resolves when verified deletes finish.
  */
 async function deleteVerifiedFiles(verified, io) {
+  /** @type {Map<string, string>} */
+  const skillDirs = new Map();
+  /** @type {Set<string>} */
+  const unlinkedSymlinks = new Set();
   for (const file of verified) {
+    const skillName = (file.relative ?? "").split("/")[0];
+    const skillDir = skillName ? join(file.root, skillName) : "";
+    if (skillDir && !unlinkedSymlinks.has(skillDir)) {
+      if (await unlinkDestSkillSymlink(skillDir, io.removeFile)) {
+        unlinkedSymlinks.add(skillDir);
+        continue;
+      }
+    }
+    if (skillDir && unlinkedSymlinks.has(skillDir)) {
+      continue;
+    }
     try {
       await io.removeFile(file.absolute);
+      if (skillDir) {
+        skillDirs.set(skillDir, file.root);
+      }
       await pruneEmptyAncestors(dirname(file.absolute), file.root, io.removeDir);
     } catch (error) {
       if (isAbsentFsError(error)) {
@@ -651,6 +698,12 @@ async function deleteVerifiedFiles(verified, io) {
       }
       throw error;
     }
+  }
+  for (const [skillDir, root] of skillDirs) {
+    await pruneEmptyDirTrees(skillDir, root, {
+      readDir: (dir) => readdir(dir, { withFileTypes: true }),
+      removeDir: io.removeDir,
+    });
   }
 }
 
@@ -662,53 +715,6 @@ async function deleteVerifiedFiles(verified, io) {
  */
 function isAbsentFsError(error) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
-}
-
-/**
- * Resolve a lock-relative path and reject escapes outside the agent root.
- *
- * @param {string} root - Agent skills root from the lock.
- * @param {string} relative - Tracked path relative to that root.
- * @returns {string} Absolute path inside the root.
- * @throws {Error} When the relative path escapes the root.
- */
-function resolveTrackedPath(root, relative) {
-  if (
-    relative.includes("\0") ||
-    relative.startsWith("/") ||
-    relative.split(/[\\/]/).includes("..")
-  ) {
-    throw new Error(`Refusing to delete path outside plugin root: ${relative}`);
-  }
-  const absolute = resolve(join(root, relative));
-  const resolvedRoot = resolve(root);
-  const prefix = resolvedRoot.endsWith(sep) ? resolvedRoot : `${resolvedRoot}${sep}`;
-  if (absolute !== resolvedRoot && !absolute.startsWith(prefix)) {
-    throw new Error(`Refusing to delete path outside plugin root: ${relative}`);
-  }
-  return absolute;
-}
-
-/**
- * Remove empty directories from a deleted file up to the agent skills root.
- *
- * @param {string} start - Directory that contained a deleted file.
- * @param {string} root - Agent skills root; not removed.
- * @param {typeof rmdir} removeDir - Injectable rmdir.
- * @returns {Promise<void>} Resolves when pruning stops.
- */
-async function pruneEmptyAncestors(start, root, removeDir) {
-  const resolvedRoot = resolve(root);
-  const prefix = resolvedRoot.endsWith(sep) ? resolvedRoot : `${resolvedRoot}${sep}`;
-  let current = resolve(start);
-  while (current.startsWith(prefix) && current !== resolvedRoot) {
-    try {
-      await removeDir(current);
-    } catch {
-      return;
-    }
-    current = dirname(current);
-  }
 }
 
 /**

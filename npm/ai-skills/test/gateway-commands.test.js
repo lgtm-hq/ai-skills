@@ -217,6 +217,7 @@ describe("gateway maintenance commands", () => {
       run: async (args) => {
         calls.push(args);
       },
+      sourceRoot: null,
       writeLock: async () => {},
     });
 
@@ -264,7 +265,7 @@ describe("gateway maintenance commands", () => {
     );
 
     expect(removed).toEqual(["pdf"]);
-    expect(calls).toEqual([["skills@^1.5.0", "remove", "pdf", "-a", "cursor", "-y"]]);
+    expect(calls).toEqual([]);
     expect(written.plugins).toEqual({
       lint: lock.plugins.lint,
     });
@@ -443,7 +444,7 @@ describe("gateway maintenance commands", () => {
           writeLock: async () => {},
         },
       ),
-    ).rejects.toThrow("outside plugin root");
+    ).rejects.toThrow("outside explode root");
   });
 
   test("keeps a locally modified skill file on a real filesystem remove", async () => {
@@ -558,6 +559,7 @@ describe("gateway maintenance commands", () => {
       run: async (args) => {
         calls.push(args);
       },
+      sourceRoot: null,
       writeLock: async (next) => {
         written = next;
       },
@@ -605,6 +607,7 @@ describe("gateway maintenance commands", () => {
       readLock: async () => stale,
       rmdir: async () => {},
       run: async () => {},
+      sourceRoot: null,
       unlink: async () => {},
       warn: () => {},
       writeLock: async (next) => {
@@ -654,6 +657,7 @@ describe("gateway maintenance commands", () => {
       run: async (args) => {
         calls.push(args);
       },
+      sourceRoot: null,
       unlink: async (path) => {
         unlinked.push(path);
       },
@@ -662,12 +666,9 @@ describe("gateway maintenance commands", () => {
       },
     });
 
-    expect(calls).toEqual(
-      expect.arrayContaining([
-        expect.arrayContaining(["add", "--skill", "lint", "test", "greptile", "coderabbit"]),
-        ["skills@^1.5.0", "remove", "retired", "-a", "cursor", "-y"],
-      ]),
-    );
+    expect(calls).toEqual([
+      expect.arrayContaining(["add", "--skill", "lint", "test", "greptile", "coderabbit"]),
+    ]);
     expect(unlinked).toEqual(["/tmp/project/.cursor/skills/retired/SKILL.md"]);
     expect(Object.keys(written.plugins.review.agents.cursor.files)).not.toContain(
       "retired/SKILL.md",
@@ -715,16 +716,14 @@ describe("gateway maintenance commands", () => {
       run: async (args) => {
         calls.push(args);
       },
+      sourceRoot: null,
       unlink: async (path) => {
         unlinked.push(path);
       },
       writeLock: async () => {},
     });
 
-    const removeCall = calls.find((args) => args.includes("remove"));
-    expect(removeCall).toEqual(["skills@^1.5.0", "remove", "retired", "-a", "cursor", "-y"]);
-    expect(removeCall).not.toContain("claude-code");
-    expect(removeCall).not.toContain("lint");
+    expect(calls.find((args) => args.includes("remove"))).toBeUndefined();
     expect(unlinked).toEqual(["/tmp/project/.cursor/skills/retired/SKILL.md"]);
   });
 
@@ -1523,6 +1522,80 @@ describe("gateway maintenance commands", () => {
         writeLock: async () => {},
       });
       await expect(access(pluginDir)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("update explode does not claim a skipped identical dest", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-update-skip-"));
+    try {
+      const dest = join(cwd, ".cursor/skills");
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      await mkdir(join(dest, "lint"), { recursive: true });
+      await writeFile(join(dest, "lint/SKILL.md"), "# lint\n");
+      await mkdir(join(dest, "test"), { recursive: true });
+      await writeFile(join(dest, "test/SKILL.md"), "# test\n");
+      const testHash = await hashFile(join(sourceRoot, "skills/test/SKILL.md"));
+      const lockEnvironment = { cwd };
+      await writeFile(
+        join(cwd, "ai-skills-lock.json"),
+        `${JSON.stringify(
+          {
+            gatewayVersion: "0.0.0-old",
+            plugins: {
+              leftover: {
+                agents: {
+                  cursor: {
+                    files: { "test/SKILL.md": testHash },
+                    projector: "explode",
+                    root: dest,
+                  },
+                },
+                installedAt: "2026-07-10T16:00:00.000Z",
+                projector: "explode",
+                repo: "lgtm-hq/ai-skills",
+                sha: "v0.0.0-old",
+                skills: ["lint", "test"],
+                vendor: "lgtm-hq",
+                version: "0.0.0-old",
+              },
+            },
+            scope: "project",
+            version: 2,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      await updateSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: ["leftover"],
+          yes: true,
+        },
+        {
+          isInstalled: async () => true,
+          lockEnvironment,
+          readLock: (scope) => readLockfile(scope, lockEnvironment),
+          run: async () => {
+            throw new Error("skills CLI must not run when catalog sources resolve");
+          },
+          sourceRoot,
+          writeLock: (next) => writeLockfile(next, lockEnvironment),
+        },
+      );
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(Object.keys(lock.plugins.leftover.agents.cursor.files).sort()).toEqual([
+        "test/SKILL.md",
+      ]);
+      expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
