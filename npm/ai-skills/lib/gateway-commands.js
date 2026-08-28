@@ -22,7 +22,7 @@ import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./s
  * Entries absent from every tracked agent directory are pruned instead of reinstalled.
  *
  * @param {{agents: string[], global: boolean, project: boolean, skills: string[], yes: boolean}} options - Validated command options.
- * @param {{hash?: typeof import("./lockfile.js").hashFile, isInstalled?: Parameters<typeof pruneMissingLockEntries>[1], lockEnvironment?: Parameters<typeof reconcileLock>[1], now?: () => Date, readLock?: typeof readLockfile, run?: typeof runSkills, writeLock?: typeof writeLockfile}} [dependencies] - Injectable command dependencies.
+ * @param {{hash?: typeof import("./lockfile.js").hashFile, isInstalled?: Parameters<typeof pruneMissingLockEntries>[1], lockEnvironment?: Parameters<typeof reconcileLock>[1], now?: () => Date, readLock?: typeof readLockfile, rmdir?: typeof rmdir, run?: typeof runSkills, unlink?: typeof unlink, warn?: (message: string) => void, writeLock?: typeof writeLockfile}} [dependencies] - Injectable command dependencies.
  * @returns {Promise<{pruned: string[], updated: string[]}>} Updated and pruned plugin ids.
  */
 export async function updateSkills(options, dependencies = {}) {
@@ -50,6 +50,10 @@ export async function updateSkills(options, dependencies = {}) {
     }
   }
   const catalogSkills = {};
+  const hash = dependencies.hash ?? hashFile;
+  const removeFile = dependencies.unlink ?? unlink;
+  const removeDir = dependencies.rmdir ?? rmdir;
+  const warn = dependencies.warn ?? ((message) => console.warn(message));
   for (const pluginId of updated) {
     const entry = selected[pluginId];
     const skills = await currentPluginSkills(pluginId, entry);
@@ -71,9 +75,16 @@ export async function updateSkills(options, dependencies = {}) {
         source,
       ),
     );
+    await removeStalePluginSkills(pluginId, entry, skills, {
+      hash,
+      removeDir,
+      removeFile,
+      run,
+      scopedOptions,
+      warn,
+    });
   }
   const installedAt = now().toISOString();
-  const hash = dependencies.hash ?? hashFile;
   const plugins = {};
   for (const [pluginId, entry] of Object.entries(prunedLock.plugins)) {
     if (!updated.includes(pluginId)) {
@@ -259,6 +270,62 @@ function resolveVendorSource(entry, vendors) {
     throw new Error(`Vendor is no longer available in the gateway registry: ${entry.vendor}`);
   }
   return `${vendor.repo}@${vendor.sha}`;
+}
+
+/**
+ * Hash-verified delete of skills that left the catalog since the last lock write.
+ *
+ * @param {string} pluginId - Plugin id.
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Pre-update lock entry.
+ * @param {string[]} currentSkills - Skill names in the current catalog.
+ * @param {{
+ *   hash: typeof hashFile,
+ *   removeDir: typeof rmdir,
+ *   removeFile: typeof unlink,
+ *   run: typeof runSkills,
+ *   scopedOptions: {agents: string[], global: boolean, project: boolean, yes: boolean},
+ *   warn: (message: string) => void,
+ * }} io - Injectable command dependencies.
+ * @returns {Promise<void>} Resolves when stale members are removed or left with a warning.
+ */
+async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
+  const current = new Set(currentSkills);
+  const staleNames = pluginSkillNames(entry).filter((name) => !current.has(name));
+  if (staleNames.length === 0) {
+    return;
+  }
+  const stale = {
+    ...entry,
+    agents: Object.fromEntries(
+      Object.entries(entry.agents).map(([agent, install]) => [
+        agent,
+        {
+          ...install,
+          files: Object.fromEntries(
+            Object.entries(install.files).filter(([relative]) =>
+              staleNames.includes(relative.split("/")[0]),
+            ),
+          ),
+        },
+      ]),
+    ),
+  };
+  const classified = await classifyPluginFiles(pluginId, stale, { hash: io.hash, warn: io.warn });
+  if (classified.removableSkills.length > 0) {
+    await io.run(
+      buildSkillsRemoveArguments(
+        {
+          ...io.scopedOptions,
+          agents: pluginAgentNames(entry),
+        },
+        classified.removableSkills,
+      ),
+    );
+  }
+  await deleteVerifiedFiles(classified.verified, {
+    removeDir: io.removeDir,
+    removeFile: io.removeFile,
+  });
 }
 
 /**

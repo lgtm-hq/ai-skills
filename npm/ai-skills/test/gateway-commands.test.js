@@ -452,6 +452,59 @@ describe("gateway maintenance commands", () => {
     ]);
   });
 
+  test("hash-verifies and drops skills removed from the catalog on update", async () => {
+    const calls = [];
+    const unlinked = [];
+    let written;
+    const stale = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            cursor: {
+              files: {
+                "lint/SKILL.md": "abc",
+                "retired/SKILL.md": "abc",
+              },
+              root: "/tmp/project/.cursor/skills",
+            },
+          },
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.21.0",
+          vendor: "lgtm-hq",
+          version: "0.21.0",
+        }),
+      },
+    };
+
+    await updateSkills(options, {
+      hash: async () => "abc",
+      isInstalled: async () => true,
+      now: () => new Date("2026-07-10T17:00:00.000Z"),
+      readLock: async () => stale,
+      run: async (args) => {
+        calls.push(args);
+      },
+      unlink: async (path) => {
+        unlinked.push(path);
+      },
+      writeLock: async (next) => {
+        written = next;
+      },
+    });
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining(["add", "--skill", "lint", "test", "greptile", "coderabbit"]),
+        ["skills@^1.5.0", "remove", "retired", "-a", "cursor", "-y"],
+      ]),
+    );
+    expect(unlinked).toEqual(["/tmp/project/.cursor/skills/retired/SKILL.md"]);
+    expect(Object.keys(written.plugins.review.agents.cursor.files)).not.toContain(
+      "retired/SKILL.md",
+    );
+  });
+
   test("skips first-party update when the package pin is current and files match", async () => {
     const version = getPackageVersion();
     const calls = [];
