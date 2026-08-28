@@ -233,6 +233,55 @@ describe("native Cursor projector", () => {
     }
   });
 
+  test("leaves an existing Cursor tree and leftover backup when neither created nor swapped", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-cursor-restore-owned-noswap-"));
+    try {
+      const destRoot = cursorPluginsRoot({ cwd: root, home: root, scope: "project" });
+      const pluginDir = join(destRoot, "review");
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(join(pluginDir, "USER-DATA.txt"), "fresh\n");
+      await mkdir(`${pluginDir}.bak`, { recursive: true });
+      await writeFile(join(`${pluginDir}.bak`, "USER-DATA.txt"), "stale\n");
+      await restoreCursorPluginInstall({
+        created: false,
+        destRoot,
+        pluginId: "review",
+        swapped: false,
+      });
+      expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("fresh\n");
+      expect(await readFile(join(`${pluginDir}.bak`, "USER-DATA.txt"), "utf8")).toBe("stale\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("keeps untracked files when an owned Cursor tree is replaced", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-cursor-replace-untracked-"));
+    try {
+      const sourceRoot = join(root, "src");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      const destRoot = cursorPluginsRoot({ cwd: root, home: root, scope: "project" });
+      const pluginDir = join(destRoot, "review");
+      await mkdir(join(pluginDir, "skills/lint"), { recursive: true });
+      await writeFile(join(pluginDir, "skills/lint/SKILL.md"), "# old\n");
+      await writeFile(join(pluginDir, "USER-DATA.txt"), "keep\n");
+      await installCursorPlugin({
+        description: "Lint.",
+        destRoot,
+        pluginId: "review",
+        replace: true,
+        skills: ["lint"],
+        sourceRoot,
+        version: "0.23.0",
+      });
+      expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
+      expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   test("finds a catalog checkout from cwd", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-catalog-root-"));
     try {
@@ -246,11 +295,16 @@ describe("native Cursor projector", () => {
   });
 
   test("falls back to the clone catalog when cwd has none", async () => {
-    const found = findCatalogSourceRoot("/tmp");
-    expect(found).not.toBeNull();
-    await expect(readFile(join(found, ".claude-plugin/marketplace.json"), "utf8")).resolves.toMatch(
-      /"name"/,
-    );
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-catalog-miss-"));
+    try {
+      const found = findCatalogSourceRoot(root);
+      expect(found).not.toBeNull();
+      await expect(
+        readFile(join(found, ".claude-plugin/marketplace.json"), "utf8"),
+      ).resolves.toMatch(/"name"/);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
   });
 });
 

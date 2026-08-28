@@ -762,6 +762,8 @@ export async function install(
   const cursorPluginDir = join(destRoot, pluginId);
   const exists = lockEnvironment.exists ?? pathExists;
   const cursorExisted = lanes.cursorNative.length > 0 ? await exists(cursorPluginDir) : false;
+  // Set only after installCursorPlugin returns: dest existence is not a swap.
+  let cursorSwapped = false;
   const cliCreated = [];
   try {
     if (detectAgents || lanes.explode.length > 0) {
@@ -789,6 +791,7 @@ export async function install(
         sourceRoot: cursorSourceRoot,
         version: vendor?.sha ?? getPackageVersion(),
       });
+      cursorSwapped = cursorExisted;
     }
     for (const agent of lanes.cliNative) {
       const cliResult = await installCliPlugin({
@@ -853,7 +856,7 @@ export async function install(
           created: !cursorExisted,
           destRoot,
           pluginId,
-          swapped: cursorExisted,
+          swapped: cursorSwapped,
         });
       } catch (rollbackError) {
         rollbackErrors.push(rollbackError);

@@ -1480,4 +1480,65 @@ describe("native projectors", () => {
       await rm(cwd, { force: true, recursive: true });
     }
   });
+
+  test("does not restore a leftover Cursor backup when install fails before swap", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cursor-preswap-bak-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(sourceRoot, { recursive: true });
+      const pluginDir = join(cwd, ".cursor/plugins/local/review");
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(join(pluginDir, "USER-DATA.txt"), "fresh\n");
+      await mkdir(`${pluginDir}.bak`, { recursive: true });
+      await writeFile(join(`${pluginDir}.bak`, "USER-DATA.txt"), "stale\n");
+      await Bun.write(
+        join(cwd, "ai-skills-lock.json"),
+        `${JSON.stringify(
+          {
+            gatewayVersion: "0.0.0-dev",
+            plugins: {
+              review: {
+                agents: {
+                  cursor: {
+                    files: { ".claude-plugin/plugin.json": "old" },
+                    projector: "native",
+                    root: pluginDir,
+                  },
+                },
+                installedAt: "2026-07-10T16:00:00.000Z",
+                projector: "native",
+                repo: "lgtm-hq/ai-skills",
+                sha: "v0.0.0-old",
+                skills: ["lint", "test"],
+                vendor: "lgtm-hq",
+                version: "0.0.0-old",
+              },
+            },
+            scope: "project",
+            version: 2,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            global: false,
+            projector: "native",
+            project: true,
+          },
+          async () => {},
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          { cwd },
+          { sourceRoot },
+        ),
+      ).rejects.toThrow();
+      expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("fresh\n");
+      expect(await readFile(join(`${pluginDir}.bak`, "USER-DATA.txt"), "utf8")).toBe("stale\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
 });
