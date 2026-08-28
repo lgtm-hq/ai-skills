@@ -403,7 +403,7 @@ def test_update_preserves_plugin_slices(repo_root: Path) -> None:
             "        renameSkills:\n"
             "          teach: teach-existing\n"
             "        agents:\n"
-            "          - cursor\n",
+            "          - comment-sicko\n",
         ),
         encoding="utf-8",
     )
@@ -424,7 +424,7 @@ def test_update_preserves_plugin_slices(repo_root: Path) -> None:
     assert_that(plugin.id).is_equal_to("existing-plugin")
     assert_that(plugin.skills).is_equal_to("*")
     assert_that(plugin.rename_skills).is_equal_to((("teach", "teach-existing"),))
-    assert_that(plugin.agents).is_equal_to(("cursor",))
+    assert_that(plugin.agents).is_equal_to(("comment-sicko",))
     dumped = registry_path.read_text(encoding="utf-8")
     assert_that(dumped).contains("existing-plugin")
     assert_that(dumped).contains("teach: teach-existing")

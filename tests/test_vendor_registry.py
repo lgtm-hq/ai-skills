@@ -445,8 +445,8 @@ _PLUGIN_SLICE = """
         renameSkills:
           teach: teach-example
         agents:
-          - cursor
-          - claude-code
+          - comment-sicko
+          - code-reviewer
 """
 
 
@@ -486,7 +486,7 @@ def test_load_registry_accepts_plugin_slice(valid_registry_path: Path) -> None:
     assert_that(plugin.skills).is_equal_to("*")
     assert_that(plugin.extra_skills).is_equal_to(("extras/bonus",))
     assert_that(plugin.rename_skills).is_equal_to((("teach", "teach-example"),))
-    assert_that(plugin.agents).is_equal_to(("cursor", "claude-code"))
+    assert_that(plugin.agents).is_equal_to(("comment-sicko", "code-reviewer"))
 
 
 def test_load_registry_accepts_omitted_plugins(valid_registry_path: Path) -> None:
@@ -562,19 +562,25 @@ def test_load_registry_accepts_skill_path_list(valid_registry_path: Path) -> Non
             id="rename-not-slug",
         ),
         pytest.param(
-            "- cursor\n          - claude-code",
-            "- notepad",
-            "agents entries must be one of",
-            id="unknown-agent",
+            "teach: teach-example",
+            '" teach ": teach-example',
+            "renameSkills keys and values must be lowercase slugs",
+            id="padded-rename",
         ),
         pytest.param(
-            "agents:\n          - cursor\n          - claude-code",
+            "- comment-sicko\n          - code-reviewer",
+            "- CommentSicko",
+            "agents entries must be lowercase slugs",
+            id="invalid-agent-slug",
+        ),
+        pytest.param(
+            "agents:\n          - comment-sicko\n          - code-reviewer",
             "agents: []",
             "agents must be a non-empty list",
             id="empty-agents",
         ),
         pytest.param(
-            "agents:\n          - cursor\n          - claude-code",
+            "agents:\n          - comment-sicko\n          - code-reviewer",
             "agents: null",
             "agents must be a list",
             id="null-agents",
@@ -622,6 +628,12 @@ def test_load_registry_accepts_skill_path_list(valid_registry_path: Path) -> Non
             id="glob-extra",
         ),
         pytest.param(
+            "extraSkills:\n          - extras/bonus",
+            'extraSkills:\n          - "bad\\0path"',
+            "extraSkills entries must be relative",
+            id="nul-extra",
+        ),
+        pytest.param(
             'skills: "*"',
             "skills:\n          - '*'",
             r'skills list must not contain "\*"',
@@ -630,7 +642,7 @@ def test_load_registry_accepts_skill_path_list(valid_registry_path: Path) -> Non
         pytest.param(
             "description: Example vendor plugin.",
             "description: |\n          Example vendor plugin.",
-            "must not contain newlines",
+            "must not contain control characters",
             id="multiline-description",
         ),
     ],

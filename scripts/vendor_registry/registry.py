@@ -16,8 +16,6 @@ from vendor_registry.vendor_plugin import VendorPlugin
 _ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _REPO_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
-# Must match AGENT_SKILL_PATHS in npm/ai-skills/lib/lockfile.js.
-_KNOWN_HOST_AGENTS = frozenset({"claude-code", "codex", "copilot", "cursor"})
 _VENDOR_REQUIRED_FIELDS = frozenset(
     {"id", "repo", "sha", "skillRoots", "license", "homepage"},
 )
@@ -54,8 +52,8 @@ class UniqueKeyLoader(yaml.SafeLoader):
             The constructed mapping.
 
         Raises:
-            yaml.constructor.ConstructorError: If ``node`` is not a mapping or
-                a key is duplicated.
+            yaml.constructor.ConstructorError: If ``node`` is not a mapping,
+                a key is unhashable, or a key is duplicated.
         """
         if not isinstance(node, yaml.nodes.MappingNode):
             raise yaml.constructor.ConstructorError(
@@ -67,7 +65,16 @@ class UniqueKeyLoader(yaml.SafeLoader):
         mapping: dict[object, object] = {}
         for key_node, value_node in node.value:
             key = self.construct_object(key_node, deep=deep)
-            if key in mapping:
+            try:
+                duplicated = key in mapping
+            except TypeError as exc:
+                raise yaml.constructor.ConstructorError(
+                    None,
+                    None,
+                    f"unhashable mapping key {type(key).__name__}",
+                    key_node.start_mark,
+                ) from exc
+            if duplicated:
                 raise yaml.constructor.ConstructorError(
                     None,
                     None,
@@ -247,13 +254,13 @@ def _required_string(*, value: object, field: str, position: int) -> str:
 
     Raises:
         TypeError: If the field is not a string.
-        ValueError: If the field is blank.
+        ValueError: If the field is blank or contains control characters.
     """
     if not isinstance(value, str):
         msg = f"Vendor {position} {field} must be a string"
         raise TypeError(msg)
-    if "\n" in value or "\r" in value:
-        msg = f"Vendor {position} {field} must not contain newlines"
+    if any(ord(char) < 32 or char == "\x7f" for char in value):
+        msg = f"Vendor {position} {field} must not contain control characters"
         raise ValueError(msg)
     if not value.strip():
         msg = f"Vendor {position} {field} must not be empty"
@@ -325,6 +332,7 @@ def _parse_relative_posix_path(
         raise TypeError(msg)
     if (
         not value
+        or any(ord(char) < 32 or char == "\x7f" for char in value)
         or any(char.isspace() for char in value)
         or "\\" in value
         or value.startswith("/")
@@ -605,15 +613,22 @@ def _parse_rename_skills(
         if not isinstance(raw_old, str) or not isinstance(raw_new, str):
             msg = f"{where} renameSkills keys and values must be strings"
             raise TypeError(msg)
-        old = raw_old.strip()
-        new = raw_new.strip()
-        if _ID_PATTERN.fullmatch(old) is None or _ID_PATTERN.fullmatch(new) is None:
+        if (
+            raw_old != raw_old.strip()
+            or raw_new != raw_new.strip()
+            or _ID_PATTERN.fullmatch(raw_old) is None
+            or _ID_PATTERN.fullmatch(raw_new) is None
+        ):
             msg = f"{where} renameSkills keys and values must be lowercase slugs"
             raise ValueError(msg)
-        if old == new:
+        if raw_old == raw_new:
             msg = f"{where} renameSkills must change the skill name"
             raise ValueError(msg)
-        pairs.append((old, new))
+        pairs.append((raw_old, raw_new))
+    sources = [old for old, _ in pairs]
+    if len(sources) != len(set(sources)):
+        msg = f"{where} renameSkills sources must be unique"
+        raise ValueError(msg)
     targets = [new for _, new in pairs]
     if len(targets) != len(set(targets)):
         msg = f"{where} renameSkills targets must be unique"
@@ -627,20 +642,21 @@ def _parse_plugin_agents(
     position: int,
     plugin_id: str,
 ) -> tuple[str, ...]:
-    """Validate an optional list of known host agent names.
+    """Validate an optional list of kebab-case agent markdown component names.
 
     Args:
         value: Raw YAML ``agents`` value. The key must be omitted or a
-            non-empty list; ``null`` is rejected.
+            non-empty list; ``null`` is rejected. Entries are agent
+            ``.md`` stems (issue #377), not host ids.
         position: One-based vendor position.
         plugin_id: Plugin id for error messages.
 
     Returns:
-        Unique known agent names in source order.
+        Unique kebab-case agent component names in source order.
 
     Raises:
         TypeError: If ``agents`` is not a string list.
-        ValueError: If the list is empty, duplicated, or names an unknown host.
+        ValueError: If the list is empty, duplicated, or not kebab-case.
     """
     where = _plugin_where(position=position, plugin_id=plugin_id)
     if not isinstance(value, list):
@@ -654,14 +670,10 @@ def _parse_plugin_agents(
         if not isinstance(raw_agent, str):
             msg = f"{where} agents entries must be strings"
             raise TypeError(msg)
-        agent = raw_agent.strip()
-        if agent not in _KNOWN_HOST_AGENTS:
-            msg = (
-                f"{where} agents entries must be one of: "
-                f"{', '.join(sorted(_KNOWN_HOST_AGENTS))}"
-            )
+        if raw_agent != raw_agent.strip() or _ID_PATTERN.fullmatch(raw_agent) is None:
+            msg = f"{where} agents entries must be lowercase slugs"
             raise ValueError(msg)
-        agents.append(agent)
+        agents.append(raw_agent)
     if len(agents) != len(set(agents)):
         msg = f"{where} agents entries must be unique"
         raise ValueError(msg)
@@ -747,6 +759,9 @@ def _first_party_plugin_ids(*, registry_path: Path) -> frozenset[str]:
         plugin_id = group.get("id")
         if not isinstance(plugin_id, str) or not plugin_id.strip():
             msg = f"bundles.yaml group {group_key!r} must have a non-empty string id"
+            raise ValueError(msg)
+        if _ID_PATTERN.fullmatch(plugin_id) is None:
+            msg = f"bundles.yaml group {group_key!r} id must be a lowercase slug"
             raise ValueError(msg)
         ids.add(plugin_id)
     return frozenset(ids)

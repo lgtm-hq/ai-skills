@@ -116,8 +116,9 @@ Per plugin:
   across **all** vendors (global explode namespace). Every collision rename
   is a reviewed registry edit, never a bake/install guess. Duplicate YAML
   keys are rejected.
-- `agents` — optional non-empty list of `claude-code`, `copilot`, `cursor`,
-  `codex` (omit the key rather than `null`)
+- `agents` — optional non-empty list of kebab-case agent markdown
+  component names (the stem of `agents/*.md` files to ingest). Omit the
+  key rather than `null`. This is not a host-id allowlist.
 
 ```yaml
     plugins:
@@ -130,8 +131,8 @@ Per plugin:
         renameSkills:
           teach: teach-example
         agents:
-          - cursor
-          - claude-code
+          - comment-sicko
+          - code-reviewer
 ```
 
 `scripts/manage_vendors.py` round-trips `plugins` when refreshing SHAs. Do

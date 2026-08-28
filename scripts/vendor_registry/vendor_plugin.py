@@ -12,7 +12,8 @@ class VendorPlugin:
     ``skills`` is ``"*"`` (every skill under ``skills_root``) or a tuple of
     POSIX paths relative to ``skills_root``. ``extra_skills`` are additional
     repo-relative paths. ``rename_skills`` is an ordered mapping of old skill
-    directory names to new names (ADR-0005 class 2).
+    directory names to new names (ADR-0005 class 2). ``agents`` are kebab-case
+    agent ``.md`` stems listed in the registry, not host ids.
     """
 
     id: str
