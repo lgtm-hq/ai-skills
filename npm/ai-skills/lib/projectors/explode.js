@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   cp,
   lstat,
   mkdir,
   mkdtemp,
   readdir,
+  readlink,
   realpath,
   rename,
   rm,
@@ -18,9 +19,11 @@ import { dirname, join, resolve, sep } from "node:path";
 import { hashFile, hashTree, isSafePluginId } from "../lockfile.js";
 
 /**
- * @typedef {{id: string, replace?: Set<string>, root: string}} ExplodeAgent
+ * @typedef {{copy?: boolean, id: string, replace?: Set<string>, root: string}} ExplodeAgent
  * Agent id plus the exploded skills directory root. ``replace`` is the set of
  * skill names this agent already owns in the lock (not skipped dests).
+ * ``copy`` overrides the call-level copy flag so ``--copy`` dests stay
+ * directories on update instead of becoming store symlinks.
  */
 
 /**
@@ -82,6 +85,32 @@ export function defaultStoreRoot(scope, environment = {}) {
 }
 
 /**
+ * Whether existing dest skills are real directories (``--copy``), not store
+ * symlinks. First existing dest wins: a directory forces copy; only symlinks
+ * keep symlink mode. Absent dests are ignored so a later sibling can decide.
+ *
+ * @param {string} destRoot - Agent skills directory.
+ * @param {string[]} skillNames - Candidate dest skill names.
+ * @returns {Promise<boolean>} True when at least one dest is a real directory.
+ */
+export async function destUsesCopyMaterialization(destRoot, skillNames) {
+  for (const name of skillNames) {
+    try {
+      const info = await lstat(join(destRoot, name));
+      if (info.isDirectory()) {
+        return true;
+      }
+    } catch (error) {
+      if (isAbsentFsError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  return false;
+}
+
+/**
  * Stage a whole-plugin explode, reject dest collisions, then commit atomically.
  *
  * Dest trees that already match the staged bytes are skipped and not claimed.
@@ -115,8 +144,9 @@ export async function explodePlugin(args) {
   const copy = Boolean(args.copy);
   const keepBackups = Boolean(args.keepBackups);
   const storeRoot = args.storeRoot;
+  const needsStore = args.agents.some((agent) => !(agent.copy ?? copy));
 
-  if (!copy && !storeRoot) {
+  if (needsStore && !storeRoot) {
     throw new Error("explodePlugin requires storeRoot unless copy is true");
   }
 
@@ -168,7 +198,7 @@ export async function explodePlugin(args) {
         await move(plan.dest, destBackup);
         swappedDests.push({ backup: destBackup, dest: plan.dest });
       }
-      if (copy) {
+      if (plan.copy) {
         await commitCopiedSkill({
           copyFn,
           dest: plan.dest,
@@ -369,7 +399,7 @@ export async function removeExplodedFiles(args) {
     for (const file of group.files) {
       const absolute = resolveTrackedPath(file.root, file.relative);
       try {
-        const current = await hash(absolute);
+        const current = await hashExplodePath(absolute, hash);
         if (current !== file.digest) {
           warn(`left modified ${args.pluginId} file ${file.relative}`);
           modified.push(file.relative);
@@ -474,6 +504,13 @@ async function unlinkDestSkillIfUnmodified(
     if (!info.isSymbolicLink()) {
       return false;
     }
+    if (await danglingSymlink(skillDir)) {
+      await removeFile(skillDir);
+      for (const file of group.files) {
+        removed.push(file.relative);
+      }
+      return true;
+    }
   } catch (error) {
     if (isAbsentFsError(error)) {
       return false;
@@ -484,7 +521,7 @@ async function unlinkDestSkillIfUnmodified(
   for (const file of group.files) {
     const absolute = resolveTrackedPath(file.root, file.relative);
     try {
-      const current = await hash(absolute);
+      const current = await hashExplodePath(absolute, hash);
       if (current !== file.digest) {
         warn(`left modified ${args.pluginId} file ${file.relative}`);
         modified.push(file.relative);
@@ -650,6 +687,7 @@ async function checkpoint(failAfter, name) {
  *   skipped: Array<{agent: string, dest: string, skill: string}>,
  *   toWrite: Array<{
  *     agent: string,
+ *     copy: boolean,
  *     dest: string,
  *     replace: boolean,
  *     skill: string,
@@ -665,6 +703,7 @@ async function planExplodeCommits(args) {
   const skipped = [];
   /** @type {Array<{
    *     agent: string,
+   *     copy: boolean,
    *     dest: string,
    *     replace: boolean,
    *     skill: string,
@@ -675,15 +714,16 @@ async function planExplodeCommits(args) {
   for (const agent of args.agents) {
     claimed[agent.id] = {};
     const owned = agent.replace ?? new Set();
+    const copy = Boolean(agent.copy ?? args.copy);
     for (const [skill, staged] of Object.entries(args.stagedSkills)) {
       const dest = join(agent.root, skill);
       assertInsideRoot(agent.root, dest);
       const storeDir = args.storeRoot ? join(args.storeRoot, skill) : dest;
-      if (args.storeRoot) {
+      if (!copy && args.storeRoot) {
         assertInsideRoot(args.storeRoot, storeDir);
       }
       let replace = owned.has(skill);
-      if (args.storeRoot && !owned.has(skill) && (await pathExists(storeDir))) {
+      if (!copy && args.storeRoot && !owned.has(skill) && (await pathExists(storeDir))) {
         const storeHashes = await hashExistingTree(storeDir, args.hash);
         const storeEmpty = Object.keys(storeHashes).length === 0;
         if (!storeEmpty && !sameHashes(storeHashes, args.stagedHashes[skill])) {
@@ -701,6 +741,7 @@ async function planExplodeCommits(args) {
         if (!isEmpty && owned.has(skill)) {
           toWrite.push({
             agent: agent.id,
+            copy,
             dest,
             replace: true,
             skill,
@@ -724,6 +765,7 @@ async function planExplodeCommits(args) {
       }
       toWrite.push({
         agent: agent.id,
+        copy,
         dest,
         replace,
         skill,
@@ -845,6 +887,8 @@ async function walkRejectingEscapes(dir, root) {
 
 /**
  * Hash an existing dest, following dest-root symlinks for content compare.
+ * Dangling dest or store symlinks hash as empty so explode can replace them
+ * instead of throwing ENOENT from ``realpath``.
  *
  * @param {string} dest - Existing dest file or directory.
  * @param {(path: string) => Promise<string>} hash - Hasher.
@@ -856,6 +900,9 @@ async function hashExistingTree(dest, hash) {
     return { "SKILL.md": await hash(dest) };
   }
   if (info.isSymbolicLink()) {
+    if (await danglingSymlink(dest)) {
+      return {};
+    }
     const target = await realpath(dest);
     const targetInfo = await lstat(target);
     if (targetInfo.isFile()) {
@@ -864,6 +911,48 @@ async function hashExistingTree(dest, hash) {
     return hashTree(target, hash);
   }
   return hashTree(dest, hash);
+}
+
+/**
+ * True when ``path`` is a symlink whose target cannot be resolved.
+ *
+ * @param {string} path - Path to inspect.
+ * @returns {Promise<boolean>} True when the symlink is dangling.
+ */
+async function danglingSymlink(path) {
+  try {
+    await realpath(path);
+    return false;
+  } catch (error) {
+    if (isAbsentFsError(error)) {
+      return true;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Hash a dest path the same way ``walkHashTree`` records lock digests.
+ * In-tree dest-dir symlinks use ``symlink:<target>``; files hash through.
+ *
+ * @param {string} path - File path relative to a dest skill tree.
+ * @param {(path: string) => Promise<string>} hash - File hasher.
+ * @returns {Promise<string>} Hex digest.
+ */
+async function hashExplodePath(path, hash) {
+  try {
+    const info = await lstat(path);
+    if (info.isSymbolicLink()) {
+      return createHash("sha256")
+        .update(`symlink:${await readlink(path)}`)
+        .digest("hex");
+    }
+  } catch (error) {
+    if (!isAbsentFsError(error)) {
+      throw error;
+    }
+  }
+  return hash(path);
 }
 
 /**

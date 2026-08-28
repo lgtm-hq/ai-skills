@@ -15,9 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   commit. Byte-identical dests are skipped and not owned; different content
   hard-errors before any dest write. Remove unlinks dest skill symlinks
   without following into the managed store, hash-verifies copied trees,
-  leaves modified files, and prunes nested empty directory trees. Vendor
-  installs and first-party installs without a catalog checkout still use
-  the skills CLI (no collision doctrine until bake).
+  leaves modified files, and prunes nested empty directory trees. Dangling
+  dest skill symlinks are treated as empty (replaceable on explode, unlinked
+  on remove) so they cannot poison later installs. Update preserves
+  `--copy` dest directories instead of rewriting them as store symlinks.
+  Vendor installs and first-party installs without a catalog checkout still
+  use the skills CLI (no collision doctrine until bake).
 
 ### Changed
 

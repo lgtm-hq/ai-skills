@@ -15,7 +15,7 @@ import { join } from "node:path";
 
 import { loadVendorIndex } from "../lib/catalog.js";
 import { batchesFromCliOptions, install } from "../lib/install.js";
-import { removeSkills } from "../lib/gateway-commands.js";
+import { removeSkills, updateSkills } from "../lib/gateway-commands.js";
 import { readLockfile, writeLockfile } from "../lib/lockfile.js";
 import { MINIMUM_SKILLS_VERSION } from "../lib/options.js";
 import { buildSkillsArguments } from "../lib/skills-runner.js";
@@ -2080,6 +2080,130 @@ describe("native projectors", () => {
         code: "ENOENT",
       });
       expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("update preserves copy dest directories instead of rewriting store symlinks", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-copy-update-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      await install(
+        {
+          ...unattendedOptions,
+          agents: ["cursor"],
+          bundle: null,
+          copy: true,
+          global: false,
+          projector: "explode",
+          project: true,
+          skills: ["test"],
+        },
+        async () => {
+          throw new Error("skills CLI must not run when catalog sources resolve");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      expect((await lstat(join(cwd, ".cursor/skills/test"))).isDirectory()).toBe(true);
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test v2\n");
+      const lockPath = join(cwd, "ai-skills-lock.json");
+      const lock = JSON.parse(await readFile(lockPath, "utf8"));
+      lock.plugins.test.sha = "v0.0.0-old";
+      lock.plugins.test.version = "0.0.0-old";
+      await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+      await updateSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: ["test"],
+          yes: true,
+        },
+        {
+          isInstalled: async () => true,
+          lockEnvironment: { cwd },
+          readLock: (scope) => readLockfile(scope, { cwd }),
+          run: async () => {
+            throw new Error("skills CLI must not run when catalog sources resolve");
+          },
+          sourceRoot,
+          writeLock: (next) => writeLockfile(next, { cwd }),
+        },
+      );
+      expect((await lstat(join(cwd, ".cursor/skills/test"))).isDirectory()).toBe(true);
+      expect(await readFile(join(cwd, ".cursor/skills/test/SKILL.md"), "utf8")).toBe("# test v2\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("remove unlinks a dangling dest skill symlink so reinstall can proceed", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-dangle-rm-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      await install(
+        {
+          ...unattendedOptions,
+          agents: ["cursor"],
+          bundle: null,
+          global: false,
+          projector: "explode",
+          project: true,
+          skills: ["test"],
+        },
+        async () => {
+          throw new Error("skills CLI must not run when catalog sources resolve");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      const dest = join(cwd, ".cursor/skills/test");
+      const store = join(cwd, ".agents/skills/test");
+      expect(await readlink(dest)).toBe(store);
+      await rm(store, { force: true, recursive: true });
+      await removeSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: ["test"],
+          yes: true,
+        },
+        {
+          lockEnvironment: { cwd },
+          readLock: (scope) => readLockfile(scope, { cwd }),
+          writeLock: (next) => writeLockfile(next, { cwd }),
+        },
+      );
+      await expect(lstat(dest)).rejects.toMatchObject({ code: "ENOENT" });
+      const result = await install(
+        {
+          ...unattendedOptions,
+          agents: ["cursor"],
+          bundle: null,
+          global: false,
+          projector: "explode",
+          project: true,
+          skills: ["test"],
+        },
+        async () => {
+          throw new Error("skills CLI must not run when catalog sources resolve");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      expect(result.installed).toBe(1);
+      expect(await readlink(dest)).toBe(store);
+      expect(await readFile(join(dest, "SKILL.md"), "utf8")).toBe("# test\n");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

@@ -15,6 +15,7 @@ import { describe, expect, test } from "bun:test";
 
 import { hashFile } from "../lib/lockfile.js";
 import {
+  destUsesCopyMaterialization,
   discardExplodeBackups,
   explodePlugin,
   pruneEmptyDirTrees,
@@ -183,6 +184,57 @@ describe("explodePlugin", () => {
       expect(result.claimed.cursor["lint/SKILL.md"]).toBe(
         await hashFile(join(source, "lint/SKILL.md")),
       );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("per-agent copy keeps dest directories when the call-level flag is false", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-copy-agent-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      await explodePlugin({
+        agents: [{ id: "cursor", root: dest }],
+        copy: true,
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+      });
+      await writeFile(join(source, "lint/SKILL.md"), "# lint v2\n");
+      await explodePlugin({
+        agents: [{ copy: true, id: "cursor", replace: new Set(["lint"]), root: dest }],
+        copy: false,
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+        storeRoot: store,
+      });
+      expect((await lstat(join(dest, "lint"))).isDirectory()).toBe(true);
+      expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint v2\n");
+      await expect(lstat(join(store, "lint"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("replaces a dangling dest skill symlink instead of throwing ENOENT", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-dangling-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      await explodePlugin({
+        agents: [{ id: "cursor", root: dest }],
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+        storeRoot: store,
+      });
+      await rm(join(store, "lint"), { force: true, recursive: true });
+      await writeFile(join(source, "lint/SKILL.md"), "# lint v2\n");
+      await explodePlugin({
+        agents: [{ id: "cursor", replace: new Set(["lint"]), root: dest }],
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+        storeRoot: store,
+      });
+      expect(await readlink(join(dest, "lint"))).toBe(join(store, "lint"));
+      expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint v2\n");
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -455,6 +507,61 @@ describe("removeExplodedFiles", () => {
       expect(result.removed).toEqual(["lint/SKILL.md"]);
       await expect(lstat(join(dest, "lint"))).rejects.toMatchObject({ code: "ENOENT" });
       expect(await readFile(join(store, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("unlinks a dangling dest skill symlink without requiring store content", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-dangle-rm-"));
+    try {
+      const dest = join(root, ".cursor/skills");
+      const store = join(root, ".agents/skills");
+      await mkdir(dest, { recursive: true });
+      await mkdir(store, { recursive: true });
+      await symlink(join(store, "lint"), join(dest, "lint"));
+      const result = await removeExplodedFiles({
+        files: [
+          {
+            absolute: join(dest, "lint/SKILL.md"),
+            digest: "missing",
+            relative: "lint/SKILL.md",
+            root: dest,
+          },
+        ],
+        pluginId: "review",
+      });
+      expect(result.removed).toEqual(["lint/SKILL.md"]);
+      await expect(lstat(join(dest, "lint"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("destUsesCopyMaterialization", () => {
+  test("detects a real dest directory as copy mode", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-copy-detect-"));
+    try {
+      const dest = join(root, ".cursor/skills");
+      await mkdir(join(dest, "lint"), { recursive: true });
+      await writeFile(join(dest, "lint/SKILL.md"), "# lint\n");
+      expect(await destUsesCopyMaterialization(dest, ["lint", "missing"])).toBe(true);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("does not treat dest skill symlinks as copy mode", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-link-detect-"));
+    try {
+      const dest = join(root, ".cursor/skills");
+      const store = join(root, ".agents/skills/lint");
+      await mkdir(dest, { recursive: true });
+      await mkdir(store, { recursive: true });
+      await writeFile(join(store, "SKILL.md"), "# lint\n");
+      await symlink(store, join(dest, "lint"));
+      expect(await destUsesCopyMaterialization(dest, ["lint"])).toBe(false);
     } finally {
       await rm(root, { force: true, recursive: true });
     }

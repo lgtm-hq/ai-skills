@@ -24,10 +24,12 @@ import { getPackageVersion } from "./package-version.js";
 import {
   defaultStoreRoot,
   destSkillIsSymlink,
+  destUsesCopyMaterialization,
   discardExplodeBackups,
   explodePlugin,
   pruneEmptyAncestors,
   pruneEmptyDirTrees,
+  removeExplodedFiles,
   resolveExplodeSourceSkills,
   resolveTrackedPath,
   restoreExplodeInstall,
@@ -126,11 +128,20 @@ export async function updateSkills(options, dependencies = {}) {
         if (explodeSources) {
           const explode = dependencies.explode ?? explodePlugin;
           const exploded = await explode({
-            agents: lanes.explode.map((agent) => ({
-              id: agent,
-              replace: new Set(skillNamesFromFiles(entry.agents[agent]?.files ?? {})),
-              root: entry.agents[agent].root,
-            })),
+            agents: await Promise.all(
+              lanes.explode.map(async (agent) => {
+                const root = entry.agents[agent].root;
+                const files = entry.agents[agent]?.files ?? {};
+                return {
+                  id: agent,
+                  copy: await destUsesCopyMaterialization(root, [
+                    ...new Set([...skills, ...skillNamesFromFiles(files)]),
+                  ]),
+                  replace: new Set(skillNamesFromFiles(files)),
+                  root,
+                };
+              }),
+            ),
             copy: false,
             hash,
             keepBackups: true,
@@ -312,6 +323,17 @@ export async function removeSkills(options, dependencies = {}) {
   const pendingCliUninstall = [];
   for (const pluginId of selected) {
     const entry = lock.plugins[pluginId];
+    const explodeFiles = explodeTrackedFiles(entry);
+    if (explodeFiles.length > 0) {
+      await removeExplodedFiles({
+        files: explodeFiles,
+        hash,
+        pluginId,
+        removeDir,
+        removeFile,
+        warn,
+      });
+    }
     const classified = await classifyPluginFiles(pluginId, entry, { hash, warn });
     const lanes = partitionLockedLanes(entry);
     await deleteVerifiedFiles(classified.verified, {
@@ -525,6 +547,17 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
       ]),
     ),
   };
+  const explodeFiles = explodeTrackedFiles(stale);
+  if (explodeFiles.length > 0) {
+    await removeExplodedFiles({
+      files: explodeFiles,
+      hash: io.hash,
+      pluginId,
+      removeDir: io.removeDir,
+      removeFile: io.removeFile,
+      warn: io.warn,
+    });
+  }
   const classified = await classifyPluginFiles(pluginId, stale, { hash: io.hash, warn: io.warn });
   await deleteVerifiedFiles(classified.verified, {
     modifiedSkills: classified.modifiedSkills,
@@ -640,6 +673,32 @@ function sourceSha(vendor, currentSha, vendors) {
 }
 
 /**
+ * Lock-owned explode files for hash-verified dest unlink.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Plugin lock entry.
+ * @returns {Array<{absolute: string, digest: string, relative: string, root: string}>}
+ *   Files owned by explode-projected agents.
+ */
+function explodeTrackedFiles(entry) {
+  /** @type {Array<{absolute: string, digest: string, relative: string, root: string}>} */
+  const files = [];
+  for (const [agent, install] of Object.entries(entry.agents)) {
+    if (agentProjector(entry, agent) !== PROJECTOR_EXPLODE) {
+      continue;
+    }
+    for (const [relative, digest] of Object.entries(install.files)) {
+      files.push({
+        absolute: resolveTrackedPath(install.root, relative),
+        digest,
+        relative,
+        root: install.root,
+      });
+    }
+  }
+  return files;
+}
+
+/**
  * Classify tracked files before any delete so modified paths stay on disk.
  *
  * @param {string} pluginId - Plugin id.
@@ -659,8 +718,11 @@ async function classifyPluginFiles(pluginId, entry, io) {
   const modifiedSkills = new Set();
   /** @type {Array<{absolute: string, root: string}>} */
   const verified = [];
-  for (const install of Object.values(entry.agents)) {
+  for (const [agent, install] of Object.entries(entry.agents)) {
     if (isCliOwnedNativeInstall(install, entry.projector)) {
+      continue;
+    }
+    if (agentProjector(entry, agent) === PROJECTOR_EXPLODE) {
       continue;
     }
     for (const [relative, digest] of Object.entries(install.files)) {
