@@ -78,6 +78,79 @@ describe("native Cursor projector", () => {
     }
   });
 
+  test("refuses a path-escaping plugin id", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-cursor-escape-"));
+    try {
+      const destRoot = join(root, ".cursor/plugins/local");
+      await mkdir(destRoot, { recursive: true });
+      const victim = join(root, "victim");
+      await mkdir(victim);
+      await writeFile(join(victim, "keep.txt"), "safe\n");
+      await expect(removeCursorPlugin({ destRoot, pluginId: "../../../victim" })).rejects.toThrow(
+        "kebab-case",
+      );
+      expect(await readFile(join(victim, "keep.txt"), "utf8")).toBe("safe\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("refuses to overwrite an unowned Cursor plugin tree", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-cursor-unowned-"));
+    try {
+      const sourceRoot = join(root, "src");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      const destRoot = cursorPluginsRoot({ cwd: root, home: root, scope: "project" });
+      const pluginDir = join(destRoot, "review");
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(join(pluginDir, "USER-DATA.txt"), "keep\n");
+      await expect(
+        installCursorPlugin({
+          description: "Lint.",
+          destRoot,
+          pluginId: "review",
+          skills: ["lint"],
+          sourceRoot,
+          version: "0.23.0",
+        }),
+      ).rejects.toThrow("unowned");
+      expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("preserves an owned Cursor tree when staging copy fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-cursor-copy-fail-"));
+    try {
+      const sourceRoot = join(root, "src");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      const destRoot = cursorPluginsRoot({ cwd: root, home: root, scope: "project" });
+      const pluginDir = join(destRoot, "review");
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(join(pluginDir, "USER-DATA.txt"), "keep\n");
+      await expect(
+        installCursorPlugin({
+          copy: async () => {
+            throw new Error("copy failed");
+          },
+          description: "Lint.",
+          destRoot,
+          pluginId: "review",
+          replace: true,
+          skills: ["lint"],
+          sourceRoot,
+          version: "0.23.0",
+        }),
+      ).rejects.toThrow("copy failed");
+      expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   test("finds a catalog checkout from cwd", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-catalog-root-"));
     try {
@@ -88,6 +161,14 @@ describe("native Cursor projector", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
+  });
+
+  test("falls back to the clone catalog when cwd has none", async () => {
+    const found = findCatalogSourceRoot("/tmp");
+    expect(found).not.toBeNull();
+    await expect(readFile(join(found, ".claude-plugin/marketplace.json"), "utf8")).resolves.toMatch(
+      /"name"/,
+    );
   });
 });
 
@@ -107,6 +188,23 @@ describe("native CLI projector", () => {
     expect(calls).toEqual([
       ["claude", "plugin", "marketplace", "add", "lgtm-hq/ai-skills@v0.23.0"],
       ["claude", "plugin", "install", "review@ai-skills"],
+    ]);
+  });
+
+  test("adds Copilot marketplace sources without a git tag", async () => {
+    const calls = [];
+    await installCliPlugin({
+      agent: "copilot",
+      exec: async (command, args) => {
+        calls.push([command, ...args]);
+        return { status: 0, stderr: "", stdout: "ok" };
+      },
+      pluginId: "review",
+      source: "lgtm-hq/ai-skills@v0.23.0",
+    });
+    expect(calls).toEqual([
+      ["copilot", "plugin", "marketplace", "add", "lgtm-hq/ai-skills"],
+      ["copilot", "plugin", "install", "review@ai-skills"],
     ]);
   });
 

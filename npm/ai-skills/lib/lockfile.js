@@ -10,6 +10,19 @@ export const LOCKFILE_VERSION = 2;
 export const PROJECTOR_EXPLODE = "explode";
 export const PROJECTOR_NATIVE = "native";
 
+/** Kebab-case plugin ids; rejects path segments that could escape a dest root. */
+export const PLUGIN_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * Whether a lock key is a kebab-case plugin id.
+ *
+ * @param {unknown} pluginId - Candidate plugin id.
+ * @returns {boolean} True when the id is a safe folder name.
+ */
+export function isSafePluginId(pluginId) {
+  return typeof pluginId === "string" && PLUGIN_ID_RE.test(pluginId);
+}
+
 export const AGENT_SKILL_PATHS = {
   "claude-code": ".claude/skills",
   copilot: ".copilot/skills",
@@ -404,8 +417,8 @@ function isValidV2Lock(lock, scope) {
   ) {
     return false;
   }
-  for (const entry of Object.values(lock.plugins)) {
-    if (!isValidPluginEntry(entry)) {
+  for (const [pluginId, entry] of Object.entries(lock.plugins)) {
+    if (!isSafePluginId(pluginId) || !isValidPluginEntry(entry)) {
       return false;
     }
   }
@@ -566,8 +579,9 @@ async function hashTrackedPath(path, hash) {
  */
 function mergeAgentInstalls(previous, incoming) {
   const projector = incoming.projector ?? previous.projector;
+  const replaceFiles = previous.root !== incoming.root || previous.projector !== incoming.projector;
   return {
-    files: { ...previous.files, ...incoming.files },
+    files: replaceFiles ? { ...incoming.files } : { ...previous.files, ...incoming.files },
     root: incoming.root,
     ...(projector === PROJECTOR_NATIVE || projector === PROJECTOR_EXPLODE ? { projector } : {}),
   };

@@ -51,13 +51,14 @@ export function spawnExec(command, args) {
  * @param {string} args.source - Marketplace source (`owner/repo@tag`).
  * @param {string} [args.marketplace] - Marketplace name in `id@marketplace`.
  * @param {(command: string, cliArgs: string[]) => Promise<ExecResult>} [args.exec] - Injectable exec.
- * @returns {Promise<void>} Resolves when the plugin is installed.
+ * @returns {Promise<{alreadyPresent: boolean}>} Whether host install was already satisfied.
  */
 export async function installCliPlugin(args) {
   const cli = cliForAgent(args.agent);
   const exec = args.exec ?? spawnExec;
   const marketplace = args.marketplace ?? FIRST_PARTY_MARKETPLACE;
-  const added = await exec(cli, ["plugin", "marketplace", "add", args.source]);
+  const marketplaceSource = args.agent === "copilot" ? stripGitTag(args.source) : args.source;
+  const added = await exec(cli, ["plugin", "marketplace", "add", marketplaceSource]);
   if (added.status !== 0 && !isAlreadyPresent(added)) {
     throw new Error(`${cli} plugin marketplace add failed: ${detail(added)}`);
   }
@@ -65,6 +66,9 @@ export async function installCliPlugin(args) {
   if (installed.status !== 0 && !isAlreadyPresent(installed)) {
     throw new Error(`${cli} plugin install failed: ${detail(installed)}`);
   }
+  return {
+    alreadyPresent: installed.status !== 0 && isAlreadyPresent(installed),
+  };
 }
 
 /**
@@ -123,4 +127,14 @@ function isAlreadyAbsent(result) {
  */
 function detail(result) {
   return (result.stderr || result.stdout || `exit ${result.status}`).trim();
+}
+
+/**
+ * Copilot `plugin marketplace add` takes OWNER/REPO without a git tag.
+ *
+ * @param {string} source - `owner/repo` or `owner/repo@tag`.
+ * @returns {string} `owner/repo`.
+ */
+function stripGitTag(source) {
+  return source.replace(/@[^/]+$/, "");
 }

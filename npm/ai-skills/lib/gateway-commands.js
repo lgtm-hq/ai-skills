@@ -24,7 +24,6 @@ import {
   cursorPluginsRoot,
   findCatalogSourceRoot,
   installCursorPlugin,
-  removeCursorPlugin,
 } from "./projectors/native-cursor.js";
 import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./skills-runner.js";
 
@@ -205,14 +204,6 @@ export async function removeSkills(options, dependencies = {}) {
       );
     }
     await deleteVerifiedFiles(classified.verified, { removeDir, removeFile });
-    if (lanes.cursorNative.length > 0 && !classified.modified) {
-      const destRoot = cursorPluginsRoot({
-        cwd: dependencies.lockEnvironment?.cwd,
-        home: dependencies.lockEnvironment?.home,
-        scope,
-      });
-      await removeCursorPlugin({ destRoot, pluginId });
-    }
     for (const agent of lanes.cliNative) {
       await uninstallCliPlugin({
         agent,
@@ -719,6 +710,7 @@ async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, 
     description: bundles.groups[pluginId]?.description ?? pluginId,
     destRoot,
     pluginId,
+    replace: true,
     skills,
     sourceRoot,
     version: entry.vendor === "lgtm-hq" ? getPackageVersion() : entry.version,

@@ -1,8 +1,10 @@
 import { existsSync } from "node:fs";
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { isSafePluginId } from "../lockfile.js";
 
 /**
  * Directory that holds locally dropped Cursor plugins.
@@ -27,7 +29,7 @@ export function cursorPluginsRoot(environment) {
  * @returns {string | null} Absolute catalog root, or null when absent.
  */
 export function findCatalogSourceRoot(cwd = process.cwd()) {
-  const packageRepoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+  const packageRepoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
   for (const root of [cwd, packageRepoRoot]) {
     if (
       existsSync(join(root, "skills")) &&
@@ -40,9 +42,27 @@ export function findCatalogSourceRoot(cwd = process.cwd()) {
 }
 
 /**
+ * Reject a plugin id that is not a kebab-case folder name.
+ *
+ * @param {string} pluginId - Candidate destination folder name.
+ * @returns {void}
+ * @throws {Error} When the id could escape `destRoot`.
+ */
+export function assertSafePluginId(pluginId) {
+  if (!isSafePluginId(pluginId)) {
+    throw new Error(`Refusing Cursor plugin id ${JSON.stringify(pluginId)}: must be kebab-case`);
+  }
+}
+
+/**
  * Assemble a Cursor-local plugin tree from sliced marketplace metadata.
  *
  * Copies each listed skill directory and writes `.claude-plugin/plugin.json`.
+ * Assembly happens in a sibling `.staging` directory. An existing destination
+ * is never overwritten unless `replace` is true (this lock already owns the
+ * plugin). Untracked files in an owned destination are copied into staging so
+ * a swap cannot delete user data. When `commit` is false, a `.bak` of the
+ * previous tree is left for the caller to discard after the lock write.
  *
  * @param {object} args - Named arguments.
  * @param {string} args.pluginId - Plugin id (destination folder name).
@@ -51,9 +71,12 @@ export function findCatalogSourceRoot(cwd = process.cwd()) {
  * @param {string[]} args.skills - Skill directory names to copy.
  * @param {string} args.sourceRoot - Catalog root that contains `skills/<name>/`.
  * @param {string} args.destRoot - `plugins/local` directory.
+ * @param {boolean} [args.replace=false] - Overwrite a destination this lock owns.
+ * @param {boolean} [args.commit=true] - Discard `.bak` after a successful swap.
  * @param {typeof cp} [args.copy] - Injectable recursive copy.
  * @param {typeof mkdir} [args.makeDir] - Injectable mkdir.
- * @param {typeof rm} [args.remove] - Injectable rm used to replace an existing tree.
+ * @param {typeof rm} [args.remove] - Injectable rm.
+ * @param {typeof rename} [args.move] - Injectable rename used for the swap.
  * @param {typeof writeFile} [args.write] - Injectable writer.
  * @returns {Promise<string>} Absolute plugin directory.
  */
@@ -62,27 +85,57 @@ export async function installCursorPlugin(args) {
   const makeDir = args.makeDir ?? mkdir;
   const write = args.write ?? writeFile;
   const remove = args.remove ?? rm;
-  const pluginDir = join(args.destRoot, args.pluginId);
-  await remove(pluginDir, { force: true, recursive: true });
-  await makeDir(pluginDir, { recursive: true });
-  for (const name of args.skills) {
-    const from = join(args.sourceRoot, "skills", name);
-    const to = join(pluginDir, "skills", name);
-    await copy(from, to, { recursive: true });
+  const move = args.move ?? rename;
+  const paths = cursorPluginPaths(args.destRoot, args.pluginId);
+  const existed = existsSync(paths.pluginDir);
+  if (existed && !args.replace) {
+    throw new Error(`Refusing to overwrite unowned Cursor plugin at ${paths.pluginDir}`);
   }
-  const manifestDir = join(pluginDir, ".claude-plugin");
-  await makeDir(manifestDir, { recursive: true });
-  const manifest = {
-    description: args.description,
-    name: args.pluginId,
-    version: args.version,
-  };
-  await write(join(manifestDir, "plugin.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-  return pluginDir;
+
+  await remove(paths.staging, { force: true, recursive: true });
+  try {
+    await makeDir(paths.staging, { recursive: true });
+    for (const name of args.skills) {
+      const from = join(args.sourceRoot, "skills", name);
+      const to = join(paths.staging, "skills", name);
+      await copy(from, to, { recursive: true });
+    }
+    const manifestDir = join(paths.staging, ".claude-plugin");
+    await makeDir(manifestDir, { recursive: true });
+    const manifest = {
+      description: args.description,
+      name: args.pluginId,
+      version: args.version,
+    };
+    await write(join(manifestDir, "plugin.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+    if (existed) {
+      await copyUntrackedFiles(paths.pluginDir, paths.staging, copy, makeDir);
+    }
+    if (existed) {
+      await remove(paths.backup, { force: true, recursive: true });
+      await move(paths.pluginDir, paths.backup);
+    }
+    await move(paths.staging, paths.pluginDir);
+  } catch (error) {
+    if (existed && existsSync(paths.backup)) {
+      await remove(paths.pluginDir, { force: true, recursive: true });
+      await move(paths.backup, paths.pluginDir);
+    }
+    await remove(paths.staging, { force: true, recursive: true });
+    throw error;
+  }
+  if (args.commit !== false) {
+    await remove(paths.backup, { force: true, recursive: true });
+  }
+  return paths.pluginDir;
 }
 
 /**
- * Delete a Cursor-local plugin tree.
+ * Delete a Cursor-local plugin tree this operation created.
+ *
+ * User `remove` must not call this for an owned install: hash-whitelisted
+ * deletes belong in `deleteVerifiedFiles`. Recursive removal is for rollback
+ * of trees the current operation assembled.
  *
  * @param {object} args - Named arguments.
  * @param {string} args.pluginId - Plugin id.
@@ -92,5 +145,113 @@ export async function installCursorPlugin(args) {
  */
 export async function removeCursorPlugin(args) {
   const remove = args.remove ?? rm;
-  await remove(join(args.destRoot, args.pluginId), { force: true, recursive: true });
+  const paths = cursorPluginPaths(args.destRoot, args.pluginId);
+  await remove(paths.pluginDir, { force: true, recursive: true });
+  await remove(paths.staging, { force: true, recursive: true });
+  await remove(paths.backup, { force: true, recursive: true });
+}
+
+/**
+ * Restore the pre-swap Cursor tree after a later lock-write failure.
+ *
+ * @param {object} args - Named arguments.
+ * @param {string} args.pluginId - Plugin id.
+ * @param {string} args.destRoot - `plugins/local` directory.
+ * @param {boolean} [args.created=false] - Whether this operation created dest.
+ * @param {typeof rm} [args.remove] - Injectable rm.
+ * @param {typeof rename} [args.move] - Injectable rename.
+ * @returns {Promise<void>} Resolves when dest matches the pre-install tree.
+ */
+export async function restoreCursorPluginInstall(args) {
+  const remove = args.remove ?? rm;
+  const move = args.move ?? rename;
+  const paths = cursorPluginPaths(args.destRoot, args.pluginId);
+  if (existsSync(paths.backup)) {
+    await remove(paths.pluginDir, { force: true, recursive: true });
+    await move(paths.backup, paths.pluginDir);
+  } else if (args.created) {
+    await remove(paths.pluginDir, { force: true, recursive: true });
+  }
+  await remove(paths.staging, { force: true, recursive: true });
+}
+
+/**
+ * Discard the `.bak` sidecar after the gateway lock write succeeds.
+ *
+ * @param {object} args - Named arguments.
+ * @param {string} args.pluginId - Plugin id.
+ * @param {string} args.destRoot - `plugins/local` directory.
+ * @param {typeof rm} [args.remove] - Injectable rm.
+ * @returns {Promise<void>} Resolves when sidecars are gone.
+ */
+export async function discardCursorPluginBackup(args) {
+  const remove = args.remove ?? rm;
+  const paths = cursorPluginPaths(args.destRoot, args.pluginId);
+  await remove(paths.backup, { force: true, recursive: true });
+  await remove(paths.staging, { force: true, recursive: true });
+}
+
+/**
+ * @param {string} destRoot - `plugins/local` directory.
+ * @param {string} pluginId - Plugin id.
+ * @returns {{backup: string, pluginDir: string, staging: string}} Resolved paths.
+ */
+function cursorPluginPaths(destRoot, pluginId) {
+  assertSafePluginId(pluginId);
+  const pluginDir = join(destRoot, pluginId);
+  assertInsideRoot(destRoot, pluginDir);
+  return {
+    backup: `${pluginDir}.bak`,
+    pluginDir,
+    staging: `${pluginDir}.staging`,
+  };
+}
+
+/**
+ * @param {string} root - Directory that must contain `candidate`.
+ * @param {string} candidate - Path joined from `root`.
+ * @returns {void}
+ * @throws {Error} When `candidate` escapes `root`.
+ */
+function assertInsideRoot(root, candidate) {
+  const resolvedRoot = resolve(root);
+  const resolvedCandidate = resolve(candidate);
+  const prefix = resolvedRoot.endsWith(sep) ? resolvedRoot : `${resolvedRoot}${sep}`;
+  if (resolvedCandidate !== resolvedRoot && !resolvedCandidate.startsWith(prefix)) {
+    throw new Error(`Refusing to touch path outside Cursor plugin root: ${candidate}`);
+  }
+}
+
+/**
+ * Copy dest files that staging does not already contain so a swap keeps
+ * untracked user data.
+ *
+ * @param {string} fromDir - Existing plugin directory.
+ * @param {string} toDir - Staging directory.
+ * @param {typeof cp} copy - Recursive copy.
+ * @param {typeof mkdir} makeDir - mkdir for parent paths.
+ * @returns {Promise<void>} Resolves when untracked files are copied.
+ */
+async function copyUntrackedFiles(fromDir, toDir, copy, makeDir) {
+  let entries;
+  try {
+    entries = await readdir(fromDir, { withFileTypes: true });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+  for (const entry of entries) {
+    const from = join(fromDir, entry.name);
+    const to = join(toDir, entry.name);
+    if (entry.isDirectory()) {
+      await copyUntrackedFiles(from, to, copy, makeDir);
+      continue;
+    }
+    if (!existsSync(to)) {
+      await makeDir(dirname(to), { recursive: true });
+      await copy(from, to, { recursive: true });
+    }
+  }
 }

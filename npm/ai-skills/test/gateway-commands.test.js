@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { listSkills, removeSkills, updateSkills } from "../lib/gateway-commands.js";
+import { hashFile } from "../lib/lockfile.js";
 import { getPackageVersion } from "../lib/package-version.js";
 
 const pluginEntry = (overrides) => ({
@@ -825,6 +826,58 @@ describe("gateway maintenance commands", () => {
       expect(written.plugins.lint.agents.cursor.files["skills/lint/SKILL.md"]).toMatch(
         /^[a-f0-9]{64}$/,
       );
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("remove leaves untracked Cursor plugin files in place", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cursor-remove-"));
+    try {
+      const pluginDir = join(cwd, ".cursor/plugins/local/lint");
+      await mkdir(join(pluginDir, ".claude-plugin"), { recursive: true });
+      await mkdir(join(pluginDir, "skills/lint"), { recursive: true });
+      await writeFile(join(pluginDir, ".claude-plugin/plugin.json"), "{}\n");
+      await writeFile(join(pluginDir, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(pluginDir, "USER-DATA.txt"), "keep\n");
+      const pluginJsonHash = await hashFile(join(pluginDir, ".claude-plugin/plugin.json"));
+      const skillHash = await hashFile(join(pluginDir, "skills/lint/SKILL.md"));
+      await removeSkills(options, {
+        lockEnvironment: { cwd },
+        readLock: async () => ({
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            lint: pluginEntry({
+              agents: {
+                cursor: {
+                  files: {
+                    ".claude-plugin/plugin.json": pluginJsonHash,
+                    "skills/lint/SKILL.md": skillHash,
+                  },
+                  projector: "native",
+                  root: pluginDir,
+                },
+              },
+              projector: "native",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              skills: ["lint"],
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            }),
+          },
+          scope: "project",
+          version: 2,
+        }),
+        run: async () => {
+          throw new Error("explode runner must not run");
+        },
+        writeLock: async () => {},
+      });
+      expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
+      await expect(
+        readFile(join(pluginDir, ".claude-plugin/plugin.json"), "utf8"),
+      ).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

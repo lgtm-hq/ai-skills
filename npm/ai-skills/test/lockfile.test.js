@@ -70,6 +70,28 @@ describe("gateway lockfile", () => {
     expect(merged.plugins.pdf).toEqual(lock.plugins.pdf);
   });
 
+  test("replaces an agent file map when projector or root changes", () => {
+    const merged = mergeLockEntries(lock, {
+      review: {
+        ...explodeEntry,
+        agents: {
+          cursor: {
+            files: { "skills/lint/SKILL.md": "native" },
+            projector: "native",
+            root: "/tmp/project/.cursor/plugins/local/review",
+          },
+        },
+        projector: "native",
+      },
+    });
+    expect(merged.plugins.review.agents.cursor.files).toEqual({
+      "skills/lint/SKILL.md": "native",
+    });
+    expect(merged.plugins.review.agents.cursor.root).toBe(
+      "/tmp/project/.cursor/plugins/local/review",
+    );
+  });
+
   test("prunes entries that conflict with disk state", async () => {
     const { lock: pruned, pruned: names } = await pruneMissingLockEntries(
       lock,
@@ -132,6 +154,21 @@ describe("gateway lockfile", () => {
       readLockfile("project", {
         cwd: "/tmp/unused",
         read: async () => JSON.stringify({ version: 99 }),
+      }),
+    ).rejects.toThrow("Invalid gateway lockfile");
+  });
+
+  test("rejects a v2 lock whose plugin ids are not kebab-case", async () => {
+    await expect(
+      readLockfile("project", {
+        cwd: "/tmp/unused",
+        read: async () =>
+          JSON.stringify({
+            gatewayVersion: "0.0.0-dev",
+            plugins: { "../../../victim": explodeEntry },
+            scope: "project",
+            version: LOCKFILE_VERSION,
+          }),
       }),
     ).rejects.toThrow("Invalid gateway lockfile");
   });
