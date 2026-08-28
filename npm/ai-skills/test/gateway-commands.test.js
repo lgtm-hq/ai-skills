@@ -89,6 +89,34 @@ describe("gateway maintenance commands", () => {
     expect(written.skills).toBeUndefined();
   });
 
+  test("skips update when the pin is current and files match", async () => {
+    const calls = [];
+    const current = {
+      ...lock,
+      plugins: {
+        anthropics: pluginEntry({
+          sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+          version: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+        }),
+      },
+    };
+    const result = await updateSkills(options, {
+      isInstalled: async () => true,
+      lockEnvironment: {
+        exists: async () => true,
+        hash: async () => "abc",
+      },
+      readLock: async () => current,
+      run: async (args) => {
+        calls.push(args);
+      },
+      writeLock: async () => {},
+    });
+
+    expect(calls).toEqual([]);
+    expect(result).toEqual({ pruned: [], updated: [] });
+  });
+
   test("updates every tracked agent on a plugin even when -a is a subset", async () => {
     const calls = [];
     let written;
@@ -236,6 +264,53 @@ describe("gateway maintenance commands", () => {
     });
   });
 
+  test("leaves locally modified files with a warning during remove", async () => {
+    const warnings = [];
+    const unlinked = [];
+    await removeSkills(
+      { ...options, skills: ["pdf"] },
+      {
+        hash: async () => "changed",
+        readLock: async () => lock,
+        run: async () => {},
+        unlink: async (path) => {
+          unlinked.push(path);
+        },
+        warn: (message) => {
+          warnings.push(message);
+        },
+        writeLock: async () => {},
+      },
+    );
+
+    expect(unlinked).toEqual([]);
+    expect(warnings).toEqual(["left modified pdf file pdf/SKILL.md"]);
+  });
+
+  test("prunes nested empty directories after a verified remove", async () => {
+    const removed = [];
+    await removeSkills(
+      { ...options, skills: ["pdf"] },
+      {
+        hash: async () => "abc",
+        readLock: async () => lock,
+        rmdir: async (path) => {
+          removed.push(`dir:${path}`);
+        },
+        run: async () => {},
+        unlink: async (path) => {
+          removed.push(`file:${path}`);
+        },
+        writeLock: async () => {},
+      },
+    );
+
+    expect(removed).toEqual([
+      "file:/tmp/project/.cursor/skills/pdf/SKILL.md",
+      "dir:/tmp/project/.cursor/skills/pdf",
+    ]);
+  });
+
   test("lists lock-managed installs in name order", async () => {
     const plugins = await listSkills(options, {
       lockEnvironment: {
@@ -247,6 +322,9 @@ describe("gateway maintenance commands", () => {
 
     expect(plugins.map((plugin) => plugin.name)).toEqual(["lint", "pdf"]);
     expect(plugins.every((plugin) => plugin.status === "")).toBe(true);
+    expect(plugins.find((plugin) => plugin.name === "lint")?.agentStatus).toEqual({ cursor: "" });
+    expect(plugins.find((plugin) => plugin.name === "lint")?.skills).toEqual(["lint"]);
+    expect(plugins.find((plugin) => plugin.name === "pdf")?.skills).toEqual(["pdf"]);
   });
 
   test("annotates missing and modified plugins instead of listing them as healthy", async () => {
@@ -260,8 +338,16 @@ describe("gateway maintenance commands", () => {
 
     expect(plugins).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "lint", status: "MODIFIED" }),
-        expect.objectContaining({ name: "pdf", status: "MISSING" }),
+        expect.objectContaining({
+          name: "lint",
+          status: "MODIFIED",
+          agentStatus: { cursor: "MODIFIED" },
+        }),
+        expect.objectContaining({
+          name: "pdf",
+          status: "MISSING",
+          agentStatus: { cursor: "MISSING" },
+        }),
       ]),
     );
   });

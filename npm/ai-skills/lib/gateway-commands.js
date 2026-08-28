@@ -1,7 +1,11 @@
+import { rmdir, unlink } from "node:fs/promises";
+import { dirname, join } from "node:path";
+
 import { loadVendors } from "./catalog.js";
 import { getPackageVersion } from "./package-version.js";
 import {
   hashFile,
+  LOCKFILE_VERSION,
   pluginAgentNames,
   pluginSkillNames,
   pruneMissingLockEntries,
@@ -19,7 +23,7 @@ import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./s
  * Entries absent from every tracked agent directory are pruned instead of reinstalled.
  *
  * @param {{agents: string[], global: boolean, project: boolean, skills: string[], yes: boolean}} options - Validated command options.
- * @param {{hash?: typeof import("./lockfile.js").hashFile, isInstalled?: Parameters<typeof pruneMissingLockEntries>[1], now?: () => Date, readLock?: typeof readLockfile, run?: typeof runSkills, writeLock?: typeof writeLockfile}} [dependencies] - Injectable command dependencies.
+ * @param {{hash?: typeof import("./lockfile.js").hashFile, isInstalled?: Parameters<typeof pruneMissingLockEntries>[1], lockEnvironment?: Parameters<typeof reconcileLock>[1], now?: () => Date, readLock?: typeof readLockfile, run?: typeof runSkills, writeLock?: typeof writeLockfile}} [dependencies] - Injectable command dependencies.
  * @returns {Promise<{pruned: string[], updated: string[]}>} Updated and pruned plugin ids.
  */
 export async function updateSkills(options, dependencies = {}) {
@@ -39,9 +43,15 @@ export async function updateSkills(options, dependencies = {}) {
     dependencies.isInstalled,
   );
   const selected = selectPlugins(prunedLock.plugins, options.skills);
-  const updated = Object.keys(selected);
   const { vendors } = await loadVendors();
-  for (const entry of Object.values(selected)) {
+  const updated = [];
+  for (const [pluginId, entry] of Object.entries(selected)) {
+    if (await pluginNeedsRefresh(pluginId, entry, prunedLock.scope, vendors, dependencies)) {
+      updated.push(pluginId);
+    }
+  }
+  for (const pluginId of updated) {
+    const entry = selected[pluginId];
     const source =
       entry.vendor === "lgtm-hq"
         ? `lgtm-hq/ai-skills@v${getPackageVersion()}`
@@ -91,7 +101,15 @@ export async function updateSkills(options, dependencies = {}) {
  * Remove selected lock-managed plugins through the upstream CLI and then unlock them.
  *
  * @param {{agents: string[], global: boolean, project: boolean, skills: string[], yes: boolean}} options - Validated command options.
- * @param {{readLock?: typeof readLockfile, run?: typeof runSkills, writeLock?: typeof writeLockfile}} [dependencies] - Injectable command dependencies.
+ * @param {{
+ *   hash?: typeof hashFile,
+ *   readLock?: typeof readLockfile,
+ *   rmdir?: typeof rmdir,
+ *   run?: typeof runSkills,
+ *   unlink?: typeof unlink,
+ *   warn?: (message: string) => void,
+ *   writeLock?: typeof writeLockfile,
+ * }} [dependencies] - Injectable command dependencies.
  * @returns {Promise<string[]>} Removed plugin ids.
  */
 export async function removeSkills(options, dependencies = {}) {
@@ -104,6 +122,10 @@ export async function removeSkills(options, dependencies = {}) {
   const readLock = dependencies.readLock ?? readLockfile;
   const writeLock = dependencies.writeLock ?? writeLockfile;
   const run = dependencies.run ?? runSkills;
+  const hash = dependencies.hash ?? hashFile;
+  const removeFile = dependencies.unlink ?? unlink;
+  const removeDir = dependencies.rmdir ?? rmdir;
+  const warn = dependencies.warn ?? ((message) => console.warn(message));
   const lock = await readLock(scope);
   const selected = Object.keys(selectPlugins(lock.plugins, options.skills));
   if (selected.length === 0) {
@@ -120,6 +142,12 @@ export async function removeSkills(options, dependencies = {}) {
         pluginSkillNames(entry),
       ),
     );
+    await removeVerifiedPluginFiles(pluginId, entry, {
+      hash,
+      removeDir,
+      removeFile,
+      warn,
+    });
   }
   const plugins = { ...lock.plugins };
   selected.forEach((pluginId) => delete plugins[pluginId]);
@@ -140,7 +168,9 @@ export async function removeSkills(options, dependencies = {}) {
  * }} [dependencies] - Injectable command dependencies.
  * @returns {Promise<Array<{
  *   agentNames: string[],
+ *   agentStatus: Record<string, "" | "MISSING" | "MODIFIED">,
  *   name: string,
+ *   skills: string[],
  *   status: "" | "MISSING" | "MODIFIED",
  * } & import("./lockfile.js").PluginLockEntry>>} Lock-managed entries.
  */
@@ -154,9 +184,39 @@ export async function listSkills(options, dependencies = {}) {
       name,
       ...entry,
       agentNames: pluginAgentNames(entry),
+      agentStatus: agentReconcileStatus(name, entry, reconciliation),
+      skills: pluginSkillNames(entry),
       status: statusByPlugin.get(name) ?? "",
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/**
+ * Whether a plugin pin moved or tracked files drifted.
+ *
+ * @param {string} pluginId - Plugin id.
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Lock entry.
+ * @param {"global" | "project"} scope - Lock scope.
+ * @param {Array<{id: string, repo: string, sha: string}>} vendors - Current vendor registry.
+ * @param {{lockEnvironment?: Parameters<typeof reconcileLock>[1]}} dependencies - Injectable fs.
+ * @returns {Promise<boolean>} True when the plugin should be re-materialized.
+ */
+async function pluginNeedsRefresh(pluginId, entry, scope, vendors, dependencies) {
+  const expectedSha = sourceSha(entry.vendor, entry.sha, vendors);
+  const expectedVersion = entry.vendor === "lgtm-hq" ? getPackageVersion() : expectedSha;
+  if (entry.sha !== expectedSha || entry.version !== expectedVersion) {
+    return true;
+  }
+  const reconciliation = await reconcileLock(
+    {
+      gatewayVersion: "",
+      plugins: { [pluginId]: entry },
+      scope,
+      version: LOCKFILE_VERSION,
+    },
+    dependencies.lockEnvironment,
+  );
+  return reconciliation.missing.length > 0 || reconciliation.modified.length > 0;
 }
 
 /**
@@ -210,6 +270,88 @@ function sourceSha(vendor, currentSha, vendors) {
     return `v${getPackageVersion()}`;
   }
   return vendors.find((candidate) => candidate.id === vendor)?.sha ?? currentSha;
+}
+
+/**
+/**
+ * Delete hash-matching tracked files and prune empty ancestor directories.
+ *
+ * Locally modified files are left in place with a warning.
+ *
+ * @param {string} pluginId - Plugin id.
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Lock entry.
+ * @param {{
+ *   hash: typeof hashFile,
+ *   removeDir: typeof rmdir,
+ *   removeFile: typeof unlink,
+ *   warn: (message: string) => void,
+ * }} io - Injectable filesystem and warning sink.
+ * @returns {Promise<void>} Resolves when verified deletes finish.
+ */
+async function removeVerifiedPluginFiles(pluginId, entry, io) {
+  for (const install of Object.values(entry.agents)) {
+    for (const [relative, digest] of Object.entries(install.files)) {
+      const absolute = join(install.root, relative);
+      try {
+        const current = await io.hash(absolute);
+        if (current !== digest) {
+          io.warn(`left modified ${pluginId} file ${relative}`);
+          continue;
+        }
+        await io.removeFile(absolute);
+        await pruneEmptyAncestors(dirname(absolute), install.root, io.removeDir);
+      } catch {
+        // Already absent after the skills CLI, or unreadable — skip.
+      }
+    }
+  }
+}
+
+/**
+ * Remove empty directories from a deleted file up to the agent skills root.
+ *
+ * @param {string} start - Directory that contained a deleted file.
+ * @param {string} root - Agent skills root; not removed.
+ * @param {typeof rmdir} removeDir - Injectable rmdir.
+ * @returns {Promise<void>} Resolves when pruning stops.
+ */
+async function pruneEmptyAncestors(start, root, removeDir) {
+  let current = start;
+  while (current.startsWith(root) && current !== root) {
+    try {
+      await removeDir(current);
+    } catch {
+      return;
+    }
+    current = dirname(current);
+  }
+}
+
+/**
+ * Per-agent reconcile annotation for one plugin.
+ *
+ * @param {string} pluginId - Plugin id.
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Lock entry.
+ * @param {import("./lockfile.js").ReconcileResult} reconciliation - Partition.
+ * @returns {Record<string, "" | "MISSING" | "MODIFIED">} Agent id to status.
+ */
+function agentReconcileStatus(pluginId, entry, reconciliation) {
+  /** @type {Record<string, "" | "MISSING" | "MODIFIED">} */
+  const status = {};
+  for (const agent of pluginAgentNames(entry)) {
+    status[agent] = "";
+  }
+  for (const item of reconciliation.modified) {
+    if (item.pluginId === pluginId) {
+      status[item.agent] = "MODIFIED";
+    }
+  }
+  for (const item of reconciliation.missing) {
+    if (item.pluginId === pluginId) {
+      status[item.agent] = "MISSING";
+    }
+  }
+  return status;
 }
 
 /**

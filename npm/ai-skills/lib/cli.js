@@ -31,8 +31,15 @@ async function printLockedSkills(options) {
   const plugins = await listSkills(options);
   for (const plugin of plugins) {
     const status = plugin.status ? `\t${plugin.status}` : "";
+    const agents = plugin.agentNames
+      .map((agent) => {
+        const agentStatus = plugin.agentStatus?.[agent];
+        return agentStatus ? `${agent}:${agentStatus}` : agent;
+      })
+      .join(",");
+    const skills = (plugin.skills ?? []).join(",");
     console.log(
-      `${plugin.name}\t${plugin.vendor}\t${plugin.repo}\t${plugin.sha}\t${plugin.agentNames.join(",")}${status}`,
+      `${plugin.name}\t${plugin.vendor}\t${plugin.repo}\t${plugin.sha}\t${agents}\t${skills}${status}`,
     );
   }
 }
