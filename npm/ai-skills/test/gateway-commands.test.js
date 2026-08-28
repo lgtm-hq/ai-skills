@@ -297,6 +297,62 @@ describe("gateway maintenance commands", () => {
     expect(warnings).toEqual(["left modified pdf file pdf/SKILL.md"]);
   });
 
+  test("does not treat native skills/ prefix as a modified skill name", async () => {
+    const calls = [];
+    const warnings = [];
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-modified-skill-"));
+    try {
+      const pluginDir = join(cwd, ".cursor/plugins/local/lint");
+      await mkdir(join(pluginDir, "skills/lint"), { recursive: true });
+      await writeFile(join(pluginDir, "skills/lint/SKILL.md"), "# dirty\n");
+      await removeSkills(
+        { ...options, agents: ["cursor", "codex"], skills: ["lint"] },
+        {
+          hash: async (path) =>
+            path === join(pluginDir, "skills/lint/SKILL.md") ? "changed" : "abc",
+          readLock: async () => ({
+            gatewayVersion: "0.0.0-dev",
+            plugins: {
+              lint: pluginEntry({
+                agents: {
+                  cursor: {
+                    files: { "skills/lint/SKILL.md": "abc" },
+                    projector: "native",
+                    root: pluginDir,
+                  },
+                  codex: {
+                    files: { "lint/SKILL.md": "abc" },
+                    projector: "explode",
+                    root: join(cwd, ".codex/skills"),
+                  },
+                },
+                projector: "explode",
+                repo: "lgtm-hq/ai-skills",
+                skills: ["lint"],
+                vendor: "lgtm-hq",
+                version: "0.0.0-dev",
+              }),
+            },
+            scope: "project",
+            version: 2,
+          }),
+          run: async (args) => {
+            calls.push(args);
+          },
+          warn: (message) => {
+            warnings.push(message);
+          },
+          writeLock: async () => {},
+        },
+      );
+      expect(warnings).toEqual(["left modified lint file skills/lint/SKILL.md"]);
+      expect(calls).toEqual([]);
+      expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# dirty\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("keeps the lock when a verified unlink fails", async () => {
     let written;
     const denied = Object.assign(new Error("EPERM"), { code: "EPERM" });
@@ -932,6 +988,11 @@ describe("gateway maintenance commands", () => {
       await expect(
         readFile(join(pluginDir, ".claude-plugin/plugin.json"), "utf8"),
       ).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).rejects.toMatchObject(
+        {
+          code: "ENOENT",
+        },
+      );
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

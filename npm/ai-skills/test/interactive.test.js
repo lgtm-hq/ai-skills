@@ -305,7 +305,7 @@ describe("completeInteractively", () => {
         skills: ["lint", "test", "greptile", "coderabbit"],
       },
     ]);
-    expect(options.agents).toEqual(KNOWN_AGENTS.map((agent) => agent.value));
+    expect(options.agents).toEqual(["claude-code", "cursor", "codex", "copilot"]);
     expect(options.global).toBe(true);
     expect(options.copy).toBe(false);
     expect(options.onConflict).toBe("overwrite");

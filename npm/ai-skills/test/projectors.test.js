@@ -95,6 +95,29 @@ describe("native Cursor projector", () => {
     }
   });
 
+  test("refuses a path-escaping skill name", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-cursor-skill-escape-"));
+    try {
+      const sourceRoot = join(root, "src");
+      const destRoot = join(root, ".cursor/plugins/local");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(destRoot, { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await expect(
+        installCursorPlugin({
+          description: "Lint.",
+          destRoot,
+          pluginId: "review",
+          skills: ["../etc"],
+          sourceRoot,
+          version: "0.23.0",
+        }),
+      ).rejects.toThrow("must be kebab-case");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   test("refuses to overwrite an unowned Cursor plugin tree", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-cursor-unowned-"));
     try {

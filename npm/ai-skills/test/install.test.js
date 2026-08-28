@@ -1337,6 +1337,9 @@ describe("native projectors", () => {
         ),
       ).rejects.toThrow("rolled back");
       expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
+      await expect(readFile(join(pluginDir, "skills/lint/SKILL.md"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

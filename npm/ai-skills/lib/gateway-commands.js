@@ -496,8 +496,7 @@ async function classifyPluginFiles(pluginId, entry, io) {
         const current = await io.hash(absolute);
         if (current !== digest) {
           io.warn(`left modified ${pluginId} file ${relative}`);
-          const skillName = relative.split("/")[0];
-          if (skillName) {
+          for (const skillName of skillNamesFromFiles({ [relative]: digest })) {
             modifiedSkills.add(skillName);
           }
           continue;

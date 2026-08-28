@@ -327,9 +327,16 @@ describe("gateway lockfile", () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-hash-tree-"));
     try {
       await mkdir(join(root, ".claude-plugin"), { recursive: true });
+      await mkdir(join(root, "skills/lint"), { recursive: true });
       await writeFile(join(root, ".claude-plugin/plugin.json"), "{}\n");
+      await writeFile(join(root, "skills/lint/SKILL.md"), "# lint\n");
       const files = await hashTree(root);
+      expect(Object.keys(files).sort()).toEqual([
+        ".claude-plugin/plugin.json",
+        "skills/lint/SKILL.md",
+      ]);
       expect(files[".claude-plugin/plugin.json"]).toMatch(/^[a-f0-9]{64}$/);
+      expect(files["skills/lint/SKILL.md"]).toMatch(/^[a-f0-9]{64}$/);
     } finally {
       await rm(root, { force: true, recursive: true });
     }

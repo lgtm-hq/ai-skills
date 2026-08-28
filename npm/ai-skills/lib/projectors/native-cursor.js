@@ -55,6 +55,19 @@ export function assertSafePluginId(pluginId) {
 }
 
 /**
+ * Reject a skill directory name that could escape the catalog `skills/` tree.
+ *
+ * @param {string} name - Candidate skill directory name.
+ * @returns {void}
+ * @throws {Error} When the name is not kebab-case.
+ */
+function assertSafeSkillName(name) {
+  if (!isSafePluginId(name)) {
+    throw new Error(`Refusing skill name ${JSON.stringify(name)}: must be kebab-case`);
+  }
+}
+
+/**
  * Assemble a Cursor-local plugin tree from sliced marketplace metadata.
  *
  * Copies each listed skill directory and writes `.claude-plugin/plugin.json`.
@@ -96,8 +109,11 @@ export async function installCursorPlugin(args) {
   try {
     await makeDir(paths.staging, { recursive: true });
     for (const name of args.skills) {
+      assertSafeSkillName(name);
       const from = join(args.sourceRoot, "skills", name);
       const to = join(paths.staging, "skills", name);
+      assertInsideRoot(join(args.sourceRoot, "skills"), from);
+      assertInsideRoot(join(paths.staging, "skills"), to);
       await copy(from, to, { recursive: true });
     }
     const manifestDir = join(paths.staging, ".claude-plugin");
