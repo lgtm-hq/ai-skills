@@ -124,6 +124,9 @@ function isAlreadyAbsent(result) {
   if (/\balready (uninstalled|removed|absent)\b/.test(text)) {
     return true;
   }
+  if (/\bmarketplace\b/.test(text)) {
+    return false;
+  }
   return (
     /\bplugin\b/.test(text) &&
     (/\bnot (found|installed)\b/.test(text) || /\bdoes not exist\b/.test(text))

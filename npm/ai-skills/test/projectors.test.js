@@ -467,6 +467,16 @@ describe("native CLI projector", () => {
     ).rejects.toThrow("copilot plugin uninstall failed: marketplace does not exist");
   });
 
+  test("does not treat plugin marketplace does not exist as already absent", async () => {
+    await expect(
+      uninstallCliPlugin({
+        agent: "copilot",
+        exec: async () => ({ status: 1, stderr: "plugin marketplace does not exist", stdout: "" }),
+        pluginId: "review",
+      }),
+    ).rejects.toThrow("copilot plugin uninstall failed: plugin marketplace does not exist");
+  });
+
   test("does not treat uninstall still exists as already absent", async () => {
     await expect(
       uninstallCliPlugin({
