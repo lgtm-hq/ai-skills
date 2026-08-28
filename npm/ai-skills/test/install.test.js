@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { loadVendorIndex } from "../lib/catalog.js";
-import { writeDoctorCache } from "../lib/doctor.js";
+import { writeDoctorCache, runDoctor } from "../lib/doctor.js";
 import { batchesFromCliOptions, install } from "../lib/install.js";
 import { removeSkills, updateSkills } from "../lib/gateway-commands.js";
 import { readLockfile, writeLockfile } from "../lib/lockfile.js";
@@ -1485,7 +1485,7 @@ describe("native projectors", () => {
     }
   });
 
-  test("fails closed when --projector cannot remove the old explode dests", async () => {
+  test("commits native lock when --projector dest cleanup fails", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-projector-override-rmfail-"));
     const explodeFile = join(cwd, ".cursor/skills/jira/SKILL.md");
     const sourceRoot = join(cwd, "catalog");
@@ -1549,6 +1549,30 @@ describe("native projectors", () => {
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
       expect(lock.plugins.jira.agents.cursor.projector).toBe("native");
       expect(await readFile(explodeFile, "utf8")).toBe("# jira\n");
+      const lines = [];
+      await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: null,
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          exec: async () => {
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          home: cwd,
+          lockEnvironment: { cwd, home: cwd },
+          log: (line) => lines.push(line),
+        },
+      );
+      expect(
+        lines.some((line) => line.startsWith("orphan\tcursor\t") && line.endsWith("/jira")),
+      ).toBe(true);
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

@@ -228,7 +228,8 @@ describe("ensureHostCapability", () => {
   });
 
   test("does not reuse a Cursor cache entry from a different scope", async () => {
-    const home = await mkdtemp(join(tmpdir(), "ai-skills-doctor-scope-"));
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-doctor-scope-home-"));
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-scope-cwd-"));
     try {
       await writeDoctorCache(
         {
@@ -240,7 +241,7 @@ describe("ensureHostCapability", () => {
         { home },
       );
       const result = await ensureHostCapability("cursor", {
-        cwd: home,
+        cwd,
         exec: async () => {
           const error = new Error("not found");
           error.code = "ENOENT";
@@ -257,6 +258,56 @@ describe("ensureHostCapability", () => {
       });
     } finally {
       await rm(home, { force: true, recursive: true });
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("project Cursor probe ORs home and cwd plugins/local", async () => {
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-doctor-or-home-"));
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-or-cwd-"));
+    const exec = async () => {
+      const error = new Error("not found");
+      error.code = "ENOENT";
+      throw error;
+    };
+    try {
+      await mkdir(join(home, ".cursor/plugins/local"), { recursive: true });
+      const fromHome = await ensureHostCapability("cursor", {
+        cwd,
+        exec,
+        home,
+        scope: "project",
+        yes: true,
+      });
+      expect(fromHome).toEqual({
+        capability: "native",
+        source: "probe",
+        version: "project:present:nocli",
+      });
+    } finally {
+      await rm(home, { force: true, recursive: true });
+      await rm(cwd, { force: true, recursive: true });
+    }
+
+    const homeAbsent = await mkdtemp(join(tmpdir(), "ai-skills-doctor-or-home2-"));
+    const cwdPresent = await mkdtemp(join(tmpdir(), "ai-skills-doctor-or-cwd2-"));
+    try {
+      await mkdir(join(cwdPresent, ".cursor/plugins/local"), { recursive: true });
+      const fromCwd = await ensureHostCapability("cursor", {
+        cwd: cwdPresent,
+        exec,
+        home: homeAbsent,
+        scope: "project",
+        yes: true,
+      });
+      expect(fromCwd).toEqual({
+        capability: "native",
+        source: "probe",
+        version: "project:present:nocli",
+      });
+    } finally {
+      await rm(homeAbsent, { force: true, recursive: true });
+      await rm(cwdPresent, { force: true, recursive: true });
     }
   });
 
@@ -1256,7 +1307,74 @@ describe("runDoctor", () => {
     }
   });
 
-  test("fails closed when migrate cannot remove the old dests", async () => {
+  test("repairs an adopted raycast skill without expanding the raycast bundle", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-raycast-repair-"));
+    const sourceRoot = join(cwd, "catalog");
+    try {
+      await mkdir(join(sourceRoot, "skills/raycast"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/pr-raycast"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/raycast/SKILL.md"), "# raycast\n");
+      await writeFile(join(sourceRoot, "skills/pr-raycast/SKILL.md"), "# pr-raycast\n");
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            raycast: {
+              agents: {
+                cursor: {
+                  files: { "raycast/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              skills: ["raycast"],
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      const result = await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: null,
+          project: true,
+          repair: true,
+          yes: true,
+        },
+        {
+          exec: async () => {
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          home: cwd,
+          installExtras: { sourceRoot },
+          lockEnvironment: { cwd, hash: async () => "abc", home: cwd },
+          log: () => {},
+        },
+      );
+      expect(result.repaired).toEqual(["raycast"]);
+      expect(await readFile(join(cwd, ".cursor/skills/raycast/SKILL.md"), "utf8")).toBe(
+        "# raycast\n",
+      );
+      await expect(access(join(cwd, ".cursor/skills/pr-raycast"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("commits native lock when migrate dest cleanup fails", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-uninstall-fail-"));
     const explodeFile = join(cwd, ".cursor/skills/jira/SKILL.md");
     const sourceRoot = join(cwd, "catalog");
@@ -1328,6 +1446,30 @@ describe("runDoctor", () => {
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
       expect(lock.plugins.jira.agents.cursor.projector).toBe("native");
       expect(await readFile(explodeFile, "utf8")).toBe("# jira\n");
+      const lines = [];
+      await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: null,
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          exec: async () => {
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          home: cwd,
+          lockEnvironment: { cwd, home: cwd },
+          log: (line) => lines.push(line),
+        },
+      );
+      expect(
+        lines.some((line) => line.startsWith("orphan\tcursor\t") && line.endsWith("/jira")),
+      ).toBe(true);
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -1483,6 +1625,9 @@ describe("runDoctor", () => {
       expect(result.migrated).toEqual(["review"]);
       expect(execCalls.some((call) => call.includes("uninstall"))).toBe(false);
       expect(warnings.some((message) => message.includes("sibling"))).toBe(true);
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.review.agents["claude-code"].projector).toBe("explode");
+      expect(lock.plugins.review.agents["claude-code"].root).toBe(join(cwd, ".claude/skills"));
     } finally {
       await rm(cwd, { force: true, recursive: true });
       await rm(home, { force: true, recursive: true });

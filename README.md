@@ -29,8 +29,9 @@ TUI is a plugin checklist, `--skill` / `--bundle` name a plugin, and
 `--vendor` installs that vendor plugin whole. Native projectors are the
 default for Cursor, Claude Code, and GitHub Copilot when the doctor cache
 (`~/.ai-skills/doctor.json`) says native — install probes and writes that
-cache on a miss (`--projector explode` still writes skill
-directories). Codex stays exploded. If you previously
+cache on a miss. Ambiguous Claude Code / Copilot probes ask once; `-y`
+fails closed without writing the cache (`--projector explode` still
+writes skill directories). Codex stays exploded. If you previously
 used the skills CLI or a per-skill gateway cart, wipe and reinstall, or
 switch to a host plugin marketplace command below.
 
@@ -92,8 +93,10 @@ Unattended installs need an explicit scope and agent. `--bundle` and
 `--projector native|explode` overrides delivery. Without it, install consults
 `sk doctor`'s host cache (`~/.ai-skills/doctor.json`) for hosts that are not
 already locked: probe Claude Code / Copilot for a working `plugin`
-subcommand, and Cursor for `~/.cursor/plugins/local/`. Locked agents keep
-their projector until `--migrate` or `--projector`. Codex stays exploded.
+subcommand, and Cursor for `~/.cursor/plugins/local/`. Ambiguous Claude
+Code / Copilot probes ask once; `-y` fails closed without writing the
+cache. Locked agents keep their projector until `--migrate` or
+`--projector`. Codex stays exploded.
 Vendor installs stay exploded. Cursor native still needs a catalog checkout
 (`skills/` + `.claude-plugin/`). Published npm / `bunx` installs fall back
 to explode only when native is implicit; `--projector native` without a

@@ -177,6 +177,13 @@ describe("parseArguments", () => {
     expect(() => parseArguments(["--migrate", "cursor"])).toThrow("doctor-only");
   });
 
+  test("allows unattended doctor without agents", () => {
+    const parsed = parseArguments(["doctor", "-y", "--global", "--repair"]);
+    expect(() =>
+      validateUnattendedCommandOptions(parsed.options, { requireAgents: false }),
+    ).not.toThrow();
+  });
+
   test("rejects --migrate on an unknown host", () => {
     expect(() => parseArguments(["doctor", "--migrate", "notepad"])).toThrow("Unknown agent");
   });
