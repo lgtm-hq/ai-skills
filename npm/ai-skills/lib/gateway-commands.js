@@ -2,18 +2,33 @@ import { rmdir, unlink } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 
 import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
-import { getPackageVersion } from "./package-version.js";
 import {
+  agentProjector,
   hashFile,
+  hashTree,
+  isCliOwnedNativeInstall,
+  ownedCursorTreeFiles,
   LOCKFILE_VERSION,
   pluginAgentNames,
   pluginSkillNames,
+  PROJECTOR_EXPLODE,
+  PROJECTOR_NATIVE,
   pruneMissingLockEntries,
   readLockfile,
   reconcileLock,
+  skillNamesFromFiles,
   writeLockfile,
 } from "./lockfile.js";
 import { resolveScope } from "./options.js";
+import { getPackageVersion } from "./package-version.js";
+import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
+import {
+  cursorPluginsRoot,
+  discardCursorPluginBackup,
+  findCatalogSourceRoot,
+  installCursorPlugin,
+  restoreCursorPluginInstall,
+} from "./projectors/native-cursor.js";
 import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./skills-runner.js";
 
 /**
@@ -22,7 +37,21 @@ import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./s
  * Entries absent from every tracked agent directory are pruned instead of reinstalled.
  *
  * @param {{agents: string[], global: boolean, project: boolean, skills: string[], yes: boolean}} options - Validated command options.
- * @param {{hash?: typeof import("./lockfile.js").hashFile, isInstalled?: Parameters<typeof pruneMissingLockEntries>[1], lockEnvironment?: Parameters<typeof reconcileLock>[1], now?: () => Date, readLock?: typeof readLockfile, rmdir?: typeof rmdir, run?: typeof runSkills, unlink?: typeof unlink, warn?: (message: string) => void, writeLock?: typeof writeLockfile}} [dependencies] - Injectable command dependencies.
+ * @param {{
+ *   exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>,
+ *   hash?: typeof import("./lockfile.js").hashFile,
+ *   isInstalled?: Parameters<typeof pruneMissingLockEntries>[1],
+ *   lockEnvironment?: Parameters<typeof reconcileLock>[1],
+ *   move?: typeof import("node:fs/promises").rename,
+ *   now?: () => Date,
+ *   readLock?: typeof readLockfile,
+ *   rmdir?: typeof rmdir,
+ *   run?: typeof runSkills,
+ *   sourceRoot?: string | null,
+ *   unlink?: typeof unlink,
+ *   warn?: (message: string) => void,
+ *   writeLock?: typeof writeLockfile,
+ * }} [dependencies] - Injectable command dependencies.
  * @returns {Promise<{pruned: string[], updated: string[]}>} Updated and pruned plugin ids.
  */
 export async function updateSkills(options, dependencies = {}) {
@@ -54,72 +83,141 @@ export async function updateSkills(options, dependencies = {}) {
   const removeFile = dependencies.unlink ?? unlink;
   const removeDir = dependencies.rmdir ?? rmdir;
   const warn = dependencies.warn ?? ((message) => console.warn(message));
-  for (const pluginId of updated) {
-    const entry = selected[pluginId];
-    const skills = await currentPluginSkills(pluginId, entry);
-    catalogSkills[pluginId] = skills;
-    const source =
-      entry.vendor === "lgtm-hq"
-        ? `lgtm-hq/ai-skills@v${getPackageVersion()}`
-        : resolveVendorSource(entry, vendors);
-    const agents = pluginAgentNames(entry);
-    await run(
-      buildSkillsArguments(
-        {
-          ...scopedOptions,
-          agents: agents.length > 0 ? agents : scopedOptions.agents,
-          copy: false,
-          onConflict: "overwrite",
-          skills,
-        },
-        source,
-      ),
-    );
-    await removeStalePluginSkills(pluginId, entry, skills, {
-      hash,
-      removeDir,
-      removeFile,
-      run,
-      scopedOptions,
-      warn,
-    });
-  }
-  const installedAt = now().toISOString();
-  const plugins = {};
-  for (const [pluginId, entry] of Object.entries(prunedLock.plugins)) {
-    if (!updated.includes(pluginId)) {
-      plugins[pluginId] = entry;
-      continue;
-    }
-    const hashed = await rematerializePluginFiles(
-      entry,
-      catalogSkills[pluginId] ?? pluginSkillNames(entry),
-      hash,
-    );
-    plugins[pluginId] = {
-      ...hashed,
-      installedAt,
-      sha: sourceSha(entry.vendor, entry.sha, vendors),
-      version:
+  const cursorBackups = [];
+  try {
+    for (const pluginId of updated) {
+      const entry = selected[pluginId];
+      const skills = await currentPluginSkills(pluginId, entry);
+      catalogSkills[pluginId] = skills;
+      const source =
         entry.vendor === "lgtm-hq"
-          ? getPackageVersion()
-          : sourceSha(entry.vendor, entry.sha, vendors),
-    };
+          ? `lgtm-hq/ai-skills@v${getPackageVersion()}`
+          : resolveVendorSource(entry, vendors);
+      const lanes = partitionLockedLanes(entry);
+      if (lanes.explode.length > 0) {
+        await run(
+          buildSkillsArguments(
+            {
+              ...scopedOptions,
+              agents: lanes.explode,
+              copy: false,
+              onConflict: "overwrite",
+              skills,
+            },
+            source,
+          ),
+        );
+      }
+      if (lanes.cursorNative.length > 0) {
+        const cursorProgress = { swapped: false };
+        try {
+          cursorBackups.push(
+            await rematerializeCursorPlugin(
+              pluginId,
+              entry,
+              skills,
+              dependencies,
+              prunedLock.scope,
+              cursorProgress,
+            ),
+          );
+        } catch (error) {
+          if (cursorProgress.swapped && cursorProgress.destRoot) {
+            cursorBackups.push({
+              destRoot: cursorProgress.destRoot,
+              pluginId,
+              swapped: true,
+            });
+          }
+          throw error;
+        }
+      }
+      for (const agent of lanes.cliNative) {
+        await installCliPlugin({
+          agent,
+          exec: dependencies.exec,
+          pluginId,
+          source,
+        });
+      }
+      await removeStalePluginSkills(pluginId, entry, skills, {
+        hash,
+        removeDir,
+        removeFile,
+        run,
+        scopedOptions: { ...scopedOptions, agents: lanes.explode },
+        warn,
+      });
+    }
+    const installedAt = now().toISOString();
+    const plugins = {};
+    for (const [pluginId, entry] of Object.entries(prunedLock.plugins)) {
+      if (!updated.includes(pluginId)) {
+        plugins[pluginId] = entry;
+        continue;
+      }
+      const hashed = await rematerializePluginFiles(
+        entry,
+        catalogSkills[pluginId] ?? pluginSkillNames(entry),
+        hash,
+      );
+      plugins[pluginId] = {
+        ...hashed,
+        installedAt,
+        skills: catalogSkills[pluginId] ?? pluginSkillNames(entry),
+        sha: sourceSha(entry.vendor, entry.sha, vendors),
+        version:
+          entry.vendor === "lgtm-hq"
+            ? getPackageVersion()
+            : sourceSha(entry.vendor, entry.sha, vendors),
+      };
+    }
+    await writeLock({
+      ...prunedLock,
+      gatewayVersion: getPackageVersion(),
+      plugins,
+    });
+    for (const item of cursorBackups) {
+      try {
+        await discardCursorPluginBackup(item);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        warn(`Warning: could not discard Cursor plugin backup after update (${detail})`);
+      }
+    }
+    return { pruned, updated };
+  } catch (error) {
+    const restoreErrors = [];
+    for (const item of cursorBackups) {
+      try {
+        await restoreCursorPluginInstall({
+          ...item,
+          created: !item.swapped,
+          move: dependencies.move,
+        });
+      } catch (restoreError) {
+        restoreErrors.push(restoreError);
+      }
+    }
+    if (restoreErrors.length > 0) {
+      const original = error instanceof Error ? error.message : String(error);
+      const restore = restoreErrors
+        .map((item) => (item instanceof Error ? item.message : String(item)))
+        .join("; ");
+      throw new Error(`${original} (Cursor restore also failed: ${restore})`);
+    }
+    throw error;
   }
-  await writeLock({
-    ...prunedLock,
-    gatewayVersion: getPackageVersion(),
-    plugins,
-  });
-  return { pruned, updated };
 }
 
 /**
- * Remove selected lock-managed plugins through the upstream CLI and then unlock them.
+ * Remove selected lock-managed plugins, persist the lock removal, then uninstall host CLIs.
  *
  * @param {{agents: string[], global: boolean, project: boolean, skills: string[], yes: boolean}} options - Validated command options.
  * @param {{
+ *   exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>,
  *   hash?: typeof hashFile,
+ *   lockEnvironment?: Parameters<typeof reconcileLock>[1],
  *   readLock?: typeof readLockfile,
  *   rmdir?: typeof rmdir,
  *   run?: typeof runSkills,
@@ -148,21 +246,49 @@ export async function removeSkills(options, dependencies = {}) {
   if (selected.length === 0) {
     return [];
   }
+  /** @type {Array<{agent: string, pluginId: string}>} */
+  const pendingCliUninstall = [];
   for (const pluginId of selected) {
     const entry = lock.plugins[pluginId];
     const classified = await classifyPluginFiles(pluginId, entry, { hash, warn });
-    if (classified.removableSkills.length > 0) {
+    const lanes = partitionLockedLanes(entry);
+    if (lanes.explode.length > 0 && classified.removableSkills.length > 0) {
       await run(
         buildSkillsRemoveArguments(
           {
             ...scopedOptions,
-            agents: pluginAgentNames(entry),
+            agents: lanes.explode,
           },
           classified.removableSkills,
         ),
       );
     }
     await deleteVerifiedFiles(classified.verified, { removeDir, removeFile });
+    for (const agent of lanes.cursorNative) {
+      const pluginDir = entry.agents[agent]?.root;
+      if (!pluginDir) {
+        continue;
+      }
+      try {
+        await removeDir(pluginDir);
+      } catch {
+        // Untracked files remain; keep the folder.
+      }
+    }
+    for (const agent of lanes.cliNative) {
+      if (
+        await siblingLockHasCliNative(
+          pluginId,
+          agent,
+          scope,
+          readLock,
+          dependencies.lockEnvironment,
+        )
+      ) {
+        continue;
+      }
+      pendingCliUninstall.push({ agent, pluginId });
+    }
   }
   const plugins = { ...lock.plugins };
   selected.forEach((pluginId) => delete plugins[pluginId]);
@@ -170,6 +296,39 @@ export async function removeSkills(options, dependencies = {}) {
     ...lock,
     plugins,
   });
+  /** @type {Map<string, Set<string>>} */
+  const remainingAgents = new Map();
+  for (const item of pendingCliUninstall) {
+    const agents = remainingAgents.get(item.pluginId) ?? new Set();
+    agents.add(item.agent);
+    remainingAgents.set(item.pluginId, agents);
+  }
+  try {
+    for (const item of pendingCliUninstall) {
+      await uninstallCliPlugin({
+        agent: item.agent,
+        exec: dependencies.exec,
+        pluginId: item.pluginId,
+      });
+      const agents = remainingAgents.get(item.pluginId);
+      if (!agents) {
+        continue;
+      }
+      agents.delete(item.agent);
+      if (agents.size === 0) {
+        remainingAgents.delete(item.pluginId);
+      }
+    }
+  } catch (error) {
+    await restoreLockAfterCliUninstallFailure({
+      lock,
+      plugins,
+      remainingAgents,
+      warn,
+      writeLock,
+    });
+    throw error;
+  }
   return selected;
 }
 
@@ -296,6 +455,7 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
   }
   const stale = {
     ...entry,
+    skills: staleNames,
     agents: Object.fromEntries(
       Object.entries(entry.agents).map(([agent, install]) => [
         agent,
@@ -303,7 +463,7 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
           ...install,
           files: Object.fromEntries(
             Object.entries(install.files).filter(([relative]) =>
-              staleNames.includes(relative.split("/")[0]),
+              skillNamesBelongTo(relative, staleNames),
             ),
           ),
         },
@@ -311,16 +471,8 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
     ),
   };
   const classified = await classifyPluginFiles(pluginId, stale, { hash: io.hash, warn: io.warn });
-  if (classified.removableSkills.length > 0) {
-    await io.run(
-      buildSkillsRemoveArguments(
-        {
-          ...io.scopedOptions,
-          agents: pluginAgentNames(entry),
-        },
-        classified.removableSkills,
-      ),
-    );
+  if (classified.removableSkills.length > 0 && io.scopedOptions.agents.length > 0) {
+    await io.run(buildSkillsRemoveArguments(io.scopedOptions, classified.removableSkills));
   }
   await deleteVerifiedFiles(classified.verified, {
     removeDir: io.removeDir,
@@ -364,6 +516,21 @@ async function rematerializePluginFiles(entry, skillNames, hash) {
   const current = new Set(skillNames);
   const agents = {};
   for (const [agent, install] of Object.entries(entry.agents)) {
+    const projector = agentProjector(entry, agent);
+    if (projector === PROJECTOR_NATIVE && agent === "cursor") {
+      agents[agent] = {
+        ...install,
+        files: ownedCursorTreeFiles(await hashTree(install.root, hash), skillNames),
+      };
+      continue;
+    }
+    if (isCliOwnedNativeInstall(install, entry.projector)) {
+      agents[agent] = {
+        ...install,
+        files: Object.fromEntries(skillNames.map((name) => [`${name}/SKILL.md`, ""])),
+      };
+      continue;
+    }
     const files = {};
     for (const relative of Object.keys(install.files)) {
       const name = relative.split("/")[0];
@@ -372,7 +539,10 @@ async function rematerializePluginFiles(entry, skillNames, hash) {
       }
       try {
         files[relative] = await hash(join(install.root, relative));
-      } catch {
+      } catch (error) {
+        if (!isAbsentFsError(error)) {
+          throw error;
+        }
         files[relative] = "";
       }
     }
@@ -383,7 +553,10 @@ async function rematerializePluginFiles(entry, skillNames, hash) {
       }
       try {
         files[relative] = await hash(join(install.root, relative));
-      } catch {
+      } catch (error) {
+        if (!isAbsentFsError(error)) {
+          throw error;
+        }
         files[relative] = "";
       }
     }
@@ -427,14 +600,16 @@ async function classifyPluginFiles(pluginId, entry, io) {
   /** @type {Array<{absolute: string, root: string}>} */
   const verified = [];
   for (const install of Object.values(entry.agents)) {
+    if (isCliOwnedNativeInstall(install, entry.projector)) {
+      continue;
+    }
     for (const [relative, digest] of Object.entries(install.files)) {
       const absolute = resolveTrackedPath(install.root, relative);
       try {
         const current = await io.hash(absolute);
         if (current !== digest) {
           io.warn(`left modified ${pluginId} file ${relative}`);
-          const skillName = relative.split("/")[0];
-          if (skillName) {
+          for (const skillName of skillNamesFromFiles({ [relative]: digest })) {
             modifiedSkills.add(skillName);
           }
           continue;
@@ -449,6 +624,7 @@ async function classifyPluginFiles(pluginId, entry, io) {
     }
   }
   return {
+    modified: modifiedSkills.size > 0,
     removableSkills: pluginSkillNames(entry).filter((name) => !modifiedSkills.has(name)),
     verified,
   };
@@ -580,4 +756,189 @@ function pluginReconcileStatus(reconciliation) {
     status.set(item.pluginId, "MISSING");
   }
   return status;
+}
+
+/**
+ * Split a lock entry's agents by owning projector.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Plugin lock entry.
+ * @returns {{cliNative: string[], cursorNative: string[], explode: string[]}} Lanes.
+ */
+function partitionLockedLanes(entry) {
+  const explode = [];
+  const cursorNative = [];
+  const cliNative = [];
+  for (const agent of pluginAgentNames(entry)) {
+    const projector = agentProjector(entry, agent);
+    if (projector === PROJECTOR_EXPLODE) {
+      explode.push(agent);
+    } else if (agent === "cursor") {
+      cursorNative.push(agent);
+    } else {
+      cliNative.push(agent);
+    }
+  }
+  return { cliNative, cursorNative, explode };
+}
+
+/**
+ * Whether the other gateway scope still records this plugin as CLI-native.
+ *
+ * Host CLIs are user-scoped; uninstalling while a sibling lock still owns the
+ * plugin would strand that scope. Injected `readLock` helpers that ignore the
+ * scope argument (and return the current lock) are treated as having no sibling.
+ *
+ * @param {string} pluginId - Plugin id being removed.
+ * @param {string} agent - CLI-native agent name.
+ * @param {"global" | "project"} scope - Scope of the removal.
+ * @param {typeof readLockfile} readLock - Lock reader.
+ * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Path environment.
+ * @returns {Promise<boolean>} True when uninstall must be skipped.
+ */
+async function siblingLockHasCliNative(pluginId, agent, scope, readLock, lockEnvironment) {
+  const siblingScope = scope === "global" ? "project" : "global";
+  const sibling = await readLock(siblingScope, lockEnvironment);
+  if (sibling.scope !== siblingScope) {
+    return false;
+  }
+  const entry = sibling.plugins[pluginId];
+  if (!entry) {
+    return false;
+  }
+  return partitionLockedLanes(entry).cliNative.includes(agent);
+}
+
+/**
+ * Put plugins back in the lock when host CLI uninstall fails after the write.
+ *
+ * Lock removal is persisted before uninstall so a write failure cannot drop a
+ * still-tracked host plugin. If uninstall then fails, restore only unfinished
+ * CLI agents. Cursor-native and explode lanes are already deleted before the
+ * lock write; restamping them would report MISSING and rematerialize on update.
+ *
+ * @param {object} args - Named arguments.
+ * @param {import("./lockfile.js").GatewayLock} args.lock - Lock snapshot from before this remove.
+ * @param {import("./lockfile.js").GatewayLock["plugins"]} args.plugins - Lock plugins after this remove.
+ * @param {Map<string, Set<string>>} args.remainingAgents - Unfinished CLI agents by plugin id.
+ * @param {(message: string) => void} args.warn - Warning sink.
+ * @param {typeof writeLockfile} args.writeLock - Lock writer.
+ * @returns {Promise<void>} Resolves after restore or a failed restore warning.
+ */
+async function restoreLockAfterCliUninstallFailure(args) {
+  if (args.remainingAgents.size === 0) {
+    return;
+  }
+  const restoredPlugins = { ...args.plugins };
+  for (const [pluginId, remaining] of args.remainingAgents) {
+    const original = args.lock.plugins[pluginId];
+    /** @type {import("./lockfile.js").PluginLockEntry["agents"]} */
+    const restoredAgents = {};
+    for (const agent of remaining) {
+      const install = original.agents[agent];
+      if (install) {
+        restoredAgents[agent] = install;
+      }
+    }
+    if (Object.keys(restoredAgents).length === 0) {
+      continue;
+    }
+    const restoredEntry = {
+      ...original,
+      agents: restoredAgents,
+    };
+    const projectorValues = Object.keys(restoredAgents).map((agent) =>
+      agentProjector(restoredEntry, agent),
+    );
+    restoredPlugins[pluginId] = {
+      ...restoredEntry,
+      projector: projectorValues.every((value) => value === PROJECTOR_NATIVE)
+        ? PROJECTOR_NATIVE
+        : PROJECTOR_EXPLODE,
+    };
+  }
+  try {
+    await args.writeLock({
+      ...args.lock,
+      plugins: restoredPlugins,
+    });
+  } catch (restoreError) {
+    const detail = restoreError instanceof Error ? restoreError.message : String(restoreError);
+    args.warn(`Warning: could not restore lock after CLI uninstall failure (${detail})`);
+  }
+}
+
+/**
+ * Re-assemble a Cursor-local plugin tree from the current catalog membership.
+ *
+ * @param {string} pluginId - Plugin id.
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Lock entry.
+ * @param {string[]} skills - Current catalog skill names.
+ * @param {{
+ *   lockEnvironment?: Parameters<typeof reconcileLock>[1],
+ *   move?: typeof import("node:fs/promises").rename,
+ *   sourceRoot?: string | null,
+ * }} dependencies - Injectable catalog root and paths.
+ * @param {"global" | "project"} scope - Installation scope.
+ * @param {{destRoot?: string, swapped?: boolean}} [progress] - Filled with dest root; `swapped` after dest→`.bak`.
+ * @returns {Promise<{destRoot: string, pluginId: string, swapped: boolean}>} Dest root and whether dest was swapped aside.
+ */
+async function rematerializeCursorPlugin(
+  pluginId,
+  entry,
+  skills,
+  dependencies,
+  scope,
+  progress = {},
+) {
+  if (entry.vendor !== "lgtm-hq") {
+    throw new Error("Native Cursor projector is first-party only");
+  }
+  const sourceRoot =
+    dependencies.sourceRoot !== undefined
+      ? dependencies.sourceRoot
+      : findCatalogSourceRoot(dependencies.lockEnvironment?.cwd ?? process.cwd());
+  if (!sourceRoot) {
+    throw new Error(
+      "Native Cursor projector requires a catalog checkout (skills/ + " +
+        ".claude-plugin/marketplace.json). Run update from the ai-skills " +
+        "repository, or remove and reinstall with --projector explode.",
+    );
+  }
+  const destRoot = cursorPluginsRoot({
+    cwd: dependencies.lockEnvironment?.cwd,
+    home: dependencies.lockEnvironment?.home,
+    scope,
+  });
+  progress.destRoot = destRoot;
+  const bundles = await loadBundles();
+  await installCursorPlugin({
+    commit: false,
+    description: bundles.groups[pluginId]?.description ?? pluginId,
+    destRoot,
+    move: dependencies.move,
+    pluginId,
+    progress,
+    replace: true,
+    skills,
+    sourceRoot,
+    version: getPackageVersion(),
+  });
+  return { destRoot, pluginId, swapped: Boolean(progress.swapped) };
+}
+
+/**
+ * Whether a tracked relative path belongs to one of the named skills.
+ *
+ * @param {string} relative - Path relative to the agent root.
+ * @param {string[]} names - Skill directory names.
+ * @returns {boolean} True when the path is inside one of those skills.
+ */
+function skillNamesBelongTo(relative, names) {
+  const wanted = new Set(names);
+  for (const name of skillNamesFromFiles({ [relative]: "" })) {
+    if (wanted.has(name)) {
+      return true;
+    }
+  }
+  return false;
 }

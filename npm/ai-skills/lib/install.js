@@ -3,17 +3,33 @@ import { join } from "node:path";
 
 import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
 import {
+  agentProjector,
   agentSkillsRoot,
   hashFile,
+  hashTree,
+  isCliOwnedNativeInstall,
+  ownedCursorTreeFiles,
   LOCKFILE_VERSION,
   mergeLockEntries,
   PROJECTOR_EXPLODE,
+  PROJECTOR_NATIVE,
   readLockfile,
   reconcileLock,
+  skillNamesFromFiles,
   writeLockfile,
 } from "./lockfile.js";
 import { resolveScope } from "./options.js";
 import { getPackageVersion } from "./package-version.js";
+import { assertProjectorSupported, resolveProjector } from "./projectors/defaults.js";
+import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
+import {
+  cursorDestHasFiles,
+  cursorPluginsRoot,
+  discardCursorPluginBackup,
+  findCatalogSourceRoot,
+  installCursorPlugin,
+  restoreCursorPluginInstall,
+} from "./projectors/native-cursor.js";
 import { buildSkillsArguments, runSkills } from "./skills-runner.js";
 import {
   createClackUi,
@@ -608,10 +624,11 @@ async function cancelable(ui, valuePromise) {
 /**
  * Install a first-party bundle or SHA-pinned vendor skill.
  *
- * @param {{agents: string[], bundle: string | null, copy: boolean, global: boolean, onConflict: string | null, project: boolean, skills: string[], vendor: string | null, yes: boolean}} options - Validated install options.
+ * @param {{agents: string[], bundle: string | null, copy: boolean, global: boolean, onConflict: string | null, project: boolean, projector?: "native" | "explode" | null, skills: string[], vendor: string | null, yes: boolean}} options - Validated install options.
  * @param {(args: string[]) => Promise<void>} [run] - Injectable skills process runner.
  * @param {() => Date} [now] - Injectable clock.
  * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable lockfile environment.
+ * @param {{exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>, move?: typeof import("node:fs/promises").rename, remove?: typeof rm, sourceRoot?: string | null, warn?: (message: string) => void}} [extras] - Native projector dependencies.
  * @returns {Promise<{alreadyPresent: number, installed: number, repaired: number}>} Install summary counts.
  */
 export async function install(
@@ -619,8 +636,10 @@ export async function install(
   run = runSkills,
   now = () => new Date(),
   lockEnvironment = {},
+  extras = {},
 ) {
   lockEnvironment = lockEnvironment ?? {};
+  extras = extras ?? {};
   if (options.onConflict && options.onConflict !== "overwrite") {
     throw new Error(
       `--on-conflict=${options.onConflict} is unsupported: upstream skills CLI has no conflict policy. Omit the flag, use overwrite, or remove the existing skill first.`,
@@ -701,38 +720,118 @@ export async function install(
     return { alreadyPresent, installed, repaired };
   }
   const agentsForRun = detectAgents ? [] : agentsToInstall;
-  const rollbackAgents = detectAgents ? KNOWN_AGENTS.map((agent) => agent.value) : agentsToInstall;
+  const lanes = partitionProjectorLanes(
+    agentsForRun,
+    scopedOptions.projector,
+    Boolean(vendor),
+    existing,
+  );
+  if (detectAgents && scopedOptions.projector === PROJECTOR_NATIVE) {
+    throw new Error(
+      "Native projector requires -a/--agent; omit --projector to detect exploded hosts",
+    );
+  }
+  let cursorSourceRoot;
+  if (lanes.cursorNative.length > 0) {
+    cursorSourceRoot =
+      extras.sourceRoot !== undefined
+        ? extras.sourceRoot
+        : findCatalogSourceRoot(lockEnvironment.cwd ?? process.cwd());
+    if (!cursorSourceRoot) {
+      const lockedNativeCursor =
+        Boolean(existing?.agents?.cursor) &&
+        agentProjector(existing, "cursor") === PROJECTOR_NATIVE;
+      if (scopedOptions.projector === PROJECTOR_NATIVE || lockedNativeCursor) {
+        throw new Error(
+          "Native Cursor projector requires a catalog checkout (skills/ + " +
+            ".claude-plugin/marketplace.json). Use --projector explode, or run from the " +
+            "ai-skills repository.",
+        );
+      }
+      lanes.explode.push("cursor");
+      lanes.cursorNative.length = 0;
+    }
+  }
+  const rollbackAgents = detectAgents ? KNOWN_AGENTS.map((agent) => agent.value) : lanes.explode;
   const preexisting = await snapshotExistingSkillDirs(
     scopedOptions,
     rollbackAgents,
     lockEnvironment,
   );
+  const destRoot = cursorPluginsRoot({
+    cwd: lockEnvironment.cwd,
+    home: lockEnvironment.home,
+    scope,
+  });
+  const cursorPluginDir = join(destRoot, pluginId);
+  const cursorExisted =
+    lanes.cursorNative.length > 0 ? await cursorDestHasFiles(cursorPluginDir) : false;
+  // Dest existence is not a swap; installCursorPlugin sets this after dest→`.bak`.
+  const cursorProgress = { swapped: false };
+  let lockCommitted = false;
+  const cliCreated = [];
   try {
-    await run(
-      buildSkillsArguments(
-        {
-          ...scopedOptions,
-          agents: agentsForRun,
-        },
+    if (detectAgents || lanes.explode.length > 0) {
+      await run(
+        buildSkillsArguments(
+          {
+            ...scopedOptions,
+            agents: agentsForRun.length > 0 ? lanes.explode : agentsForRun,
+          },
+          source,
+        ),
+      );
+    }
+    if (lanes.cursorNative.length > 0) {
+      const replace = Boolean(
+        existing?.agents?.cursor && agentProjector(existing, "cursor") === PROJECTOR_NATIVE,
+      );
+      await installCursorPlugin({
+        commit: false,
+        description: await pluginDescription(pluginId, vendor),
+        destRoot,
+        move: extras.move,
+        pluginId,
+        progress: cursorProgress,
+        replace,
+        skills: scopedOptions.skills,
+        sourceRoot: cursorSourceRoot,
+        version: vendor?.sha ?? getPackageVersion(),
+      });
+    }
+    for (const agent of lanes.cliNative) {
+      const cliResult = await installCliPlugin({
+        agent,
+        exec: extras.exec,
+        pluginId,
         source,
-      ),
-    );
+      });
+      if (!cliResult.alreadyPresent) {
+        cliCreated.push(agent);
+      }
+    }
     const agentsForLock = detectAgents
       ? await discoverInstalledAgents(scopedOptions, lockEnvironment)
       : agentsToInstall;
     if (agentsForLock.length === 0) {
       return { alreadyPresent: 0, installed: 0, repaired: 0 };
     }
-    if (!detectAgents) {
-      await assertCompletePluginInstall(scopedOptions, agentsToInstall, lockEnvironment);
+    if (!detectAgents && lanes.explode.length > 0) {
+      await assertCompletePluginInstall(scopedOptions, lanes.explode, lockEnvironment);
     }
     const entries = await createLockEntries(
-      { ...scopedOptions, agents: agentsForLock },
+      {
+        ...scopedOptions,
+        agents: agentsForLock,
+        ...(detectAgents ? { projector: PROJECTOR_EXPLODE } : {}),
+      },
       vendor,
       now,
       lockEnvironment,
       pluginId,
       detectAgents,
+      existing,
+      new Set(lanes.explode),
     );
     if (Object.keys(entries).length === 0) {
       return { alreadyPresent: 0, installed: 0, repaired: 0 };
@@ -746,14 +845,57 @@ export async function install(
           "Fix the lockfile path permissions and re-run install.",
       );
     }
+    lockCommitted = true;
+    if (lanes.cursorNative.length > 0) {
+      try {
+        await discardCursorPluginBackup({
+          destRoot,
+          pluginId,
+          remove: extras.remove,
+        });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        const warn = extras.warn ?? ((message) => console.warn(message));
+        warn(`Warning: could not discard Cursor plugin backup after install (${detail})`);
+      }
+    }
     return { alreadyPresent, installed, repaired };
   } catch (error) {
+    if (lockCommitted) {
+      throw error;
+    }
+    const rollbackErrors = [];
     try {
       await rollbackNewSkillDirs(scopedOptions, rollbackAgents, preexisting, lockEnvironment);
     } catch (rollbackError) {
+      rollbackErrors.push(rollbackError);
+    }
+    if (lanes.cursorNative.length > 0) {
+      try {
+        await restoreCursorPluginInstall({
+          created: !cursorExisted,
+          destRoot,
+          move: extras.move,
+          pluginId,
+          remove: extras.remove,
+          swapped: cursorProgress.swapped,
+        });
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
+    for (const agent of cliCreated) {
+      try {
+        await uninstallCliPlugin({ agent, exec: extras.exec, pluginId });
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
+    if (rollbackErrors.length > 0) {
       const original = error instanceof Error ? error.message : String(error);
-      const rollback =
-        rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+      const rollback = rollbackErrors
+        .map((item) => (item instanceof Error ? item.message : String(item)))
+        .join("; ");
       throw new Error(`${original} (rollback also failed: ${rollback})`);
     }
     throw error;
@@ -763,12 +905,15 @@ export async function install(
 /**
  * Build lockfile entries for an installation that completed successfully.
  *
- * @param {{agents: string[], bundle: string | null, skills: string[], global: boolean, project: boolean}} options - Completed install options.
+ * @param {{agents: string[], bundle: string | null, projector?: "native" | "explode" | null, skills: string[], global: boolean, project: boolean, vendor: string | null}} options - Completed install options.
  * @param {{id: string, repo: string, sha: string} | undefined} vendor - Selected vendor, if any.
  * @param {() => Date} now - Clock for installation metadata.
  * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable path/hash environment.
  * @param {string} pluginId - Plugin id to record.
  * @param {boolean} [onlyExistingFiles] - When true, omit missing SKILL.md paths instead of empty digests.
+ * @param {import("./lockfile.js").PluginLockEntry} [existing] - Previously locked plugin, if any.
+ * @param {Set<string>} [explodeLockAgents] - Agents delivered via explode this run
+ *   (including implicit Cursor native → explode when the catalog is absent).
  * @returns {Promise<Record<string, import("./lockfile.js").PluginLockEntry>>} Entries keyed by plugin id.
  */
 async function createLockEntries(
@@ -778,14 +923,47 @@ async function createLockEntries(
   lockEnvironment = {},
   pluginId,
   onlyExistingFiles = false,
+  existing,
+  explodeLockAgents = new Set(),
 ) {
   lockEnvironment = lockEnvironment ?? {};
   const installedAt = now().toISOString();
   const scope = resolveScope(options);
   const packageVersion = getPackageVersion();
   const exists = lockEnvironment?.exists ?? pathExists;
+  const hash = lockEnvironment.hash ?? hashFile;
+  const destRoot = cursorPluginsRoot({
+    cwd: lockEnvironment.cwd,
+    home: lockEnvironment.home,
+    scope,
+  });
   const agents = {};
+  const projectors = {};
   for (const agent of options.agents) {
+    const projector = explodeLockAgents.has(agent)
+      ? PROJECTOR_EXPLODE
+      : projectorForAgent(agent, options.projector, Boolean(vendor), existing);
+    projectors[agent] = projector;
+    if (projector === PROJECTOR_NATIVE && agent === "cursor") {
+      const root = join(destRoot, pluginId);
+      if (onlyExistingFiles && !(await exists(root))) {
+        continue;
+      }
+      agents[agent] = {
+        files: ownedCursorTreeFiles(await hashTree(root, hash), options.skills),
+        projector,
+        root,
+      };
+      continue;
+    }
+    if (projector === PROJECTOR_NATIVE) {
+      agents[agent] = {
+        files: Object.fromEntries(options.skills.map((name) => [`${name}/SKILL.md`, ""])),
+        projector,
+        root: `cli:${agent}`,
+      };
+      continue;
+    }
     const root = agentSkillsRoot(scope, agent, lockEnvironment);
     const files = {};
     for (const name of options.skills) {
@@ -799,17 +977,22 @@ async function createLockEntries(
     if (Object.keys(files).length === 0) {
       continue;
     }
-    agents[agent] = { files, root };
+    agents[agent] = { files, projector, root };
   }
   if (Object.keys(agents).length === 0) {
     return {};
   }
+  const projectorValues = [...new Set(Object.values(projectors))];
   const entry = {
     agents,
     installedAt,
-    projector: PROJECTOR_EXPLODE,
+    projector:
+      projectorValues.length === 1 && projectorValues[0] === PROJECTOR_NATIVE
+        ? PROJECTOR_NATIVE
+        : PROJECTOR_EXPLODE,
     repo: vendor?.repo ?? "lgtm-hq/ai-skills",
     sha: vendor?.sha ?? `v${packageVersion}`,
+    skills: [...options.skills],
     vendor: vendor?.id ?? "lgtm-hq",
     version: vendor?.sha ?? packageVersion,
   };
@@ -893,12 +1076,82 @@ function agentCoversSkills(install, requestedSkills) {
   if (!install) {
     return false;
   }
-  const tracked = new Set(
-    Object.keys(install.files)
-      .map((relative) => relative.split("/")[0])
-      .filter(Boolean),
-  );
+  if (isCliOwnedNativeInstall(install, install.projector)) {
+    const tracked = skillNamesFromFiles(install.files);
+    if (tracked.size === 0) {
+      return true;
+    }
+    return requestedSkills.every((name) => tracked.has(name));
+  }
+  const tracked = skillNamesFromFiles(install.files);
   return requestedSkills.every((name) => tracked.has(name));
+}
+
+/**
+ * Split agents into explode, Cursor-tree, and CLI-native lanes.
+ *
+ * @param {string[]} agents - Agents to install.
+ * @param {"native" | "explode" | null | undefined} override - CLI `--projector`.
+ * @param {boolean} vendor - Whether this is a vendor install.
+ * @param {import("./lockfile.js").PluginLockEntry} [existing] - Previously locked plugin, if any.
+ * @returns {{cliNative: string[], cursorNative: string[], explode: string[]}} Lanes.
+ */
+function partitionProjectorLanes(agents, override, vendor, existing) {
+  const explode = [];
+  const cursorNative = [];
+  const cliNative = [];
+  for (const agent of agents) {
+    const projector = projectorForAgent(agent, override, vendor, existing);
+    if (projector === PROJECTOR_EXPLODE) {
+      explode.push(agent);
+    } else if (agent === "cursor") {
+      cursorNative.push(agent);
+    } else {
+      cliNative.push(agent);
+    }
+  }
+  return { cliNative, cursorNative, explode };
+}
+
+/**
+ * Projector for one agent: explicit `--projector` wins, else the locked
+ * per-agent value, else the host default.
+ *
+ * @param {string} agent - Host identifier.
+ * @param {"native" | "explode" | null | undefined} override - CLI `--projector`.
+ * @param {boolean} vendor - Whether this is a vendor install.
+ * @param {import("./lockfile.js").PluginLockEntry} [existing] - Previously locked plugin, if any.
+ * @returns {"native" | "explode"} Effective projector.
+ */
+function projectorForAgent(agent, override, vendor, existing) {
+  if (vendor || override === PROJECTOR_NATIVE || override === PROJECTOR_EXPLODE) {
+    const projector = resolveProjector(agent, override, { vendor });
+    assertProjectorSupported(agent, projector);
+    return projector;
+  }
+  if (existing?.agents?.[agent]) {
+    const projector = agentProjector(existing, agent);
+    assertProjectorSupported(agent, projector);
+    return projector;
+  }
+  const projector = resolveProjector(agent, override, { vendor });
+  assertProjectorSupported(agent, projector);
+  return projector;
+}
+
+/**
+ * plugin.json description for a first-party bundle, or the plugin id.
+ *
+ * @param {string} pluginId - Plugin id.
+ * @param {{id: string} | undefined} vendor - Selected vendor, if any.
+ * @returns {Promise<string>} Manifest description.
+ */
+async function pluginDescription(pluginId, vendor) {
+  if (vendor) {
+    return pluginId;
+  }
+  const bundles = await loadBundles();
+  return bundles.groups[pluginId]?.description ?? pluginId;
 }
 
 /**

@@ -26,10 +26,11 @@ The unit of install is a **plugin**. A plugin is a named group of skills (and,
 later, other components). Contents stay visible; native hosts install the
 plugin as a whole. The gateway (`sk`) installs plugins atomically — the
 TUI is a plugin checklist, `--skill` / `--bundle` name a plugin, and
-`--vendor` installs that vendor plugin whole. Native projectors are a
-later issue. If you previously used the skills CLI or a per-skill
-gateway cart, wipe and reinstall, or switch to a host plugin marketplace
-command below.
+`--vendor` installs that vendor plugin whole. Native projectors are the
+default for Cursor, Claude Code, and GitHub Copilot (`--projector explode`
+falls back to skill directories). Codex stays exploded. If you previously
+used the skills CLI or a per-skill gateway cart, wipe and reinstall, or
+switch to a host plugin marketplace command below.
 
 Pin the gateway to a release. Native `marketplace add` tracks the default
 branch unless you append a git tag. The npm version matches the git tag
@@ -86,6 +87,15 @@ bunx --package=@lgtm-hq/ai-skills@0.23.0 sk install -y --global \
 Unattended installs need an explicit scope and agent. `--bundle` and
 `--skill` take a plugin id from the table below (`git-pr`, `review`,
 `standards`, …). `--vendor <id>` installs that vendor plugin whole.
+`--projector native|explode` selects delivery; the default is native for
+Cursor, Claude Code, and Copilot, and explode for Codex. Cursor native
+assembles `~/.cursor/plugins/local/<plugin-id>` from a catalog checkout
+(`skills/` + `.claude-plugin/`). Published npm / `bunx` installs do not
+ship that catalog, so Cursor falls back to explode. Explicit
+`--projector native` without a catalog checkout fails closed. Claude Code
+and Copilot shell out to their plugin CLIs (user-scoped by the host). Use
+`--projector explode` to keep writing `~/.cursor/skills` (and the other
+host skill directories).
 
 > [!WARNING]
 > Pin the gateway to a release. Plugins are instructions your agents

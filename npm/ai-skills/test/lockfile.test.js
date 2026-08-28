@@ -1,9 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   LOCKFILE_VERSION,
+  agentProjector,
+  hashTree,
+  isCliOwnedNativeInstall,
   isPluginInstalled,
   mergeLockEntries,
+  ownedCursorTreeFiles,
+  pluginSkillNames,
   pruneMissingLockEntries,
   readLockfile,
   reconcileLock,
@@ -62,6 +70,66 @@ describe("gateway lockfile", () => {
 
     expect(Object.keys(merged.plugins.review.agents).sort()).toEqual(["claude-code", "cursor"]);
     expect(merged.plugins.pdf).toEqual(lock.plugins.pdf);
+  });
+
+  test("replaces an agent file map when projector or root changes", () => {
+    const merged = mergeLockEntries(lock, {
+      review: {
+        ...explodeEntry,
+        agents: {
+          cursor: {
+            files: { "skills/lint/SKILL.md": "native" },
+            projector: "native",
+            root: "/tmp/project/.cursor/plugins/local/review",
+          },
+        },
+        projector: "native",
+      },
+    });
+    expect(merged.plugins.review.agents.cursor.files).toEqual({
+      "skills/lint/SKILL.md": "native",
+    });
+    expect(merged.plugins.review.agents.cursor.root).toBe(
+      "/tmp/project/.cursor/plugins/local/review",
+    );
+  });
+
+  test("unions agent files when a previous projector field is omitted", () => {
+    const merged = mergeLockEntries(lock, {
+      review: {
+        ...explodeEntry,
+        agents: {
+          cursor: {
+            files: { "test/SKILL.md": "new" },
+            projector: "explode",
+            root: "/tmp/project/.cursor/skills",
+          },
+        },
+      },
+    });
+    expect(merged.plugins.review.agents.cursor.files).toEqual({
+      "lint/SKILL.md": "abc",
+      "test/SKILL.md": "new",
+    });
+  });
+
+  test("does not flip exploded agents to native when merging a native install", () => {
+    const merged = mergeLockEntries(lock, {
+      review: {
+        ...explodeEntry,
+        agents: {
+          "claude-code": {
+            files: { "lint/SKILL.md": "" },
+            projector: "native",
+            root: "cli:claude-code",
+          },
+        },
+        projector: "native",
+      },
+    });
+    expect(agentProjector(merged.plugins.review, "cursor")).toBe("explode");
+    expect(agentProjector(merged.plugins.review, "claude-code")).toBe("native");
+    expect(merged.plugins.review.projector).toBe("explode");
   });
 
   test("prunes entries that conflict with disk state", async () => {
@@ -126,6 +194,21 @@ describe("gateway lockfile", () => {
       readLockfile("project", {
         cwd: "/tmp/unused",
         read: async () => JSON.stringify({ version: 99 }),
+      }),
+    ).rejects.toThrow("Invalid gateway lockfile");
+  });
+
+  test("rejects a v2 lock whose plugin ids are not kebab-case", async () => {
+    await expect(
+      readLockfile("project", {
+        cwd: "/tmp/unused",
+        read: async () =>
+          JSON.stringify({
+            gatewayVersion: "0.0.0-dev",
+            plugins: { "../../../victim": explodeEntry },
+            scope: "project",
+            version: LOCKFILE_VERSION,
+          }),
       }),
     ).rejects.toThrow("Invalid gateway lockfile");
   });
@@ -212,5 +295,103 @@ describe("gateway lockfile", () => {
 
     expect(removed).toEqual([]);
     expect(Object.keys(kept.plugins).sort()).toEqual(["pdf", "review"]);
+  });
+
+  test("reads skill names from Cursor native trees and explicit skills lists", () => {
+    expect(
+      pluginSkillNames({
+        ...explodeEntry,
+        agents: {
+          cursor: {
+            files: {
+              ".claude-plugin/plugin.json": "abc",
+              "skills/lint/SKILL.md": "def",
+              "skills/test/SKILL.md": "ghi",
+            },
+            root: "/tmp/.cursor/plugins/local/review",
+          },
+        },
+      }),
+    ).toEqual(["lint", "test"]);
+    expect(pluginSkillNames({ ...explodeEntry, skills: ["lint", "test"] })).toEqual([
+      "lint",
+      "test",
+    ]);
+  });
+
+  test("treats CLI-owned native installs as present without hashing", async () => {
+    const entry = {
+      ...explodeEntry,
+      projector: "native",
+      agents: {
+        "claude-code": {
+          files: { "lint/SKILL.md": "" },
+          projector: "native",
+          root: "cli:claude-code",
+        },
+      },
+    };
+    expect(isCliOwnedNativeInstall(entry.agents["claude-code"], "native")).toBe(true);
+    const result = await reconcileLock(
+      {
+        gatewayVersion: "0.0.0-dev",
+        plugins: { review: entry },
+        scope: "project",
+        version: LOCKFILE_VERSION,
+      },
+      {
+        exists: async () => false,
+        hash: async () => {
+          throw new Error("CLI native must not hash");
+        },
+      },
+    );
+    expect(result.present).toEqual([{ agent: "claude-code", pluginId: "review" }]);
+    expect(result.missing).toEqual([]);
+  });
+
+  test("does not treat an empty Cursor native file map as CLI-owned", () => {
+    expect(
+      isCliOwnedNativeInstall(
+        {
+          files: {},
+          projector: "native",
+          root: "/tmp/.cursor/plugins/local/review",
+        },
+        "native",
+      ),
+    ).toBe(false);
+  });
+
+  test("hashes every regular file in a plugin tree", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-hash-tree-"));
+    try {
+      await mkdir(join(root, ".claude-plugin"), { recursive: true });
+      await mkdir(join(root, "skills/lint"), { recursive: true });
+      await writeFile(join(root, ".claude-plugin/plugin.json"), "{}\n");
+      await writeFile(join(root, "skills/lint/SKILL.md"), "# lint\n");
+      const files = await hashTree(root);
+      expect(Object.keys(files).sort()).toEqual([
+        ".claude-plugin/plugin.json",
+        "skills/lint/SKILL.md",
+      ]);
+      expect(files[".claude-plugin/plugin.json"]).toMatch(/^[a-f0-9]{64}$/);
+      expect(files["skills/lint/SKILL.md"]).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("drops untracked Cursor files from the owned hash map", async () => {
+    const files = {
+      ".claude-plugin/plugin.json": "aaa",
+      "USER-DATA.txt": "bbb",
+      "skills/lint/SKILL.md": "ccc",
+      "skills/retired/SKILL.md": "ddd",
+    };
+    expect(ownedCursorTreeFiles(files, ["lint"])).toEqual({
+      ".claude-plugin/plugin.json": "aaa",
+      "skills/lint/SKILL.md": "ccc",
+    });
   });
 });
