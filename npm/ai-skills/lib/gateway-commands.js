@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { rmdir, unlink } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 
@@ -24,6 +23,7 @@ import { resolveScope } from "./options.js";
 import { getPackageVersion } from "./package-version.js";
 import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
 import {
+  cursorDestHasFiles,
   cursorPluginsRoot,
   discardCursorPluginBackup,
   findCatalogSourceRoot,
@@ -876,8 +876,8 @@ async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, 
   if (!sourceRoot) {
     throw new Error(
       "Native Cursor projector requires a catalog checkout (skills/ + " +
-        ".claude-plugin/marketplace.json). Use --projector explode, or run from the " +
-        "ai-skills repository.",
+        ".claude-plugin/marketplace.json). Run update from the ai-skills " +
+        "repository, or remove and reinstall with --projector explode.",
     );
   }
   const destRoot = cursorPluginsRoot({
@@ -885,7 +885,7 @@ async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, 
     home: dependencies.lockEnvironment?.home,
     scope,
   });
-  const swapped = existsSync(join(destRoot, pluginId));
+  const swapped = await cursorDestHasFiles(join(destRoot, pluginId));
   const bundles = await loadBundles();
   await installCursorPlugin({
     commit: false,

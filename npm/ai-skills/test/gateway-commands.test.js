@@ -1213,6 +1213,48 @@ describe("gateway maintenance commands", () => {
     }
   });
 
+  test("does not tell update to pass --projector explode when catalog is missing", async () => {
+    let message = "";
+    try {
+      await updateSkills(options, {
+        isInstalled: async () => true,
+        lockEnvironment: { cwd: "/tmp/ai-skills-no-catalog-update" },
+        readLock: async () => ({
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            lint: pluginEntry({
+              agents: {
+                cursor: {
+                  files: { ".claude-plugin/plugin.json": "old" },
+                  projector: "native",
+                  root: "/tmp/ai-skills-no-catalog-update/.cursor/plugins/local/lint",
+                },
+              },
+              projector: "native",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-old",
+              skills: ["lint"],
+              vendor: "lgtm-hq",
+              version: "0.0.0-old",
+            }),
+          },
+          scope: "project",
+          version: 2,
+        }),
+        run: async () => {
+          throw new Error("explode runner must not run");
+        },
+        sourceRoot: null,
+        writeLock: async () => {},
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain("requires a catalog checkout");
+    expect(message).toContain("Run update from the ai-skills repository");
+    expect(message).not.toMatch(/Use --projector explode/);
+  });
+
   test("updates a native Cursor plugin by reassembling the local tree", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cursor-update-"));
     try {
