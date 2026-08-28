@@ -6,9 +6,9 @@ import ctypes
 import functools
 import os
 import shutil
+import stat
 import sys
 from collections.abc import Iterator, Sequence
-from contextlib import suppress
 from ctypes.util import find_library
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -161,7 +161,7 @@ def copy_tree(*, source: Path, destination: Path, source_root: Path) -> None:
         FileExistsError: If ``destination`` already exists.
     """
     contained_path(path=source, root=source_root)
-    if destination.exists():
+    if destination.exists(follow_symlinks=False) or destination.is_symlink():
         msg = f"destination already exists: {destination}"
         raise FileExistsError(msg)
     destination.mkdir(parents=True)
@@ -174,7 +174,7 @@ def copy_tree(*, source: Path, destination: Path, source_root: Path) -> None:
         target = destination / relative
         contained_path(path=target.parent, root=destination.parent)
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src=file_path, dst=target)
+        _copy_file_nofollow(source=file_path, destination=target)
 
 
 def validate_tree(*, root: Path) -> None:
@@ -364,20 +364,36 @@ def find_skill_markdown(*, root: Path) -> tuple[str, ...]:
 
 
 def _reject_leftover_backup(*, destination: Path) -> None:
-    """Fail closed when a leftover bake backup path already exists.
+    """Fail closed when a leftover bake sidecar already exists.
 
     Args:
-        destination: Final output path whose sibling ``.{name}.bak`` must
-            not already exist.
+        destination: Final output path whose sibling ``.{name}.bak`` and
+            ``.{name}.hold`` must not already exist.
 
     Raises:
-        ValueError: If a leftover backup directory, file, or dangling
-            symlink is present.
+        ValueError: If a leftover backup or hold directory, file, or
+            dangling symlink is present.
     """
-    leftover = destination.with_name(f".{destination.name}.bak")
-    if leftover.exists(follow_symlinks=False):
-        msg = f"leftover bake backup: {leftover}"
-        raise ValueError(msg)
+    leftovers = (
+        (destination.with_name(f".{destination.name}.bak"), "backup"),
+        (destination.with_name(f".{destination.name}.hold"), "hold"),
+    )
+    for leftover, label in leftovers:
+        if leftover.exists(follow_symlinks=False):
+            msg = f"leftover bake {label}: {leftover}"
+            raise ValueError(msg)
+
+
+def _hold_path(*, destination: Path) -> Path:
+    """Return the sibling directory that parks the original dest inode.
+
+    Args:
+        destination: Final output path.
+
+    Returns:
+        ``.{name}.hold`` next to ``destination``.
+    """
+    return destination.with_name(f".{destination.name}.hold")
 
 
 def install_directory(*, source: Path, destination: Path) -> None:
@@ -385,13 +401,13 @@ def install_directory(*, source: Path, destination: Path) -> None:
 
     When ``destination`` already exists, the staged tree is exchanged onto
     the destination path in one kernel rename so that path is never absent
-    or mixed, then the new contents are mirrored onto the original
-    destination inode and exchanged back. A process whose cwd is
-    ``destination`` keeps a valid working directory, including when the
-    inode mirror fails: the original inode is swapped back onto
-    ``destination`` before the error propagates. When ``destination``
-    does not exist, ``source`` is renamed onto it. A leftover
-    ``.{name}.bak`` next to ``destination`` always fails closed.
+    or mixed. The original destination inode is moved to a sibling hold
+    directory (outside any caller temporary tree), snapshotted, then
+    filled with the new contents and exchanged back. On mirror failure the
+    snapshot is copied back onto that inode before it returns to
+    ``destination``, so readers and a resident cwd see the complete old
+    tree. When ``destination`` does not exist, ``source`` is renamed onto
+    it. Leftover ``.{name}.bak`` or ``.{name}.hold`` sidecars fail closed.
 
     Args:
         source: Completed tree on the same filesystem as ``destination``.
@@ -399,9 +415,13 @@ def install_directory(*, source: Path, destination: Path) -> None:
 
     Raises:
         ValueError: If ``source`` or ``destination`` is a symlink, or a
-            leftover backup path already exists (including a dangling
-            symlink).
+            leftover backup or hold path already exists (including a
+            dangling symlink).
         OSError: If the exchange or mirror fails.
+        ExceptionGroup: If rollback cannot restore the original inode to
+            ``destination``; both the publish error and the restore error
+            are raised, and the hold directory is left in place so the
+            original inode is not unlinked.
     """
     if source.is_symlink():
         msg = f"symlink rejected: {source}"
@@ -420,26 +440,129 @@ def _publish_into_existing(*, source: Path, destination: Path) -> None:
     """Atomically publish ``source`` while restoring the dest inode.
 
     The destination path is swapped onto the staged tree first so readers
-    never see a mixed generation. The new tree is then copied onto the
-    original destination inode and swapped back.
+    never see a mixed generation. The original inode is parked in a
+    sibling hold directory, snapshotted, filled with the new tree, and
+    swapped back.
 
     Args:
         source: Staged complete tree.
         destination: Live directory whose inode should be preserved.
 
     Raises:
-        ValueError: If a leftover backup path already exists.
+        ValueError: If a leftover backup or hold path already exists.
         OSError: If an exchange or mirror copy fails.
+        ExceptionGroup: If rollback cannot put the original inode back.
     """
     _reject_leftover_backup(destination=destination)
-    _exchange_paths(first=source, second=destination)
+    original_inode = destination.stat().st_ino
+    hold = _hold_path(destination=destination)
+    inode_home = hold / "inode"
+    snapshot = hold / "snapshot"
+    hold.mkdir()
+    exchanged = False
+    parked = False
     try:
-        _mirror_tree(source=destination, destination=source)
-    except BaseException:
-        with suppress(OSError):
-            _exchange_paths(first=source, second=destination)
+        _exchange_paths(first=source, second=destination)
+        exchanged = True
+        source.rename(target=inode_home)
+        parked = True
+        snapshot.mkdir()
+        _replace_tree_contents(source=inode_home, destination=snapshot)
+        try:
+            _mirror_tree(source=destination, destination=inode_home)
+            _exchange_paths(first=inode_home, second=destination)
+        except BaseException as exc:  # noqa: BLE001 - restore dest inode on interrupt
+            _rollback_original_inode(
+                snapshot=snapshot,
+                inode_home=inode_home,
+                destination=destination,
+                original=exc,
+            )
+    except BaseException as exc:
+        if exchanged and not parked:
+            try:
+                _exchange_paths(first=source, second=destination)
+            except BaseException as restore_exc:  # noqa: BLE001 - pair with publish error
+                _raise_publish_failures(original=exc, restore=restore_exc)
         raise
-    _exchange_paths(first=source, second=destination)
+    finally:
+        if _inode_is(
+            path=destination,
+            ino=original_inode,
+        ) and hold.exists(follow_symlinks=False):
+            _remove_path(path=hold)
+
+
+def _rollback_original_inode(
+    *,
+    snapshot: Path,
+    inode_home: Path,
+    destination: Path,
+    original: BaseException,
+) -> None:
+    """Put complete old contents on the original inode and swap it back.
+
+    Args:
+        snapshot: Complete copy of the pre-publish destination tree.
+        inode_home: Current path of the original destination inode.
+        destination: Live destination path.
+        original: Error that interrupted publish.
+
+    Raises:
+        ExceptionGroup: If restoring contents or exchanging back fails.
+        BaseException: Re-raises ``original`` after a successful restore.
+    """
+    try:
+        if snapshot.exists(follow_symlinks=False):
+            _replace_tree_contents(source=snapshot, destination=inode_home)
+        _exchange_paths(first=inode_home, second=destination)
+    except BaseException as restore_exc:  # noqa: BLE001 - pair with publish error
+        _raise_publish_failures(original=original, restore=restore_exc)
+    raise original
+
+
+def _raise_publish_failures(
+    *,
+    original: BaseException,
+    restore: BaseException,
+) -> None:
+    """Raise both publish failures when they can join an ``ExceptionGroup``.
+
+    Args:
+        original: Error that interrupted publish.
+        restore: Error from attempting to restore the original inode.
+
+    Raises:
+        ExceptionGroup: When both errors are ``Exception`` instances.
+        BaseException: ``restore`` when either error cannot join an
+            ``ExceptionGroup``.
+    """
+    if isinstance(original, Exception) and isinstance(restore, Exception):
+        raise ExceptionGroup(
+            "bake destination publish failed",
+            [original, restore],
+        ) from original
+    raise restore from original
+
+
+def _inode_is(*, path: Path, ino: int) -> bool:
+    """Return whether ``path`` is a non-symlink directory with inode ``ino``.
+
+    Args:
+        path: Path to inspect.
+        ino: Expected inode number.
+
+    Returns:
+        ``True`` when ``path`` exists, is not a symlink, and matches
+        ``ino``.
+    """
+    try:
+        status = path.lstat()
+    except FileNotFoundError:
+        return False
+    if stat.S_ISLNK(status.st_mode):
+        return False
+    return status.st_ino == ino
 
 
 def _mirror_tree(*, source: Path, destination: Path) -> None:
@@ -453,30 +576,135 @@ def _mirror_tree(*, source: Path, destination: Path) -> None:
         ValueError: If a child is a symlink or unsupported node.
         OSError: If a copy or removal fails.
     """
+    _replace_tree_contents(source=source, destination=destination)
+
+
+def _replace_tree_contents(*, source: Path, destination: Path) -> None:
+    """Replace ``destination`` children with ``source`` without following links.
+
+    Copies use a directory file descriptor and ``O_EXCL|O_NOFOLLOW`` so a
+    symlink planted after the existence check cannot redirect the write.
+    Destination-side dangling symlinks are snapshotted as symlinks.
+
+    Args:
+        source: Tree whose children are the desired contents.
+        destination: Directory whose inode must be preserved.
+
+    Raises:
+        ValueError: If a child is an unsupported node.
+        OSError: If a copy or removal fails.
+        FileExistsError: If a dest name is replaced by a symlink during
+            the exclusive create.
+    """
     incoming = {child.name for child in source.iterdir()}
     for child in list(source.iterdir()):
         dest_child = destination / child.name
-        if dest_child.exists(follow_symlinks=False):
-            _remove_path(path=dest_child)
+        if child.is_symlink():
+            if dest_child.exists(follow_symlinks=False):
+                _remove_path(path=dest_child)
+            dest_child.symlink_to(os.readlink(child))
+            continue
         if child.is_dir():
-            copy_tree(source=child, destination=dest_child, source_root=source)
+            if dest_child.exists(follow_symlinks=False):
+                _remove_path(path=dest_child)
+            dest_child.mkdir()
+            _replace_tree_contents(source=child, destination=dest_child)
             continue
         if not child.is_file():
             msg = f"unsupported file type rejected: {child}"
             raise ValueError(msg)
-        shutil.copy2(src=child, dst=dest_child)
+        _copy_file_nofollow(source=child, destination=dest_child)
     for dest_child in list(destination.iterdir()):
         if dest_child.name not in incoming:
             _remove_path(path=dest_child)
 
 
+def _copy_file_nofollow(*, source: Path, destination: Path) -> None:
+    """Copy a regular file without following a destination symlink.
+
+    Args:
+        source: Regular file to copy.
+        destination: Intended new file path.
+
+    Raises:
+        ValueError: If ``source`` is not a regular file.
+        OSError: If the copy fails or ``destination`` is a symlink.
+    """
+    src_flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        src_flags |= os.O_NOFOLLOW
+    src_fd = os.open(source, src_flags)
+    try:
+        info = os.fstat(src_fd)
+        if not stat.S_ISREG(info.st_mode):
+            msg = f"unsupported file type rejected: {source}"
+            raise ValueError(msg)
+        dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            dir_flags |= os.O_NOFOLLOW
+        parent_fd = os.open(destination.parent, dir_flags)
+        try:
+            _remove_path(path=destination)
+            _create_exclusive_copy_at(
+                source_fd=src_fd,
+                dir_fd=parent_fd,
+                name=destination.name,
+                mode=stat.S_IMODE(info.st_mode),
+            )
+        finally:
+            os.close(parent_fd)
+    finally:
+        os.close(src_fd)
+
+
+def _create_exclusive_copy_at(
+    *,
+    source_fd: int,
+    dir_fd: int,
+    name: str,
+    mode: int,
+) -> None:
+    """Create ``name`` in ``dir_fd`` without following a planted symlink.
+
+    ``O_CREAT|O_EXCL|O_NOFOLLOW`` fails closed when ``name`` already exists
+    as a symlink, so the copy cannot write through an external target.
+
+    Args:
+        source_fd: Open read fd for the source regular file.
+        dir_fd: Open directory file descriptor for the destination parent.
+        name: Child name to create.
+        mode: POSIX permission bits for the new file.
+
+    Raises:
+        OSError: If exclusive create or the copy fails.
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    dst_fd = os.open(name, flags, mode, dir_fd=dir_fd)
+    try:
+        os.lseek(source_fd, 0, os.SEEK_SET)
+        while True:
+            chunk = os.read(source_fd, 1024 * 1024)
+            if not chunk:
+                break
+            os.write(dst_fd, chunk)
+        os.fchmod(dst_fd, mode)
+    finally:
+        os.close(dst_fd)
+
+
 def _remove_path(*, path: Path) -> None:
-    """Remove a file or directory.
+    """Remove a file, symlink, or directory without following links.
 
     Args:
         path: Path to unlink or recursively delete.
     """
-    if path.is_dir() and not path.is_symlink():
+    try:
+        status = path.lstat()
+    except FileNotFoundError:
+        return
+    if stat.S_ISDIR(status.st_mode) and not stat.S_ISLNK(status.st_mode):
         shutil.rmtree(path)
         return
     path.unlink()

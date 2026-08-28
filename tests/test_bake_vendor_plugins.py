@@ -1864,6 +1864,180 @@ def test_install_directory_restores_complete_tree_on_mirror_failure(
         "ok\n",
     )
     assert_that((tmp_path / ".plugins-baked.bak").exists()).is_false()
+    assert_that((tmp_path / ".plugins-baked.hold").exists()).is_false()
+
+
+def test_install_directory_restores_complete_tree_on_partial_mirror_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A partial inode mirror must restore the complete original tree."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "a.txt").write_text("old-a\n", encoding="utf-8")
+    (dest / "b.txt").write_text("old-b\n", encoding="utf-8")
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "a.txt").write_text("new-a\n", encoding="utf-8")
+    (source / "b.txt").write_text("new-b\n", encoding="utf-8")
+    dest_inode = dest.stat().st_ino
+
+    def _partial_mirror(*, source: Path, destination: Path) -> None:
+        """Copy one file onto the original inode, then fail.
+
+        Args:
+            source: Staged tree now at the live path.
+            destination: Original destination inode.
+
+        Raises:
+            OSError: After the first file copy.
+        """
+        first = min(
+            (path for path in source.iterdir() if path.is_file()),
+            key=lambda path: path.name,
+        )
+        safe_tree._copy_file_nofollow(
+            source=first,
+            destination=destination / first.name,
+        )
+        msg = "injected partial mirror failure"
+        raise OSError(msg)
+
+    monkeypatch.setattr(safe_tree, "_mirror_tree", _partial_mirror)
+    previous_cwd = Path.cwd()
+    try:
+        os.chdir(dest)
+        with pytest.raises(OSError, match="injected partial mirror failure"):
+            install_directory(source=source, destination=dest)
+        Path("probe.txt").write_text("ok\n", encoding="utf-8")
+        assert_that(Path.cwd().resolve()).is_equal_to(dest.resolve())
+    finally:
+        os.chdir(previous_cwd)
+
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
+    assert_that((dest / "a.txt").read_text(encoding="utf-8")).is_equal_to(
+        "old-a\n",
+    )
+    assert_that((dest / "b.txt").read_text(encoding="utf-8")).is_equal_to(
+        "old-b\n",
+    )
+    assert_that((dest / "probe.txt").read_text(encoding="utf-8")).is_equal_to(
+        "ok\n",
+    )
+    assert_that((tmp_path / ".plugins-baked.hold").exists()).is_false()
+
+
+def test_install_directory_preserves_inode_when_rollback_exchange_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed rollback exchange must not unlink the original cwd inode."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "a.txt").write_text("old-a\n", encoding="utf-8")
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "a.txt").write_text("new-a\n", encoding="utf-8")
+    dest_inode = dest.stat().st_ino
+    real_exchange = safe_tree._exchange_paths
+    calls = {"count": 0}
+
+    def _fail_mirror(*, source: Path, destination: Path) -> None:
+        """Fail after the destination path already holds the new tree.
+
+        Args:
+            source: Staged tree now at the live path.
+            destination: Original destination inode.
+
+        Raises:
+            OSError: Always.
+        """
+        del source, destination
+        msg = "injected mirror failure"
+        raise OSError(msg)
+
+    def _fail_second_exchange(*, first: Path, second: Path) -> None:
+        """Fail the rollback exchange after the first swap succeeded.
+
+        Args:
+            first: First path.
+            second: Second path.
+
+        Raises:
+            OSError: On the second exchange call.
+        """
+        calls["count"] += 1
+        if calls["count"] == 2:
+            msg = "injected exchange failure"
+            raise OSError(msg)
+        real_exchange(first=first, second=second)
+
+    monkeypatch.setattr(safe_tree, "_mirror_tree", _fail_mirror)
+    monkeypatch.setattr(safe_tree, "_exchange_paths", _fail_second_exchange)
+    previous_cwd = Path.cwd()
+    try:
+        os.chdir(dest)
+        with pytest.raises(ExceptionGroup, match="bake destination publish"):
+            install_directory(source=source, destination=dest)
+        cwd = Path.cwd()
+        assert_that(cwd.exists()).is_true()
+        assert_that(cwd.stat().st_ino).is_equal_to(dest_inode)
+    finally:
+        os.chdir(previous_cwd)
+
+    assert_that((tmp_path / ".plugins-baked.hold").exists()).is_true()
+
+
+def test_install_directory_preserves_inode_when_final_exchange_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed final exchange must not unlink the original cwd inode."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "a.txt").write_text("old-a\n", encoding="utf-8")
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "a.txt").write_text("new-a\n", encoding="utf-8")
+    dest_inode = dest.stat().st_ino
+    real_exchange = safe_tree._exchange_paths
+    calls = {"count": 0}
+
+    def _fail_second_exchange(*, first: Path, second: Path) -> None:
+        """Fail the closing exchange after a successful inode mirror.
+
+        Args:
+            first: First path.
+            second: Second path.
+
+        Raises:
+            OSError: On the second exchange call.
+        """
+        calls["count"] += 1
+        if calls["count"] == 2:
+            msg = "injected exchange failure"
+            raise OSError(msg)
+        real_exchange(first=first, second=second)
+
+    monkeypatch.setattr(safe_tree, "_exchange_paths", _fail_second_exchange)
+    previous_cwd = Path.cwd()
+    try:
+        os.chdir(dest)
+        with pytest.raises(OSError, match="injected exchange failure"):
+            install_directory(source=source, destination=dest)
+        Path("probe.txt").write_text("ok\n", encoding="utf-8")
+        assert_that(Path.cwd().resolve()).is_equal_to(dest.resolve())
+    finally:
+        os.chdir(previous_cwd)
+
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
+    assert_that((dest / "a.txt").read_text(encoding="utf-8")).is_equal_to(
+        "old-a\n",
+    )
+    assert_that((dest / "probe.txt").read_text(encoding="utf-8")).is_equal_to(
+        "ok\n",
+    )
+    assert_that((tmp_path / ".plugins-baked.hold").exists()).is_false()
 
 
 def test_install_directory_preserves_destination_inode_for_resident_cwd(
@@ -1986,6 +2160,119 @@ def test_install_directory_rejects_dangling_backup_symlink(
     )
 
 
+def test_install_directory_rejects_leftover_hold(
+    tmp_path: Path,
+) -> None:
+    """A leftover hold directory must not be overwritten silently."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "COVERAGE.md").write_text("old\n", encoding="utf-8")
+    (tmp_path / ".plugins-baked.hold").mkdir()
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="leftover bake hold"):
+        install_directory(source=source, destination=dest)
+
+    assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to(
+        "old\n",
+    )
+
+
+def test_install_directory_rejects_leftover_hold_when_destination_missing(
+    tmp_path: Path,
+) -> None:
+    """A leftover hold still fails closed when dest has not been created."""
+    dest = tmp_path / "plugins-baked"
+    (tmp_path / ".plugins-baked.hold").mkdir()
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="leftover bake hold"):
+        install_directory(source=source, destination=dest)
+
+    assert_that(dest.exists()).is_false()
+
+
+def test_install_directory_rejects_symlink_planted_before_exclusive_create(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dest child symlink planted after unlink must not be followed."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "COVERAGE.md").write_text("old\n", encoding="utf-8")
+    outside = tmp_path / "outside-target"
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+    dest_inode = dest.stat().st_ino
+    real_create = safe_tree._create_exclusive_copy_at
+    real_mirror = safe_tree._mirror_tree
+
+    def _plant(
+        *,
+        source_fd: int,
+        dir_fd: int,
+        name: str,
+        mode: int,
+    ) -> None:
+        """Plant a dangling symlink, then attempt the exclusive create.
+
+        Args:
+            source_fd: Open read fd for the source file.
+            dir_fd: Open directory fd for the destination parent.
+            name: Child name to create.
+            mode: POSIX permission bits.
+
+        Raises:
+            OSError: When exclusive create refuses the planted symlink.
+        """
+        os.symlink(str(outside), name, dir_fd=dir_fd)
+        real_create(
+            source_fd=source_fd,
+            dir_fd=dir_fd,
+            name=name,
+            mode=mode,
+        )
+
+    def _mirror_with_toctou(*, source: Path, destination: Path) -> None:
+        """Install the TOCTOU plant only while mirroring onto the inode.
+
+        Args:
+            source: Staged tree now at the live path.
+            destination: Original destination inode.
+        """
+        monkeypatch.setattr(
+            safe_tree,
+            "_create_exclusive_copy_at",
+            _plant,
+        )
+        try:
+            real_mirror(source=source, destination=destination)
+        finally:
+            monkeypatch.setattr(
+                safe_tree,
+                "_create_exclusive_copy_at",
+                real_create,
+            )
+
+    monkeypatch.setattr(safe_tree, "_mirror_tree", _mirror_with_toctou)
+
+    with pytest.raises(OSError):
+        install_directory(source=source, destination=dest)
+
+    assert_that(outside.exists()).is_false()
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
+    assert_that((dest / "COVERAGE.md").is_symlink()).is_false()
+    assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to(
+        "old\n",
+    )
+    assert_that((tmp_path / ".plugins-baked.hold").exists()).is_false()
+
+
 def test_bake_preserves_plugins_baked_cwd(
     tmp_path: Path,
 ) -> None:
@@ -2049,6 +2336,65 @@ def test_bake_restores_plugins_baked_cwd_on_mirror_failure(
     assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to(
         coverage_before,
     )
+    assert_that((dest / "probe.txt").read_text(encoding="utf-8")).is_equal_to(
+        "ok\n",
+    )
+    assert_that((tmp_path / ".plugins-baked.hold").exists()).is_false()
+
+
+def test_bake_restores_complete_tree_on_partial_mirror_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A partial inode mirror during bake must restore the complete old tree."""
+    _write_registry(repo_root=tmp_path, plugins_yaml="")
+    bake_vendor_plugins.bake(repo_root=tmp_path)
+    dest = tmp_path / "plugins-baked"
+    dest_inode = dest.stat().st_ino
+    coverage_before = (dest / "COVERAGE.md").read_text(encoding="utf-8")
+    marketplace_before = (dest / ".claude-plugin" / "marketplace.json").read_text(
+        encoding="utf-8",
+    )
+
+    def _partial_mirror(*, source: Path, destination: Path) -> None:
+        """Copy one real file onto the original inode, then fail.
+
+        Args:
+            source: Staged tree now at the live path.
+            destination: Original destination inode.
+
+        Raises:
+            OSError: After the first file copy.
+        """
+        first = min(
+            (path for path in source.iterdir() if path.is_file()),
+            key=lambda path: path.name,
+        )
+        safe_tree._copy_file_nofollow(
+            source=first,
+            destination=destination / first.name,
+        )
+        msg = "injected partial mirror failure"
+        raise OSError(msg)
+
+    monkeypatch.setattr(safe_tree, "_mirror_tree", _partial_mirror)
+    previous_cwd = Path.cwd()
+    try:
+        os.chdir(dest)
+        with pytest.raises(OSError, match="injected partial mirror failure"):
+            bake_vendor_plugins.bake(repo_root=tmp_path)
+        Path("probe.txt").write_text("ok\n", encoding="utf-8")
+        assert_that(Path.cwd().resolve()).is_equal_to(dest.resolve())
+    finally:
+        os.chdir(previous_cwd)
+
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
+    assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to(
+        coverage_before,
+    )
+    assert_that(
+        (dest / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"),
+    ).is_equal_to(marketplace_before)
     assert_that((dest / "probe.txt").read_text(encoding="utf-8")).is_equal_to(
         "ok\n",
     )
