@@ -1377,6 +1377,43 @@ describe("native projectors", () => {
     }
   });
 
+  test("does not uninstall a status-zero already-installed Claude plugin when lock write fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cli-already-zero-"));
+    try {
+      const calls = [];
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            agents: ["claude-code"],
+            global: false,
+            projector: "native",
+            project: true,
+          },
+          async () => {
+            throw new Error("explode runner must not run");
+          },
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          {
+            cwd,
+            write: async () => {
+              throw new Error("EACCES");
+            },
+          },
+          {
+            exec: async (command, args) => {
+              calls.push([command, ...args]);
+              return { status: 0, stderr: "", stdout: "already installed" };
+            },
+          },
+        ),
+      ).rejects.toThrow("rolled back");
+      expect(calls.some((argv) => argv.includes("uninstall"))).toBe(false);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("does not uninstall a pre-existing Claude plugin when marketplace add fails", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cli-marketplace-fail-"));
     try {
@@ -1476,6 +1513,76 @@ describe("native projectors", () => {
       await expect(readFile(join(pluginDir, "skills/lint/SKILL.md"))).rejects.toMatchObject({
         code: "ENOENT",
       });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("keeps the new Cursor tree when backup discard fails after lock write", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cursor-discard-warn-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      const pluginDir = join(cwd, ".cursor/plugins/local/review");
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(join(pluginDir, "USER-DATA.txt"), "keep\n");
+      await Bun.write(
+        join(cwd, "ai-skills-lock.json"),
+        `${JSON.stringify(
+          {
+            gatewayVersion: "0.0.0-dev",
+            plugins: {
+              review: {
+                agents: {
+                  cursor: {
+                    files: { ".claude-plugin/plugin.json": "old" },
+                    projector: "native",
+                    root: pluginDir,
+                  },
+                },
+                installedAt: "2026-07-10T16:00:00.000Z",
+                projector: "native",
+                repo: "lgtm-hq/ai-skills",
+                sha: "v0.0.0-old",
+                skills: ["lint", "test"],
+                vendor: "lgtm-hq",
+                version: "0.0.0-old",
+              },
+            },
+            scope: "project",
+            version: 2,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const warnings = [];
+      await install(
+        {
+          ...unattendedOptions,
+          global: false,
+          projector: "native",
+          project: true,
+        },
+        async () => {},
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        {
+          remove: async () => {
+            throw new Error("EACCES bak");
+          },
+          sourceRoot,
+          warn: (message) => warnings.push(message),
+        },
+      );
+      expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
+      expect(warnings.some((message) => message.includes("discard Cursor plugin backup"))).toBe(
+        true,
+      );
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

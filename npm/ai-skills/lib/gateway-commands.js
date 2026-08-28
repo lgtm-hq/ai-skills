@@ -164,7 +164,12 @@ export async function updateSkills(options, dependencies = {}) {
       plugins,
     });
     for (const item of cursorBackups) {
-      await discardCursorPluginBackup(item);
+      try {
+        await discardCursorPluginBackup(item);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        warn(`Warning: could not discard Cursor plugin backup after update (${detail})`);
+      }
     }
     return { pruned, updated };
   } catch (error) {
@@ -191,7 +196,7 @@ export async function updateSkills(options, dependencies = {}) {
 }
 
 /**
- * Remove selected lock-managed plugins through the upstream CLI and then unlock them.
+ * Remove selected lock-managed plugins, persist the lock removal, then uninstall host CLIs.
  *
  * @param {{agents: string[], global: boolean, project: boolean, skills: string[], yes: boolean}} options - Validated command options.
  * @param {{
@@ -226,6 +231,8 @@ export async function removeSkills(options, dependencies = {}) {
   if (selected.length === 0) {
     return [];
   }
+  /** @type {Array<{agent: string, pluginId: string}>} */
+  const pendingCliUninstall = [];
   for (const pluginId of selected) {
     const entry = lock.plugins[pluginId];
     const classified = await classifyPluginFiles(pluginId, entry, { hash, warn });
@@ -254,11 +261,7 @@ export async function removeSkills(options, dependencies = {}) {
       ) {
         continue;
       }
-      await uninstallCliPlugin({
-        agent,
-        exec: dependencies.exec,
-        pluginId,
-      });
+      pendingCliUninstall.push({ agent, pluginId });
     }
   }
   const plugins = { ...lock.plugins };
@@ -267,6 +270,13 @@ export async function removeSkills(options, dependencies = {}) {
     ...lock,
     plugins,
   });
+  for (const item of pendingCliUninstall) {
+    await uninstallCliPlugin({
+      agent: item.agent,
+      exec: dependencies.exec,
+      pluginId: item.pluginId,
+    });
+  }
   return selected;
 }
 

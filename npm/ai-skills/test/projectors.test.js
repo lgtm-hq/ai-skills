@@ -311,7 +311,7 @@ describe("native Cursor projector", () => {
 describe("native CLI projector", () => {
   test("adds the marketplace then installs through the host CLI", async () => {
     const calls = [];
-    await installCliPlugin({
+    const result = await installCliPlugin({
       agent: "claude-code",
       exec: async (command, args) => {
         calls.push([command, ...args]);
@@ -320,6 +320,7 @@ describe("native CLI projector", () => {
       pluginId: "review",
       source: "lgtm-hq/ai-skills@v0.23.0",
     });
+    expect(result).toEqual({ alreadyPresent: false });
     expect(CLI_BY_AGENT["claude-code"]).toBe("claude");
     expect(calls).toEqual([
       ["claude", "plugin", "marketplace", "add", "lgtm-hq/ai-skills@v0.23.0"],
@@ -362,6 +363,16 @@ describe("native CLI projector", () => {
       ["copilot", "plugin", "marketplace", "add", "lgtm-hq/ai-skills"],
       ["copilot", "plugin", "install", "review@ai-skills"],
     ]);
+  });
+
+  test("treats status-zero already-installed as already present", async () => {
+    const result = await installCliPlugin({
+      agent: "claude-code",
+      exec: async () => ({ status: 0, stderr: "", stdout: "already installed" }),
+      pluginId: "review",
+      source: "lgtm-hq/ai-skills@v0.23.0",
+    });
+    expect(result).toEqual({ alreadyPresent: true });
   });
 
   test("does not treat does not exist as already present", async () => {

@@ -888,6 +888,43 @@ describe("gateway maintenance commands", () => {
     expect(execCalls).toEqual([["claude", "plugin", "uninstall", "review@ai-skills"]]);
   });
 
+  test("does not uninstall a CLI plugin when lock write fails", async () => {
+    const execCalls = [];
+    const nativeLock = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            "claude-code": {
+              files: { "lint/SKILL.md": "" },
+              projector: "native",
+              root: "cli:claude-code",
+            },
+          },
+          projector: "native",
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.0.0-dev",
+          vendor: "lgtm-hq",
+          version: "0.0.0-dev",
+        }),
+      },
+    };
+    await expect(
+      removeSkills(options, {
+        exec: async (command, args) => {
+          execCalls.push([command, ...args]);
+          return { status: 0, stderr: "", stdout: "" };
+        },
+        readLock: async () => nativeLock,
+        run: async () => {},
+        writeLock: async () => {
+          throw new Error("EACCES");
+        },
+      }),
+    ).rejects.toThrow("EACCES");
+    expect(execCalls).toEqual([]);
+  });
+
   test("keeps a user-scoped CLI plugin when the sibling lock still owns it", async () => {
     const execCalls = [];
     const projectLock = {

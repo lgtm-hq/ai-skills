@@ -70,7 +70,7 @@ export async function installCliPlugin(args) {
     throw new Error(`${cli} plugin install failed: ${detail(installed)}`);
   }
   return {
-    alreadyPresent: installed.status !== 0 && isAlreadyPresent(installed),
+    alreadyPresent: isAlreadyPresent(installed),
   };
 }
 

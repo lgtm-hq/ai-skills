@@ -627,7 +627,7 @@ async function cancelable(ui, valuePromise) {
  * @param {(args: string[]) => Promise<void>} [run] - Injectable skills process runner.
  * @param {() => Date} [now] - Injectable clock.
  * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable lockfile environment.
- * @param {{exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>, sourceRoot?: string | null}} [extras] - Native projector dependencies.
+ * @param {{exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>, remove?: typeof rm, sourceRoot?: string | null, warn?: (message: string) => void}} [extras] - Native projector dependencies.
  * @returns {Promise<{alreadyPresent: number, installed: number, repaired: number}>} Install summary counts.
  */
 export async function install(
@@ -764,6 +764,7 @@ export async function install(
   const cursorExisted = lanes.cursorNative.length > 0 ? await exists(cursorPluginDir) : false;
   // Set only after installCursorPlugin returns: dest existence is not a swap.
   let cursorSwapped = false;
+  let lockCommitted = false;
   const cliCreated = [];
   try {
     if (detectAgents || lanes.explode.length > 0) {
@@ -839,11 +840,25 @@ export async function install(
           "Fix the lockfile path permissions and re-run install.",
       );
     }
+    lockCommitted = true;
     if (lanes.cursorNative.length > 0) {
-      await discardCursorPluginBackup({ destRoot, pluginId });
+      try {
+        await discardCursorPluginBackup({
+          destRoot,
+          pluginId,
+          remove: extras.remove,
+        });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        const warn = extras.warn ?? ((message) => console.warn(message));
+        warn(`Warning: could not discard Cursor plugin backup after install (${detail})`);
+      }
     }
     return { alreadyPresent, installed, repaired };
   } catch (error) {
+    if (lockCommitted) {
+      throw error;
+    }
     const rollbackErrors = [];
     try {
       await rollbackNewSkillDirs(scopedOptions, rollbackAgents, preexisting, lockEnvironment);
