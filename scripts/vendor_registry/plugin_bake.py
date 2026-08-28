@@ -159,7 +159,7 @@ def _bake_plugin(
         FileExistsError: If the plugin output directory already exists.
     """
     destination = output_root / plugin.id
-    if destination.exists():
+    if destination.exists(follow_symlinks=False) or destination.is_symlink():
         msg = f"plugin output already exists: {plugin.id}"
         raise FileExistsError(msg)
     destination.mkdir(parents=True)

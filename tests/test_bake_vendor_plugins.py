@@ -364,6 +364,43 @@ def test_bake_discovers_skills_under_glob_skills_root(
     assert_that((plugin / "skills" / "beta" / "SKILL.md").is_file()).is_true()
 
 
+def test_bake_allows_agent_only_plugin(
+    tmp_path: Path,
+) -> None:
+    """An empty skills tree plus declared agents is a valid slice."""
+    vendor_root = tmp_path / "vendor-src"
+    (vendor_root / "skills").mkdir(parents=True)
+    agents = vendor_root / "agents"
+    agents.mkdir()
+    agents.joinpath("code-reviewer.md").write_text(
+        "# code-reviewer\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Agent-only vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+            "        agents:\n"
+            "          - code-reviewer\n"
+        ),
+    )
+
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    plugin = tmp_path / "plugins-baked" / "example-plugin"
+    assert_that((plugin / "agents" / "code-reviewer.md").is_file()).is_true()
+    assert_that((plugin / "skills").is_dir()).is_true()
+    assert_that(list((plugin / "skills").iterdir())).is_empty()
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
+
+
 def test_bake_rejects_missing_agent(
     tmp_path: Path,
 ) -> None:
@@ -3016,3 +3053,36 @@ def test_main_maps_bake_errors_to_exit_one(
         bake_vendor_plugins.main(["--repo-root", str(tmp_path)]),
     ).is_equal_to(1)
     assert_that(capsys.readouterr().err).contains("COLLISION REPORT")
+
+
+def test_bake_fetches_github_tarball_when_vendor_trees_omitted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production bake() fetches and unpacks the GitHub tarball."""
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    buffer = BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        skill = tarfile.TarInfo(name="repo-sha/skills/alpha/SKILL.md")
+        payload = b"---\nname: alpha\ndescription: alpha skill.\n---\n"
+        skill.size = len(payload)
+        archive.addfile(tarinfo=skill, fileobj=BytesIO(payload))
+    _stub_https_script(
+        monkeypatch=monkeypatch,
+        script=[(200, buffer.getvalue(), None)],
+    )
+
+    bake_vendor_plugins.bake(repo_root=tmp_path)
+
+    plugin = tmp_path / "plugins-baked" / "example-plugin"
+    assert_that((plugin / "skills" / "alpha" / "SKILL.md").is_file()).is_true()
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
