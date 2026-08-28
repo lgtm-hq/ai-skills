@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **deps**: update lintro (#412) (318f07d)
 - **deps**: update lintro (#410) (20f7274)
 
 ## [0.27.0] - 2026-08-28
