@@ -222,6 +222,40 @@ describe("ensureHostCapability", () => {
 });
 
 describe("runDoctor", () => {
+  test("rejects --repair with --migrate", async () => {
+    await expect(
+      runDoctor({
+        agents: [],
+        global: true,
+        migrate: "cursor",
+        project: false,
+        repair: true,
+        yes: true,
+      }),
+    ).rejects.toThrow("Choose only one doctor action");
+  });
+
+  test("rejects migrate of an unknown host", async () => {
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-doctor-unknown-"));
+    try {
+      await expect(
+        runDoctor(
+          {
+            agents: [],
+            global: true,
+            migrate: "notepad",
+            project: false,
+            repair: false,
+            yes: true,
+          },
+          { home, lockEnvironment: { cwd: home, home } },
+        ),
+      ).rejects.toThrow("Unknown agent");
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
+  });
+
   test("reports host capability and lock drift", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-report-"));
     const lines = [];
@@ -746,6 +780,69 @@ describe("runDoctor", () => {
     }
   });
 
+  test("migrate force-removes modified explode dests", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-migrate-modified-"));
+    const explodeFile = join(cwd, ".cursor/skills/jira/SKILL.md");
+    const sourceRoot = join(cwd, "catalog");
+    try {
+      await mkdir(join(cwd, ".cursor/skills/jira"), { recursive: true });
+      await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
+      await writeFile(explodeFile, "# edited locally\n");
+      await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            jira: {
+              agents: {
+                cursor: {
+                  files: { "jira/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      const result = await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: "cursor",
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          exec: async () => {
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          home: cwd,
+          installExtras: { sourceRoot },
+          lockEnvironment: { cwd, home: cwd },
+          log: () => {},
+        },
+      );
+      expect(result.migrated).toEqual(["jira"]);
+      await expect(access(explodeFile)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("reports explode orphans from per-agent files not plugin-wide membership", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-orphan-files-"));
     const lines = [];
@@ -924,13 +1021,18 @@ describe("runDoctor", () => {
             error.code = "ENOENT";
             throw error;
           },
-          hash: async () => {
-            throw new Error("hash boom");
-          },
           home: cwd,
-          installExtras: { sourceRoot },
+          installExtras: {
+            remove: async () => {
+              throw new Error("rm boom");
+            },
+            sourceRoot,
+          },
           lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
           log: () => {},
+          remove: async () => {
+            throw new Error("rm boom");
+          },
           warn: (message) => warnings.push(message),
         },
       );

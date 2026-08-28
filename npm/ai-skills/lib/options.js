@@ -88,7 +88,7 @@ export function parseArguments(argv) {
     }
   }
 
-  const unknownAgent = options.agents.find((agent) => !AGENT_SKILL_PATHS[agent]);
+  const unknownAgent = options.agents.find((agent) => !Object.hasOwn(AGENT_SKILL_PATHS, agent));
   if (unknownAgent) {
     throw new Error(`Unknown agent: ${unknownAgent}`);
   }
@@ -121,7 +121,7 @@ export function parseArguments(argv) {
   if (command === "doctor" && options.skills.length > 0) {
     throw new Error("doctor does not accept --skill");
   }
-  if (options.migrate && !AGENT_SKILL_PATHS[options.migrate]) {
+  if (options.migrate && !Object.hasOwn(AGENT_SKILL_PATHS, options.migrate)) {
     throw new Error(`Unknown agent: ${options.migrate}`);
   }
   return { command, options };

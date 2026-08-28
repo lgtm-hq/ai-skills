@@ -175,4 +175,23 @@ describe("parseArguments", () => {
   test("rejects --migrate on an unknown host", () => {
     expect(() => parseArguments(["doctor", "--migrate", "notepad"])).toThrow("Unknown agent");
   });
+
+  test("rejects inherited names as --migrate hosts", () => {
+    expect(() => parseArguments(["doctor", "--migrate", "constructor"])).toThrow("Unknown agent");
+  });
+
+  test("rejects install source options and skills on doctor", () => {
+    expect(() => parseArguments(["doctor", "--vendor", "vercel-labs"])).toThrow(
+      "does not accept install source options",
+    );
+    expect(() => parseArguments(["doctor", "--skill", "review"])).toThrow(
+      "doctor does not accept --skill",
+    );
+  });
+
+  test("rejects --migrate without an agent", () => {
+    expect(() => parseArguments(["doctor", "--migrate"])).toThrow(
+      "--migrate requires an agent name",
+    );
+  });
 });

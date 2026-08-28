@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -74,8 +74,11 @@ export async function writeDoctorCache(cache, environment = {}) {
   const path = doctorCachePath(environment.home ?? homedir());
   const makeDir = environment.mkdir ?? mkdir;
   const write = environment.write ?? writeFile;
+  const move = environment.rename ?? rename;
   await makeDir(dirname(path), { recursive: true });
-  await write(path, `${JSON.stringify(cache, null, 2)}\n`);
+  const staging = `${path}.${process.pid}.tmp`;
+  await write(staging, `${JSON.stringify(cache, null, 2)}\n`);
+  await move(staging, path);
 }
 
 /**
@@ -151,7 +154,7 @@ export async function ensureHostCapability(agent, environment = {}) {
   if (probed.capability === PROJECTOR_NATIVE || probed.capability === PROJECTOR_EXPLODE) {
     const entry = { capability: probed.capability, source: "probe", version };
     cache.hosts[agent] = entry;
-    await writeDoctorCache(cache, environment);
+    await persistDoctorCache(cache, environment);
     return entry;
   }
   if (environment.yes) {
@@ -163,7 +166,7 @@ export async function ensureHostCapability(agent, environment = {}) {
   const capability = await prompt(agent);
   const entry = { capability, source: "prompt", version };
   cache.hosts[agent] = entry;
-  await writeDoctorCache(cache, environment);
+  await persistDoctorCache(cache, environment);
   return entry;
 }
 
@@ -227,6 +230,9 @@ export async function runDoctor(options, dependencies = {}) {
   if (options.repair && options.migrate) {
     throw new Error("Choose only one doctor action: --repair or --migrate");
   }
+  if (options.migrate && !Object.hasOwn(AGENT_SKILL_PATHS, options.migrate)) {
+    throw new Error(`Unknown agent: ${options.migrate}`);
+  }
   const log = dependencies.log ?? ((line) => console.log(line));
   const scope = resolveScope(options);
   const environment = {
@@ -278,6 +284,21 @@ export async function runDoctor(options, dependencies = {}) {
  */
 function emptyDoctorCache() {
   return { hosts: {}, schemaVersion: DOCTOR_CACHE_SCHEMA };
+}
+
+/**
+ * Persist the doctor cache, ignoring write failures so a probe still returns.
+ *
+ * @param {DoctorCache} cache - Cache to write.
+ * @param {Parameters<typeof writeDoctorCache>[1]} environment - Injectable fs.
+ * @returns {Promise<void>} Resolves after write or a swallowed persistence error.
+ */
+async function persistDoctorCache(cache, environment = {}) {
+  try {
+    await writeDoctorCache(cache, environment);
+  } catch {
+    // Capability is already known; a missing cache only costs another probe.
+  }
 }
 
 /**
@@ -453,7 +474,8 @@ async function orphanEntries(agent, root, known) {
   try {
     entries = await readdir(root, { withFileTypes: true });
   } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+    const code = error && typeof error === "object" && "code" in error ? error.code : "";
+    if (code === "ENOENT" || code === "EACCES" || code === "ENOTDIR") {
       return [];
     }
     throw error;
@@ -544,7 +566,7 @@ async function repairMissing(options, plugins, dependencies = {}) {
  * @returns {Promise<string[]>} Migrated plugin ids.
  */
 async function migrateHost(host, options, environment, dependencies = {}) {
-  if (!AGENT_SKILL_PATHS[host]) {
+  if (!Object.hasOwn(AGENT_SKILL_PATHS, host)) {
     throw new Error(`Unknown agent: ${host}`);
   }
   const target = await ensureHostCapability(host, environment);
@@ -571,7 +593,7 @@ async function migrateHost(host, options, environment, dependencies = {}) {
   /** @type {string[]} */
   const migrated = [];
   for (const [pluginId, entry] of toMigrate) {
-    if (entry.vendor !== "lgtm-hq" && target.capability === PROJECTOR_NATIVE) {
+    if (entry.vendor && entry.vendor !== "lgtm-hq" && target.capability === PROJECTOR_NATIVE) {
       warn(`skipping vendor plugin ${pluginId}: native migrate is first-party only`);
       continue;
     }
@@ -602,10 +624,16 @@ async function migrateHost(host, options, environment, dependencies = {}) {
       continue;
     }
     try {
-      await uninstallLockedAgent(pluginId, { ...entry, agents: { [host]: snapshot } }, host, {
-        ...dependencies,
-        scope,
-      });
+      await removeLockedAgentProjection(
+        pluginId,
+        { ...entry, agents: { [host]: snapshot } },
+        host,
+        {
+          ...dependencies,
+          force: true,
+          scope,
+        },
+      );
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       warn(
@@ -677,19 +705,28 @@ async function agentHasModifiedFiles(install, lockEnvironment = {}) {
 }
 
 /**
+ * Remove one agent's recorded projection from disk without rewriting the lock.
+ *
+ * Used after a successful projector cutover so leftover dests do not stay
+ * host-visible. ``force`` deletes explode skill dirs even when hashes drifted.
+ *
  * @param {string} pluginId - Plugin id.
- * @param {import("./lockfile.js").PluginLockEntry} entry - Lock entry.
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Lock entry snapshot.
  * @param {string} agent - Agent to uninstall.
- * @param {Parameters<typeof runDoctor>[1] & {scope?: "global" | "project"}} dependencies - Injectable I/O.
+ * @param {Parameters<typeof runDoctor>[1] & {force?: boolean, scope?: "global" | "project"}} [dependencies] - Injectable I/O.
  * @returns {Promise<void>} Resolves when dest files are gone.
  */
-async function uninstallLockedAgent(pluginId, entry, agent, dependencies = {}) {
+export async function removeLockedAgentProjection(pluginId, entry, agent, dependencies = {}) {
   const install = entry.agents[agent];
   if (!install) {
     return;
   }
   const projector = agentProjector(entry, agent);
   if (projector === PROJECTOR_EXPLODE) {
+    if (dependencies.force) {
+      await forceRemoveExplodeSkillDirs(install, dependencies);
+      return;
+    }
     await removeExplodedFiles({
       files: Object.entries(install.files).map(([relative, digest]) => ({
         digest,
@@ -720,6 +757,18 @@ async function uninstallLockedAgent(pluginId, entry, agent, dependencies = {}) {
     return;
   }
   await uninstallCliPlugin({ agent, exec: dependencies.exec, pluginId });
+}
+
+/**
+ * @param {import("./lockfile.js").AgentInstall} install - Exploded agent snapshot.
+ * @param {{remove?: typeof rm}} dependencies - Injectable rm.
+ * @returns {Promise<void>} Resolves when skill dirs are gone.
+ */
+async function forceRemoveExplodeSkillDirs(install, dependencies) {
+  const remove = dependencies.remove ?? rm;
+  for (const name of skillNamesFromFiles(install.files)) {
+    await remove(join(install.root, name), { force: true, recursive: true });
+  }
 }
 
 /**

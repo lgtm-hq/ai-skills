@@ -22,7 +22,7 @@ import {
 } from "./lockfile.js";
 import { resolveScope } from "./options.js";
 import { getPackageVersion } from "./package-version.js";
-import { resolveDoctorCapabilities } from "./doctor.js";
+import { resolveDoctorCapabilities, removeLockedAgentProjection } from "./doctor.js";
 import { assertProjectorSupported, resolveProjector } from "./projectors/defaults.js";
 import {
   defaultStoreRoot,
@@ -722,11 +722,7 @@ export async function install(
       ? 1
       : 0
     : existing
-      ? agentsToInstall.filter(
-          (agent) =>
-            existing.agents[agent] &&
-            agentCoversSkills(existing.agents[agent], scopedOptions.skills),
-        ).length
+      ? agentsToInstall.filter((agent) => isRepairInstall(existing, agent, scopedOptions)).length
       : 0;
   const installed = detectAgents ? (existing ? 0 : 1) : agentsToInstall.length - repaired;
   if (!detectAgents && agentsToInstall.length === 0) {
@@ -963,6 +959,17 @@ export async function install(
         warn(`Warning: could not discard Cursor plugin backup after install (${detail})`);
       }
     }
+    await removeSupersededProjections({
+      agents: agentsToInstall,
+      doctorCapabilities,
+      existing,
+      extras,
+      lockEnvironment,
+      pluginId,
+      projectorOverride: scopedOptions.projector,
+      scope,
+      vendor: Boolean(vendor),
+    });
     return { alreadyPresent, installed, repaired };
   } catch (error) {
     if (lockCommitted) {
@@ -1245,6 +1252,32 @@ function agentCoversSkills(install, requestedSkills) {
 }
 
 /**
+ * Whether rematerializing this agent is a repair of the locked projector.
+ *
+ * An explicit ``--projector`` that differs from the lock is a cutover install,
+ * not a repair.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} existing - Current lock entry.
+ * @param {string} agent - Agent being installed.
+ * @param {{projector?: "native" | "explode" | null, skills: string[]}} options - Install options.
+ * @returns {boolean} True when the agent should count as repaired.
+ */
+function isRepairInstall(existing, agent, options) {
+  const locked = existing.agents[agent];
+  if (!locked || !agentCoversSkills(locked, options.skills)) {
+    return false;
+  }
+  const override = options.projector;
+  if (
+    (override === PROJECTOR_NATIVE || override === PROJECTOR_EXPLODE) &&
+    agentProjector(existing, agent) !== override
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Split agents into explode, Cursor-tree, and CLI-native lanes.
  *
  * @param {string[]} agents - Agents to install.
@@ -1269,6 +1302,69 @@ function partitionProjectorLanes(agents, override, vendor, existing, doctorCapab
     }
   }
   return { cliNative, cursorNative, explode };
+}
+
+/**
+ * Delete a previous projection after a successful projector override.
+ *
+ * ``sk doctor --migrate`` is the user-facing cutover; ``--projector`` on a
+ * locked agent takes the same install path and must not leave the old dests
+ * host-visible.
+ *
+ * @param {object} args - Named arguments.
+ * @param {string[]} args.agents - Agents this install materialized.
+ * @param {Record<string, "native" | "explode">} args.doctorCapabilities - Doctor cache.
+ * @param {import("./lockfile.js").PluginLockEntry | undefined} args.existing - Pre-install lock.
+ * @param {object} args.extras - Install extras.
+ * @param {Parameters<typeof readLockfile>[1]} args.lockEnvironment - Path environment.
+ * @param {string} args.pluginId - Plugin id.
+ * @param {"native" | "explode" | null | undefined} args.projectorOverride - CLI override.
+ * @param {"global" | "project"} args.scope - Install scope.
+ * @param {boolean} args.vendor - Whether this is a vendor install.
+ * @returns {Promise<void>} Resolves after cleanup attempts.
+ */
+async function removeSupersededProjections(args) {
+  if (!args.existing) {
+    return;
+  }
+  const warn = args.extras.warn ?? ((message) => console.warn(message));
+  for (const agent of args.agents) {
+    const previous = args.existing.agents[agent];
+    if (!previous) {
+      continue;
+    }
+    const next = projectorForAgent(
+      agent,
+      args.projectorOverride,
+      args.vendor,
+      args.existing,
+      args.doctorCapabilities,
+    );
+    if (agentProjector(args.existing, agent) === next) {
+      continue;
+    }
+    try {
+      await removeLockedAgentProjection(
+        args.pluginId,
+        { ...args.existing, agents: { [agent]: previous } },
+        agent,
+        {
+          exec: args.extras.exec,
+          force: true,
+          hash: args.lockEnvironment.hash,
+          lockEnvironment: args.lockEnvironment,
+          remove: args.extras.remove,
+          scope: args.scope,
+          warn,
+        },
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      warn(
+        `installed ${args.pluginId} on ${agent} but could not remove the old projection: ${detail}`,
+      );
+    }
+  }
 }
 
 /**

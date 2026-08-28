@@ -1357,6 +1357,67 @@ describe("native projectors", () => {
     }
   });
 
+  test("removes explode dests when --projector native rematerializes a locked agent", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-projector-override-cleanup-"));
+    const explodeFile = join(cwd, ".cursor/skills/jira/SKILL.md");
+    const sourceRoot = join(cwd, "catalog");
+    try {
+      await mkdir(join(cwd, ".cursor/skills/jira"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
+      await writeFile(explodeFile, "# jira\n");
+      await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            jira: {
+              agents: {
+                cursor: {
+                  files: { "jira/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-07-10T16:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      const counts = await install(
+        {
+          ...unattendedOptions,
+          agents: ["cursor"],
+          bundle: null,
+          global: false,
+          projector: "native",
+          project: true,
+          skills: ["jira"],
+        },
+        async () => {
+          throw new Error("explode runner must not run");
+        },
+        () => new Date("2026-07-10T17:00:00.000Z"),
+        { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+        { sourceRoot },
+      );
+      expect(counts).toEqual({ alreadyPresent: 0, installed: 1, repaired: 0 });
+      await expect(access(explodeFile)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(
+        await readFile(join(cwd, ".cursor/plugins/local/jira/skills/jira/SKILL.md"), "utf8"),
+      ).toBe("# jira\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("does not demote a locked native Cursor install when catalog is absent", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-repair-native-no-catalog-"));
     try {
