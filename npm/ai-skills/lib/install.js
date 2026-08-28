@@ -25,10 +25,12 @@ import { getPackageVersion } from "./package-version.js";
 import { assertProjectorSupported, resolveProjector } from "./projectors/defaults.js";
 import {
   defaultStoreRoot,
+  destUsesCopyMaterialization,
   discardExplodeBackups,
   explodePlugin,
   resolveExplodeSourceSkills,
   restoreExplodeInstall,
+  warnSkippedExplodeDests,
 } from "./projectors/explode.js";
 import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
 import {
@@ -799,13 +801,26 @@ export async function install(
       if (explodeSources && lanes.explode.length > 0) {
         const explode = extras.explode ?? explodePlugin;
         const exploded = await explode({
-          agents: lanes.explode.map((agent) => ({
-            id: agent,
-            replace: existing?.agents?.[agent]
-              ? new Set(skillNamesFromFiles(existing.agents[agent].files))
-              : new Set(),
-            root: agentSkillsRoot(scope, agent, lockEnvironment),
-          })),
+          agents: await Promise.all(
+            lanes.explode.map(async (agent) => {
+              const root = agentSkillsRoot(scope, agent, lockEnvironment);
+              const names = [
+                ...new Set([
+                  ...scopedOptions.skills,
+                  ...skillNamesFromFiles(existing?.agents?.[agent]?.files ?? {}),
+                ]),
+              ];
+              return {
+                id: agent,
+                copy:
+                  Boolean(scopedOptions.copy) || (await destUsesCopyMaterialization(root, names)),
+                replace: existing?.agents?.[agent]
+                  ? new Set(skillNamesFromFiles(existing.agents[agent].files))
+                  : new Set(),
+                root,
+              };
+            }),
+          ),
           copy: scopedOptions.copy,
           failAfter: extras.failAfter,
           hash: lockEnvironment.hash ?? hashFile,
@@ -818,6 +833,7 @@ export async function install(
         });
         explodeClaims = exploded.claimed;
         explodeProgress = exploded;
+        warnSkippedExplodeDests(exploded.skipped, extras.warn);
       } else {
         // Vendor installs and first-party installs without a catalog checkout
         // still shell out to the skills CLI. That path is not transactional and
@@ -1061,12 +1077,29 @@ async function createLockEntries(
     }
     const files = {};
     for (const name of options.skills) {
-      const relative = `${name}/SKILL.md`;
-      const absolute = join(root, relative);
-      if (onlyExistingFiles && !(await exists(absolute))) {
+      const skillDir = join(root, name);
+      let tree = {};
+      try {
+        tree = await hashTree(skillDir, hash);
+      } catch (error) {
+        if (error && typeof error === "object" && "code" in error && error.code === "ENOTDIR") {
+          tree = { "SKILL.md": await hashTrackedFile(skillDir, lockEnvironment) };
+        } else {
+          throw error;
+        }
+      }
+      if (Object.keys(tree).length === 0) {
+        const relative = `${name}/SKILL.md`;
+        const absolute = join(skillDir, "SKILL.md");
+        if (onlyExistingFiles && !(await exists(absolute))) {
+          continue;
+        }
+        files[relative] = await hashTrackedFile(absolute, lockEnvironment);
         continue;
       }
-      files[relative] = await hashTrackedFile(absolute, lockEnvironment);
+      for (const [relative, digest] of Object.entries(tree)) {
+        files[`${name}/${relative}`] = digest;
+      }
     }
     if (Object.keys(files).length === 0) {
       continue;

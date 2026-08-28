@@ -25,7 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of rewriting them as store symlinks, including the skills-CLI
   fallback path. Vendor installs
   and first-party installs without a catalog checkout still use the skills
-  CLI (no collision doctrine until bake).
+  CLI (no collision doctrine until bake). That CLI lock records the full dest
+  tree so later remove can hash-verify nested files, not only `SKILL.md`.
+  Install repair preserves existing `--copy` dest directories the same way
+  update does. Identical dest skips emit a warning (ADR-0005 class 1). A
+  regular file at a dest skill path is a collision, not a `SKILL.md` match.
 
 ### Changed
 

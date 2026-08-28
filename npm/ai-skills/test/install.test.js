@@ -2085,6 +2085,96 @@ describe("native projectors", () => {
     }
   });
 
+  test("warns when an identical dest is skipped without claiming ownership", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-skip-warn-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await mkdir(join(cwd, ".cursor/skills/lint"), { recursive: true });
+      await writeFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "# lint\n");
+      const warnings = [];
+      await install(
+        {
+          ...unattendedOptions,
+          agents: ["cursor"],
+          bundle: null,
+          global: false,
+          projector: "explode",
+          project: true,
+          skills: ["lint"],
+        },
+        async () => {
+          throw new Error("skills CLI must not run when catalog sources resolve");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        {
+          sourceRoot,
+          warn: (message) => {
+            warnings.push(message);
+          },
+        },
+      );
+      expect(warnings.some((item) => item.includes("skipped identical explode dest"))).toBe(true);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("CLI explode lock records nested dest files so remove deletes them", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cli-explode-nested-"));
+    try {
+      const dest = join(cwd, ".cursor/skills/lint");
+      await install(
+        {
+          ...unattendedOptions,
+          agents: ["cursor"],
+          bundle: null,
+          global: false,
+          projector: "explode",
+          project: true,
+          skills: ["lint"],
+        },
+        async () => {
+          await mkdir(dest, { recursive: true });
+          await writeFile(join(dest, "SKILL.md"), "# lint\n");
+          await writeFile(join(dest, "notes.md"), "notes\n");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot: null },
+      );
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(Object.keys(lock.plugins.lint.agents.cursor.files).sort()).toEqual([
+        "lint/SKILL.md",
+        "lint/notes.md",
+      ]);
+      await removeSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: ["lint"],
+          yes: true,
+        },
+        {
+          lockEnvironment: { cwd },
+          readLock: (scope) => readLockfile(scope, { cwd }),
+          run: async () => {
+            throw new Error("skills CLI must not run for explode remove");
+          },
+          writeLock: (next) => writeLockfile(next, { cwd }),
+        },
+      );
+      await expect(readFile(join(dest, "notes.md"), "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("update preserves copy dest directories instead of rewriting store symlinks", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-copy-update-"));
     try {
@@ -2134,6 +2224,58 @@ describe("native projectors", () => {
           sourceRoot,
           writeLock: (next) => writeLockfile(next, { cwd }),
         },
+      );
+      expect((await lstat(join(cwd, ".cursor/skills/test"))).isDirectory()).toBe(true);
+      expect(await readFile(join(cwd, ".cursor/skills/test/SKILL.md"), "utf8")).toBe("# test v2\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("install repair keeps --copy dest directories", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-copy-repair-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      await install(
+        {
+          ...unattendedOptions,
+          agents: ["cursor"],
+          bundle: null,
+          copy: true,
+          global: false,
+          projector: "explode",
+          project: true,
+          skills: ["test"],
+        },
+        async () => {
+          throw new Error("skills CLI must not run when catalog sources resolve");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      expect((await lstat(join(cwd, ".cursor/skills/test"))).isDirectory()).toBe(true);
+      await writeFile(join(cwd, ".cursor/skills/test/SKILL.md"), "# dirty\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test v2\n");
+      await install(
+        {
+          ...unattendedOptions,
+          agents: ["cursor"],
+          bundle: null,
+          copy: false,
+          global: false,
+          projector: "explode",
+          project: true,
+          skills: ["test"],
+        },
+        async () => {
+          throw new Error("skills CLI must not run when catalog sources resolve");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
       );
       expect((await lstat(join(cwd, ".cursor/skills/test"))).isDirectory()).toBe(true);
       expect(await readFile(join(cwd, ".cursor/skills/test/SKILL.md"), "utf8")).toBe("# test v2\n");

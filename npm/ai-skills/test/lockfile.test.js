@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -422,6 +423,21 @@ describe("gateway lockfile", () => {
       ]);
       expect(files[".claude-plugin/plugin.json"]).toMatch(/^[a-f0-9]{64}$/);
       expect(files["skills/lint/SKILL.md"]).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("hashes in-tree symlinks as symlink:<target>", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-hash-symlink-"));
+    try {
+      await mkdir(join(root, "skills/lint"), { recursive: true });
+      await writeFile(join(root, "skills/lint/SKILL.md"), "# lint\n");
+      await symlink("SKILL.md", join(root, "skills/lint/alias.md"));
+      const files = await hashTree(root);
+      expect(files["skills/lint/alias.md"]).toBe(
+        createHash("sha256").update("symlink:SKILL.md").digest("hex"),
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }

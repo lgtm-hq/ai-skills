@@ -125,6 +125,27 @@ describe("explodePlugin", () => {
     }
   });
 
+  test("file dest with matching SKILL.md bytes is still a collision", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-file-dest-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      await mkdir(dest, { recursive: true });
+      await writeFile(join(dest, "lint"), "# lint\n");
+      await expect(
+        explodePlugin({
+          agents: [{ id: "cursor", root: dest }],
+          skills: ["lint"],
+          sourceSkills: { lint: join(source, "lint") },
+          storeRoot: store,
+        }),
+      ).rejects.toThrow("Explode collision");
+      expect(await readFile(join(dest, "lint"), "utf8")).toBe("# lint\n");
+      await expect(lstat(join(store, "lint"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   test("rejects a source symlink that escapes the skill tree", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-symlink-"));
     try {
@@ -140,6 +161,25 @@ describe("explodePlugin", () => {
           storeRoot: store,
         }),
       ).rejects.toThrow("outside explode root");
+      await expect(lstat(join(dest, "lint"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("rejects a dangling symlink in the explode source", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-dangling-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      await symlink("missing.md", join(source, "lint/gone.md"));
+      await expect(
+        explodePlugin({
+          agents: [{ id: "cursor", root: dest }],
+          skills: ["lint"],
+          sourceSkills: { lint: join(source, "lint") },
+          storeRoot: store,
+        }),
+      ).rejects.toThrow("dangling symlink");
       await expect(lstat(join(dest, "lint"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await rm(root, { force: true, recursive: true });

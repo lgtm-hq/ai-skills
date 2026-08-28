@@ -37,6 +37,7 @@ import {
   resolveTrackedPath,
   restoreExplodeInstall,
   unlinkDestSkillSymlink,
+  warnSkippedExplodeDests,
 } from "./projectors/explode.js";
 import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
 import {
@@ -158,6 +159,7 @@ export async function updateSkills(options, dependencies = {}) {
           });
           explodeClaimsByPlugin[pluginId] = exploded.claimed;
           explodeBackups.push(exploded);
+          warnSkippedExplodeDests(exploded.skipped, warn);
         } else {
           // Vendor / non-checkout first-party still uses the skills CLI.
           const copyAgents = [];

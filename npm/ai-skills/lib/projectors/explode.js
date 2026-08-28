@@ -36,9 +36,24 @@ import { hashFile, hashTree, isSafePluginId } from "../lockfile.js";
  *   swappedStores: Array<{backup: string, storeDir: string}>,
  * }} ExplodeResult
  * Files this plugin owns after a successful commit. Skipped dests are
- * byte-identical and must not be recorded in the lock. ``keepBackups``
- * leaves dest/store ``.bak`` trees for the caller to discard after lock write.
+ * byte-identical and must not be recorded in the lock. Callers that pass
+ * ``keepBackups`` must discard dest/store ``.bak`` trees after the lock write.
  */
+
+/**
+ * ADR-0005 class 1: identical dest skip is a log line, with no ownership claim.
+ *
+ * @param {Array<{agent: string, dest: string, skill: string}>} skipped - Unclaimed dests.
+ * @param {(message: string) => void} [warn] - Warning sink.
+ * @returns {void}
+ */
+export function warnSkippedExplodeDests(skipped, warn = (message) => console.warn(message)) {
+  for (const item of skipped) {
+    warn(
+      `skipped identical explode dest ${item.dest} (not claiming ${item.skill} on ${item.agent})`,
+    );
+  }
+}
 
 /**
  * Resolve first-party skill directories from a catalog root.
@@ -1037,7 +1052,7 @@ async function walkRejectingEscapes(dir, root, visiting = new Set()) {
 async function hashExistingTree(dest, hash) {
   const info = await lstat(dest);
   if (info.isFile()) {
-    return { "SKILL.md": await hash(dest) };
+    return { ".": await hash(dest) };
   }
   if (info.isSymbolicLink()) {
     if (await danglingSymlink(dest)) {
@@ -1046,7 +1061,7 @@ async function hashExistingTree(dest, hash) {
     const target = await realpath(dest);
     const targetInfo = await lstat(target);
     if (targetInfo.isFile()) {
-      return { "SKILL.md": await hash(dest) };
+      return { ".": await hash(dest) };
     }
     return hashTree(target, hash);
   }

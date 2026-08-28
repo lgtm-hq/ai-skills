@@ -245,7 +245,7 @@ describe("gateway maintenance commands", () => {
     ]);
   });
 
-  test("removes only lock-managed selections after mocked CLI success", async () => {
+  test("removes explode lock selections without calling the skills CLI", async () => {
     const calls = [];
     let written;
     const removed = await removeSkills(
