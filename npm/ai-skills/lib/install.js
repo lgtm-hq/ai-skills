@@ -27,13 +27,13 @@ import {
 import { checkGatewayUpdate, checkSkillDrift, checkVendorDrift } from "./update-check.js";
 
 /**
- * @typedef {{firstParty: string[], vendors: Record<string, string[]>}} InstallCart
- * Interactive skill cart keyed by catalog source.
+ * @typedef {{firstParty: string[], vendors: string[]}} InstallCart
+ * Interactive plugin cart. Values are plugin ids (first-party bundle ids or vendor ids).
  */
 
 /**
- * @typedef {{vendor: string | null, skills: string[]}} InstallBatch
- * One upstream `skills add` invocation (single source).
+ * @typedef {{pluginId: string, vendor: string | null, skills: string[]}} InstallBatch
+ * One upstream `skills add` invocation for a single plugin.
  */
 
 /**
@@ -49,10 +49,10 @@ import { checkGatewayUpdate, checkSkillDrift, checkVendorDrift } from "./update-
 /**
  * Fill unset install selections through the home/cart wizard.
  *
- * Home lists catalogs to browse; selections accumulate in a cart. Proceed asks
- * for agents/scope once, then returns install batches. Scope defaults to global,
- * installs symlink (not copy), and uses overwrite for the gateway fail-closed
- * `--on-conflict` API without prompting.
+ * The wizard lists plugins (first-party groups + vendor plugins). Selection is
+ * plugin-atomic: no per-skill expansion. Proceed asks for agents/scope once.
+ * Scope defaults to global, installs symlink (not copy), and uses overwrite
+ * for the gateway fail-closed `--on-conflict` API without prompting.
  *
  * @param {{agents: string[], bundle: string | null, copy: boolean, global: boolean, onConflict: string | null, project: boolean, skills: string[], vendor: string | null, yes: boolean}} options - Initial install options.
  * @param {ReturnType<typeof createClackUi>} [ui] - Injectable interactive UI.
@@ -78,71 +78,16 @@ export async function completeInteractively(options, ui = createClackUi(), depen
   if (installedSummary) {
     ui.note(installedSummary, "Installed");
   }
-  /** @type {InstallCart} */
-  const cart = { firstParty: [], vendors: {} };
-
-  while (true) {
-    const action = await cancelable(
-      ui,
-      ui.select({
-        message: "Install skills",
-        options: buildHomeOptions(cart, vendors, signals),
-      }),
-    );
-
-    if (action === "cancel") {
-      throw new Error("Install cancelled");
-    }
-    if (action === "proceed") {
-      break;
-    }
-    if (action === "browse:first-party") {
-      cart.firstParty = await cancelable(
-        ui,
-        ui.groupMultiselect({
-          message: `Skills from lgtm-hq/ai-skills @ v${getPackageVersion()}`,
-          options: buildFirstPartySkillGroups(bundles, buildSkillMarkers(signals, null)),
-          initialValues: cart.firstParty,
-          required: false,
-        }),
-      );
-      continue;
-    }
-    if (action.startsWith("browse:vendor:")) {
-      const vendorId = action.slice("browse:vendor:".length);
-      const index = await loadVendorIndex(vendorId);
-      // Prefer registry record so displayRef survives (baked indexes omit it).
-      const vendor = vendors.vendors.find((entry) => entry.id === vendorId) ?? index.vendor;
-      const skillRoots = index.vendor.skillRoots ?? vendor.skillRoots ?? [];
-      const picker = buildVendorSkillPicker(
-        index.skills,
-        skillRoots,
-        buildSkillMarkers(signals, vendorId),
-      );
-      const message = `Skills from ${vendorDisplayLabel(vendor)}`;
-      const initialValues = cart.vendors[vendorId] ?? [];
-      cart.vendors[vendorId] = await cancelable(
-        ui,
-        picker.mode === "grouped"
-          ? ui.groupMultiselect({
-              message,
-              options: picker.options,
-              initialValues,
-              required: false,
-            })
-          : ui.multiselect({
-              message,
-              options: picker.options,
-              initialValues,
-              required: false,
-            }),
-      );
-      continue;
-    }
-    throw new Error(`Unknown home action: ${action}`);
-  }
-
-  const installBatches = batchesFromCart(cart);
+  const selected = await cancelable(
+    ui,
+    ui.multiselect({
+      message: "Install plugins",
+      options: await buildPluginChecklist(bundles, vendors, signals),
+      required: false,
+    }),
+  );
+  const cart = partitionPluginSelection(selected);
+  const installBatches = await batchesFromCart(cart);
   if (installBatches.length === 0) {
     throw new Error("Install cancelled");
   }
@@ -296,65 +241,76 @@ async function readWizardLock(options, lockEnvironment) {
 }
 
 /**
- * Compute browse-row status suffixes for skills installed from one catalog.
+ * Build a flat plugin checklist for interactive install.
  *
- * @param {WizardSignals} signals - Wizard signals.
- * @param {string | null} vendorId - Vendor being browsed, or null for first-party.
- * @returns {Map<string, string>} Skill name to label suffix.
+ * @param {{groups: Record<string, {id?: string, name: string, description: string, skills: string[]}>}} bundles - First-party plugin catalog.
+ * @param {{vendors: Array<{id: string, repo: string, displayRef?: string}>}} vendors - Vendor registry.
+ * @param {WizardSignals | {driftedVendors?: Set<string>, driftedSkills?: Set<string>, lock?: {plugins?: Record<string, import("./lockfile.js").PluginLockEntry>}}} [signals] - Installed/drift annotations.
+ * @returns {Promise<{value: string, label: string}[]>} Clack multiselect options.
  */
-function buildSkillMarkers(signals, vendorId) {
+export async function buildPluginChecklist(bundles, vendors, signals = {}) {
+  const driftedVendors = signals.driftedVendors ?? new Set();
+  const markers = buildPluginMarkers(signals);
+  /** @type {{value: string, label: string}[]} */
+  const options = Object.entries(bundles.groups).map(([pluginId, group]) => {
+    const count = group.skills.length;
+    const skillLabel = count === 1 ? "skill" : "skills";
+    return {
+      value: pluginId,
+      label: `${group.name} — ${group.description} (${count} ${skillLabel})${markers.get(pluginId) ?? ""}`,
+    };
+  });
+  for (const vendor of vendors.vendors) {
+    const index = await loadVendorIndex(vendor.id);
+    const count = index.skills.length;
+    const skillLabel = count === 1 ? "skill" : "skills";
+    const drift = driftedVendors.has(vendor.id) ? VENDOR_DRIFT_SUFFIX : "";
+    options.push({
+      value: `vendor:${vendor.id}`,
+      label: `${vendorDisplayLabel(vendor)} — ${count} ${skillLabel}${drift}${markers.get(vendor.id) ?? ""}`,
+    });
+  }
+  return options;
+}
+
+/**
+ * Status suffixes keyed by plugin id.
+ *
+ * @param {{lock?: {plugins?: Record<string, import("./lockfile.js").PluginLockEntry>}, driftedSkills?: Set<string>}} signals - Wizard signals.
+ * @returns {Map<string, string>} Plugin id to installed/drift suffix.
+ */
+function buildPluginMarkers(signals) {
   /** @type {Map<string, string>} */
   const markers = new Map();
-  const catalogVendor = vendorId ?? "lgtm-hq";
-  for (const [pluginId, entry] of Object.entries(signals.lock.plugins)) {
-    if (entry.vendor !== catalogVendor) {
-      continue;
-    }
-    const suffix = formatSkillStatusSuffix({
-      entry,
-      drifted: signals.driftedSkills.has(pluginId),
-    });
-    markers.set(pluginId, suffix);
-    for (const install of Object.values(entry.agents)) {
-      for (const relative of Object.keys(install.files)) {
-        markers.set(relative.split("/")[0], suffix);
-      }
-    }
+  for (const [pluginId, entry] of Object.entries(signals.lock?.plugins ?? {})) {
+    markers.set(
+      pluginId,
+      formatSkillStatusSuffix({
+        entry,
+        drifted: signals.driftedSkills?.has(pluginId) ?? false,
+      }),
+    );
   }
   return markers;
 }
 
 /**
- * Build home-screen options for the install wizard.
+ * Split checklist values into first-party plugin ids and vendor ids.
  *
- * @param {InstallCart} cart - Current skill cart.
- * @param {{vendors: Array<{id: string, repo: string, displayRef?: string}>}} vendors - Vendor registry.
- * @param {{driftedVendors?: Set<string>}} [signals] - Wizard signals (vendor drift annotations).
- * @returns {{value: string, label: string}[]} Clack select options.
+ * @param {string[]} selected - Checklist values.
+ * @returns {InstallCart} Partitioned plugin cart.
  */
-export function buildHomeOptions(cart, vendors, signals = {}) {
-  const driftedVendors = signals.driftedVendors ?? new Set();
-  const options = [
-    {
-      value: "browse:first-party",
-      label: `Browse lgtm-hq/ai-skills @ v${getPackageVersion()}`,
-    },
-    ...vendors.vendors.map((vendor) => ({
-      value: `browse:vendor:${vendor.id}`,
-      label: `Browse ${vendorDisplayLabel(vendor)}${
-        driftedVendors.has(vendor.id) ? VENDOR_DRIFT_SUFFIX : ""
-      }`,
-    })),
-  ];
-  const total = cartSkillCount(cart);
-  if (total > 0) {
-    options.push({
-      value: "proceed",
-      label: `Proceed with install (${total} skill${total === 1 ? "" : "s"})`,
-    });
+export function partitionPluginSelection(selected) {
+  /** @type {InstallCart} */
+  const cart = { firstParty: [], vendors: [] };
+  for (const value of selected) {
+    if (value.startsWith("vendor:")) {
+      cart.vendors.push(value.slice("vendor:".length));
+    } else {
+      cart.firstParty.push(value);
+    }
   }
-  options.push({ value: "cancel", label: "Cancel" });
-  return options;
+  return cart;
 }
 
 /**
@@ -370,81 +326,81 @@ export function vendorDisplayLabel(vendor) {
 }
 
 /**
- * Count skills currently in the cart.
+ * Count plugins currently in the cart.
  *
- * @param {InstallCart} cart - Skill cart.
- * @returns {number} Total selected skills.
+ * @param {InstallCart} cart - Plugin cart.
+ * @returns {number} Total selected plugins.
  */
-export function cartSkillCount(cart) {
-  return (
-    cart.firstParty.length +
-    Object.values(cart.vendors).reduce((sum, skills) => sum + skills.length, 0)
-  );
+export function cartPluginCount(cart) {
+  return cart.firstParty.length + cart.vendors.length;
 }
 
 /**
- * Convert a cart into install batches (first-party first).
+ * Convert a plugin cart into install batches (first-party first).
  *
- * @param {InstallCart} cart - Skill cart.
- * @returns {InstallBatch[]} Non-empty batches only.
+ * @param {InstallCart} cart - Plugin cart.
+ * @returns {Promise<InstallBatch[]>} One batch per selected plugin.
  */
-export function batchesFromCart(cart) {
+export async function batchesFromCart(cart) {
+  const bundles = await loadBundles();
   /** @type {InstallBatch[]} */
   const batches = [];
-  if (cart.firstParty.length > 0) {
-    batches.push({ vendor: null, skills: [...cart.firstParty] });
-  }
-  for (const [vendorId, skills] of Object.entries(cart.vendors)) {
-    if (skills.length > 0) {
-      batches.push({ vendor: vendorId, skills: [...skills] });
+  for (const pluginId of cart.firstParty) {
+    const bundle = bundles.groups[pluginId];
+    if (!bundle) {
+      throw new Error(`Unknown first-party plugin: ${pluginId}`);
     }
+    batches.push({ pluginId, vendor: null, skills: [...bundle.skills] });
+  }
+  for (const vendorId of cart.vendors) {
+    const index = await loadVendorIndex(vendorId);
+    batches.push({
+      pluginId: vendorId,
+      vendor: vendorId,
+      skills: index.skills.map((skill) => skill.name),
+    });
   }
   return batches;
 }
 
 /**
- * Build install batches from CLI source flags (interactive, without -y).
+ * Build install batches from CLI plugin flags.
+ *
+ * `--skill` names first-party plugins. `--bundle` is an alias for one
+ * first-party plugin. `--vendor` installs that vendor plugin atomically.
  *
  * @param {{bundle: string | null, skills: string[], vendor: string | null}} options - Parsed install options.
- * @returns {Promise<InstallBatch[]>} One batch for the CLI-selected source.
+ * @returns {Promise<InstallBatch[]>} One batch per selected plugin.
  */
 export async function batchesFromCliOptions(options) {
+  if (options.vendor && (options.bundle || options.skills.length > 0)) {
+    throw new Error("Vendor installs are plugin-atomic; omit --skill and --bundle");
+  }
   if (options.vendor) {
-    if (options.skills.length === 0) {
-      throw new Error(
-        "Interactive install with --vendor requires --skill, or omit both to browse catalogs",
-      );
-    }
-    return [{ vendor: options.vendor, skills: [...options.skills] }];
+    const index = await loadVendorIndex(options.vendor);
+    return [
+      {
+        pluginId: options.vendor,
+        vendor: options.vendor,
+        skills: index.skills.map((skill) => skill.name),
+      },
+    ];
   }
-  if (options.bundle) {
-    const bundles = await loadBundles();
-    const bundle = bundles.groups[options.bundle];
+  if (options.bundle && options.skills.length > 0) {
+    throw new Error("Choose plugins via --skill or --bundle, not both");
+  }
+  const pluginIds = options.bundle ? [options.bundle] : options.skills;
+  if (pluginIds.length === 0) {
+    throw new Error("Select at least one plugin via --skill or --bundle");
+  }
+  const bundles = await loadBundles();
+  return pluginIds.map((pluginId) => {
+    const bundle = bundles.groups[pluginId];
     if (!bundle) {
-      throw new Error(`Unknown first-party bundle: ${options.bundle}`);
+      throw new Error(`Unknown first-party plugin: ${pluginId}`);
     }
-    const skills = options.skills.length > 0 ? options.skills : bundle.skills;
-    return [{ vendor: null, skills: [...skills] }];
-  }
-  return [{ vendor: null, skills: [...options.skills] }];
-}
-
-/**
- * Build grouped skill options for first-party interactive install.
- *
- * @param {{groups: Record<string, {name: string, skills: string[]}>, ungrouped: string[]}} bundles - Loaded bundle catalog.
- * @param {Map<string, string>} [markers] - Status suffixes keyed by skill name.
- * @returns {Record<string, {value: string, label: string}[]>} Clack groupMultiselect options.
- */
-function buildFirstPartySkillGroups(bundles, markers = new Map()) {
-  const toOption = (skill) => ({ value: skill, label: `${skill}${markers.get(skill) ?? ""}` });
-  const groups = Object.fromEntries(
-    Object.values(bundles.groups).map((bundle) => [bundle.name, bundle.skills.map(toOption)]),
-  );
-  if (bundles.ungrouped.length > 0) {
-    groups.Other = bundles.ungrouped.map(toOption);
-  }
-  return groups;
+    return { pluginId, vendor: null, skills: [...bundle.skills] };
+  });
 }
 
 /**
@@ -972,7 +928,7 @@ export async function installInteractively(options) {
     try {
       const counts = await install({
         ...completed,
-        bundle: null,
+        bundle: batch.vendor ? null : batch.pluginId,
         vendor: batch.vendor,
         skills: batch.skills,
       });

@@ -3,11 +3,12 @@ import { describe, expect, test } from "bun:test";
 import {
   batchesFromCart,
   batchesFromCliOptions,
-  buildHomeOptions,
+  buildPluginChecklist,
   buildVendorSkillPicker,
-  cartSkillCount,
+  cartPluginCount,
   completeInteractively,
   formatVendorGroupHeading,
+  partitionPluginSelection,
   vendorDisplayLabel,
   vendorSkillGroupKey,
 } from "../lib/install.js";
@@ -221,81 +222,88 @@ describe("buildVendorSkillPicker", () => {
 });
 
 describe("cart helpers", () => {
-  test("counts skills and builds install batches", () => {
+  test("counts plugins and expands first-party batches", async () => {
     const cart = {
-      firstParty: ["branch", "lint"],
-      vendors: { anthropics: ["pdf"], mattpocock: [] },
+      firstParty: ["review"],
+      vendors: [],
     };
-    expect(cartSkillCount(cart)).toBe(3);
-    expect(batchesFromCart(cart)).toEqual([
-      { vendor: null, skills: ["branch", "lint"] },
-      { vendor: "anthropics", skills: ["pdf"] },
+    expect(cartPluginCount(cart)).toBe(1);
+    expect(partitionPluginSelection(["review", "vendor:anthropics"])).toEqual({
+      firstParty: ["review"],
+      vendors: ["anthropics"],
+    });
+    const batches = await batchesFromCart(cart);
+    expect(batches).toEqual([
+      {
+        pluginId: "review",
+        vendor: null,
+        skills: ["lint", "test", "greptile", "coderabbit"],
+      },
     ]);
   });
 
-  test("builds a vendor batch from CLI options", async () => {
+  test("expands a vendor plugin from CLI options", async () => {
     await expect(
-      batchesFromCliOptions({ vendor: "anthropics", skills: [], bundle: null }),
-    ).rejects.toThrow(/requires --skill/);
-    expect(
-      await batchesFromCliOptions({
-        vendor: "anthropics",
-        skills: ["pdf"],
-        bundle: null,
-      }),
-    ).toEqual([{ vendor: "anthropics", skills: ["pdf"] }]);
+      batchesFromCliOptions({ vendor: "anthropics", skills: ["pdf"], bundle: null }),
+    ).rejects.toThrow(/plugin-atomic/);
+    const [batch] = await batchesFromCliOptions({
+      vendor: "anthropics",
+      skills: [],
+      bundle: null,
+    });
+    expect(batch.pluginId).toBe("anthropics");
+    expect(batch.vendor).toBe("anthropics");
+    expect(batch.skills).toContain("pdf");
+    expect(batch.skills.length).toBeGreaterThan(1);
   });
 
-  test("omits Proceed until the cart has skills", () => {
-    const vendors = {
-      vendors: [{ id: "anthropics", repo: "anthropics/skills", displayRef: "latest" }],
-    };
-    const empty = buildHomeOptions({ firstParty: [], vendors: {} }, vendors);
-    expect(empty.map((option) => option.value)).toEqual([
-      "browse:first-party",
-      "browse:vendor:anthropics",
-      "cancel",
-    ]);
-    const filled = buildHomeOptions({ firstParty: ["branch"], vendors: {} }, vendors);
-    expect(filled.some((option) => option.value === "proceed")).toBe(true);
-    expect(filled.find((option) => option.value === "proceed")?.label).toBe(
-      "Proceed with install (1 skill)",
+  test("lists first-party and vendor plugins on one checklist", async () => {
+    const { loadBundles, loadVendors } = await import("../lib/catalog.js");
+    const bundles = await loadBundles();
+    const vendors = await loadVendors();
+    const options = await buildPluginChecklist(bundles, vendors, {
+      driftedVendors: new Set(["davidondrej"]),
+    });
+    expect(options.some((option) => option.value === "review")).toBe(true);
+    expect(options.find((option) => option.value === "review")?.label).toContain("4 skills");
+    expect(options.some((option) => option.value === "vendor:anthropics")).toBe(true);
+    expect(options.find((option) => option.value === "vendor:davidondrej")?.label).toContain(
+      "newer commits",
     );
   });
 });
 
 describe("completeInteractively", () => {
-  test("honors CLI vendor/skills without opening the home wizard", async () => {
+  test("honors CLI vendor plugin without opening the checklist", async () => {
     const options = await completeInteractively(
-      { ...blankOptions, vendor: "anthropics", skills: ["pdf"] },
+      { ...blankOptions, vendor: "anthropics" },
       scriptedUi([["cursor"], "global", false]),
       offlineDependencies,
     );
 
-    expect(options.installBatches).toEqual([{ vendor: "anthropics", skills: ["pdf"] }]);
+    expect(options.installBatches[0]?.pluginId).toBe("anthropics");
+    expect(options.installBatches[0]?.vendor).toBe("anthropics");
+    expect(options.installBatches[0]?.skills).toContain("pdf");
     expect(options.vendor).toBeNull();
     expect(options.skills).toEqual([]);
     expect(options.agents).toEqual(["cursor"]);
   });
 
-  test("browse first-party then proceed with defaults", async () => {
+  test("selects first-party plugins then proceeds with defaults", async () => {
     const options = await completeInteractively(
       { ...blankOptions },
-      scriptedUi([
-        "browse:first-party",
-        ["lint", "test", "greptile", "coderabbit"],
-        "proceed",
-        KNOWN_AGENTS.map((agent) => agent.value),
-        "global",
-        false,
-      ]),
+      scriptedUi([["review"], KNOWN_AGENTS.map((agent) => agent.value), "global", false]),
       offlineDependencies,
     );
 
     expect(options.bundle).toBeNull();
     expect(options.vendor).toBeNull();
     expect(options.installBatches).toEqual([
-      { vendor: null, skills: ["lint", "test", "greptile", "coderabbit"] },
+      {
+        pluginId: "review",
+        vendor: null,
+        skills: ["lint", "test", "greptile", "coderabbit"],
+      },
     ]);
     expect(options.agents).toEqual(["claude-code", "cursor", "codex"]);
     expect(options.global).toBe(true);
@@ -303,15 +311,11 @@ describe("completeInteractively", () => {
     expect(options.onConflict).toBe("overwrite");
   });
 
-  test("accumulates first-party and vendor catalogs before proceed", async () => {
+  test("selects first-party and vendor plugins on one checklist", async () => {
     const options = await completeInteractively(
       { ...blankOptions },
       scriptedUi([
-        "browse:first-party",
-        ["branch"],
-        "browse:vendor:anthropics",
-        ["pdf"],
-        "proceed",
+        ["review", "vendor:anthropics"],
         KNOWN_AGENTS.map((agent) => agent.value),
         "global",
         false,
@@ -319,70 +323,23 @@ describe("completeInteractively", () => {
       offlineDependencies,
     );
 
-    expect(options.installBatches).toEqual([
-      { vendor: null, skills: ["branch"] },
-      { vendor: "anthropics", skills: ["pdf"] },
-    ]);
+    expect(options.installBatches[0]).toEqual({
+      pluginId: "review",
+      vendor: null,
+      skills: ["lint", "test", "greptile", "coderabbit"],
+    });
+    expect(options.installBatches[1]?.pluginId).toBe("anthropics");
+    expect(options.installBatches[1]?.vendor).toBe("anthropics");
+    expect(options.installBatches[1]?.skills).toContain("pdf");
   });
 
-  test("uses groupMultiselect for nested vendor catalogs", async () => {
-    /** @type {string[]} */
-    const prompts = [];
-    const base = scriptedUi([
-      "browse:vendor:mattpocock",
-      ["tdd", "grill-me"],
-      "proceed",
-      ["cursor"],
-      "global",
-      false,
-    ]);
-    const ui = {
-      ...base,
-      async multiselect(options) {
-        prompts.push("multiselect");
-        return base.multiselect(options);
-      },
-      async groupMultiselect(options) {
-        prompts.push("groupMultiselect");
-        expect(Object.keys(options.options).length).toBeGreaterThan(1);
-        return base.groupMultiselect(options);
-      },
-    };
-
-    const options = await completeInteractively({ ...blankOptions }, ui, offlineDependencies);
-
-    expect(prompts[0]).toBe("groupMultiselect");
-    expect(options.installBatches).toEqual([{ vendor: "mattpocock", skills: ["tdd", "grill-me"] }]);
-  });
-
-  test("empty catalog selection returns home without installing", async () => {
-    const options = await completeInteractively(
-      { ...blankOptions },
-      scriptedUi([
-        "browse:vendor:anthropics",
-        [],
-        "browse:first-party",
-        ["commit"],
-        "proceed",
-        ["cursor"],
-        "project",
-        false,
-      ]),
-      offlineDependencies,
-    );
-
-    expect(options.installBatches).toEqual([{ vendor: null, skills: ["commit"] }]);
-    expect(options.agents).toEqual(["cursor"]);
-    expect(options.project).toBe(true);
-  });
-
-  test("cancel from home aborts", async () => {
+  test("empty plugin selection cancels", async () => {
     await expect(
-      completeInteractively({ ...blankOptions }, scriptedUi(["cancel"]), offlineDependencies),
+      completeInteractively({ ...blankOptions }, scriptedUi([[]]), offlineDependencies),
     ).rejects.toThrow("Install cancelled");
   });
 
-  test("aborts when the UI reports cancel", async () => {
+  test("cancel from the plugin checklist aborts", async () => {
     await expect(
       completeInteractively(
         { ...blankOptions },
@@ -395,10 +352,11 @@ describe("completeInteractively", () => {
   test("offers copy only when advanced options are enabled", async () => {
     const options = await completeInteractively(
       { ...blankOptions },
-      scriptedUi(["browse:first-party", ["branch"], "proceed", ["cursor"], "global", true, true]),
+      scriptedUi([["git-pr"], ["cursor"], "global", true, true]),
       offlineDependencies,
     );
 
     expect(options.copy).toBe(true);
+    expect(options.installBatches[0]?.pluginId).toBe("git-pr");
   });
 });

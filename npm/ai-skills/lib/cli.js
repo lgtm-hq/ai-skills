@@ -1,7 +1,7 @@
 import { adoptSkills } from "./adopt.js";
 import { loadVendors } from "./catalog.js";
 import { listSkills, removeSkills, updateSkills } from "./gateway-commands.js";
-import { install, installInteractively } from "./install.js";
+import { batchesFromCliOptions, install, installInteractively } from "./install.js";
 import {
   parseArguments,
   validateUnattendedCommandOptions,
@@ -71,8 +71,19 @@ export async function runCli(argv) {
   }
   validateUnattendedOptions(options);
   if (options.yes) {
-    const counts = await install(options);
-    console.log(formatInstallCounts(counts));
+    const totals = { alreadyPresent: 0, installed: 0, repaired: 0 };
+    for (const batch of await batchesFromCliOptions(options)) {
+      const counts = await install({
+        ...options,
+        bundle: batch.vendor ? null : batch.pluginId,
+        vendor: batch.vendor,
+        skills: batch.skills,
+      });
+      totals.alreadyPresent += counts.alreadyPresent;
+      totals.installed += counts.installed;
+      totals.repaired += counts.repaired;
+    }
+    console.log(formatInstallCounts(totals));
     return;
   }
   await installInteractively(options);
