@@ -1,11 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   cp,
   lstat,
   mkdir,
   mkdtemp,
   readdir,
-  readlink,
   realpath,
   rename,
   rm,
@@ -16,7 +15,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 
-import { hashFile, hashTree, isSafePluginId } from "../lockfile.js";
+import { hashFile, hashLockEntryPath, hashTree, isSafePluginId } from "../lockfile.js";
 
 /**
  * @typedef {{copy?: boolean, id: string, replace?: Set<string>, root: string}} ExplodeAgent
@@ -1021,8 +1020,11 @@ async function walkRejectingEscapes(dir, root, visiting = new Set()) {
         let target;
         try {
           target = await realpath(absolute);
-        } catch {
-          throw new Error(`Refusing dangling symlink in explode source: ${absolute}`);
+        } catch (error) {
+          if (isAbsentFsError(error)) {
+            throw new Error(`Refusing dangling symlink in explode source: ${absolute}`);
+          }
+          throw error;
         }
         assertInsideRoot(root, target);
         const info = await lstat(target);
@@ -1096,12 +1098,7 @@ async function danglingSymlink(path) {
  */
 async function hashExplodePath(path, hash) {
   try {
-    const info = await lstat(path);
-    if (info.isSymbolicLink()) {
-      return createHash("sha256")
-        .update(`symlink:${await readlink(path)}`)
-        .digest("hex");
-    }
+    return await hashLockEntryPath(path, hash);
   } catch (error) {
     if (!isAbsentFsError(error)) {
       throw error;

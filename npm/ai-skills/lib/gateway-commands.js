@@ -256,6 +256,15 @@ export async function updateSkills(options, dependencies = {}) {
             : sourceSha(entry.vendor, entry.sha, vendors),
       };
     }
+    for (const pluginId of updated) {
+      const entry = selected[pluginId];
+      await removeStalePluginSkills(pluginId, entry, catalogSkills[pluginId] ?? [], {
+        hash,
+        removeDir,
+        removeFile,
+        warn,
+      });
+    }
     await writeLock({
       ...prunedLock,
       gatewayVersion: getPackageVersion(),
@@ -276,20 +285,6 @@ export async function updateSkills(options, dependencies = {}) {
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         warn(`Warning: could not discard Cursor plugin backup after update (${detail})`);
-      }
-    }
-    for (const pluginId of updated) {
-      const entry = selected[pluginId];
-      try {
-        await removeStalePluginSkills(pluginId, entry, catalogSkills[pluginId] ?? [], {
-          hash,
-          removeDir,
-          removeFile,
-          warn,
-        });
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        warn(`Warning: could not remove stale ${pluginId} skills after update (${detail})`);
       }
     }
     return { pruned, updated };
@@ -645,10 +640,19 @@ async function rematerializePluginFiles(entry, skillNames, hash, explodeClaims) 
     const projector = agentProjector(entry, agent);
     if (explodeClaims && projector === PROJECTOR_EXPLODE) {
       const claimed = explodeClaims[agent];
-      if (!claimed || Object.keys(claimed).length === 0) {
+      if (claimed && Object.keys(claimed).length > 0) {
+        agents[agent] = { ...install, files: claimed };
         continue;
       }
-      agents[agent] = { ...install, files: claimed };
+      const retained = {};
+      for (const [relative, digest] of Object.entries(install.files)) {
+        if (current.has(relative.split("/")[0])) {
+          retained[relative] = digest;
+        }
+      }
+      if (Object.keys(retained).length > 0) {
+        agents[agent] = { ...install, files: retained };
+      }
       continue;
     }
     if (projector === PROJECTOR_NATIVE && agent === "cursor") {

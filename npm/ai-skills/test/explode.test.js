@@ -656,7 +656,7 @@ describe("explodePlugin", () => {
 });
 
 describe("removeExplodedFiles", () => {
-  test("leaves a later-unclaimed identical dest in place", async () => {
+  test("leaves an unlisted sibling dest in place when removing one hashed skill", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-keep-"));
     try {
       const dest = join(root, ".cursor/skills");
