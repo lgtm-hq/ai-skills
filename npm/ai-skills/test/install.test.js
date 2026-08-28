@@ -712,6 +712,36 @@ describe("install", () => {
     }
   });
 
+  test("rolls back a targeted install that wrote only some plugin skills", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-partial-plugin-"));
+    const lintDir = join(cwd, ".cursor/skills/lint");
+    const testDir = join(cwd, ".cursor/skills/test");
+    try {
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            bundle: null,
+            global: false,
+            project: true,
+            skills: ["lint", "test"],
+          },
+          async () => {
+            await mkdir(lintDir, { recursive: true });
+            await writeFile(join(lintDir, "SKILL.md"), "partial\n");
+          },
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          { cwd },
+        ),
+      ).rejects.toThrow("Plugin install incomplete");
+
+      await expect(access(lintDir)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(access(testDir)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("rolls back newly written skill directories when the skills CLI fails", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-atomic-cli-"));
     const lintDir = join(cwd, ".cursor/skills/lint");

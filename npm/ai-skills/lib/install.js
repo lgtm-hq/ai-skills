@@ -257,7 +257,7 @@ export async function buildPluginChecklist(bundles, vendors, signals = {}) {
     const skillLabel = count === 1 ? "skill" : "skills";
     return {
       value: pluginId,
-      label: `${group.name} — ${group.description} (${count} ${skillLabel})${markers.get(pluginId) ?? ""}`,
+      label: `${group.name} (${pluginId}) — ${group.description} (${count} ${skillLabel})${markers.get(pluginId) ?? ""}`,
     };
   });
   for (const vendor of vendors.vendors) {
@@ -267,7 +267,7 @@ export async function buildPluginChecklist(bundles, vendors, signals = {}) {
     const drift = driftedVendors.has(vendor.id) ? VENDOR_DRIFT_SUFFIX : "";
     options.push({
       value: `vendor:${vendor.id}`,
-      label: `${vendorDisplayLabel(vendor)} — ${count} ${skillLabel}${drift}${markers.get(vendor.id) ?? ""}`,
+      label: `${vendor.id} — ${vendorDisplayLabel(vendor)} — ${count} ${skillLabel}${drift}${markers.get(vendor.id) ?? ""}`,
     });
   }
   return options;
@@ -713,6 +713,9 @@ export async function install(
     if (agentsForLock.length === 0) {
       return { alreadyPresent: 0, installed: 0, repaired: 0 };
     }
+    if (!detectAgents) {
+      await assertCompletePluginInstall(scopedOptions, agentsToInstall, lockEnvironment);
+    }
     const entries = await createLockEntries(
       { ...scopedOptions, agents: agentsForLock },
       vendor,
@@ -729,8 +732,8 @@ export async function install(
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       throw new Error(
-        `Skills installed but gateway lock update failed (${detail}). ` +
-          "Fix the lockfile path permissions and re-run install, or use adopt once available.",
+        `Install rolled back after gateway lock update failed (${detail}). ` +
+          "Fix the lockfile path permissions and re-run install.",
       );
     }
     return { alreadyPresent, installed, repaired };
@@ -908,6 +911,38 @@ async function discoverInstalledAgents(options, lockEnvironment = {}) {
 }
 
 /**
+ * Fail a targeted install that wrote only some of the plugin's skills.
+ *
+ * Empty mocked installs (no files on disk) stay silent so unit tests can
+ * exercise lock writes without a real skills CLI. A mix of present and
+ * absent skill files is a partial plugin and is rolled back by the caller.
+ *
+ * @param {{skills: string[], global: boolean, project: boolean}} options - Install options.
+ * @param {string[]} agents - Agents that should have received the plugin.
+ * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable fs.
+ * @returns {Promise<void>} Resolves when every present agent is complete.
+ * @throws {Error} When an agent has some but not all requested skill files.
+ */
+async function assertCompletePluginInstall(options, agents, lockEnvironment = {}) {
+  const exists = lockEnvironment.exists ?? pathExists;
+  for (const agent of agents) {
+    const root = agentSkillsRoot(resolveScope(options), agent, lockEnvironment);
+    const present = [];
+    const absent = [];
+    for (const name of options.skills) {
+      if (await exists(join(root, name, "SKILL.md"))) {
+        present.push(name);
+      } else {
+        absent.push(name);
+      }
+    }
+    if (present.length > 0 && absent.length > 0) {
+      throw new Error(`Plugin install incomplete for ${agent}: missing ${absent.join(", ")}`);
+    }
+  }
+}
+
+/**
  * Snapshot skill directories that already exist for the agents in this install.
  *
  * Used so a failed install can delete only the trees it created.
@@ -998,11 +1033,11 @@ export async function installInteractively(options) {
       totals.alreadyPresent += counts.alreadyPresent;
       totals.installed += counts.installed;
       totals.repaired += counts.repaired;
-      finished.push(batch.vendor ?? "first-party");
+      finished.push(batch.pluginId);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       throw new Error(
-        `Install failed for "${batch.vendor ?? "first-party"}" after completing: ` +
+        `Install failed for "${batch.pluginId}" after completing: ` +
           `${finished.length > 0 ? finished.join(", ") : "none"}. ${detail}`,
       );
     }

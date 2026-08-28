@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { listSkills, removeSkills, updateSkills } from "../lib/gateway-commands.js";
+import { getPackageVersion } from "../lib/package-version.js";
 
 const pluginEntry = (overrides) => ({
   agents: {
@@ -267,12 +272,15 @@ describe("gateway maintenance commands", () => {
   test("leaves locally modified files with a warning during remove", async () => {
     const warnings = [];
     const unlinked = [];
+    const calls = [];
     await removeSkills(
       { ...options, skills: ["pdf"] },
       {
         hash: async () => "changed",
         readLock: async () => lock,
-        run: async () => {},
+        run: async (args) => {
+          calls.push(args);
+        },
         unlink: async (path) => {
           unlinked.push(path);
         },
@@ -283,17 +291,104 @@ describe("gateway maintenance commands", () => {
       },
     );
 
+    expect(calls).toEqual([]);
     expect(unlinked).toEqual([]);
     expect(warnings).toEqual(["left modified pdf file pdf/SKILL.md"]);
   });
 
+  test("refuses to delete lock paths that escape the agent root", async () => {
+    const evil = {
+      ...lock,
+      plugins: {
+        pdf: pluginEntry({
+          agents: {
+            cursor: {
+              files: { "../../etc/passwd": "abc" },
+              root: "/tmp/project/.cursor/skills",
+            },
+          },
+        }),
+      },
+    };
+
+    await expect(
+      removeSkills(
+        { ...options, skills: ["pdf"] },
+        {
+          hash: async () => "abc",
+          readLock: async () => evil,
+          run: async () => {},
+          writeLock: async () => {},
+        },
+      ),
+    ).rejects.toThrow("outside plugin root");
+  });
+
+  test("keeps a locally modified skill file on a real filesystem remove", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-remove-mod-"));
+    const skillDir = join(cwd, ".cursor/skills/pdf");
+    const skillFile = join(skillDir, "SKILL.md");
+    const warnings = [];
+    const calls = [];
+    try {
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(skillFile, "local edit\n");
+      const onDisk = {
+        ...lock,
+        plugins: {
+          pdf: pluginEntry({
+            agents: {
+              cursor: {
+                files: { "pdf/SKILL.md": "abc" },
+                root: join(cwd, ".cursor/skills"),
+              },
+            },
+          }),
+        },
+      };
+
+      await removeSkills(
+        { ...options, skills: ["pdf"] },
+        {
+          readLock: async () => onDisk,
+          run: async (args) => {
+            calls.push(args);
+          },
+          warn: (message) => {
+            warnings.push(message);
+          },
+          writeLock: async () => {},
+        },
+      );
+
+      expect(calls).toEqual([]);
+      expect(warnings).toEqual(["left modified pdf file pdf/SKILL.md"]);
+      expect(await readFile(skillFile, "utf8")).toBe("local edit\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("prunes nested empty directories after a verified remove", async () => {
     const removed = [];
+    const nested = {
+      ...lock,
+      plugins: {
+        pdf: pluginEntry({
+          agents: {
+            cursor: {
+              files: { "pdf/docs/guide.md": "abc" },
+              root: "/tmp/project/.cursor/skills",
+            },
+          },
+        }),
+      },
+    };
     await removeSkills(
       { ...options, skills: ["pdf"] },
       {
         hash: async () => "abc",
-        readLock: async () => lock,
+        readLock: async () => nested,
         rmdir: async (path) => {
           removed.push(`dir:${path}`);
         },
@@ -306,9 +401,93 @@ describe("gateway maintenance commands", () => {
     );
 
     expect(removed).toEqual([
-      "file:/tmp/project/.cursor/skills/pdf/SKILL.md",
+      "file:/tmp/project/.cursor/skills/pdf/docs/guide.md",
+      "dir:/tmp/project/.cursor/skills/pdf/docs",
       "dir:/tmp/project/.cursor/skills/pdf",
     ]);
+  });
+
+  test("rematerializes current first-party plugin skills on update", async () => {
+    const calls = [];
+    let written;
+    const stale = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            cursor: {
+              files: { "lint/SKILL.md": "abc" },
+              root: "/tmp/project/.cursor/skills",
+            },
+          },
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.21.0",
+          vendor: "lgtm-hq",
+          version: "0.21.0",
+        }),
+      },
+    };
+
+    await updateSkills(options, {
+      hash: async () => "refreshed",
+      isInstalled: async () => true,
+      now: () => new Date("2026-07-10T17:00:00.000Z"),
+      readLock: async () => stale,
+      run: async (args) => {
+        calls.push(args);
+      },
+      writeLock: async (next) => {
+        written = next;
+      },
+    });
+
+    expect(calls[0]).toEqual(
+      expect.arrayContaining(["--skill", "lint", "test", "greptile", "coderabbit"]),
+    );
+    expect(Object.keys(written.plugins.review.agents.cursor.files).sort()).toEqual([
+      "coderabbit/SKILL.md",
+      "greptile/SKILL.md",
+      "lint/SKILL.md",
+      "test/SKILL.md",
+    ]);
+  });
+
+  test("skips first-party update when the package pin is current and files match", async () => {
+    const version = getPackageVersion();
+    const calls = [];
+    const current = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            cursor: {
+              files: { "lint/SKILL.md": "abc" },
+              root: "/tmp/project/.cursor/skills",
+            },
+          },
+          repo: "lgtm-hq/ai-skills",
+          sha: `v${version}`,
+          vendor: "lgtm-hq",
+          version,
+        }),
+      },
+    };
+
+    const result = await updateSkills(options, {
+      isInstalled: async () => true,
+      lockEnvironment: {
+        exists: async () => true,
+        hash: async () => "abc",
+      },
+      readLock: async () => current,
+      run: async (args) => {
+        calls.push(args);
+      },
+      writeLock: async () => {},
+    });
+
+    expect(calls).toEqual([]);
+    expect(result).toEqual({ pruned: [], updated: [] });
   });
 
   test("lists lock-managed installs in name order", async () => {

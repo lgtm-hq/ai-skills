@@ -1,7 +1,7 @@
 import { rmdir, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 
-import { loadVendors } from "./catalog.js";
+import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
 import { getPackageVersion } from "./package-version.js";
 import {
   hashFile,
@@ -11,7 +11,6 @@ import {
   pruneMissingLockEntries,
   readLockfile,
   reconcileLock,
-  refreshPluginFileHashes,
   writeLockfile,
 } from "./lockfile.js";
 import { resolveScope } from "./options.js";
@@ -50,8 +49,11 @@ export async function updateSkills(options, dependencies = {}) {
       updated.push(pluginId);
     }
   }
+  const catalogSkills = {};
   for (const pluginId of updated) {
     const entry = selected[pluginId];
+    const skills = await currentPluginSkills(pluginId, entry);
+    catalogSkills[pluginId] = skills;
     const source =
       entry.vendor === "lgtm-hq"
         ? `lgtm-hq/ai-skills@v${getPackageVersion()}`
@@ -64,7 +66,7 @@ export async function updateSkills(options, dependencies = {}) {
           agents: agents.length > 0 ? agents : scopedOptions.agents,
           copy: false,
           onConflict: "overwrite",
-          skills: pluginSkillNames(entry),
+          skills,
         },
         source,
       ),
@@ -78,7 +80,11 @@ export async function updateSkills(options, dependencies = {}) {
       plugins[pluginId] = entry;
       continue;
     }
-    const hashed = await refreshPluginFileHashes(entry, hash);
+    const hashed = await rematerializePluginFiles(
+      entry,
+      catalogSkills[pluginId] ?? pluginSkillNames(entry),
+      hash,
+    );
     plugins[pluginId] = {
       ...hashed,
       installedAt,
@@ -133,21 +139,19 @@ export async function removeSkills(options, dependencies = {}) {
   }
   for (const pluginId of selected) {
     const entry = lock.plugins[pluginId];
-    await run(
-      buildSkillsRemoveArguments(
-        {
-          ...scopedOptions,
-          agents: pluginAgentNames(entry),
-        },
-        pluginSkillNames(entry),
-      ),
-    );
-    await removeVerifiedPluginFiles(pluginId, entry, {
-      hash,
-      removeDir,
-      removeFile,
-      warn,
-    });
+    const classified = await classifyPluginFiles(pluginId, entry, { hash, warn });
+    if (classified.removableSkills.length > 0) {
+      await run(
+        buildSkillsRemoveArguments(
+          {
+            ...scopedOptions,
+            agents: pluginAgentNames(entry),
+          },
+          classified.removableSkills,
+        ),
+      );
+    }
+    await deleteVerifiedFiles(classified.verified, { removeDir, removeFile });
   }
   const plugins = { ...lock.plugins };
   selected.forEach((pluginId) => delete plugins[pluginId]);
@@ -258,6 +262,55 @@ function resolveVendorSource(entry, vendors) {
 }
 
 /**
+ * Current catalog skill names for a plugin, falling back to lock membership.
+ *
+ * First-party bundle ids and vendor plugin ids rematerialize from the baked
+ * catalog. Leftover per-skill lock entries keep their tracked names.
+ *
+ * @param {string} pluginId - Plugin id.
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Lock entry.
+ * @returns {Promise<string[]>} Skill directory names to re-materialize.
+ */
+async function currentPluginSkills(pluginId, entry) {
+  if (entry.vendor === "lgtm-hq") {
+    const bundles = await loadBundles();
+    const bundle = bundles.groups[pluginId];
+    if (bundle) {
+      return [...bundle.skills];
+    }
+  } else if (pluginId === entry.vendor) {
+    const index = await loadVendorIndex(entry.vendor);
+    return index.skills.map((skill) => skill.name);
+  }
+  return pluginSkillNames(entry);
+}
+
+/**
+ * Rebuild an entry's tracked files for the current plugin skill list.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Lock entry.
+ * @param {string[]} skillNames - Skill directory names to hash.
+ * @param {typeof hashFile} hash - Injectable hasher.
+ * @returns {Promise<import("./lockfile.js").PluginLockEntry>} Entry with rebuilt file maps.
+ */
+async function rematerializePluginFiles(entry, skillNames, hash) {
+  const agents = {};
+  for (const [agent, install] of Object.entries(entry.agents)) {
+    const files = {};
+    for (const name of skillNames) {
+      const relative = `${name}/SKILL.md`;
+      try {
+        files[relative] = await hash(join(install.root, relative));
+      } catch {
+        files[relative] = "";
+      }
+    }
+    agents[agent] = { ...install, files };
+  }
+  return { ...entry, agents };
+}
+
+/**
  * Resolve the replacement SHA or first-party tag for a refreshed entry.
  *
  * @param {string} vendor - Vendor identifier.
@@ -274,37 +327,93 @@ function sourceSha(vendor, currentSha, vendors) {
 
 /**
 /**
- * Delete hash-matching tracked files and prune empty ancestor directories.
- *
- * Locally modified files are left in place with a warning.
+ * Classify tracked files before any delete so modified paths stay on disk.
  *
  * @param {string} pluginId - Plugin id.
  * @param {import("./lockfile.js").PluginLockEntry} entry - Lock entry.
  * @param {{
  *   hash: typeof hashFile,
- *   removeDir: typeof rmdir,
- *   removeFile: typeof unlink,
  *   warn: (message: string) => void,
- * }} io - Injectable filesystem and warning sink.
- * @returns {Promise<void>} Resolves when verified deletes finish.
+ * }} io - Injectable hasher and warning sink.
+ * @returns {Promise<{
+ *   removableSkills: string[],
+ *   verified: Array<{absolute: string, root: string}>,
+ * }>} Skills safe to pass upstream and files safe to unlink.
  */
-async function removeVerifiedPluginFiles(pluginId, entry, io) {
+async function classifyPluginFiles(pluginId, entry, io) {
+  /** @type {Set<string>} */
+  const modifiedSkills = new Set();
+  /** @type {Array<{absolute: string, root: string}>} */
+  const verified = [];
   for (const install of Object.values(entry.agents)) {
     for (const [relative, digest] of Object.entries(install.files)) {
-      const absolute = join(install.root, relative);
+      const absolute = resolveTrackedPath(install.root, relative);
       try {
         const current = await io.hash(absolute);
         if (current !== digest) {
           io.warn(`left modified ${pluginId} file ${relative}`);
+          const skillName = relative.split("/")[0];
+          if (skillName) {
+            modifiedSkills.add(skillName);
+          }
           continue;
         }
-        await io.removeFile(absolute);
-        await pruneEmptyAncestors(dirname(absolute), install.root, io.removeDir);
+        verified.push({ absolute, root: install.root });
       } catch {
-        // Already absent after the skills CLI, or unreadable — skip.
+        // Already absent — skip.
       }
     }
   }
+  return {
+    removableSkills: pluginSkillNames(entry).filter((name) => !modifiedSkills.has(name)),
+    verified,
+  };
+}
+
+/**
+ * Unlink hash-matching files and prune empty ancestor directories.
+ *
+ * @param {Array<{absolute: string, root: string}>} verified - Files that matched the lock digest.
+ * @param {{
+ *   removeDir: typeof rmdir,
+ *   removeFile: typeof unlink,
+ * }} io - Injectable filesystem.
+ * @returns {Promise<void>} Resolves when verified deletes finish.
+ */
+async function deleteVerifiedFiles(verified, io) {
+  for (const file of verified) {
+    try {
+      await io.removeFile(file.absolute);
+      await pruneEmptyAncestors(dirname(file.absolute), file.root, io.removeDir);
+    } catch {
+      // Already absent after the skills CLI, or unreadable — skip.
+    }
+  }
+}
+
+/**
+ * Resolve a lock-relative path and reject escapes outside the agent root.
+ *
+ * @param {string} root - Agent skills root from the lock.
+ * @param {string} relative - Tracked path relative to that root.
+ * @returns {string} Absolute path inside the root.
+ * @throws {Error} When the relative path escapes the root.
+ */
+function resolveTrackedPath(root, relative) {
+  if (
+    relative.includes("\0") ||
+    relative.startsWith("/") ||
+    relative.split(/[\\/]/).includes("..")
+  ) {
+    throw new Error(`Refusing to delete path outside plugin root: ${relative}`);
+  }
+  const absolute = resolve(join(root, relative));
+  const resolvedRoot = resolve(root);
+  const prefix = resolvedRoot.endsWith(sep) ? resolvedRoot : `${resolvedRoot}${sep}`;
+  if (absolute !== resolvedRoot && !absolute.startsWith(prefix)) {
+    throw new Error(`Refusing to delete path outside plugin root: ${relative}`);
+  }
+  return absolute;
 }
 
 /**
@@ -316,8 +425,10 @@ async function removeVerifiedPluginFiles(pluginId, entry, io) {
  * @returns {Promise<void>} Resolves when pruning stops.
  */
 async function pruneEmptyAncestors(start, root, removeDir) {
-  let current = start;
-  while (current.startsWith(root) && current !== root) {
+  const resolvedRoot = resolve(root);
+  const prefix = resolvedRoot.endsWith(sep) ? resolvedRoot : `${resolvedRoot}${sep}`;
+  let current = resolve(start);
+  while (current.startsWith(prefix) && current !== resolvedRoot) {
     try {
       await removeDir(current);
     } catch {
