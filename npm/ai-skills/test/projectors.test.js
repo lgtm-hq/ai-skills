@@ -282,6 +282,38 @@ describe("native Cursor projector", () => {
     }
   });
 
+  test("drops retired catalog skills when an owned Cursor tree is replaced", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-cursor-replace-retired-"));
+    try {
+      const sourceRoot = join(root, "src");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      const destRoot = cursorPluginsRoot({ cwd: root, home: root, scope: "project" });
+      const pluginDir = join(destRoot, "review");
+      await mkdir(join(pluginDir, "skills/lint"), { recursive: true });
+      await mkdir(join(pluginDir, "skills/test"), { recursive: true });
+      await writeFile(join(pluginDir, "skills/lint/SKILL.md"), "# old\n");
+      await writeFile(join(pluginDir, "skills/test/SKILL.md"), "# retired\n");
+      await writeFile(join(pluginDir, "USER-DATA.txt"), "keep\n");
+      await installCursorPlugin({
+        description: "Lint.",
+        destRoot,
+        pluginId: "review",
+        replace: true,
+        skills: ["lint"],
+        sourceRoot,
+        version: "0.23.0",
+      });
+      expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
+      expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      await expect(readFile(join(pluginDir, "skills/test/SKILL.md"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   test("finds a catalog checkout from cwd", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-catalog-root-"));
     try {

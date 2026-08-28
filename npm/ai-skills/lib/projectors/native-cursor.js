@@ -126,7 +126,7 @@ export async function installCursorPlugin(args) {
     };
     await write(join(manifestDir, "plugin.json"), `${JSON.stringify(manifest, null, 2)}\n`);
     if (existed) {
-      await copyUntrackedFiles(paths.pluginDir, paths.staging, copy, makeDir);
+      await copyUntrackedFiles(paths.pluginDir, paths.staging, copy, makeDir, new Set(args.skills));
     }
     if (existed) {
       await remove(paths.backup, { force: true, recursive: true });
@@ -250,9 +250,18 @@ function assertInsideRoot(root, candidate) {
  * @param {string} toDir - Staging directory.
  * @param {typeof cp} copy - Recursive copy.
  * @param {typeof mkdir} makeDir - mkdir for parent paths.
+ * @param {Set<string>} allowedSkills - Catalog skill names that staging already contains.
+ * @param {string} [relativePrefix] - POSIX path from the plugin root.
  * @returns {Promise<void>} Resolves when untracked files are copied.
  */
-async function copyUntrackedFiles(fromDir, toDir, copy, makeDir) {
+async function copyUntrackedFiles(
+  fromDir,
+  toDir,
+  copy,
+  makeDir,
+  allowedSkills,
+  relativePrefix = "",
+) {
   let entries;
   try {
     entries = await readdir(fromDir, { withFileTypes: true });
@@ -263,10 +272,14 @@ async function copyUntrackedFiles(fromDir, toDir, copy, makeDir) {
     throw error;
   }
   for (const entry of entries) {
+    const relative = relativePrefix === "" ? entry.name : `${relativePrefix}/${entry.name}`;
+    if (isRetiredCatalogSkillPath(relative, allowedSkills)) {
+      continue;
+    }
     const from = join(fromDir, entry.name);
     const to = join(toDir, entry.name);
     if (entry.isDirectory()) {
-      await copyUntrackedFiles(from, to, copy, makeDir);
+      await copyUntrackedFiles(from, to, copy, makeDir, allowedSkills, relative);
       continue;
     }
     if (!existsSync(to)) {
@@ -274,4 +287,16 @@ async function copyUntrackedFiles(fromDir, toDir, copy, makeDir) {
       await copy(from, to, { recursive: true });
     }
   }
+}
+
+/**
+ * Whether a dest path is a catalog skill that left the plugin.
+ *
+ * @param {string} relative - POSIX path from the plugin root.
+ * @param {Set<string>} allowedSkills - Skills in the new catalog copy.
+ * @returns {boolean} True when the path must not be preserved as user data.
+ */
+function isRetiredCatalogSkillPath(relative, allowedSkills) {
+  const parts = relative.split("/");
+  return parts[0] === "skills" && parts.length >= 2 && !allowedSkills.has(parts[1]);
 }
