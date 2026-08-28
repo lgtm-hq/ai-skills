@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import ctypes
+import functools
+import os
 import shutil
+import sys
 from collections.abc import Iterator
+from ctypes.util import find_library
 from pathlib import Path
+
+_AT_FDCWD = -100
+_RENAME_EXCHANGE = 2
+_RENAME_SWAP = 0x00000002
 
 
 def iter_directory_entries(*, directory: Path) -> Iterator[Path]:
@@ -142,20 +151,20 @@ def find_skill_markdown(*, root: Path) -> tuple[str, ...]:
 def install_directory(*, source: Path, destination: Path) -> None:
     """Publish a completed ``source`` tree onto ``destination``.
 
-    When ``destination`` already exists, children are replaced in place so
-    the destination path and directory inode stay put. A process whose
-    cwd is ``destination`` remains valid. The destination directory is
-    never removed. On failure, previous children are restored. When
-    ``destination`` does not exist, ``source`` is renamed onto it.
+    When ``destination`` already exists, the two directories are exchanged
+    with a single kernel rename so the destination path is never absent
+    and never holds a partial tree. The previous tree is left at
+    ``source`` for the caller to delete. A failed exchange leaves
+    ``destination`` byte-identical. When ``destination`` does not exist,
+    ``source`` is renamed onto it.
 
     Args:
         source: Completed tree on the same filesystem as ``destination``.
         destination: Final output path.
 
     Raises:
-        ValueError: If ``source`` or ``destination`` is a symlink, or a
-            leftover backup directory already exists.
-        OSError: If the child replace or rename fails.
+        ValueError: If ``source`` or ``destination`` is a symlink.
+        OSError: If the exchange or rename fails.
     """
     if source.is_symlink():
         msg = f"symlink rejected: {source}"
@@ -164,61 +173,98 @@ def install_directory(*, source: Path, destination: Path) -> None:
         msg = f"symlink rejected: {destination}"
         raise ValueError(msg)
     if destination.exists():
-        _replace_directory_children(source=source, destination=destination)
+        _exchange_paths(first=source, second=destination)
         return
     source.rename(target=destination)
 
 
-def _replace_directory_children(*, source: Path, destination: Path) -> None:
-    """Move ``source`` children into ``destination`` without renaming dest.
+@functools.cache
+def _libc() -> ctypes.CDLL:
+    """Return the process libc for atomic directory exchange.
 
-    Args:
-        source: Staged tree whose children will be published.
-        destination: Live directory whose inode must be preserved.
+    Returns:
+        Loaded libc.
 
     Raises:
-        ValueError: If a leftover backup directory already exists.
-        OSError: If a child rename fails after previous children were
-            moved aside.
+        OSError: If libc cannot be loaded.
     """
-    backup = destination.with_name(f".{destination.name}.bak")
-    if backup.exists():
-        msg = f"leftover bake backup: {backup}"
-        raise ValueError(msg)
-    backup.mkdir()
-    try:
-        for child in list(destination.iterdir()):
-            child.rename(target=backup / child.name)
-        for child in list(source.iterdir()):
-            child.rename(target=destination / child.name)
-    except OSError:
-        _restore_directory_children(destination=destination, backup=backup)
-        raise
-    shutil.rmtree(backup)
+    libname = find_library(name="c")
+    if libname is None:
+        msg = "libc not found"
+        raise OSError(msg)
+    return ctypes.CDLL(name=libname, use_errno=True)
 
 
-def _restore_directory_children(*, destination: Path, backup: Path) -> None:
-    """Put ``backup`` children back into ``destination`` after a failed swap.
+def _exchange_paths(*, first: Path, second: Path) -> None:
+    """Atomically swap two existing paths on the same filesystem.
 
     Args:
-        destination: Live directory that may hold a partial new tree.
-        backup: Directory holding the previous children.
+        first: First path (the staged tree).
+        second: Second path (the live destination).
+
+    Raises:
+        OSError: If the platform cannot exchange directories or the
+            syscall fails.
     """
-    for child in list(destination.iterdir()):
-        _remove_path(path=child)
-    for child in list(backup.iterdir()):
-        child.rename(target=destination / child.name)
-    if backup.exists():
-        shutil.rmtree(backup)
-
-
-def _remove_path(*, path: Path) -> None:
-    """Remove a file or directory.
-
-    Args:
-        path: Path to unlink or recursively delete.
-    """
-    if path.is_dir() and not path.is_symlink():
-        shutil.rmtree(path)
+    if sys.platform == "linux":
+        _linux_rename_exchange(first=first, second=second)
         return
-    path.unlink()
+    if sys.platform == "darwin":
+        _darwin_rename_swap(first=first, second=second)
+        return
+    msg = f"atomic directory exchange is not supported on {sys.platform}"
+    raise OSError(msg)
+
+
+def _linux_rename_exchange(*, first: Path, second: Path) -> None:
+    """Swap two paths with ``renameat2(RENAME_EXCHANGE)``.
+
+    Args:
+        first: First path.
+        second: Second path.
+
+    Raises:
+        OSError: If the syscall fails.
+    """
+    libc = _libc()
+    libc.renameat2.argtypes = [
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    ]
+    libc.renameat2.restype = ctypes.c_int
+    result = libc.renameat2(
+        _AT_FDCWD,
+        os.fsencode(first),
+        _AT_FDCWD,
+        os.fsencode(second),
+        _RENAME_EXCHANGE,
+    )
+    if result != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err), str(first), None, str(second))
+
+
+def _darwin_rename_swap(*, first: Path, second: Path) -> None:
+    """Swap two paths with ``renamex_np(RENAME_SWAP)``.
+
+    Args:
+        first: First path.
+        second: Second path.
+
+    Raises:
+        OSError: If the syscall fails.
+    """
+    libc = _libc()
+    libc.renamex_np.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    libc.renamex_np.restype = ctypes.c_int
+    result = libc.renamex_np(
+        os.fsencode(first),
+        os.fsencode(second),
+        _RENAME_SWAP,
+    )
+    if result != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err), str(first), None, str(second))
