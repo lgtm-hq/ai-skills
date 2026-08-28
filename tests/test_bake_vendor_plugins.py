@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import tarfile
 from io import BytesIO
@@ -104,6 +105,8 @@ def test_plugin_version_uses_short_sha_for_latest() -> None:
         plugin_version(sha=_SHA, display_ref="latest"),
     ).is_equal_to(_SHORT_SHA)
     assert_that(plugin_version(sha=_SHA, display_ref=None)).is_equal_to(_SHORT_SHA)
+    assert_that(plugin_version(sha=_SHA, display_ref="main")).is_equal_to(_SHORT_SHA)
+    assert_that(plugin_version(sha=_SHA, display_ref="HEAD")).is_equal_to(_SHORT_SHA)
 
 
 def test_plugin_version_uses_display_ref_tag() -> None:
@@ -442,6 +445,90 @@ def test_check_rejects_stale_display_ref(
             "displayRef: v9.9.9",
         ),
         encoding="utf-8",
+    )
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_stale_repo(
+    tmp_path: Path,
+) -> None:
+    """--check fails when vendors.yaml repo changes without a re-bake."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    registry = tmp_path / "vendors.yaml"
+    registry.write_text(
+        registry.read_text(encoding="utf-8").replace(
+            "repo: owner/example",
+            "repo: owner/different",
+        ),
+        encoding="utf-8",
+    )
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_coverage_and_lock_digest_forge(
+    tmp_path: Path,
+) -> None:
+    """Updating COVERAGE.md together with BAKE.json digests still fails."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    coverage_path = tmp_path / "plugins-baked" / "COVERAGE.md"
+    forged = "# forged\n"
+    coverage_path.write_text(forged, encoding="utf-8")
+    digest = hashlib.sha256(forged.encode(encoding="utf-8")).hexdigest()
+    lock_path = tmp_path / "plugins-baked" / "BAKE.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["coverageSha256"] = digest
+    lock["files"]["COVERAGE.md"] = digest
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_unexpected_root_and_marketplace_files(
+    tmp_path: Path,
+) -> None:
+    """--check allowlists plugins-baked root and the marketplace directory."""
+    _write_registry(repo_root=tmp_path, plugins_yaml="")
+    bake_vendor_plugins.bake(repo_root=tmp_path)
+    (tmp_path / "plugins-baked" / ".evil").mkdir()
+    (tmp_path / "plugins-baked" / ".evil" / "x").write_text("p\n", encoding="utf-8")
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+    bake_vendor_plugins.bake(repo_root=tmp_path)
+    (tmp_path / "plugins-baked" / ".claude-plugin" / "hooks.json").write_text(
+        "{}\n", encoding="utf-8"
     )
 
     assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)

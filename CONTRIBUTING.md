@@ -164,10 +164,11 @@ plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-sa
   atomic directory exchange (`renameat2` / `renamex_np`) so
   `plugins-baked/` is never absent. A failed exchange leaves the
   previous tree in place.
-- Write `plugins-baked/BAKE.json` (registry pin + plugin slice +
-  coverage digest + a path→digest inventory of generated files).
-  `--check` compares it to `vendors.yaml` and the committed tree, and
-  requires all four host manifests to match the pin-derived version.
+- Write `plugins-baked/BAKE.json` (registry pin including repo + plugin
+  slice + coverage renderer inputs + a path→digest inventory).
+  `--check` re-renders `COVERAGE.md` from those inputs, compares the
+  lock to `vendors.yaml` and the committed tree, and requires all four
+  host manifests to match the pin-derived version.
 - Stamp plugin versions from `displayRef` when it is a tag; floating
   pins such as `latest` use the short SHA.
 

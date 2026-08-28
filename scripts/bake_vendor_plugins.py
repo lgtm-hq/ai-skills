@@ -24,6 +24,7 @@ from skill_frontmatter import read_frontmatter_name
 from vendor_registry.plugin_bake import bake_vendor_plugins
 from vendor_registry.plugin_bake_result import PluginBakeResult
 from vendor_registry.plugin_manifest import (
+    bake_lock_vendors,
     plugin_manifest_files,
     render_bake_manifest,
     render_marketplace,
@@ -142,6 +143,14 @@ def bake(
                 vendors=vendors,
                 coverage=coverage,
                 files=_baked_file_digests(baked_root=output_root),
+                coverage_inputs=_coverage_inputs(
+                    skipped_by_vendor=skipped_by_vendor,
+                    ingested_counts=ingested_counts,
+                    fetched=fetched,
+                    collisions=skill_collisions,
+                    agent_collisions=agent_collisions,
+                    explode_name_count=explode_name_count,
+                ),
             ),
             encoding="utf-8",
         )
@@ -171,7 +180,7 @@ def check(*, repo_root: Path) -> int:
     """
     try:
         _check_baked_output(repo_root=repo_root)
-    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+    except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError) as error:
         print(error, file=sys.stderr)
         return 1
     return 0
@@ -445,6 +454,40 @@ def _baked_file_digests(*, baked_root: Path) -> dict[str, str]:
     return dict(sorted(digests.items()))
 
 
+def _coverage_inputs(
+    *,
+    skipped_by_vendor: dict[str, tuple[str, ...]],
+    ingested_counts: dict[str, int],
+    fetched: frozenset[str],
+    collisions: tuple[str, ...],
+    agent_collisions: tuple[str, ...],
+    explode_name_count: int,
+) -> dict[str, object]:
+    """Record coverage renderer inputs for ``--check`` re-render.
+
+    Args:
+        skipped_by_vendor: Un-ingested ``SKILL.md`` paths per vendor id.
+        ingested_counts: Ingested ``SKILL.md`` counts per vendor id.
+        fetched: Vendor ids whose trees were materialized.
+        collisions: Skill explode-name collision lines.
+        agent_collisions: Agent-stem collision lines.
+        explode_name_count: Unique baked skill names when clean.
+
+    Returns:
+        JSON-serializable coverage input object.
+    """
+    return {
+        "skippedByVendor": {
+            vendor_id: list(paths) for vendor_id, paths in skipped_by_vendor.items()
+        },
+        "ingestedCounts": dict(ingested_counts),
+        "fetchedVendors": sorted(fetched),
+        "collisions": list(collisions),
+        "agentCollisions": list(agent_collisions),
+        "explodeNameCount": explode_name_count,
+    }
+
+
 def _check_baked_output(*, repo_root: Path) -> None:
     """Fail closed if committed bake output is missing, stale, or unsafe.
 
@@ -466,32 +509,68 @@ def _check_baked_output(*, repo_root: Path) -> None:
         msg = f"Missing generated file: {coverage_path}"
         raise ValueError(msg)
     coverage_text = coverage_path.read_text(encoding="utf-8")
-    if not any(vendor.plugins for vendor in vendors):
-        expected_coverage = render_coverage_report(
-            vendors=vendors,
-            skipped_by_vendor={},
-            ingested_counts={},
-            fetched_vendors=frozenset(),
-            collisions=(),
-            agent_collisions=(),
-            explode_name_count=0,
-        )
-        if coverage_text != expected_coverage:
-            msg = f"Generated file is stale: {coverage_path}"
-            raise ValueError(msg)
     bake_manifest_path = baked_root / BAKE_MANIFEST_FILENAME
-    expected_bake_manifest = render_bake_manifest(
-        vendors=vendors,
-        coverage=coverage_text,
-        files=_baked_file_digests(baked_root=baked_root),
-    )
     if not bake_manifest_path.is_file():
         msg = f"Missing generated file: {bake_manifest_path}"
         raise ValueError(msg)
-    if bake_manifest_path.read_text(encoding="utf-8") != expected_bake_manifest:
+    lock = json.loads(bake_manifest_path.read_text(encoding="utf-8"))
+    if lock.get("vendors") != bake_lock_vendors(vendors=vendors):
+        msg = f"Generated file is stale: {bake_manifest_path}"
+        raise ValueError(msg)
+    inputs = lock["coverageInputs"]
+    expected_coverage = render_coverage_report(
+        vendors=vendors,
+        skipped_by_vendor={
+            vendor_id: tuple(paths)
+            for vendor_id, paths in inputs["skippedByVendor"].items()
+        },
+        ingested_counts={
+            vendor_id: int(count)
+            for vendor_id, count in inputs["ingestedCounts"].items()
+        },
+        fetched_vendors=frozenset(inputs["fetchedVendors"]),
+        collisions=tuple(inputs["collisions"]),
+        agent_collisions=tuple(inputs["agentCollisions"]),
+        explode_name_count=int(inputs["explodeNameCount"]),
+    )
+    if coverage_text != expected_coverage:
+        msg = f"Generated file is stale: {coverage_path}"
+        raise ValueError(msg)
+    expected_digest = hashlib.sha256(
+        expected_coverage.encode(encoding="utf-8"),
+    ).hexdigest()
+    if lock.get("coverageSha256") != expected_digest:
+        msg = f"Generated file is stale: {bake_manifest_path}"
+        raise ValueError(msg)
+    if lock.get("files") != _baked_file_digests(baked_root=baked_root):
         msg = f"Generated file is stale: {bake_manifest_path}"
         raise ValueError(msg)
     expected_ids = [plugin.id for vendor in vendors for plugin in vendor.plugins]
+    allowed_root = {
+        BAKE_MANIFEST_FILENAME,
+        COVERAGE_FILENAME,
+        ".claude-plugin",
+        *expected_ids,
+    }
+    unexpected_root = sorted(
+        path.name for path in baked_root.iterdir() if path.name not in allowed_root
+    )
+    if unexpected_root:
+        msg = f"unexpected path in plugins-baked: {unexpected_root[0]!r}"
+        raise ValueError(msg)
+    marketplace_dir = baked_root / ".claude-plugin"
+    if marketplace_dir.is_dir():
+        extra_marketplace = sorted(
+            path.name
+            for path in marketplace_dir.iterdir()
+            if path.name != "marketplace.json"
+        )
+        if extra_marketplace:
+            msg = (
+                "unexpected path in plugins-baked/.claude-plugin: "
+                f"{extra_marketplace[0]!r}"
+            )
+            raise ValueError(msg)
     actual_ids = sorted(
         path.name
         for path in baked_root.iterdir()
@@ -698,6 +777,10 @@ def _assert_plugin_matches_registry(
     if missing:
         msg = f"baked plugin {plugin.id} missing declared skill {missing[0]!r}"
         raise ValueError(msg)
+    if plugin.skills != "*" and frozenset(explode_names) != frozenset(expected_names):
+        extra = sorted(frozenset(explode_names) - frozenset(expected_names))
+        msg = f"baked plugin {plugin.id} has undeclared skill {extra[0]!r}"
+        raise ValueError(msg)
     if frozenset(disk_agents) != frozenset(plugin.agents):
         msg = (
             f"baked plugin {plugin.id} agents {tuple(disk_agents)!r} do not "
@@ -788,6 +871,15 @@ def _assert_canonical_plugin_tree(*, plugin_dir: Path, plugin: VendorPlugin) -> 
                 f"path {extra[0]!r}"
             )
             raise ValueError(msg)
+    skills_root = plugin_dir / "skills"
+    if skills_root.is_dir():
+        for child in skills_root.iterdir():
+            if child.is_symlink() or not child.is_dir():
+                msg = (
+                    f"baked plugin {plugin.id} skills has unexpected path "
+                    f"{child.name!r}"
+                )
+                raise ValueError(msg)
     agents_dir = plugin_dir / "agents"
     if not agents_dir.is_dir():
         return

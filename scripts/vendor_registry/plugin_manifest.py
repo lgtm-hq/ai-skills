@@ -130,17 +130,20 @@ def render_bake_manifest(
     vendors: tuple[Vendor, ...],
     coverage: str,
     files: dict[str, str],
+    coverage_inputs: dict[str, object],
 ) -> str:
     """Render the bake lock that ``--check`` compares to ``vendors.yaml``.
 
-    The lock records the plugin-relevant registry slice, a digest of
-    ``COVERAGE.md``, and a path→digest map of every generated file except
-    the lock itself so truncated, modified, or extra bake output fails.
+    The lock records the plugin-relevant registry slice, coverage renderer
+    inputs, and a path→digest map of every generated file except the lock
+    itself. ``--check`` re-renders ``COVERAGE.md`` from those inputs so a
+    forged report cannot be made self-consistent by updating a digest.
 
     Args:
         vendors: Registry vendors in source order.
         coverage: Coverage report text whose digest is stored.
         files: POSIX relative path → SHA-256 hex digest.
+        coverage_inputs: Renderer inputs recorded at bake time.
 
     Returns:
         Pretty JSON text with a trailing newline.
@@ -151,10 +154,23 @@ def render_bake_manifest(
             "coverageSha256": hashlib.sha256(
                 coverage.encode(encoding="utf-8"),
             ).hexdigest(),
-            "vendors": [_bake_lock_vendor(vendor=vendor) for vendor in vendors],
+            "coverageInputs": coverage_inputs,
+            "vendors": bake_lock_vendors(vendors=vendors),
             "files": files,
         },
     )
+
+
+def bake_lock_vendors(*, vendors: tuple[Vendor, ...]) -> list[dict[str, object]]:
+    """Serialize registry vendors for the bake lock.
+
+    Args:
+        vendors: Registry vendors in source order.
+
+    Returns:
+        JSON-serializable vendor lock objects.
+    """
+    return [_bake_lock_vendor(vendor=vendor) for vendor in vendors]
 
 
 def _bake_lock_vendor(*, vendor: Vendor) -> dict[str, object]:
@@ -168,6 +184,7 @@ def _bake_lock_vendor(*, vendor: Vendor) -> dict[str, object]:
     """
     return {
         "id": vendor.id,
+        "repo": vendor.repo,
         "sha": vendor.sha,
         "displayRef": vendor.display_ref,
         "plugins": [_bake_lock_plugin(plugin=plugin) for plugin in vendor.plugins],
