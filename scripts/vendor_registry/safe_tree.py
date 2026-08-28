@@ -15,14 +15,12 @@ from pathlib import Path
 _AT_FDCWD = -100
 _RENAME_EXCHANGE = 2
 _RENAME_SWAP = 0x00000002
-_MARKDOWN_LINK_TARGET = re.compile(
-    r"\[[^\]\n]*\]\(\s*<?([^>\s)]+)[^)]*>?\)",
-)
 _MARKDOWN_REF_DEF = re.compile(
     r"^[ \t]{0,3}\[([^\]]+)\]:[ \t]*(?:\n[ \t]*)?<?([^\s>]+)",
     re.MULTILINE,
 )
 _REMOTE_LINK_PREFIXES = ("http://", "https://", "mailto:", "data:")
+_MARKDOWN_WHITESPACE = frozenset(" \t\f\v\r\n")
 
 
 def iter_directory_entries(*, directory: Path) -> Iterator[Path]:
@@ -188,18 +186,221 @@ def validate_internal_references(*, root: Path) -> None:
         if file_path.suffix.lower() not in {".md", ".markdown"}:
             continue
         text = file_path.read_text(encoding="utf-8")
-        for match in _MARKDOWN_LINK_TARGET.finditer(text):
+        for raw_target in _iter_markdown_destinations(text=text):
             _assert_relative_markdown_target(
-                raw_target=match.group(1),
+                raw_target=raw_target,
                 file_path=file_path,
                 root=root,
             )
-        for match in _MARKDOWN_REF_DEF.finditer(text):
-            _assert_relative_markdown_target(
-                raw_target=match.group(2),
-                file_path=file_path,
-                root=root,
-            )
+
+
+def _iter_markdown_destinations(*, text: str) -> Iterator[str]:
+    """Yield CommonMark inline-link and reference-definition destinations.
+
+    Inline link text may contain nested balanced brackets, so destinations
+    are extracted with a bracket walker rather than a character-class regex.
+
+    Args:
+        text: Markdown source.
+
+    Yields:
+        Raw destination strings (angle brackets already stripped).
+    """
+    yield from _iter_inline_link_destinations(text=text)
+    for match in _MARKDOWN_REF_DEF.finditer(text):
+        yield match.group(2)
+
+
+def _iter_inline_link_destinations(*, text: str) -> Iterator[str]:
+    """Yield destinations from ``[label](dest)`` and image links.
+
+    Args:
+        text: Markdown source.
+
+    Yields:
+        Destination strings parsed from inline links.
+    """
+    index = 0
+    while index < len(text):
+        if text[index] != "[":
+            index += 1
+            continue
+        close = _find_closing_square_bracket(text=text, start=index)
+        if close is None:
+            index += 1
+            continue
+        open_paren = close + 1
+        if open_paren >= len(text) or text[open_paren] != "(":
+            index += 1
+            continue
+        parsed = _parse_parenthesized_destination(
+            text=text,
+            open_paren=open_paren,
+        )
+        if parsed is None:
+            index += 1
+            continue
+        destination, end = parsed
+        yield destination
+        index = end
+
+
+def _find_closing_square_bracket(*, text: str, start: int) -> int | None:
+    """Return the index of the ``]`` that closes ``text[start]``.
+
+    Nested ``[]`` pairs are counted. A backslash escapes the next character.
+
+    Args:
+        text: Markdown source.
+        start: Index of the opening ``[``.
+
+    Returns:
+        Closing index, or ``None`` if the brackets are unbalanced.
+    """
+    depth = 0
+    index = start
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and index + 1 < len(text):
+            index += 2
+            continue
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    return None
+
+
+def _parse_parenthesized_destination(
+    *,
+    text: str,
+    open_paren: int,
+) -> tuple[str, int] | None:
+    """Parse a CommonMark inline destination starting at ``(``.
+
+    Args:
+        text: Markdown source.
+        open_paren: Index of the opening parenthesis.
+
+    Returns:
+        ``(destination, index_after_closing_paren)``, or ``None`` if the
+        remainder is not a CommonMark parenthesized destination.
+    """
+    index = _skip_markdown_whitespace(text=text, start=open_paren + 1)
+    if index >= len(text):
+        return None
+    if text[index] == "<":
+        parsed = _parse_angle_destination(text=text, start=index)
+    else:
+        parsed = _parse_raw_destination(text=text, start=index)
+    if parsed is None:
+        return None
+    destination, index = parsed
+    index = _skip_markdown_whitespace(text=text, start=index)
+    if index < len(text) and text[index] in {'"', "'", "("}:
+        skipped = _skip_link_title(text=text, start=index)
+        if skipped is None:
+            return None
+        index = _skip_markdown_whitespace(text=text, start=skipped)
+    if index < len(text) and text[index] == ")":
+        return destination, index + 1
+    return None
+
+
+def _skip_markdown_whitespace(*, text: str, start: int) -> int:
+    """Advance past ASCII whitespace, including line endings.
+
+    Args:
+        text: Markdown source.
+        start: Index to begin scanning.
+
+    Returns:
+        First non-whitespace index, or ``len(text)``.
+    """
+    index = start
+    while index < len(text) and text[index] in _MARKDOWN_WHITESPACE:
+        index += 1
+    return index
+
+
+def _parse_angle_destination(*, text: str, start: int) -> tuple[str, int] | None:
+    """Parse a ``<destination>`` link target.
+
+    Args:
+        text: Markdown source.
+        start: Index of the opening ``<``.
+
+    Returns:
+        ``(destination, index_after_gt)``, or ``None`` if unterminated.
+    """
+    index = start + 1
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and index + 1 < len(text):
+            index += 2
+            continue
+        if char in {"\n", "\r"}:
+            return None
+        if char == ">":
+            return text[start + 1 : index], index + 1
+        index += 1
+    return None
+
+
+def _parse_raw_destination(*, text: str, start: int) -> tuple[str, int] | None:
+    """Parse a non-angle CommonMark destination with balanced parentheses.
+
+    Args:
+        text: Markdown source.
+        start: First destination character.
+
+    Returns:
+        ``(destination, index_after_dest)``. Empty destinations are valid.
+    """
+    depth = 0
+    index = start
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and index + 1 < len(text):
+            index += 2
+            continue
+        if char in _MARKDOWN_WHITESPACE or ord(char) < 32:
+            break
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            if depth == 0:
+                break
+            depth -= 1
+        index += 1
+    return text[start:index], index
+
+
+def _skip_link_title(*, text: str, start: int) -> int | None:
+    """Advance past a CommonMark link title if one starts at ``start``.
+
+    Args:
+        text: Markdown source.
+        start: Index of ``"``, ``'``, or ``(``.
+
+    Returns:
+        Index after the closing delimiter, or ``None`` if unterminated.
+    """
+    opener = text[start]
+    closer = ")" if opener == "(" else opener
+    index = start + 1
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and index + 1 < len(text):
+            index += 2
+            continue
+        if char == closer:
+            return index + 1
+        index += 1
+    return None
 
 
 def _assert_relative_markdown_target(
@@ -267,7 +468,8 @@ def install_directory(*, source: Path, destination: Path) -> None:
 
     Raises:
         ValueError: If ``source`` or ``destination`` is a symlink, or a
-            leftover backup directory already exists.
+            leftover backup path already exists (including a dangling
+            symlink).
         OSError: If the exchange or mirror fails.
     """
     if source.is_symlink():
@@ -294,11 +496,11 @@ def _publish_into_existing(*, source: Path, destination: Path) -> None:
         destination: Live directory whose inode should be preserved.
 
     Raises:
-        ValueError: If a leftover backup directory already exists.
+        ValueError: If a leftover backup path already exists.
         OSError: If an exchange or mirror copy fails.
     """
     leftover = destination.with_name(f".{destination.name}.bak")
-    if leftover.exists():
+    if leftover.exists(follow_symlinks=False):
         msg = f"leftover bake backup: {leftover}"
         raise ValueError(msg)
     _exchange_paths(first=source, second=destination)

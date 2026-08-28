@@ -722,6 +722,74 @@ def test_bake_rejects_multiline_reference_style_markdown_link(
         )
 
 
+def test_bake_rejects_nested_bracket_markdown_link(
+    tmp_path: Path,
+) -> None:
+    """CommonMark link text may contain nested balanced brackets."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    skill = vendor_root / "skills" / "alpha" / "SKILL.md"
+    skill.write_text(
+        skill.read_text(encoding="utf-8")
+        + "See [shared [nested]](../../../outside.md).\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    with pytest.raises(ValueError, match="path escape rejected"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
+def test_check_rejects_nested_bracket_markdown_link(
+    tmp_path: Path,
+) -> None:
+    """Offline --check rejects nested-bracket destinations, not only hashes."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    skill = (
+        tmp_path / "plugins-baked" / "example-plugin" / "skills" / "alpha" / "SKILL.md"
+    )
+    skill.write_text(
+        skill.read_text(encoding="utf-8")
+        + "See [shared [nested]](../../../outside.md).\n",
+        encoding="utf-8",
+    )
+    relative = "example-plugin/skills/alpha/SKILL.md"
+    digest = hashlib.sha256(skill.read_bytes()).hexdigest()
+    lock_path = tmp_path / "plugins-baked" / "BAKE.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["files"][relative] = digest
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
 def test_check_rejects_extra_bake_lock_keys(
     tmp_path: Path,
 ) -> None:
@@ -801,6 +869,41 @@ def test_check_rejects_stale_rename_skills(
             "          teach: teach-renamed\n"
         ),
     )
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_missing_empty_skills_directory(
+    tmp_path: Path,
+) -> None:
+    """Agent-only plugins still require the empty baked skills/ directory."""
+    vendor_root = tmp_path / "vendor-src"
+    (vendor_root / "skills").mkdir(parents=True)
+    (vendor_root / "agents").mkdir()
+    (vendor_root / "agents" / "code-reviewer.md").write_text(
+        "# code-reviewer\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+            "        agents:\n"
+            "          - code-reviewer\n"
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    skills = tmp_path / "plugins-baked" / "example-plugin" / "skills"
+    assert_that(skills.is_dir()).is_true()
+    assert_that(any(skills.iterdir())).is_false()
+    skills.rmdir()
 
     assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
 
@@ -1617,6 +1720,26 @@ def test_install_directory_rejects_leftover_backup(
     dest.mkdir()
     (dest / "COVERAGE.md").write_text("old\n", encoding="utf-8")
     (tmp_path / ".plugins-baked.bak").mkdir()
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="leftover bake backup"):
+        install_directory(source=source, destination=dest)
+
+    assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to(
+        "old\n",
+    )
+
+
+def test_install_directory_rejects_dangling_backup_symlink(
+    tmp_path: Path,
+) -> None:
+    """A dangling leftover backup symlink must not be skipped by exists()."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "COVERAGE.md").write_text("old\n", encoding="utf-8")
+    (tmp_path / ".plugins-baked.bak").symlink_to(tmp_path / "missing-backup")
     source = tmp_path / "next"
     source.mkdir()
     (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")

@@ -959,12 +959,14 @@ def _baked_explode_names(*, plugin_dir: Path) -> tuple[str, ...]:
         Skill explode names in directory order.
 
     Raises:
-        ValueError: If a skill directory is missing ``SKILL.md`` or its
-            frontmatter ``name`` does not match the directory.
+        ValueError: If ``skills/`` is missing or a symlink, a skill
+            directory is missing ``SKILL.md``, or frontmatter ``name``
+            does not match the directory.
     """
     skills_root = plugin_dir / "skills"
-    if not skills_root.is_dir() or skills_root.is_symlink():
-        return ()
+    if skills_root.is_symlink() or not skills_root.is_dir():
+        msg = f"baked plugin missing skills directory: {plugin_dir}"
+        raise ValueError(msg)
     names: list[str] = []
     for skill_dir in sorted(skills_root.iterdir(), key=lambda path: path.name):
         if skill_dir.is_symlink() or not skill_dir.is_dir():
@@ -1118,8 +1120,9 @@ def _assert_canonical_plugin_tree(*, plugin_dir: Path, plugin: VendorPlugin) -> 
         plugin: Registry plugin slice.
 
     Raises:
-        ValueError: If the tree contains undeclared top-level paths, extra
-            adapter files, or non-markdown agent files.
+        ValueError: If the tree is missing ``skills/``, contains
+            undeclared top-level paths, extra adapter files, or
+            non-markdown agent files.
     """
     unexpected = sorted(
         child.name
@@ -1143,14 +1146,13 @@ def _assert_canonical_plugin_tree(*, plugin_dir: Path, plugin: VendorPlugin) -> 
             )
             raise ValueError(msg)
     skills_root = plugin_dir / "skills"
-    if skills_root.is_dir():
-        for child in skills_root.iterdir():
-            if child.is_symlink() or not child.is_dir():
-                msg = (
-                    f"baked plugin {plugin.id} skills has unexpected path "
-                    f"{child.name!r}"
-                )
-                raise ValueError(msg)
+    if skills_root.is_symlink() or not skills_root.is_dir():
+        msg = f"baked plugin {plugin.id} missing skills directory"
+        raise ValueError(msg)
+    for child in skills_root.iterdir():
+        if child.is_symlink() or not child.is_dir():
+            msg = f"baked plugin {plugin.id} skills has unexpected path {child.name!r}"
+            raise ValueError(msg)
     agents_dir = plugin_dir / "agents"
     if not agents_dir.is_dir():
         return
