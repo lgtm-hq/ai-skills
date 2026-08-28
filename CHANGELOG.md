@@ -11,10 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.22.0] - 2026-08-28
+
+### Added
+
+- **gateway**: lock schema v2 with disk reconciliation (#394) (ca4ea90)
 - **docs**: six ADRs recording the plugin-canonical architecture (#370).
 
 ### Changed
 
+- **readme**: rewrite for plugin marketplace installs (#393) (d3a3e2b)
+- **adr**: record plugin-canonical architecture decisions (#391) (3be710d)
 - **docs**: rewrite README for plugin marketplace installs, generated plugin
   table, and harness-agnostic framing (#371). Former `bunx skills add --all`
   / Clack wizard users should switch to host `plugin marketplace add` plus
@@ -27,14 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   empty — wipe and reinstall (`sk install`) to rebuild. `skill list`
   annotates MISSING and MODIFIED installs instead of listing them as
   healthy. Closes #367.
-
-### Deprecated
-
-### Removed
-
-### Fixed
-
-### Security
 
 ## [0.21.0] - 2026-08-27
 
@@ -791,7 +800,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.18.0...v0.19.0
