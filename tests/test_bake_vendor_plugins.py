@@ -722,6 +722,67 @@ def test_bake_rejects_multiline_reference_style_markdown_link(
         )
 
 
+@pytest.mark.parametrize(
+    ("suffix", "message"),
+    [
+        pytest.param(
+            "See [shared `code ] here`](../../../outside.md).\n",
+            "path escape rejected",
+            id="code-span-label",
+        ),
+        pytest.param(
+            "See [shared\ndoc](../../../outside.md).\n",
+            "path escape rejected",
+            id="wrapped-link-text",
+        ),
+        pytest.param(
+            "See [x](%2e%2e/%2e%2e/%2e%2e/outside.md).\n",
+            "path escape rejected",
+            id="percent-encoded-escape",
+        ),
+        pytest.param(
+            "See [x][doc].\n\n[doc]: <safe missing.md>\n",
+            "internal reference missing",
+            id="angle-dest-spaces",
+        ),
+        pytest.param(
+            "> [doc]: ../../shared.md\n",
+            "internal reference missing",
+            id="blockquote-ref-def",
+        ),
+    ],
+)
+def test_bake_rejects_commonmark_markdown_link_forms(
+    tmp_path: Path,
+    suffix: str,
+    message: str,
+) -> None:
+    """CommonMark destinations are parsed, not guessed with regex."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    skill = vendor_root / "skills" / "alpha" / "SKILL.md"
+    skill.write_text(
+        skill.read_text(encoding="utf-8") + suffix,
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    with pytest.raises(ValueError, match=message):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
 def test_bake_rejects_nested_bracket_markdown_link(
     tmp_path: Path,
 ) -> None:
@@ -752,10 +813,32 @@ def test_bake_rejects_nested_bracket_markdown_link(
         )
 
 
-def test_check_rejects_nested_bracket_markdown_link(
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        pytest.param(
+            "See [shared [nested]](../../../outside.md).\n",
+            id="nested-brackets",
+        ),
+        pytest.param(
+            "See [shared `code ] here`](../../../outside.md).\n",
+            id="code-span-label",
+        ),
+        pytest.param(
+            "> [doc]: ../../shared.md\n",
+            id="blockquote-ref-def",
+        ),
+        pytest.param(
+            "See [x][doc].\n\n[doc]: <safe missing.md>\n",
+            id="angle-dest-spaces",
+        ),
+    ],
+)
+def test_check_rejects_commonmark_markdown_links(
     tmp_path: Path,
+    suffix: str,
 ) -> None:
-    """Offline --check rejects nested-bracket destinations, not only hashes."""
+    """Offline --check rejects CommonMark destinations, not only hashes."""
     vendor_root = tmp_path / "vendor-src"
     _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
     _write_registry(
@@ -776,8 +859,7 @@ def test_check_rejects_nested_bracket_markdown_link(
         tmp_path / "plugins-baked" / "example-plugin" / "skills" / "alpha" / "SKILL.md"
     )
     skill.write_text(
-        skill.read_text(encoding="utf-8")
-        + "See [shared [nested]](../../../outside.md).\n",
+        skill.read_text(encoding="utf-8") + suffix,
         encoding="utf-8",
     )
     relative = "example-plugin/skills/alpha/SKILL.md"

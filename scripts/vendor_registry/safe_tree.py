@@ -5,22 +5,21 @@ from __future__ import annotations
 import ctypes
 import functools
 import os
-import re
 import shutil
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from ctypes.util import find_library
 from pathlib import Path
+from urllib.parse import unquote
+
+from markdown_it import MarkdownIt
+from markdown_it.token import Token
 
 _AT_FDCWD = -100
 _RENAME_EXCHANGE = 2
 _RENAME_SWAP = 0x00000002
-_MARKDOWN_REF_DEF = re.compile(
-    r"^[ \t]{0,3}\[([^\]]+)\]:[ \t]*(?:\n[ \t]*)?<?([^\s>]+)",
-    re.MULTILINE,
-)
 _REMOTE_LINK_PREFIXES = ("http://", "https://", "mailto:", "data:")
-_MARKDOWN_WHITESPACE = frozenset(" \t\f\v\r\n")
+_COMMONMARK = MarkdownIt("commonmark")
 
 
 def iter_directory_entries(*, directory: Path) -> Iterator[Path]:
@@ -172,6 +171,7 @@ def validate_tree(*, root: Path) -> None:
 def validate_internal_references(*, root: Path) -> None:
     """Reject markdown links that escape ``root`` or point at missing files.
 
+    Destinations are taken from a CommonMark parse of each markdown file.
     Remote URLs and in-page anchors are ignored. Relative targets must
     resolve to an existing file inside ``root``.
 
@@ -195,212 +195,65 @@ def validate_internal_references(*, root: Path) -> None:
 
 
 def _iter_markdown_destinations(*, text: str) -> Iterator[str]:
-    """Yield CommonMark inline-link and reference-definition destinations.
+    """Yield CommonMark link and image destinations from ``text``.
 
-    Inline link text may contain nested balanced brackets, so destinations
-    are extracted with a bracket walker rather than a character-class regex.
-
-    Args:
-        text: Markdown source.
-
-    Yields:
-        Raw destination strings (angle brackets already stripped).
-    """
-    yield from _iter_inline_link_destinations(text=text)
-    for match in _MARKDOWN_REF_DEF.finditer(text):
-        yield match.group(2)
-
-
-def _iter_inline_link_destinations(*, text: str) -> Iterator[str]:
-    """Yield destinations from ``[label](dest)`` and image links.
+    Destinations come from a CommonMark parser so code spans, nested
+    brackets, wrapped link text, blockquoted definitions, and unused
+    reference definitions are included. Percent-encoded hrefs are left
+    encoded here and decoded before path checks.
 
     Args:
         text: Markdown source.
 
     Yields:
-        Destination strings parsed from inline links.
+        Destinations as reported by the parser.
     """
-    index = 0
-    while index < len(text):
-        if text[index] != "[":
-            index += 1
-            continue
-        close = _find_closing_square_bracket(text=text, start=index)
-        if close is None:
-            index += 1
-            continue
-        open_paren = close + 1
-        if open_paren >= len(text) or text[open_paren] != "(":
-            index += 1
-            continue
-        parsed = _parse_parenthesized_destination(
-            text=text,
-            open_paren=open_paren,
-        )
-        if parsed is None:
-            index += 1
-            continue
-        destination, end = parsed
-        yield destination
-        index = end
+    env: dict[str, object] = {}
+    tokens = _COMMONMARK.parse(src=text, env=env)
+    yield from _iter_token_destinations(tokens=tokens)
+    yield from _iter_reference_destinations(env=env)
 
 
-def _find_closing_square_bracket(*, text: str, start: int) -> int | None:
-    """Return the index of the ``]`` that closes ``text[start]``.
-
-    Nested ``[]`` pairs are counted. A backslash escapes the next character.
+def _iter_token_destinations(*, tokens: Sequence[Token]) -> Iterator[str]:
+    """Yield href/src attributes from link and image tokens.
 
     Args:
-        text: Markdown source.
-        start: Index of the opening ``[``.
+        tokens: Parsed CommonMark tokens, including children.
 
-    Returns:
-        Closing index, or ``None`` if the brackets are unbalanced.
+    Yields:
+        Destination strings from ``link_open`` and ``image`` tokens.
     """
-    depth = 0
-    index = start
-    while index < len(text):
-        char = text[index]
-        if char == "\\" and index + 1 < len(text):
-            index += 2
+    for token in tokens:
+        if token.type == "link_open":
+            href = token.attrGet("href")
+            if isinstance(href, str) and href:
+                yield href
+        elif token.type == "image":
+            src = token.attrGet("src")
+            if isinstance(src, str) and src:
+                yield src
+        if token.children:
+            yield from _iter_token_destinations(tokens=token.children)
+
+
+def _iter_reference_destinations(*, env: dict[str, object]) -> Iterator[str]:
+    """Yield destinations from unused and used link reference definitions.
+
+    Args:
+        env: markdown-it parse environment that may contain ``references``.
+
+    Yields:
+        Definition hrefs, including blockquoted unused definitions.
+    """
+    references = env.get("references")
+    if not isinstance(references, dict):
+        return
+    for record in references.values():
+        if not isinstance(record, dict):
             continue
-        if char == "[":
-            depth += 1
-        elif char == "]":
-            depth -= 1
-            if depth == 0:
-                return index
-        index += 1
-    return None
-
-
-def _parse_parenthesized_destination(
-    *,
-    text: str,
-    open_paren: int,
-) -> tuple[str, int] | None:
-    """Parse a CommonMark inline destination starting at ``(``.
-
-    Args:
-        text: Markdown source.
-        open_paren: Index of the opening parenthesis.
-
-    Returns:
-        ``(destination, index_after_closing_paren)``, or ``None`` if the
-        remainder is not a CommonMark parenthesized destination.
-    """
-    index = _skip_markdown_whitespace(text=text, start=open_paren + 1)
-    if index >= len(text):
-        return None
-    if text[index] == "<":
-        parsed = _parse_angle_destination(text=text, start=index)
-    else:
-        parsed = _parse_raw_destination(text=text, start=index)
-    if parsed is None:
-        return None
-    destination, index = parsed
-    index = _skip_markdown_whitespace(text=text, start=index)
-    if index < len(text) and text[index] in {'"', "'", "("}:
-        skipped = _skip_link_title(text=text, start=index)
-        if skipped is None:
-            return None
-        index = _skip_markdown_whitespace(text=text, start=skipped)
-    if index < len(text) and text[index] == ")":
-        return destination, index + 1
-    return None
-
-
-def _skip_markdown_whitespace(*, text: str, start: int) -> int:
-    """Advance past ASCII whitespace, including line endings.
-
-    Args:
-        text: Markdown source.
-        start: Index to begin scanning.
-
-    Returns:
-        First non-whitespace index, or ``len(text)``.
-    """
-    index = start
-    while index < len(text) and text[index] in _MARKDOWN_WHITESPACE:
-        index += 1
-    return index
-
-
-def _parse_angle_destination(*, text: str, start: int) -> tuple[str, int] | None:
-    """Parse a ``<destination>`` link target.
-
-    Args:
-        text: Markdown source.
-        start: Index of the opening ``<``.
-
-    Returns:
-        ``(destination, index_after_gt)``, or ``None`` if unterminated.
-    """
-    index = start + 1
-    while index < len(text):
-        char = text[index]
-        if char == "\\" and index + 1 < len(text):
-            index += 2
-            continue
-        if char in {"\n", "\r"}:
-            return None
-        if char == ">":
-            return text[start + 1 : index], index + 1
-        index += 1
-    return None
-
-
-def _parse_raw_destination(*, text: str, start: int) -> tuple[str, int] | None:
-    """Parse a non-angle CommonMark destination with balanced parentheses.
-
-    Args:
-        text: Markdown source.
-        start: First destination character.
-
-    Returns:
-        ``(destination, index_after_dest)``. Empty destinations are valid.
-    """
-    depth = 0
-    index = start
-    while index < len(text):
-        char = text[index]
-        if char == "\\" and index + 1 < len(text):
-            index += 2
-            continue
-        if char in _MARKDOWN_WHITESPACE or ord(char) < 32:
-            break
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            if depth == 0:
-                break
-            depth -= 1
-        index += 1
-    return text[start:index], index
-
-
-def _skip_link_title(*, text: str, start: int) -> int | None:
-    """Advance past a CommonMark link title if one starts at ``start``.
-
-    Args:
-        text: Markdown source.
-        start: Index of ``"``, ``'``, or ``(``.
-
-    Returns:
-        Index after the closing delimiter, or ``None`` if unterminated.
-    """
-    opener = text[start]
-    closer = ")" if opener == "(" else opener
-    index = start + 1
-    while index < len(text):
-        char = text[index]
-        if char == "\\" and index + 1 < len(text):
-            index += 2
-            continue
-        if char == closer:
-            return index + 1
-        index += 1
-    return None
+        href = record.get("href")
+        if isinstance(href, str) and href:
+            yield href
 
 
 def _assert_relative_markdown_target(
@@ -412,8 +265,7 @@ def _assert_relative_markdown_target(
     """Fail closed when a relative markdown target is missing or escapes.
 
     Args:
-        raw_target: Link destination from inline syntax or a reference
-            definition.
+        raw_target: Link destination from the CommonMark parser.
         file_path: Markdown file that contains the link.
         root: Plugin tree the target must stay inside.
 
@@ -421,7 +273,7 @@ def _assert_relative_markdown_target(
         ValueError: If the target escapes ``root`` or is not an existing
             file.
     """
-    target = raw_target.split("#", maxsplit=1)[0]
+    target = unquote(raw_target.split("#", maxsplit=1)[0])
     if not target or target.lower().startswith(_REMOTE_LINK_PREFIXES):
         return
     resolved = (file_path.parent / target).resolve()
