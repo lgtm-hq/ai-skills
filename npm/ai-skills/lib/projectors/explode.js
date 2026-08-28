@@ -26,10 +26,14 @@ import { hashFile, hashTree, isSafePluginId } from "../lockfile.js";
  * @typedef {{
  *   claimed: Record<string, Record<string, string>>,
  *   createdDests: string[],
+ *   createdStores: string[],
  *   skipped: Array<{agent: string, skill: string, dest: string}>,
+ *   swappedDests: Array<{backup: string, dest: string}>,
+ *   swappedStores: Array<{backup: string, storeDir: string}>,
  * }} ExplodeResult
  * Files this plugin owns after a successful commit. Skipped dests are
- * byte-identical and must not be recorded in the lock.
+ * byte-identical and must not be recorded in the lock. ``keepBackups``
+ * leaves dest/store ``.bak`` trees for the caller to discard after lock write.
  */
 
 /**
@@ -90,6 +94,7 @@ export function defaultStoreRoot(scope, environment = {}) {
  * @param {Record<string, string>} args.sourceSkills - Skill name to source dir.
  * @param {boolean} [args.copy=false] - Copy dest trees instead of store symlinks.
  * @param {string} [args.storeRoot] - Managed store for symlink mode.
+ * @param {boolean} [args.keepBackups=false] - Leave dest/store ``.bak`` for the caller.
  * @param {"stage" | "commit"} [args.failAfter] - Injected failure checkpoint.
  * @param {(path: string) => Promise<string>} [args.hash] - Injectable hasher.
  * @param {typeof cp} [args.copyFn] - Injectable recursive copy.
@@ -107,6 +112,7 @@ export async function explodePlugin(args) {
   const link = args.link ?? symlink;
   const hash = args.hash ?? hashFile;
   const copy = Boolean(args.copy);
+  const keepBackups = Boolean(args.keepBackups);
   const storeRoot = args.storeRoot;
 
   if (!copy && !storeRoot) {
@@ -199,48 +205,26 @@ export async function explodePlugin(args) {
     }
 
     await remove(staging, { force: true, recursive: true });
-    for (const item of swappedDests) {
-      await remove(item.backup, { force: true, recursive: true });
-    }
-    for (const item of swappedStores) {
-      await remove(item.backup, { force: true, recursive: true });
+    if (!keepBackups) {
+      await discardExplodeBackups({ swappedDests, swappedStores }, { remove });
     }
     return {
       claimed: plans.claimed,
       createdDests,
+      createdStores,
       skipped: plans.skipped,
+      swappedDests,
+      swappedStores,
     };
   } catch (error) {
     const rollbackErrors = [];
-    for (const dest of createdDests.reverse()) {
-      try {
-        await remove(dest, { force: true, recursive: true });
-      } catch (failed) {
-        rollbackErrors.push(failed);
-      }
-    }
-    for (const item of swappedDests.reverse()) {
-      try {
-        await remove(item.dest, { force: true, recursive: true });
-        await move(item.backup, item.dest);
-      } catch (failed) {
-        rollbackErrors.push(failed);
-      }
-    }
-    for (const storeDir of createdStores.reverse()) {
-      try {
-        await remove(storeDir, { force: true, recursive: true });
-      } catch (failed) {
-        rollbackErrors.push(failed);
-      }
-    }
-    for (const item of swappedStores.reverse()) {
-      try {
-        await remove(item.storeDir, { force: true, recursive: true });
-        await move(item.backup, item.storeDir);
-      } catch (failed) {
-        rollbackErrors.push(failed);
-      }
+    try {
+      await restoreExplodeInstall(
+        { createdDests, createdStores, swappedDests, swappedStores },
+        { move, remove },
+      );
+    } catch (failed) {
+      rollbackErrors.push(failed);
     }
     try {
       await remove(staging, { force: true, recursive: true });
@@ -255,6 +239,73 @@ export async function explodePlugin(args) {
       throw new Error(`${original} (explode rollback also failed: ${rollback})`);
     }
     throw error;
+  }
+}
+
+/**
+ * Discard dest/store ``.bak`` trees after the gateway lock write succeeds.
+ *
+ * @param {Pick<ExplodeResult, "swappedDests" | "swappedStores">} result - Swap sidecars.
+ * @param {{remove?: typeof rm}} [io] - Injectable rm.
+ * @returns {Promise<void>} Resolves when sidecars are gone.
+ */
+export async function discardExplodeBackups(result, io = {}) {
+  const remove = io.remove ?? rm;
+  for (const item of result.swappedDests ?? []) {
+    await remove(item.backup, { force: true, recursive: true });
+  }
+  for (const item of result.swappedStores ?? []) {
+    await remove(item.backup, { force: true, recursive: true });
+  }
+}
+
+/**
+ * Restore dest/store trees when explode committed but the lock write failed.
+ *
+ * @param {Pick<ExplodeResult, "createdDests" | "createdStores" | "swappedDests" | "swappedStores">} result - Commit progress.
+ * @param {{move?: typeof rename, remove?: typeof rm}} [io] - Injectable rename/rm.
+ * @returns {Promise<void>} Resolves when dests and stores are restored.
+ */
+export async function restoreExplodeInstall(result, io = {}) {
+  const move = io.move ?? rename;
+  const remove = io.remove ?? rm;
+  const rollbackErrors = [];
+  for (const dest of [...(result.createdDests ?? [])].reverse()) {
+    try {
+      await remove(dest, { force: true, recursive: true });
+    } catch (failed) {
+      rollbackErrors.push(failed);
+    }
+  }
+  for (const item of [...(result.swappedDests ?? [])].reverse()) {
+    try {
+      await remove(item.dest, { force: true, recursive: true });
+      await move(item.backup, item.dest);
+    } catch (failed) {
+      rollbackErrors.push(failed);
+    }
+  }
+  for (const storeDir of [...(result.createdStores ?? [])].reverse()) {
+    try {
+      await remove(storeDir, { force: true, recursive: true });
+    } catch (failed) {
+      rollbackErrors.push(failed);
+    }
+  }
+  for (const item of [...(result.swappedStores ?? [])].reverse()) {
+    try {
+      await remove(item.storeDir, { force: true, recursive: true });
+      await move(item.backup, item.storeDir);
+    } catch (failed) {
+      rollbackErrors.push(failed);
+    }
+  }
+  if (rollbackErrors.length > 0) {
+    throw new Error(
+      rollbackErrors
+        .map((item) => (item instanceof Error ? item.message : String(item)))
+        .join("; "),
+    );
   }
 }
 

@@ -2008,4 +2008,45 @@ describe("native projectors", () => {
       await rm(cwd, { force: true, recursive: true });
     }
   });
+
+  test("rolls back exploded dest and store when lock update fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-lock-fail-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            agents: ["cursor"],
+            bundle: null,
+            global: false,
+            projector: "explode",
+            project: true,
+            skills: ["test"],
+          },
+          async () => {
+            throw new Error("skills CLI must not run when catalog sources resolve");
+          },
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          {
+            cwd,
+            write: async () => {
+              throw new Error("disk full");
+            },
+          },
+          { sourceRoot },
+        ),
+      ).rejects.toThrow("gateway lock update failed");
+      await expect(lstat(join(cwd, ".cursor/skills/test"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expect(lstat(join(cwd, ".agents/skills/test"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
 });

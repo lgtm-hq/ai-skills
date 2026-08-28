@@ -23,11 +23,13 @@ import { resolveScope } from "./options.js";
 import { getPackageVersion } from "./package-version.js";
 import {
   defaultStoreRoot,
+  discardExplodeBackups,
   explodePlugin,
   pruneEmptyAncestors,
   pruneEmptyDirTrees,
   resolveExplodeSourceSkills,
   resolveTrackedPath,
+  restoreExplodeInstall,
   unlinkDestSkillSymlink,
 } from "./projectors/explode.js";
 import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
@@ -98,6 +100,8 @@ export async function updateSkills(options, dependencies = {}) {
   const removeDir = dependencies.rmdir ?? rmdir;
   const warn = dependencies.warn ?? ((message) => console.warn(message));
   const cursorBackups = [];
+  /** @type {import("./projectors/explode.js").ExplodeResult[]} */
+  const explodeBackups = [];
   try {
     for (const pluginId of updated) {
       const entry = selected[pluginId];
@@ -128,12 +132,14 @@ export async function updateSkills(options, dependencies = {}) {
             })),
             copy: false,
             hash,
+            keepBackups: true,
             skills,
             sourceSkills: explodeSources,
             storeRoot:
               dependencies.storeRoot ?? defaultStoreRoot(scope, dependencies.lockEnvironment),
           });
           explodeClaimsByPlugin[pluginId] = exploded.claimed;
+          explodeBackups.push(exploded);
         } else {
           // Vendor / non-checkout first-party still uses the skills CLI.
           await run(
@@ -220,6 +226,14 @@ export async function updateSkills(options, dependencies = {}) {
       gatewayVersion: getPackageVersion(),
       plugins,
     });
+    for (const item of explodeBackups) {
+      try {
+        await discardExplodeBackups(item);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        warn(`Warning: could not discard explode backups after update (${detail})`);
+      }
+    }
     for (const item of cursorBackups) {
       try {
         await discardCursorPluginBackup(item);
@@ -231,6 +245,16 @@ export async function updateSkills(options, dependencies = {}) {
     return { pruned, updated };
   } catch (error) {
     const restoreErrors = [];
+    for (const item of explodeBackups) {
+      try {
+        await restoreExplodeInstall(item, {
+          move: dependencies.move,
+          remove: dependencies.remove,
+        });
+      } catch (restoreError) {
+        restoreErrors.push(restoreError);
+      }
+    }
     for (const item of cursorBackups) {
       try {
         await restoreCursorPluginInstall({
@@ -247,7 +271,7 @@ export async function updateSkills(options, dependencies = {}) {
       const restore = restoreErrors
         .map((item) => (item instanceof Error ? item.message : String(item)))
         .join("; ");
-      throw new Error(`${original} (Cursor restore also failed: ${restore})`);
+      throw new Error(`${original} (update restore also failed: ${restore})`);
     }
     throw error;
   }

@@ -23,8 +23,10 @@ import { getPackageVersion } from "./package-version.js";
 import { assertProjectorSupported, resolveProjector } from "./projectors/defaults.js";
 import {
   defaultStoreRoot,
+  discardExplodeBackups,
   explodePlugin,
   resolveExplodeSourceSkills,
+  restoreExplodeInstall,
 } from "./projectors/explode.js";
 import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
 import {
@@ -777,6 +779,8 @@ export async function install(
   const cursorProgress = { swapped: false };
   let lockCommitted = false;
   const cliCreated = [];
+  /** @type {import("./projectors/explode.js").ExplodeResult | null} */
+  let explodeProgress = null;
   try {
     if (detectAgents || lanes.explode.length > 0) {
       const explodeSources = detectAgents
@@ -803,11 +807,13 @@ export async function install(
           copy: scopedOptions.copy,
           failAfter: extras.failAfter,
           hash: lockEnvironment.hash ?? hashFile,
+          keepBackups: true,
           skills: scopedOptions.skills,
           sourceSkills: explodeSources,
           storeRoot: extras.storeRoot ?? defaultStoreRoot(scope, lockEnvironment),
         });
         explodeClaims = exploded.claimed;
+        explodeProgress = exploded;
       } else {
         // Vendor installs and first-party installs without a catalog checkout
         // still shell out to the skills CLI. That path is not transactional and
@@ -855,6 +861,12 @@ export async function install(
       ? await discoverInstalledAgents(scopedOptions, lockEnvironment)
       : agentsToInstall;
     if (agentsForLock.length === 0) {
+      if (explodeProgress) {
+        await restoreExplodeInstall(explodeProgress, {
+          move: extras.move,
+          remove: extras.remove,
+        });
+      }
       return { alreadyPresent: 0, installed: 0, repaired: 0 };
     }
     if (!detectAgents && lanes.explode.length > 0) {
@@ -876,6 +888,12 @@ export async function install(
       explodeClaims,
     );
     if (Object.keys(entries).length === 0) {
+      if (explodeProgress) {
+        await restoreExplodeInstall(explodeProgress, {
+          move: extras.move,
+          remove: extras.remove,
+        });
+      }
       return { alreadyPresent: 0, installed: 0, repaired: 0 };
     }
     try {
@@ -888,6 +906,15 @@ export async function install(
       );
     }
     lockCommitted = true;
+    if (explodeProgress) {
+      try {
+        await discardExplodeBackups(explodeProgress, { remove: extras.remove });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        const warn = extras.warn ?? ((message) => console.warn(message));
+        warn(`Warning: could not discard explode backups after install (${detail})`);
+      }
+    }
     if (lanes.cursorNative.length > 0) {
       try {
         await discardCursorPluginBackup({
@@ -907,6 +934,16 @@ export async function install(
       throw error;
     }
     const rollbackErrors = [];
+    if (explodeProgress) {
+      try {
+        await restoreExplodeInstall(explodeProgress, {
+          move: extras.move,
+          remove: extras.remove,
+        });
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
     try {
       await rollbackNewSkillDirs(scopedOptions, rollbackAgents, preexisting, lockEnvironment);
     } catch (rollbackError) {

@@ -15,6 +15,7 @@ import { describe, expect, test } from "bun:test";
 
 import { hashFile } from "../lib/lockfile.js";
 import {
+  discardExplodeBackups,
   explodePlugin,
   pruneEmptyDirTrees,
   removeExplodedFiles,
@@ -210,6 +211,37 @@ describe("explodePlugin", () => {
       expect(await readlink(join(dest, "lint"))).toBe(join(store, "lint"));
       expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
       expect(await readFile(join(store, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("keepBackups leaves dest.bak until the caller discards it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-keep-bak-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      await explodePlugin({
+        agents: [{ id: "cursor", root: dest }],
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+        storeRoot: store,
+      });
+      await writeFile(join(source, "lint/SKILL.md"), "# lint v2\n");
+      const result = await explodePlugin({
+        agents: [{ id: "cursor", replace: new Set(["lint"]), root: dest }],
+        keepBackups: true,
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+        storeRoot: store,
+      });
+      expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint v2\n");
+      expect((await lstat(join(dest, "lint.bak"))).isSymbolicLink()).toBe(true);
+      expect(await readFile(join(store, "lint.bak/SKILL.md"), "utf8")).toBe("# lint\n");
+      expect(result.swappedDests).toHaveLength(1);
+      await discardExplodeBackups(result);
+      await expect(lstat(join(dest, "lint.bak"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(lstat(join(store, "lint.bak"))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint v2\n");
     } finally {
       await rm(root, { force: true, recursive: true });
     }
