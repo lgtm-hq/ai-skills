@@ -1,14 +1,17 @@
-import { rmdir, unlink } from "node:fs/promises";
-import { dirname, join, resolve, sep } from "node:path";
+import { readdir, rmdir, unlink } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
 import {
   agentProjector,
+  allAgentSkillRoots,
   hashFile,
+  hashLockEntryPath,
   hashTree,
   isCliOwnedNativeInstall,
   ownedCursorTreeFiles,
   LOCKFILE_VERSION,
+  otherPluginSkillNames,
   pluginAgentNames,
   pluginSkillNames,
   PROJECTOR_EXPLODE,
@@ -21,6 +24,22 @@ import {
 } from "./lockfile.js";
 import { resolveScope } from "./options.js";
 import { getPackageVersion } from "./package-version.js";
+import {
+  defaultStoreRoot,
+  destSkillIsSymlink,
+  destUsesCopyMaterialization,
+  discardExplodeBackups,
+  explodePlugin,
+  pruneEmptyAncestors,
+  pruneEmptyDirTrees,
+  removeExplodedFiles,
+  resolveExplodeSourceSkills,
+  resolveTrackedPath,
+  restoreExplodeInstall,
+  snapshotDestPath,
+  unlinkDestSkillSymlink,
+  warnSkippedExplodeDests,
+} from "./projectors/explode.js";
 import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
 import {
   cursorPluginsRoot,
@@ -29,7 +48,7 @@ import {
   installCursorPlugin,
   restoreCursorPluginInstall,
 } from "./projectors/native-cursor.js";
-import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./skills-runner.js";
+import { buildSkillsArguments, runSkills } from "./skills-runner.js";
 
 /**
  * Refresh lock-managed plugins using the current package tag or vendor registry pins.
@@ -39,6 +58,7 @@ import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./s
  * @param {{agents: string[], global: boolean, project: boolean, skills: string[], yes: boolean}} options - Validated command options.
  * @param {{
  *   exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>,
+ *   explode?: typeof explodePlugin,
  *   hash?: typeof import("./lockfile.js").hashFile,
  *   isInstalled?: Parameters<typeof pruneMissingLockEntries>[1],
  *   lockEnvironment?: Parameters<typeof reconcileLock>[1],
@@ -48,6 +68,8 @@ import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./s
  *   rmdir?: typeof rmdir,
  *   run?: typeof runSkills,
  *   sourceRoot?: string | null,
+ *   sourceSkills?: Record<string, string>,
+ *   storeRoot?: string,
  *   unlink?: typeof unlink,
  *   warn?: (message: string) => void,
  *   writeLock?: typeof writeLockfile,
@@ -79,11 +101,18 @@ export async function updateSkills(options, dependencies = {}) {
     }
   }
   const catalogSkills = {};
+  /** @type {Record<string, Record<string, Record<string, string>>>} */
+  const explodeClaimsByPlugin = {};
   const hash = dependencies.hash ?? hashFile;
   const removeFile = dependencies.unlink ?? unlink;
   const removeDir = dependencies.rmdir ?? rmdir;
   const warn = dependencies.warn ?? ((message) => console.warn(message));
   const cursorBackups = [];
+  /** @type {import("./projectors/explode.js").ExplodeResult[]} */
+  const explodeBackups = [];
+  /** @type {Array<{backup: string, dest: string}>} */
+  const staleDestBackups = [];
+  let lockCommitted = false;
   try {
     for (const pluginId of updated) {
       const entry = selected[pluginId];
@@ -95,18 +124,80 @@ export async function updateSkills(options, dependencies = {}) {
           : resolveVendorSource(entry, vendors);
       const lanes = partitionLockedLanes(entry);
       if (lanes.explode.length > 0) {
-        await run(
-          buildSkillsArguments(
-            {
-              ...scopedOptions,
-              agents: lanes.explode,
-              copy: false,
-              onConflict: "overwrite",
-              skills,
-            },
-            source,
-          ),
+        const explodeSources = resolveExplodeSourceSkills(
+          skills,
+          dependencies,
+          entry.vendor === "lgtm-hq"
+            ? dependencies.sourceRoot !== undefined
+              ? dependencies.sourceRoot
+              : findCatalogSourceRoot(dependencies.lockEnvironment?.cwd ?? process.cwd())
+            : null,
         );
+        if (explodeSources) {
+          const explode = dependencies.explode ?? explodePlugin;
+          const exploded = await explode({
+            agents: await Promise.all(
+              lanes.explode.map(async (agent) => {
+                const root = entry.agents[agent].root;
+                const files = entry.agents[agent]?.files ?? {};
+                return {
+                  id: agent,
+                  copy: await destUsesCopyMaterialization(root, [
+                    ...new Set([...skills, ...skillNamesFromFiles(files)]),
+                  ]),
+                  replace: new Set(skillNamesFromFiles(files)),
+                  root,
+                };
+              }),
+            ),
+            copy: false,
+            hash,
+            keepBackups: true,
+            skills,
+            sourceSkills: explodeSources,
+            destRoots: allAgentSkillRoots(scope, dependencies.lockEnvironment, prunedLock),
+            retainStoreSkills: otherPluginSkillNames(prunedLock, pluginId),
+            storeRoot:
+              dependencies.storeRoot ?? defaultStoreRoot(scope, dependencies.lockEnvironment),
+          });
+          explodeClaimsByPlugin[pluginId] = exploded.claimed;
+          explodeBackups.push(exploded);
+          warnSkippedExplodeDests(exploded.skipped, warn);
+        } else {
+          // Vendor / non-checkout first-party still uses the skills CLI.
+          const copyAgents = [];
+          const symlinkAgents = [];
+          for (const agent of lanes.explode) {
+            const root = entry.agents[agent].root;
+            const files = entry.agents[agent]?.files ?? {};
+            const names = [...new Set([...skills, ...skillNamesFromFiles(files)])];
+            if (await destUsesCopyMaterialization(root, names)) {
+              copyAgents.push(agent);
+            } else {
+              symlinkAgents.push(agent);
+            }
+          }
+          for (const [agents, copy] of [
+            [symlinkAgents, false],
+            [copyAgents, true],
+          ]) {
+            if (agents.length === 0) {
+              continue;
+            }
+            await run(
+              buildSkillsArguments(
+                {
+                  ...scopedOptions,
+                  agents,
+                  copy,
+                  onConflict: "overwrite",
+                  skills,
+                },
+                source,
+              ),
+            );
+          }
+        }
       }
       if (lanes.cursorNative.length > 0) {
         const cursorProgress = { swapped: false };
@@ -140,14 +231,6 @@ export async function updateSkills(options, dependencies = {}) {
           source,
         });
       }
-      await removeStalePluginSkills(pluginId, entry, skills, {
-        hash,
-        removeDir,
-        removeFile,
-        run,
-        scopedOptions: { ...scopedOptions, agents: lanes.explode },
-        warn,
-      });
     }
     const installedAt = now().toISOString();
     const plugins = {};
@@ -160,7 +243,11 @@ export async function updateSkills(options, dependencies = {}) {
         entry,
         catalogSkills[pluginId] ?? pluginSkillNames(entry),
         hash,
+        explodeClaimsByPlugin[pluginId],
       );
+      if (Object.keys(hashed.agents).length === 0) {
+        continue;
+      }
       plugins[pluginId] = {
         ...hashed,
         installedAt,
@@ -172,11 +259,33 @@ export async function updateSkills(options, dependencies = {}) {
             : sourceSha(entry.vendor, entry.sha, vendors),
       };
     }
+    for (const pluginId of updated) {
+      const entry = selected[pluginId];
+      await removeStalePluginSkills(pluginId, entry, catalogSkills[pluginId] ?? [], {
+        catalogSkills,
+        hash,
+        lock: prunedLock,
+        pluginId,
+        removeDir,
+        removeFile,
+        staleDestBackups,
+        warn,
+      });
+    }
     await writeLock({
       ...prunedLock,
       gatewayVersion: getPackageVersion(),
       plugins,
     });
+    lockCommitted = true;
+    for (const item of explodeBackups) {
+      try {
+        await discardExplodeBackups(item);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        warn(`Warning: could not discard explode backups after update (${detail})`);
+      }
+    }
     for (const item of cursorBackups) {
       try {
         await discardCursorPluginBackup(item);
@@ -185,26 +294,55 @@ export async function updateSkills(options, dependencies = {}) {
         warn(`Warning: could not discard Cursor plugin backup after update (${detail})`);
       }
     }
+    try {
+      await discardExplodeBackups({ swappedDests: staleDestBackups });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      warn(`Warning: could not discard stale dest backups after update (${detail})`);
+    }
     return { pruned, updated };
   } catch (error) {
     const restoreErrors = [];
-    for (const item of cursorBackups) {
+    if (!lockCommitted) {
       try {
-        await restoreCursorPluginInstall({
-          ...item,
-          created: !item.swapped,
-          move: dependencies.move,
-        });
+        await restoreExplodeInstall(
+          { swappedDests: staleDestBackups },
+          {
+            move: dependencies.move,
+            remove: dependencies.remove,
+          },
+        );
       } catch (restoreError) {
         restoreErrors.push(restoreError);
       }
-    }
-    if (restoreErrors.length > 0) {
-      const original = error instanceof Error ? error.message : String(error);
-      const restore = restoreErrors
-        .map((item) => (item instanceof Error ? item.message : String(item)))
-        .join("; ");
-      throw new Error(`${original} (Cursor restore also failed: ${restore})`);
+      for (const item of explodeBackups) {
+        try {
+          await restoreExplodeInstall(item, {
+            move: dependencies.move,
+            remove: dependencies.remove,
+          });
+        } catch (restoreError) {
+          restoreErrors.push(restoreError);
+        }
+      }
+      for (const item of cursorBackups) {
+        try {
+          await restoreCursorPluginInstall({
+            ...item,
+            created: !item.swapped,
+            move: dependencies.move,
+          });
+        } catch (restoreError) {
+          restoreErrors.push(restoreError);
+        }
+      }
+      if (restoreErrors.length > 0) {
+        const original = error instanceof Error ? error.message : String(error);
+        const restore = restoreErrors
+          .map((item) => (item instanceof Error ? item.message : String(item)))
+          .join("; ");
+        throw new Error(`${original} (update restore also failed: ${restore})`);
+      }
     }
     throw error;
   }
@@ -229,14 +367,8 @@ export async function updateSkills(options, dependencies = {}) {
  */
 export async function removeSkills(options, dependencies = {}) {
   const scope = resolveScope(options);
-  const scopedOptions = {
-    ...options,
-    global: scope === "global",
-    project: scope === "project",
-  };
   const readLock = dependencies.readLock ?? readLockfile;
   const writeLock = dependencies.writeLock ?? writeLockfile;
-  const run = dependencies.run ?? runSkills;
   const hash = dependencies.hash ?? hashFile;
   const removeFile = dependencies.unlink ?? unlink;
   const removeDir = dependencies.rmdir ?? rmdir;
@@ -250,20 +382,24 @@ export async function removeSkills(options, dependencies = {}) {
   const pendingCliUninstall = [];
   for (const pluginId of selected) {
     const entry = lock.plugins[pluginId];
+    const explodeFiles = explodeTrackedFiles(entry);
+    if (explodeFiles.length > 0) {
+      await removeExplodedFiles({
+        files: explodeFiles,
+        hash,
+        pluginId,
+        removeDir,
+        removeFile,
+        warn,
+      });
+    }
     const classified = await classifyPluginFiles(pluginId, entry, { hash, warn });
     const lanes = partitionLockedLanes(entry);
-    if (lanes.explode.length > 0 && classified.removableSkills.length > 0) {
-      await run(
-        buildSkillsRemoveArguments(
-          {
-            ...scopedOptions,
-            agents: lanes.explode,
-          },
-          classified.removableSkills,
-        ),
-      );
-    }
-    await deleteVerifiedFiles(classified.verified, { removeDir, removeFile });
+    await deleteVerifiedFiles(classified.verified, {
+      modifiedSkills: classified.modifiedSkills,
+      removeDir,
+      removeFile,
+    });
     for (const agent of lanes.cursorNative) {
       const pluginDir = entry.agents[agent]?.root;
       if (!pluginDir) {
@@ -434,15 +570,19 @@ function resolveVendorSource(entry, vendors) {
 /**
  * Hash-verified delete of skills that left the catalog since the last lock write.
  *
+ * Existing dest skill directories are snapshotted first so a later lock-write
+ * failure can restore paths the previous lock still claims.
+ *
  * @param {string} pluginId - Plugin id.
  * @param {import("./lockfile.js").PluginLockEntry} entry - Pre-update lock entry.
  * @param {string[]} currentSkills - Skill names in the current catalog.
  * @param {{
+ *   catalogSkills?: Record<string, string[]>,
  *   hash: typeof hashFile,
+ *   lock?: import("./lockfile.js").GatewayLock,
  *   removeDir: typeof rmdir,
  *   removeFile: typeof unlink,
- *   run: typeof runSkills,
- *   scopedOptions: {agents: string[], global: boolean, project: boolean, yes: boolean},
+ *   staleDestBackups?: Array<{backup: string, dest: string}>,
  *   warn: (message: string) => void,
  * }} io - Injectable command dependencies.
  * @returns {Promise<void>} Resolves when stale members are removed or left with a warning.
@@ -453,6 +593,21 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
   if (staleNames.length === 0) {
     return;
   }
+  const keepDest = (dest, relative) =>
+    Boolean(
+      dest &&
+      io.lock &&
+      otherPluginsKeepStaleDest(
+        pluginId,
+        dest,
+        [...skillNamesFromFiles({ [relative]: "" })][0] ?? "",
+        io.lock,
+        io.catalogSkills ?? {},
+      ),
+    );
+  if (io.staleDestBackups) {
+    await snapshotStaleSkillDests(entry, staleNames, io.staleDestBackups, keepDest);
+  }
   const stale = {
     ...entry,
     skills: staleNames,
@@ -462,19 +617,31 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
         {
           ...install,
           files: Object.fromEntries(
-            Object.entries(install.files).filter(([relative]) =>
-              skillNamesBelongTo(relative, staleNames),
-            ),
+            Object.entries(install.files).filter(([relative]) => {
+              if (!skillNamesBelongTo(relative, staleNames)) {
+                return false;
+              }
+              return !keepDest(staleSkillDestPath(install.root, relative), relative);
+            }),
           ),
         },
       ]),
     ),
   };
-  const classified = await classifyPluginFiles(pluginId, stale, { hash: io.hash, warn: io.warn });
-  if (classified.removableSkills.length > 0 && io.scopedOptions.agents.length > 0) {
-    await io.run(buildSkillsRemoveArguments(io.scopedOptions, classified.removableSkills));
+  const explodeFiles = explodeTrackedFiles(stale);
+  if (explodeFiles.length > 0) {
+    await removeExplodedFiles({
+      files: explodeFiles,
+      hash: io.hash,
+      pluginId,
+      removeDir: io.removeDir,
+      removeFile: io.removeFile,
+      warn: io.warn,
+    });
   }
+  const classified = await classifyPluginFiles(pluginId, stale, { hash: io.hash, warn: io.warn });
   await deleteVerifiedFiles(classified.verified, {
+    modifiedSkills: classified.modifiedSkills,
     removeDir: io.removeDir,
     removeFile: io.removeFile,
   });
@@ -510,13 +677,40 @@ async function currentPluginSkills(pluginId, entry) {
  * @param {import("./lockfile.js").PluginLockEntry} entry - Lock entry.
  * @param {string[]} skillNames - Skill directory names to hash.
  * @param {typeof hashFile} hash - Injectable hasher.
+ * @param {Record<string, Record<string, string>>} [explodeClaims] - Owned explode
+ *   files from this update (skipped dests omitted). Absent when the CLI fallback ran,
+ *   in which case explode dests are hashed as full skill trees.
  * @returns {Promise<import("./lockfile.js").PluginLockEntry>} Entry with rebuilt file maps.
  */
-async function rematerializePluginFiles(entry, skillNames, hash) {
+async function rematerializePluginFiles(entry, skillNames, hash, explodeClaims) {
   const current = new Set(skillNames);
   const agents = {};
   for (const [agent, install] of Object.entries(entry.agents)) {
     const projector = agentProjector(entry, agent);
+    if (projector === PROJECTOR_EXPLODE) {
+      if (explodeClaims) {
+        const claimed = explodeClaims[agent];
+        if (claimed && Object.keys(claimed).length > 0) {
+          agents[agent] = { ...install, files: claimed };
+          continue;
+        }
+        const retained = {};
+        for (const [relative, digest] of Object.entries(install.files)) {
+          if (current.has(relative.split("/")[0])) {
+            retained[relative] = digest;
+          }
+        }
+        if (Object.keys(retained).length > 0) {
+          agents[agent] = { ...install, files: retained };
+        }
+        continue;
+      }
+      const files = await hashCliExplodeDestFiles(install.root, skillNames, hash);
+      if (Object.keys(files).length > 0) {
+        agents[agent] = { ...install, files };
+      }
+      continue;
+    }
     if (projector === PROJECTOR_NATIVE && agent === "cursor") {
       agents[agent] = {
         ...install,
@@ -566,6 +760,59 @@ async function rematerializePluginFiles(entry, skillNames, hash) {
 }
 
 /**
+ * Hash explode dest skill trees after a skills-CLI fallback update.
+ *
+ * Matches install ``createLockEntries``: walk each current skill directory so
+ * nested files are locked. An empty or missing dest falls back to a
+ * ``SKILL.md`` sentinel (detect-mode mocks). A dest that is a file hashes as
+ * ``SKILL.md``.
+ *
+ * @param {string} root - Agent skills root from the lock.
+ * @param {string[]} skillNames - Current catalog skill names.
+ * @param {typeof hashFile} hash - Injectable hasher.
+ * @returns {Promise<Record<string, string>>} Relative path to digest.
+ */
+async function hashCliExplodeDestFiles(root, skillNames, hash) {
+  const files = {};
+  for (const name of skillNames) {
+    const skillDir = join(root, name);
+    let tree = {};
+    try {
+      tree = await hashTree(skillDir, hash);
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOTDIR") {
+        try {
+          files[`${name}/SKILL.md`] = await hash(skillDir);
+        } catch (hashError) {
+          if (!isAbsentFsError(hashError)) {
+            throw hashError;
+          }
+          files[`${name}/SKILL.md`] = "";
+        }
+        continue;
+      }
+      throw error;
+    }
+    if (Object.keys(tree).length === 0) {
+      const relative = `${name}/SKILL.md`;
+      try {
+        files[relative] = await hash(join(skillDir, "SKILL.md"));
+      } catch (error) {
+        if (!isAbsentFsError(error)) {
+          throw error;
+        }
+        files[relative] = "";
+      }
+      continue;
+    }
+    for (const [relative, digest] of Object.entries(tree)) {
+      files[`${name}/${relative}`] = digest;
+    }
+  }
+  return files;
+}
+
+/**
  * Resolve the replacement SHA or first-party tag for a refreshed entry.
  *
  * @param {string} vendor - Vendor identifier.
@@ -581,6 +828,134 @@ function sourceSha(vendor, currentSha, vendors) {
 }
 
 /**
+ * Snapshot catalog-retired skill dests before hash-verified unlink.
+ *
+ * Dest skill directories are copied (symlink-preserving) so a later lock-write
+ * failure can restore paths the previous lock still claims.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Pre-update lock entry.
+ * @param {string[]} staleNames - Skill names leaving the catalog.
+ * @param {Array<{backup: string, dest: string}>} backups - Accumulator for restore/discard.
+ * @param {(dest: string | null, relative: string) => boolean} [keepDest] - Skip dests another plugin still catalogs.
+ * @returns {Promise<void>} Resolves when existing dests are snapshotted.
+ */
+async function snapshotStaleSkillDests(entry, staleNames, backups, keepDest = () => false) {
+  const seen = new Set();
+  for (const install of Object.values(entry.agents)) {
+    if (isCliOwnedNativeInstall(install, entry.projector)) {
+      continue;
+    }
+    for (const relative of Object.keys(install.files)) {
+      if (!skillNamesBelongTo(relative, staleNames)) {
+        continue;
+      }
+      const dest = staleSkillDestPath(install.root, relative);
+      if (!dest || seen.has(dest) || keepDest(dest, relative)) {
+        continue;
+      }
+      seen.add(dest);
+      const snapshot = await snapshotDestPath(dest);
+      if (snapshot) {
+        backups.push(snapshot);
+      }
+    }
+  }
+}
+
+/**
+ * Dest skill directory for a tracked relative path.
+ *
+ * Exploded installs use ``<skill>/...``. Cursor native trees use
+ * ``skills/<skill>/...``.
+ *
+ * @param {string} root - Agent skills root from the lock.
+ * @param {string} relative - Tracked path relative to that root.
+ * @returns {string | null} Skill directory to snapshot, or null when the path is metadata.
+ */
+function staleSkillDestPath(root, relative) {
+  const parts = relative.split("/");
+  if (parts[0] === ".claude-plugin") {
+    return null;
+  }
+  if (parts[0] === "skills" && parts[1]) {
+    return join(root, "skills", parts[1]);
+  }
+  if (parts[0]) {
+    return join(root, parts[0]);
+  }
+  return null;
+}
+
+/**
+ * Whether another lock plugin still catalogs this skill at the same dest root.
+ *
+ * A skill-move in one update must not let the retiring plugin unlink a dest
+ * the surviving plugin skipped or still catalogs.
+ *
+ * @param {string} pluginId - Plugin whose stale dests are being considered.
+ * @param {string} dest - Absolute dest skill directory.
+ * @param {string} skillName - Skill directory name.
+ * @param {import("./lockfile.js").GatewayLock} lock - Pre-update lock.
+ * @param {Record<string, string[]>} catalogSkills - Current catalog names for plugins in this update.
+ * @returns {boolean} True when another plugin still wants this dest.
+ */
+function otherPluginsKeepStaleDest(pluginId, dest, skillName, lock, catalogSkills) {
+  if (!skillName) {
+    return false;
+  }
+  for (const [otherId, other] of Object.entries(lock.plugins ?? {})) {
+    if (otherId === pluginId) {
+      continue;
+    }
+    const names = catalogSkills[otherId] ?? pluginSkillNames(other);
+    if (!names.includes(skillName)) {
+      continue;
+    }
+    for (const install of Object.values(other.agents ?? {})) {
+      if (isCliOwnedNativeInstall(install, other.projector)) {
+        continue;
+      }
+      if (typeof install.root !== "string" || install.root.startsWith("cli:")) {
+        continue;
+      }
+      if (
+        dest === join(install.root, skillName) ||
+        dest === join(install.root, "skills", skillName)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Lock-owned explode files for hash-verified dest unlink.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Plugin lock entry.
+ * @returns {Array<{absolute: string, digest: string, relative: string, root: string}>}
+ *   Files owned by explode-projected agents.
+ */
+function explodeTrackedFiles(entry) {
+  /** @type {Array<{absolute: string, digest: string, relative: string, root: string}>} */
+  const files = [];
+  for (const [agent, install] of Object.entries(entry.agents)) {
+    if (agentProjector(entry, agent) !== PROJECTOR_EXPLODE) {
+      continue;
+    }
+    for (const [relative, digest] of Object.entries(install.files)) {
+      files.push({
+        absolute: resolveTrackedPath(install.root, relative),
+        digest,
+        relative,
+        root: install.root,
+      });
+    }
+  }
+  return files;
+}
+
+/**
  * Classify tracked files before any delete so modified paths stay on disk.
  *
  * @param {string} pluginId - Plugin id.
@@ -590,8 +965,9 @@ function sourceSha(vendor, currentSha, vendors) {
  *   warn: (message: string) => void,
  * }} io - Injectable hasher and warning sink.
  * @returns {Promise<{
+ *   modifiedSkills: Set<string>,
  *   removableSkills: string[],
- *   verified: Array<{absolute: string, root: string}>,
+ *   verified: Array<{absolute: string, relative: string, root: string}>,
  * }>} Skills safe to pass upstream and files safe to unlink.
  */
 async function classifyPluginFiles(pluginId, entry, io) {
@@ -599,14 +975,17 @@ async function classifyPluginFiles(pluginId, entry, io) {
   const modifiedSkills = new Set();
   /** @type {Array<{absolute: string, root: string}>} */
   const verified = [];
-  for (const install of Object.values(entry.agents)) {
+  for (const [agent, install] of Object.entries(entry.agents)) {
     if (isCliOwnedNativeInstall(install, entry.projector)) {
+      continue;
+    }
+    if (agentProjector(entry, agent) === PROJECTOR_EXPLODE) {
       continue;
     }
     for (const [relative, digest] of Object.entries(install.files)) {
       const absolute = resolveTrackedPath(install.root, relative);
       try {
-        const current = await io.hash(absolute);
+        const current = await hashLockEntryPath(absolute, io.hash);
         if (current !== digest) {
           io.warn(`left modified ${pluginId} file ${relative}`);
           for (const skillName of skillNamesFromFiles({ [relative]: digest })) {
@@ -614,7 +993,7 @@ async function classifyPluginFiles(pluginId, entry, io) {
           }
           continue;
         }
-        verified.push({ absolute, root: install.root });
+        verified.push({ absolute, relative, root: install.root });
       } catch (error) {
         if (isAbsentFsError(error)) {
           continue;
@@ -625,25 +1004,50 @@ async function classifyPluginFiles(pluginId, entry, io) {
   }
   return {
     modified: modifiedSkills.size > 0,
+    modifiedSkills,
     removableSkills: pluginSkillNames(entry).filter((name) => !modifiedSkills.has(name)),
     verified,
   };
 }
 
 /**
- * Unlink hash-matching files and prune empty ancestor directories.
+ * Unlink hash-matching files and prune empty directory trees.
  *
- * @param {Array<{absolute: string, root: string}>} verified - Files that matched the lock digest.
+ * @param {Array<{absolute: string, relative?: string, root: string}>} verified - Files that matched the lock digest.
  * @param {{
+ *   modifiedSkills?: Set<string>,
  *   removeDir: typeof rmdir,
  *   removeFile: typeof unlink,
  * }} io - Injectable filesystem.
  * @returns {Promise<void>} Resolves when verified deletes finish.
  */
 async function deleteVerifiedFiles(verified, io) {
+  /** @type {Map<string, string>} */
+  const skillDirs = new Map();
+  /** @type {Set<string>} */
+  const skipSkillDirs = new Set();
+  const modifiedSkills = io.modifiedSkills ?? new Set();
   for (const file of verified) {
+    const skillName = (file.relative ?? "").split("/")[0];
+    const skillDir = skillName ? join(file.root, skillName) : "";
+    if (skillDir && !skipSkillDirs.has(skillDir)) {
+      if (modifiedSkills.has(skillName) && (await destSkillIsSymlink(skillDir))) {
+        skipSkillDirs.add(skillDir);
+        continue;
+      }
+      if (await unlinkDestSkillSymlink(skillDir, io.removeFile)) {
+        skipSkillDirs.add(skillDir);
+        continue;
+      }
+    }
+    if (skillDir && skipSkillDirs.has(skillDir)) {
+      continue;
+    }
     try {
       await io.removeFile(file.absolute);
+      if (skillDir) {
+        skillDirs.set(skillDir, file.root);
+      }
       await pruneEmptyAncestors(dirname(file.absolute), file.root, io.removeDir);
     } catch (error) {
       if (isAbsentFsError(error)) {
@@ -651,6 +1055,12 @@ async function deleteVerifiedFiles(verified, io) {
       }
       throw error;
     }
+  }
+  for (const [skillDir, root] of skillDirs) {
+    await pruneEmptyDirTrees(skillDir, root, {
+      readDir: (dir) => readdir(dir, { withFileTypes: true }),
+      removeDir: io.removeDir,
+    });
   }
 }
 
@@ -662,53 +1072,6 @@ async function deleteVerifiedFiles(verified, io) {
  */
 function isAbsentFsError(error) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
-}
-
-/**
- * Resolve a lock-relative path and reject escapes outside the agent root.
- *
- * @param {string} root - Agent skills root from the lock.
- * @param {string} relative - Tracked path relative to that root.
- * @returns {string} Absolute path inside the root.
- * @throws {Error} When the relative path escapes the root.
- */
-function resolveTrackedPath(root, relative) {
-  if (
-    relative.includes("\0") ||
-    relative.startsWith("/") ||
-    relative.split(/[\\/]/).includes("..")
-  ) {
-    throw new Error(`Refusing to delete path outside plugin root: ${relative}`);
-  }
-  const absolute = resolve(join(root, relative));
-  const resolvedRoot = resolve(root);
-  const prefix = resolvedRoot.endsWith(sep) ? resolvedRoot : `${resolvedRoot}${sep}`;
-  if (absolute !== resolvedRoot && !absolute.startsWith(prefix)) {
-    throw new Error(`Refusing to delete path outside plugin root: ${relative}`);
-  }
-  return absolute;
-}
-
-/**
- * Remove empty directories from a deleted file up to the agent skills root.
- *
- * @param {string} start - Directory that contained a deleted file.
- * @param {string} root - Agent skills root; not removed.
- * @param {typeof rmdir} removeDir - Injectable rmdir.
- * @returns {Promise<void>} Resolves when pruning stops.
- */
-async function pruneEmptyAncestors(start, root, removeDir) {
-  const resolvedRoot = resolve(root);
-  const prefix = resolvedRoot.endsWith(sep) ? resolvedRoot : `${resolvedRoot}${sep}`;
-  let current = resolve(start);
-  while (current.startsWith(prefix) && current !== resolvedRoot) {
-    try {
-      await removeDir(current);
-    } catch {
-      return;
-    }
-    current = dirname(current);
-  }
 }
 
 /**

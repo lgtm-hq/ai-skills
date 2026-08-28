@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **gateway**: transactional explode fallback — stage, collision-check, then
+  commit. Byte-identical dests are skipped and not owned; different content
+  hard-errors before any dest write. Remove unlinks dest skill symlinks
+  without following into the managed store, hash-verifies copied trees,
+  leaves modified files, and prunes nested empty directory trees. Dangling
+  dest skill symlinks are treated as empty (replaceable on explode, unlinked
+  on remove) so they cannot poison later installs. An unowned leftover store
+  is replaced when dest is absent and no other dest or lock plugin still
+  consumes it, so remove-then-reinstall cannot collide. A live consumer of
+  that store is a hard error, including owned updates that would rewrite a
+  shared store. Update preserves `--copy` dest directories
+  instead of rewriting them as store symlinks, including the skills-CLI
+  fallback path. Vendor installs
+  and first-party installs without a catalog checkout still use the skills
+  CLI (no collision doctrine until bake). That CLI lock records the full dest
+  tree so later remove can hash-verify nested files, not only `SKILL.md`.
+  Install repair preserves existing `--copy` dest directories the same way
+  update does. Identical dest skips emit a warning (ADR-0005 class 1). A
+  regular file at a dest skill path is a collision, not a `SKILL.md` match.
+  Update snapshots catalog-retired dests, then unlinks them before writing
+  the new lock. A cleanup failure leaves the previous lock owning those
+  paths; a later lock-write failure restores the snapshots. Stale cleanup
+  does not unlink a dest another plugin in the same update still catalogs.
+  Empty explode
+  claims retain prior owned files still in the current catalog. A CLI-fallback
+  update hashes the full dest skill tree so nested files are locked and later
+  remove can delete them.
+
 ### Changed
 
 ### Deprecated

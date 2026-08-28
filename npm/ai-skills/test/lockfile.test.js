@@ -1,15 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
   LOCKFILE_VERSION,
   agentProjector,
+  allAgentSkillRoots,
   hashTree,
   isCliOwnedNativeInstall,
   isPluginInstalled,
   mergeLockEntries,
+  otherPluginSkillNames,
   ownedCursorTreeFiles,
   pluginSkillNames,
   pruneMissingLockEntries,
@@ -319,6 +322,49 @@ describe("gateway lockfile", () => {
     ]);
   });
 
+  test("otherPluginSkillNames keeps explode skills and ignores native ones", () => {
+    expect([...otherPluginSkillNames(lock, "review")].sort()).toEqual(["pdf"]);
+    expect([...otherPluginSkillNames(lock, "pdf")].sort()).toEqual(["lint"]);
+    const mixed = {
+      ...lock,
+      plugins: {
+        ...lock.plugins,
+        local: {
+          ...explodeEntry,
+          projector: "native",
+          agents: {
+            cursor: {
+              files: { "skills/unique-native/SKILL.md": "abc" },
+              projector: "native",
+              root: "/tmp/.cursor/plugins/local/local",
+            },
+          },
+        },
+      },
+    };
+    expect([...otherPluginSkillNames(mixed, "pdf")].sort()).toEqual(["lint"]);
+  });
+
+  test("allAgentSkillRoots includes known layouts and extra lock dests", () => {
+    const env = { cwd: "/tmp/project" };
+    const roots = allAgentSkillRoots("project", env, {
+      plugins: {
+        review: {
+          ...explodeEntry,
+          agents: {
+            cursor: {
+              files: { "lint/SKILL.md": "abc" },
+              root: "/custom/explode/skills",
+            },
+          },
+        },
+      },
+    });
+    expect(roots).toContain("/tmp/project/.cursor/skills");
+    expect(roots).toContain("/tmp/project/.codex/skills");
+    expect(roots).toContain("/custom/explode/skills");
+  });
+
   test("treats CLI-owned native installs as present without hashing", async () => {
     const entry = {
       ...explodeEntry,
@@ -377,6 +423,21 @@ describe("gateway lockfile", () => {
       ]);
       expect(files[".claude-plugin/plugin.json"]).toMatch(/^[a-f0-9]{64}$/);
       expect(files["skills/lint/SKILL.md"]).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("hashes in-tree symlinks as symlink:<target>", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-hash-symlink-"));
+    try {
+      await mkdir(join(root, "skills/lint"), { recursive: true });
+      await writeFile(join(root, "skills/lint/SKILL.md"), "# lint\n");
+      await symlink("SKILL.md", join(root, "skills/lint/alias.md"));
+      const files = await hashTree(root);
+      expect(files["skills/lint/alias.md"]).toBe(
+        createHash("sha256").update("symlink:SKILL.md").digest("hex"),
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }

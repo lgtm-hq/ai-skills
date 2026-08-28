@@ -1,7 +1,16 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import {
+  access,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  readlink,
+  rename,
+  writeFile,
+} from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { getPackageVersion } from "./package-version.js";
 
@@ -256,6 +265,64 @@ export function agentSkillsRoot(scope, agent, environment = {}) {
 }
 
 /**
+ * Explode-owned skill names tracked by lock plugins other than ``pluginId``.
+ *
+ * Native installs namespace per plugin and do not consume the explode store.
+ *
+ * @param {GatewayLock | {plugins?: Record<string, PluginLockEntry>}} lock - Current lock.
+ * @param {string} pluginId - Plugin whose names are excluded.
+ * @returns {Set<string>} Skill names retained by other explode plugins.
+ */
+export function otherPluginSkillNames(lock, pluginId) {
+  const names = new Set();
+  for (const [id, entry] of Object.entries(lock.plugins ?? {})) {
+    if (id === pluginId) {
+      continue;
+    }
+    for (const [agent, install] of Object.entries(entry.agents ?? {})) {
+      if (agentProjector(entry, agent) !== PROJECTOR_EXPLODE) {
+        continue;
+      }
+      for (const name of skillNamesFromFiles(install.files)) {
+        names.add(name);
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * Exploded dest roots for known agent layouts, plus any lock-recorded dests.
+ *
+ * @param {"global" | "project"} scope - Installation scope.
+ * @param {{cwd?: string, home?: string}} [environment] - Injectable path environment.
+ * @param {GatewayLock | {plugins?: Record<string, PluginLockEntry>}} [lock] - Current lock.
+ * @returns {string[]} Absolute agent skills directories.
+ */
+export function allAgentSkillRoots(scope, environment = {}, lock) {
+  const roots = Object.keys(AGENT_SKILL_PATHS).map((agent) =>
+    agentSkillsRoot(scope, agent, environment),
+  );
+  if (!lock?.plugins) {
+    return roots;
+  }
+  const seen = new Set(roots.map((root) => resolve(root)));
+  for (const entry of Object.values(lock.plugins)) {
+    for (const install of Object.values(entry.agents ?? {})) {
+      if (typeof install.root !== "string" || install.root.startsWith("cli:")) {
+        continue;
+      }
+      const resolved = resolve(install.root);
+      if (!seen.has(resolved)) {
+        seen.add(resolved);
+        roots.push(install.root);
+      }
+    }
+  }
+  return roots;
+}
+
+/**
  * Sha256 a file's contents as hex.
  *
  * @param {string} path - File path.
@@ -371,7 +438,9 @@ export function isCliOwnedNativeInstall(install, pluginProjector = PROJECTOR_EXP
 }
 
 /**
- * Sha256 every regular file under ``root``, keyed by POSIX-relative paths.
+ * Sha256 every regular file and in-tree symlink under ``root``, keyed by
+ * POSIX-relative paths. Symlink digests encode the link target so a dest
+ * missing the symlink does not compare equal.
  *
  * @param {string} root - Directory to walk.
  * @param {(path: string) => Promise<string>} [hash] - Injectable hasher.
@@ -595,10 +664,27 @@ async function pathExists(path) {
  */
 async function hashTrackedPath(path, hash) {
   try {
-    return await hash(path);
+    return await hashLockEntryPath(path, hash);
   } catch {
     return "";
   }
+}
+
+/**
+ * Hash a path the same way ``hashTree`` records it: symlink targets as
+ * ``sha256("symlink:" + target)``, regular files via ``hash``.
+ *
+ * @param {string} path - Absolute file path.
+ * @param {(path: string) => Promise<string>} [hash] - Injectable hasher.
+ * @returns {Promise<string>} Hex digest.
+ */
+export async function hashLockEntryPath(path, hash = hashFile) {
+  const info = await lstat(path);
+  if (info.isSymbolicLink()) {
+    const target = await readlink(path);
+    return createHash("sha256").update(`symlink:${target}`).digest("hex");
+  }
+  return hash(path);
 }
 
 /**
@@ -688,6 +774,9 @@ async function walkHashTree(dir, prefix, files, hash) {
     const absolute = join(dir, entry.name);
     if (entry.isDirectory()) {
       await walkHashTree(absolute, relative, files, hash);
+    } else if (entry.isSymbolicLink()) {
+      const target = await readlink(absolute);
+      files[relative] = createHash("sha256").update(`symlink:${target}`).digest("hex");
     } else if (entry.isFile()) {
       files[relative] = await hash(absolute);
     }
