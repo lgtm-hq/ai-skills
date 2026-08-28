@@ -1309,6 +1309,67 @@ describe("native projectors", () => {
     }
   });
 
+  test("does not demote a locked native Cursor install when catalog is absent", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-repair-native-no-catalog-"));
+    try {
+      const pluginDir = join(cwd, ".cursor/plugins/local/review");
+      await Bun.write(
+        join(cwd, "ai-skills-lock.json"),
+        `${JSON.stringify(
+          {
+            gatewayVersion: "0.0.0-dev",
+            plugins: {
+              review: {
+                agents: {
+                  cursor: {
+                    files: { ".claude-plugin/plugin.json": "abc" },
+                    projector: "native",
+                    root: pluginDir,
+                  },
+                },
+                installedAt: "2026-07-10T16:00:00.000Z",
+                projector: "native",
+                repo: "lgtm-hq/ai-skills",
+                sha: "v0.0.0-dev",
+                vendor: "lgtm-hq",
+                version: "0.0.0-dev",
+              },
+            },
+            scope: "project",
+            version: 2,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            global: false,
+            projector: null,
+            project: true,
+          },
+          async () => {
+            throw new Error("explode runner must not run");
+          },
+          () => new Date("2026-07-10T17:00:00.000Z"),
+          {
+            cwd,
+            exists: async () => false,
+            hash: async () => "",
+          },
+          { sourceRoot: null },
+        ),
+      ).rejects.toThrow("requires a catalog checkout");
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.review.agents.cursor.projector).toBe("native");
+      expect(lock.plugins.review.agents.cursor.root).toBe(pluginDir);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("repairs an exploded Cursor lock without switching to native", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-repair-explode-"));
     try {

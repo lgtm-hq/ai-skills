@@ -738,7 +738,10 @@ export async function install(
         ? extras.sourceRoot
         : findCatalogSourceRoot(lockEnvironment.cwd ?? process.cwd());
     if (!cursorSourceRoot) {
-      if (scopedOptions.projector === PROJECTOR_NATIVE) {
+      const lockedNativeCursor =
+        Boolean(existing?.agents?.cursor) &&
+        agentProjector(existing, "cursor") === PROJECTOR_NATIVE;
+      if (scopedOptions.projector === PROJECTOR_NATIVE || lockedNativeCursor) {
         throw new Error(
           "Native Cursor projector requires a catalog checkout (skills/ + " +
             ".claude-plugin/marketplace.json). Use --projector explode, or run from the " +
