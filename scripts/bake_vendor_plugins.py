@@ -269,7 +269,8 @@ def _bake_into(
         for result in plugin_results:
             for old, new in result.renamed:
                 print(
-                    f"bake: {vendor.id}:{old} RENAMED -> {result.plugin_id}/skills/{new}",
+                    f"bake: {vendor.id}:{old} RENAMED -> "
+                    f"{result.plugin_id}/skills/{new}",
                 )
     return tuple(results), skipped_by_vendor, ingested_counts, frozenset(fetched)
 

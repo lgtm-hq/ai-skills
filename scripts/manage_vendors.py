@@ -599,7 +599,8 @@ def _print_summary(*, action: str, vendor_id: str) -> None:
     """
     print(f"{action} vendor '{vendor_id}' in vendors.yaml.")
     print(
-        "Rebaked vendor indexes, plugin trees, and synchronized ai-skills npm package data."
+        "Rebaked vendor indexes, plugin trees, and synchronized "
+        "ai-skills npm package data.",
     )
     print()
     print("Manual follow-up still required (not automated):")

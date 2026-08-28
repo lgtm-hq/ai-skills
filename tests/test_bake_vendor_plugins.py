@@ -1722,7 +1722,9 @@ def test_bake_rejects_symlink_under_node_modules(
     _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
     nested = vendor_root / "node_modules" / "pkg"
     nested.mkdir(parents=True)
-    (nested / "link").symlink_to("/tmp")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (nested / "link").symlink_to(outside)
     _write_registry(
         repo_root=tmp_path,
         plugins_yaml=(
