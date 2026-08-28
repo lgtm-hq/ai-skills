@@ -289,3 +289,30 @@ def test_validate_rejects_agents_entry_with_path_like_skill_name(
         "AGENTS.md contains invalid skill name: ../scripts"
     )
     logger.info("[TEST] path-like skill name rejected: rc={}", result.returncode)
+
+
+def test_validate_rejects_stale_plugins_baked(tmp_path: Path) -> None:
+    """Fail when the copied plugins-baked tree no longer matches --check."""
+    script_path = _copy_validate_script(repo_root=REPO_ROOT, tmp_path=tmp_path)
+    skill_dir = tmp_path / "skills" / "example"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: example\ndescription: Example skill.\n---\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "AGENTS.md").write_text(
+        "- `example` - Example skill.\n",
+        encoding="utf-8",
+    )
+    coverage = tmp_path / "plugins-baked" / "COVERAGE.md"
+    coverage.write_text(
+        coverage.read_text(encoding="utf-8") + "tamper\n",
+        encoding="utf-8",
+    )
+
+    result = _run_validate(script_path=script_path, cwd=tmp_path)
+
+    assert_that(result.returncode).is_equal_to(1)
+    combined = result.stdout + result.stderr
+    assert_that(combined).contains("Validation failed")
+    logger.info("[TEST] stale plugins-baked: rc={}", result.returncode)

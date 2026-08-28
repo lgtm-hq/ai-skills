@@ -235,6 +235,22 @@ def test_check_detects_registry_drift(repo_root: Path) -> None:
     assert_that(manage_vendors.check(repo_root=repo_root)).is_equal_to(1)
 
 
+def test_check_detects_plugin_bake_drift(repo_root: Path) -> None:
+    """Report drift when only plugins-baked/ diverges from the lock."""
+    coverage = repo_root / "plugins-baked" / "COVERAGE.md"
+    coverage.write_text(
+        coverage.read_text(encoding="utf-8") + "tamper\n",
+        encoding="utf-8",
+    )
+    assert_that(manage_vendors.check(repo_root=repo_root)).is_equal_to(1)
+
+
+def test_parser_help_mentions_plugin_trees() -> None:
+    """refresh and check help strings mention plugin trees."""
+    help_text = manage_vendors._build_parser().format_help()
+    assert_that(help_text).contains("plugin trees")
+
+
 def test_add_rolls_back_registry_when_rebake_fails(
     repo_root: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -479,6 +495,13 @@ def test_update_preserves_plugin_slices(repo_root: Path) -> None:
         .joinpath("SKILL.md")
         .is_file(),
     ).is_true()
+    skill_markdown = (
+        repo_root / "plugins-baked" / "existing-plugin" / "skills" / "teach-existing"
+    ).joinpath("SKILL.md")
+    assert_that(skill_markdown.read_text(encoding="utf-8")).contains(
+        "name: teach-existing",
+    )
+    assert_that(manage_vendors.check(repo_root=repo_root)).is_zero()
     dumped = registry_path.read_text(encoding="utf-8")
     assert_that(dumped).contains(
         "    plugins:\n"

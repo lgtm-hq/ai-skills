@@ -26,7 +26,7 @@ _PLUGIN_REQUIRED_FIELDS = frozenset(
 )
 _PLUGIN_OPTIONAL_FIELDS = frozenset({"extraSkills", "renameSkills", "agents"})
 _PLUGIN_FIELDS = _PLUGIN_REQUIRED_FIELDS | _PLUGIN_OPTIONAL_FIELDS
-_GLOB_METACHARS = frozenset("*?[]{}")
+GLOB_METACHARS = frozenset("*?[]{}")
 _DOT_PARTS = frozenset({"", ".", ".."})
 
 
@@ -373,7 +373,7 @@ def _parse_relative_posix_path(
     if any(part in _DOT_PARTS for part in parts):
         msg = f"{where} {field} entries must be relative, non-empty paths"
         raise ValueError(msg)
-    if not allow_glob and any(char in _GLOB_METACHARS for char in value):
+    if not allow_glob and any(char in GLOB_METACHARS for char in value):
         msg = f"{where} {field} entries must not contain glob metacharacters"
         raise ValueError(msg)
     return value

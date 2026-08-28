@@ -819,12 +819,15 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "refresh",
         parents=[common],
-        help="Rebake indexes and synchronize npm data (no YAML changes)",
+        help=(
+            "Rebake indexes and plugin trees, then synchronize npm data "
+            "(no YAML changes)"
+        ),
     )
     subparsers.add_parser(
         "check",
         parents=[common],
-        help="Verify baked indexes and npm data are current",
+        help="Verify baked indexes, plugin trees, and npm data are current",
     )
     return parser
 

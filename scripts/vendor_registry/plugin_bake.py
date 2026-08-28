@@ -9,7 +9,9 @@ from skill_frontmatter import read_frontmatter_name, rewrite_frontmatter_name
 from vendor_registry.plugin_bake_result import PluginBakeResult
 from vendor_registry.plugin_manifest import write_plugin_manifests
 from vendor_registry.plugin_version import plugin_version
+from vendor_registry.registry import GLOB_METACHARS
 from vendor_registry.safe_tree import (
+    _copy_file_nofollow,
     contained_path,
     copy_tree,
     iter_directory_entries,
@@ -20,7 +22,6 @@ from vendor_registry.safe_tree import (
 from vendor_registry.vendor import Vendor
 from vendor_registry.vendor_plugin import VendorPlugin
 
-_GLOB_METACHARS = frozenset("*?[]{}")
 _AGENTS_DIRECTORY = "agents"
 
 
@@ -116,7 +117,7 @@ def expand_skills_roots(*, vendor_root: Path, pattern: str) -> tuple[Path, ...]:
     Raises:
         ValueError: If a match is a symlink, or a literal root is missing.
     """
-    if any(char in _GLOB_METACHARS for char in pattern):
+    if any(char in GLOB_METACHARS for char in pattern):
         matches = []
         for path in sorted(vendor_root.glob(pattern)):
             if path.is_symlink():
@@ -349,5 +350,5 @@ def _copy_agents(
             raise ValueError(msg)
         contained_path(path=source, root=vendor_root)
         target = agents_destination / f"{stem}.md"
-        target.write_bytes(source.read_bytes())
+        _copy_file_nofollow(source=source, destination=target)
     return tuple(plugin.agents)

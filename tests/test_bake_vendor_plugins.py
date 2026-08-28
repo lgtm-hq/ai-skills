@@ -193,6 +193,13 @@ def test_bake_slices_renames_and_reports_skipped(
     manifest = json.loads((plugin / "plugin.json").read_text(encoding="utf-8"))
     assert_that(manifest["version"]).is_equal_to(_SHORT_SHA)
     assert_that(manifest["name"]).is_equal_to("example-plugin")
+    for relative in (
+        ".claude-plugin/plugin.json",
+        ".codex-plugin/plugin.json",
+        ".cursor-plugin/plugin.json",
+    ):
+        host = json.loads((plugin / relative).read_text(encoding="utf-8"))
+        assert_that(host["version"]).is_equal_to(_SHORT_SHA)
     coverage = (tmp_path / "plugins-baked" / "COVERAGE.md").read_text(encoding="utf-8")
     assert_that(coverage).contains("SKIPPED `template/placeholder/SKILL.md`")
     assert_that(coverage).does_not_contain("examples/SKILL.md")
@@ -316,7 +323,7 @@ def test_bake_fails_on_agent_stem_collision(
         ),
     )
 
-    with pytest.raises(ValueError, match="COLLIDES agent 'code-reviewer'"):
+    with pytest.raises(ValueError, match="share agent stems"):
         bake_vendor_plugins.bake(
             repo_root=tmp_path,
             vendor_trees={"example-vendor": vendor_root},
@@ -2736,3 +2743,278 @@ def test_main_check_returns_zero_for_empty_bake(
     assert_that(
         bake_vendor_plugins.main(["--check", "--repo-root", str(tmp_path)]),
     ).is_equal_to(0)
+
+
+class _FakeHttpResponse:
+    """Minimal HTTP response used to stub ``HTTPSConnection``."""
+
+    def __init__(
+        self,
+        *,
+        status: int,
+        body: bytes = b"",
+        location: str | None = None,
+    ) -> None:
+        """Record status, body, and optional Location.
+
+        Args:
+            status: HTTP status code.
+            body: Response bytes.
+            location: Redirect target, if any.
+        """
+        self.status = status
+        self._body = body
+        self._location = location
+
+    def getheader(self, name: str) -> str | None:
+        """Return the Location header when requested.
+
+        Args:
+            name: Header name.
+
+        Returns:
+            The Location value, or ``None``.
+        """
+        if name == "Location":
+            return self._location
+        return None
+
+    def read(self) -> bytes:
+        """Return the scripted body.
+
+        Returns:
+            Response bytes.
+        """
+        return self._body
+
+
+def _stub_https_script(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    script: list[tuple[int, bytes, str | None]],
+) -> list[tuple[str, str]]:
+    """Replace ``HTTPSConnection`` with a scripted fake.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        script: Queue of ``(status, body, Location)`` responses.
+
+    Returns:
+        Live list of ``(host, url)`` pairs recorded as requests are sent.
+    """
+    calls: list[tuple[str, str]] = []
+    remaining = list(script)
+
+    class _FakeConnection:
+        """HTTPSConnection stand-in that plays ``remaining``."""
+
+        def __init__(self, *, host: str, timeout: int = 60) -> None:
+            """Capture the requested host.
+
+            Args:
+                host: TLS host name.
+                timeout: Unused; matches production keyword.
+            """
+            self.host = host
+            del timeout
+
+        def request(
+            self,
+            method: str,
+            url: str,
+            headers: dict[str, str],
+        ) -> None:
+            """Record one GET.
+
+            Args:
+                method: HTTP method.
+                url: Request path.
+                headers: Request headers.
+            """
+            del method, headers
+            calls.append((self.host, url))
+
+        def getresponse(self) -> _FakeHttpResponse:
+            """Pop the next scripted response.
+
+            Returns:
+                The next fake response.
+
+            Raises:
+                IndexError: If the script is exhausted.
+            """
+            status, body, location = remaining.pop(0)
+            return _FakeHttpResponse(
+                status=status,
+                body=body,
+                location=location,
+            )
+
+        def close(self) -> None:
+            """Match ``HTTPSConnection.close``."""
+
+    monkeypatch.setattr(bake_vendor_plugins, "HTTPSConnection", _FakeConnection)
+    return calls
+
+
+def test_http_get_bytes_returns_body_on_200(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 200 from api.github.com returns the response body."""
+    calls = _stub_https_script(
+        monkeypatch=monkeypatch,
+        script=[(200, b"tarball-bytes", None)],
+    )
+    payload = bake_vendor_plugins._http_get_bytes(
+        host="api.github.com",
+        path="/repos/owner/repo/tarball/abc",
+        headers={"User-Agent": "test"},
+    )
+    assert_that(payload).is_equal_to(b"tarball-bytes")
+    assert_that(calls).is_equal_to(
+        [("api.github.com", "/repos/owner/repo/tarball/abc")],
+    )
+
+
+def test_http_get_bytes_follows_codeload_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A GitHub API 302 to codeload is followed on the allowlist."""
+    calls = _stub_https_script(
+        monkeypatch=monkeypatch,
+        script=[
+            (
+                302,
+                b"",
+                "https://codeload.github.com/owner/repo/legacy.tar.gz/abc",
+            ),
+            (200, b"tarball-bytes", None),
+        ],
+    )
+    payload = bake_vendor_plugins._http_get_bytes(
+        host="api.github.com",
+        path="/repos/owner/repo/tarball/abc",
+        headers={"User-Agent": "test"},
+    )
+    assert_that(payload).is_equal_to(b"tarball-bytes")
+    assert_that(calls).is_equal_to(
+        [
+            ("api.github.com", "/repos/owner/repo/tarball/abc"),
+            (
+                "codeload.github.com",
+                "/owner/repo/legacy.tar.gz/abc",
+            ),
+        ],
+    )
+
+
+def test_http_get_bytes_rejects_third_party_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Redirects off GitHub fail closed."""
+    _stub_https_script(
+        monkeypatch=monkeypatch,
+        script=[(302, b"", "https://evil.example/steal")],
+    )
+    with pytest.raises(RuntimeError, match="unexpected host"):
+        bake_vendor_plugins._http_get_bytes(
+            host="api.github.com",
+            path="/repos/owner/repo/tarball/abc",
+            headers={"User-Agent": "test"},
+        )
+
+
+def test_http_get_bytes_rejects_non_https_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """http:// Location headers are refused even for an allowlisted host."""
+    _stub_https_script(
+        monkeypatch=monkeypatch,
+        script=[(302, b"", "http://codeload.github.com/owner/repo.tgz")],
+    )
+    with pytest.raises(RuntimeError, match="non-HTTPS"):
+        bake_vendor_plugins._http_get_bytes(
+            host="api.github.com",
+            path="/repos/owner/repo/tarball/abc",
+            headers={"User-Agent": "test"},
+        )
+
+
+def test_http_get_bytes_exhausts_redirects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bounded redirects fail when Location keeps hopping on GitHub."""
+    hops: list[tuple[int, bytes, str | None]] = [
+        (
+            302,
+            b"",
+            "https://api.github.com/next",
+        )
+        for _ in range(bake_vendor_plugins._MAX_REDIRECTS + 1)
+    ]
+    _stub_https_script(monkeypatch=monkeypatch, script=hops)
+    with pytest.raises(RuntimeError, match="redirect failed"):
+        bake_vendor_plugins._http_get_bytes(
+            host="api.github.com",
+            path="/repos/owner/repo/tarball/abc",
+            headers={"User-Agent": "test"},
+        )
+
+
+def test_http_get_bytes_rejects_non_200(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-redirect error statuses become RuntimeError."""
+    _stub_https_script(
+        monkeypatch=monkeypatch,
+        script=[(404, b"missing", None)],
+    )
+    with pytest.raises(RuntimeError, match="HTTP 404"):
+        bake_vendor_plugins._http_get_bytes(
+            host="api.github.com",
+            path="/repos/owner/repo/tarball/abc",
+            headers={"User-Agent": "test"},
+        )
+
+
+def test_http_get_bytes_rejects_unexpected_initial_host() -> None:
+    """The first hop is allowlisted before opening a socket."""
+    with pytest.raises(RuntimeError, match="unexpected host"):
+        bake_vendor_plugins._http_get_bytes(
+            host="evil.example",
+            path="/tarball",
+            headers={"User-Agent": "test"},
+        )
+
+
+def test_main_maps_bake_errors_to_exit_one(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """CLI bake failures print to stderr and return 1 instead of traceback."""
+    _write_registry(repo_root=tmp_path, plugins_yaml="")
+
+    def _boom(
+        *,
+        repo_root: Path,
+        vendor_trees: object = None,
+    ) -> None:
+        """Raise the collision error bake() would raise.
+
+        Args:
+            repo_root: Unused repository root.
+            vendor_trees: Unused injected trees.
+        """
+        del repo_root, vendor_trees
+        msg = (
+            "COLLISION REPORT: catalog plugins share explode names. "
+            "Declare renameSkills (or slice one side out) in vendors.yaml."
+        )
+        raise ValueError(msg)
+
+    monkeypatch.setattr(bake_vendor_plugins, "bake", _boom)
+    assert_that(
+        bake_vendor_plugins.main(["--repo-root", str(tmp_path)]),
+    ).is_equal_to(1)
+    assert_that(capsys.readouterr().err).contains("COLLISION REPORT")

@@ -55,6 +55,16 @@ BAKE_MANIFEST_FILENAME = "BAKE.json"
 MARKETPLACE_RELATIVE = Path(".claude-plugin") / "marketplace.json"
 _USER_AGENT = "lgtm-hq-ai-skills-vendor-plugin-baker"
 _MAX_REDIRECTS = 5
+_ALLOWED_FETCH_HOSTS = frozenset({"api.github.com", "codeload.github.com"})
+_CLI_FAILURES = (
+    OSError,
+    TypeError,
+    ValueError,
+    KeyError,
+    AttributeError,
+    json.JSONDecodeError,
+    RuntimeError,
+)
 _LOCK_KEYS = (
     "$generated",
     "coverageSha256",
@@ -198,14 +208,7 @@ def check(*, repo_root: Path) -> int:
     """
     try:
         _check_baked_output(repo_root=repo_root)
-    except (
-        OSError,
-        TypeError,
-        ValueError,
-        KeyError,
-        AttributeError,
-        json.JSONDecodeError,
-    ) as error:
+    except _CLI_FAILURES as error:
         print(error, file=sys.stderr)
         return 1
     return 0
@@ -327,6 +330,54 @@ def _fetch_vendor_tree(*, vendor: Vendor, dest: Path) -> None:
     _extract_tarball(payload=payload, dest=dest)
 
 
+def _require_allowed_fetch_host(*, host: str) -> str:
+    """Return ``host`` when it is an allowlisted GitHub tarball hostname.
+
+    Args:
+        host: Request hostname, optionally with a port or userinfo prefix.
+
+    Returns:
+        The lowercase hostname without a port.
+
+    Raises:
+        RuntimeError: If the host is not ``api.github.com`` or
+            ``codeload.github.com``.
+    """
+    hostname = host.split("@")[-1].split(":")[0].lower()
+    if hostname not in _ALLOWED_FETCH_HOSTS:
+        msg = f"Refusing fetch from unexpected host {host!r}"
+        raise RuntimeError(msg)
+    return hostname
+
+
+def _redirect_request(*, location: str, current_host: str) -> tuple[str, str]:
+    """Parse a tarball redirect into an allowlisted host and path.
+
+    Args:
+        location: Absolute or host-relative ``Location`` header.
+        current_host: Host of the response that issued the redirect.
+
+    Returns:
+        Next TLS host and request path (including query string).
+
+    Raises:
+        RuntimeError: If the redirect is not HTTPS GitHub/codeload.
+    """
+    parsed = urlparse(location)
+    scheme = parsed.scheme.lower()
+    if scheme and scheme != "https":
+        msg = f"Refusing non-HTTPS tarball redirect to {location!r}"
+        raise RuntimeError(msg)
+    if parsed.hostname:
+        next_host = _require_allowed_fetch_host(host=parsed.hostname)
+    else:
+        next_host = current_host
+    next_path = parsed.path or "/"
+    if parsed.query:
+        next_path = f"{next_path}?{parsed.query}"
+    return next_host, next_path
+
+
 def _http_get_bytes(
     *,
     host: str,
@@ -346,10 +397,12 @@ def _http_get_bytes(
         Response body.
 
     Raises:
-        RuntimeError: On HTTP errors, truncated redirects, or transport
-            failures.
+        RuntimeError: On HTTP errors, truncated redirects, disallowed
+            hosts, or transport failures.
     """
-    # nosemgrep - fixed GitHub/codeload hosts; Python 3.13 HTTPSConnection verifies TLS.
+    host = _require_allowed_fetch_host(host=host)
+    # nosemgrep - HTTPSConnection only to allowlisted api.github.com /
+    # codeload.github.com; Python 3.13 HTTPSConnection verifies TLS.
     connection = HTTPSConnection(host=host, timeout=60)
     try:
         connection.request(method="GET", url=path, headers=headers)
@@ -366,11 +419,10 @@ def _http_get_bytes(
         if not location or redirects <= 0:
             msg = f"GitHub tarball redirect failed for {host}{path}"
             raise RuntimeError(msg)
-        parsed = urlparse(location)
-        next_host = parsed.netloc or host
-        next_path = parsed.path or "/"
-        if parsed.query:
-            next_path = f"{next_path}?{parsed.query}"
+        next_host, next_path = _redirect_request(
+            location=location,
+            current_host=host,
+        )
         return _http_get_bytes(
             host=next_host,
             path=next_path,
@@ -1204,7 +1256,11 @@ def main(argv: list[str] | None = None) -> int:
     repo_root = args.repo_root if args.repo_root is not None else _repo_root()
     if args.check:
         return check(repo_root=repo_root)
-    bake(repo_root=repo_root)
+    try:
+        bake(repo_root=repo_root)
+    except _CLI_FAILURES as error:
+        print(error, file=sys.stderr)
+        return 1
     return 0
 
 

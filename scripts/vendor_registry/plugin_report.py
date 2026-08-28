@@ -149,8 +149,14 @@ def collision_error_message(
     Returns:
         Multi-line error message.
     """
-    header = (
-        "COLLISION REPORT: catalog plugins share explode names. "
-        "Declare renameSkills (or slice one side out) in vendors.yaml."
-    )
+    if skill_collisions:
+        header = (
+            "COLLISION REPORT: catalog plugins share explode names. "
+            "Declare renameSkills (or slice one side out) in vendors.yaml."
+        )
+    else:
+        header = (
+            "COLLISION REPORT: catalog plugins share agent stems. "
+            "Slice agents or change a stem in vendors.yaml."
+        )
     return "\n".join((header, *skill_collisions, *agent_collisions))

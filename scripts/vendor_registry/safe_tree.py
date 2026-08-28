@@ -172,7 +172,7 @@ def copy_tree(*, source: Path, destination: Path, source_root: Path) -> None:
     for file_path in walk_files(root=source):
         relative = file_path.relative_to(source)
         target = destination / relative
-        contained_path(path=target.parent, root=destination.parent)
+        contained_path(path=target.parent, root=destination)
         target.parent.mkdir(parents=True, exist_ok=True)
         _copy_file_nofollow(source=file_path, destination=target)
 
