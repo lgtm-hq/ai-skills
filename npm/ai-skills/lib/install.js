@@ -664,6 +664,7 @@ export async function install(
   now = () => new Date(),
   lockEnvironment = {},
 ) {
+  lockEnvironment = lockEnvironment ?? {};
   if (options.onConflict && options.onConflict !== "overwrite") {
     throw new Error(
       `--on-conflict=${options.onConflict} is unsupported: upstream skills CLI has no conflict policy. Omit the flag, use overwrite, or remove the existing skill first.`,
@@ -791,6 +792,7 @@ async function createLockEntries(
   pluginId,
   onlyExistingFiles = false,
 ) {
+  lockEnvironment = lockEnvironment ?? {};
   const installedAt = now().toISOString();
   const scope = resolveScope(options);
   const packageVersion = getPackageVersion();
