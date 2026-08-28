@@ -11,12 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **vendors**: bake pipeline for registry plugin slices — `plugins-baked/`
-  marketplace-shaped output with symlink/path-escape rejection, coverage
-  report, global explode-name collision guard, pin-derived versions, and
-  inode-preserving publish with backup restore so `plugins-baked/` stays
-  present for resident shells (ADR-0005, ADR-0006).
-
 ### Changed
 
 ### Deprecated
@@ -26,6 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.28.0] - 2026-08-28
+
+### Added
+
+- **vendors**: add bake pipeline for vendor plugin slices (#411) (518d249)
+- **vendors**: bake pipeline for registry plugin slices — `plugins-baked/`
+  marketplace-shaped output with symlink/path-escape rejection, coverage
+  report, global explode-name collision guard, pin-derived versions, and
+  inode-preserving publish with backup restore so `plugins-baked/` stays
+  present for resident shells (ADR-0005, ADR-0006).
+
+### Changed
+
+- **deps**: update lintro (#410) (20f7274)
 
 ## [0.27.0] - 2026-08-28
 
@@ -904,7 +913,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.24.0...v0.25.0
