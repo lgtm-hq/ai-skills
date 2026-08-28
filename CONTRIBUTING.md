@@ -194,7 +194,9 @@ cross-checks coverage inputs against the baked tree. A path→digest
 inventory in `BAKE.json` rejects extra, missing, or modified generated
 files. Extra lock keys and a non-mapping `BAKE.json` fail closed.
 Ingested vendor trees stay out of lintro (`.lintro-ignore`); bake
-`--check` is the quality gate for that output.
+`--check` is the quality gate for that output. `.gitleaks.toml`
+allowlists those paths because `BAKE.json` stores SHA-256 file
+digests that trip `generic-api-key`.
 
 ## Pull requests
 

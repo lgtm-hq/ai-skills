@@ -23,6 +23,7 @@ vendors:
     homepage: https://github.com/anthropics/skills
     plugins:
       - id: document-skills
+        # yamllint disable-line rule:line-length
         description: Anthropic document suite for Excel, Word, PowerPoint, and PDF.
         skillsRoot: skills
         skills:
@@ -31,6 +32,7 @@ vendors:
           - pptx
           - pdf
       - id: example-skills
+        # yamllint disable-line rule:line-length
         description: Anthropic example skills for design, testing, and skill authoring.
         skillsRoot: skills
         skills:

@@ -1,0 +1,15 @@
+# Generated bake inventories store SHA-256 file digests that trip
+# gitleaks generic-api-key. Ingested vendor trees are not first-party
+# secrets; bake --check is the integrity gate.
+
+title = "ai-skills"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Vendor bake output"
+paths = [
+  '''(^|/)plugins-baked/''',
+  '''(^|/)npm/ai-skills/data/plugins-baked/''',
+]
