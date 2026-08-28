@@ -401,8 +401,7 @@ def _http_get_bytes(
             hosts, or transport failures.
     """
     host = _require_allowed_fetch_host(host=host)
-    # nosemgrep - HTTPSConnection only to allowlisted api.github.com /
-    # codeload.github.com; Python 3.13 HTTPSConnection verifies TLS.
+    # nosemgrep - allowlisted GitHub/codeload hosts; Python 3.13 verifies TLS.
     connection = HTTPSConnection(host=host, timeout=60)
     try:
         connection.request(method="GET", url=path, headers=headers)

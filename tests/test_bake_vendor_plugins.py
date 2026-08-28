@@ -2746,7 +2746,13 @@ def test_main_check_returns_zero_for_empty_bake(
 
 
 class _FakeHttpResponse:
-    """Minimal HTTP response used to stub ``HTTPSConnection``."""
+    """Minimal HTTP response used to stub ``HTTPSConnection``.
+
+    Args:
+        status: HTTP status code.
+        body: Response bytes.
+        location: Redirect target, if any.
+    """
 
     def __init__(
         self,
@@ -2755,13 +2761,6 @@ class _FakeHttpResponse:
         body: bytes = b"",
         location: str | None = None,
     ) -> None:
-        """Record status, body, and optional Location.
-
-        Args:
-            status: HTTP status code.
-            body: Response bytes.
-            location: Redirect target, if any.
-        """
         self.status = status
         self._body = body
         self._location = location
@@ -2806,15 +2805,14 @@ def _stub_https_script(
     remaining = list(script)
 
     class _FakeConnection:
-        """HTTPSConnection stand-in that plays ``remaining``."""
+        """HTTPSConnection stand-in that plays ``remaining``.
+
+        Args:
+            host: TLS host name.
+            timeout: Unused; matches production keyword.
+        """
 
         def __init__(self, *, host: str, timeout: int = 60) -> None:
-            """Capture the requested host.
-
-            Args:
-                host: TLS host name.
-                timeout: Unused; matches production keyword.
-            """
             self.host = host
             del timeout
 
