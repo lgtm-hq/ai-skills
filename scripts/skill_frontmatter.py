@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import re
 
+from vendor_registry.registry import load_unique_yaml_text
+
 _FENCE_OPEN = "---\n"
 _FENCE_CLOSE = "\n---\n"
 _NAME_LINE = re.compile(r"^name:\s*.*$", re.MULTILINE)
@@ -68,16 +70,15 @@ def rewrite_frontmatter_name(*, text: str, name: str) -> str:
         The document with a rewritten ``name:`` line and Unix newlines.
 
     Raises:
-        ValueError: If the document has no complete frontmatter block or no
-            ``name:`` field.
+        TypeError: If frontmatter is not a mapping.
+        ValueError: If the document has no complete frontmatter block, no
+            ``name:`` field, or duplicate mapping keys.
     """
     frontmatter, body = split_frontmatter(text)
     if frontmatter is None:
         msg = "SKILL.md is missing YAML frontmatter"
         raise ValueError(msg)
-    if _NAME_LINE.search(frontmatter) is None:
-        msg = "SKILL.md frontmatter is missing name"
-        raise ValueError(msg)
+    _frontmatter_name(frontmatter=frontmatter)
     updated = _NAME_LINE.sub(repl=f"name: {name}", string=frontmatter, count=1)
     return f"---\n{updated}\n---\n{body}"
 
@@ -92,21 +93,40 @@ def read_frontmatter_name(*, text: str) -> str:
         The unquoted ``name`` field.
 
     Raises:
-        ValueError: If frontmatter or ``name`` is missing or empty.
+        TypeError: If frontmatter is not a mapping.
+        ValueError: If frontmatter or ``name`` is missing or empty, duplicate
+            keys are present, or ``name`` is not a string.
     """
     frontmatter, _body = split_frontmatter(text)
     if frontmatter is None:
         msg = "SKILL.md is missing YAML frontmatter"
         raise ValueError(msg)
-    match = _NAME_LINE.search(frontmatter)
-    if match is None:
+    return _frontmatter_name(frontmatter=frontmatter)
+
+
+def _frontmatter_name(*, frontmatter: str) -> str:
+    """Return the unique YAML ``name`` from a frontmatter block.
+
+    Duplicate keys are rejected so last-wins YAML cannot disguise a
+    colliding explode name behind an earlier ``name:`` line.
+
+    Args:
+        frontmatter: Text between the ``---`` fences.
+
+    Returns:
+        The ``name`` field.
+
+    Raises:
+        TypeError: If frontmatter is not a mapping.
+        ValueError: If YAML is invalid, a key is duplicated, or ``name``
+            is missing, empty, or not a string.
+    """
+    parsed = load_unique_yaml_text(text=frontmatter, source="SKILL.md frontmatter")
+    if not isinstance(parsed, dict):
+        msg = "SKILL.md frontmatter must be a mapping"
+        raise TypeError(msg)
+    value = parsed.get("name")
+    if not isinstance(value, str) or not value.strip():
         msg = "SKILL.md frontmatter is missing name"
-        raise ValueError(msg)
-    _key, _sep, remainder = match.group(0).partition(":")
-    value = remainder.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-        value = value[1:-1]
-    if not value:
-        msg = "SKILL.md frontmatter name must not be empty"
         raise ValueError(msg)
     return value

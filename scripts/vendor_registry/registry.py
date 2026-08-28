@@ -85,6 +85,30 @@ class UniqueKeyLoader(yaml.SafeLoader):
         return mapping
 
 
+def load_unique_yaml_text(*, text: str, source: str = "YAML") -> object:
+    """Parse YAML text and reject duplicate mapping keys.
+
+    Args:
+        text: YAML document.
+        source: Label used in error messages.
+
+    Returns:
+        The document root.
+
+    Raises:
+        ValueError: If the document is invalid YAML or repeats a mapping key.
+    """
+    try:
+        loader = UniqueKeyLoader(text)
+        try:
+            return loader.get_single_data()
+        finally:
+            loader.dispose()
+    except yaml.YAMLError as exc:
+        msg = f"invalid YAML in {source}: {exc}"
+        raise ValueError(msg) from exc
+
+
 def _load_unique_yaml(*, path: Path) -> object:
     """Parse YAML and reject duplicate mapping keys.
 
@@ -97,15 +121,10 @@ def _load_unique_yaml(*, path: Path) -> object:
     Raises:
         ValueError: If the document is invalid YAML or repeats a mapping key.
     """
-    try:
-        loader = UniqueKeyLoader(path.read_text(encoding="utf-8"))
-        try:
-            return loader.get_single_data()
-        finally:
-            loader.dispose()
-    except yaml.YAMLError as exc:
-        msg = f"invalid YAML in {path.name}: {exc}"
-        raise ValueError(msg) from exc
+    return load_unique_yaml_text(
+        text=path.read_text(encoding="utf-8"),
+        source=path.name,
+    )
 
 
 def load_registry(*, registry_path: Path) -> tuple[Vendor, ...]:

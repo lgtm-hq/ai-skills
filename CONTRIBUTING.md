@@ -160,9 +160,14 @@ plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-sa
   `SKILL.md` listed as `SKIPPED`) and fail CI on unresolved explode-name
   or agent-stem collisions against other baked plugins or first-party
   `skills/` names.
-- Stage the complete tree in a temp directory and rename it into
-  `plugins-baked/`, restoring the previous tree if the install rename
-  fails so a partial tree is never published.
+- Stage the complete tree in a temp directory and publish it with an
+  atomic directory exchange (`renameat2` / `renamex_np`) so
+  `plugins-baked/` is never absent. A failed exchange leaves the
+  previous tree in place.
+- Write `plugins-baked/BAKE.json` (registry pin + plugin slice +
+  coverage digest). `--check` compares it to `vendors.yaml` and the
+  committed `COVERAGE.md`, and requires all four host manifests to
+  match the pin-derived version.
 - Stamp plugin versions from `displayRef` when it is a tag; floating
   pins such as `latest` use the short SHA.
 
@@ -172,11 +177,11 @@ uv run python scripts/bake_vendor_plugins.py --check
 ```
 
 Production `vendors.yaml` stays index-only until plugin slices are
-filled; bake still emits an empty marketplace + coverage file so
-`--check` has a drift gate. ``--check`` also compares pin-derived
-versions, ``renameSkills`` targets, declared skill selectors, and
-``agents`` against the committed plugin trees so a registry edit
-without a re-bake fails closed.
+filled; bake still emits an empty marketplace, coverage file, and
+`BAKE.json` lock so `--check` has a drift gate. ``--check`` compares
+that lock to `vendors.yaml` (SHA, displayRef, plugin slices) and to
+the committed coverage digest, and requires all four host manifests
+to match the pin-derived version.
 
 ## Pull requests
 

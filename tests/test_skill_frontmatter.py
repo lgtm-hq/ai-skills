@@ -117,3 +117,11 @@ def test_read_frontmatter_name_strips_quotes() -> None:
     assert_that(
         read_frontmatter_name(text='---\nname: "branch"\n---\n'),
     ).is_equal_to("branch")
+
+
+def test_read_frontmatter_name_rejects_duplicate_keys() -> None:
+    """Duplicate name keys cannot hide a colliding explode identity."""
+    with pytest.raises(ValueError, match="duplicate key"):
+        read_frontmatter_name(
+            text="---\nname: alpha\nname: branch\n---\n",
+        )

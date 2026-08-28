@@ -22,7 +22,11 @@ from urllib.parse import urlparse
 from skill_frontmatter import read_frontmatter_name
 from vendor_registry.plugin_bake import bake_vendor_plugins
 from vendor_registry.plugin_bake_result import PluginBakeResult
-from vendor_registry.plugin_manifest import render_marketplace
+from vendor_registry.plugin_manifest import (
+    plugin_manifest_files,
+    render_bake_manifest,
+    render_marketplace,
+)
 from vendor_registry.plugin_report import (
     collect_agent_collisions,
     collect_skill_collisions,
@@ -41,6 +45,7 @@ from vendor_registry.vendor_plugin import VendorPlugin
 
 PLUGINS_BAKED_DIRNAME = "plugins-baked"
 COVERAGE_FILENAME = "COVERAGE.md"
+BAKE_MANIFEST_FILENAME = "BAKE.json"
 MARKETPLACE_RELATIVE = Path(".claude-plugin") / "marketplace.json"
 _USER_AGENT = "lgtm-hq-ai-skills-vendor-plugin-baker"
 _MAX_REDIRECTS = 5
@@ -130,6 +135,10 @@ def bake(
         marketplace_path.parent.mkdir(parents=True, exist_ok=True)
         marketplace_path.write_text(marketplace, encoding="utf-8")
         (output_root / COVERAGE_FILENAME).write_text(coverage, encoding="utf-8")
+        (output_root / BAKE_MANIFEST_FILENAME).write_text(
+            render_bake_manifest(vendors=vendors, coverage=coverage),
+            encoding="utf-8",
+        )
         print(coverage, end="")
         if skill_collisions or agent_collisions:
             raise ValueError(
@@ -432,6 +441,7 @@ def _check_baked_output(*, repo_root: Path) -> None:
     if not coverage_path.is_file():
         msg = f"Missing generated file: {coverage_path}"
         raise ValueError(msg)
+    coverage_text = coverage_path.read_text(encoding="utf-8")
     if not any(vendor.plugins for vendor in vendors):
         expected_coverage = render_coverage_report(
             vendors=vendors,
@@ -442,9 +452,20 @@ def _check_baked_output(*, repo_root: Path) -> None:
             agent_collisions=(),
             explode_name_count=0,
         )
-        if coverage_path.read_text(encoding="utf-8") != expected_coverage:
+        if coverage_text != expected_coverage:
             msg = f"Generated file is stale: {coverage_path}"
             raise ValueError(msg)
+    bake_manifest_path = baked_root / BAKE_MANIFEST_FILENAME
+    expected_bake_manifest = render_bake_manifest(
+        vendors=vendors,
+        coverage=coverage_text,
+    )
+    if not bake_manifest_path.is_file():
+        msg = f"Missing generated file: {bake_manifest_path}"
+        raise ValueError(msg)
+    if bake_manifest_path.read_text(encoding="utf-8") != expected_bake_manifest:
+        msg = f"Generated file is stale: {bake_manifest_path}"
+        raise ValueError(msg)
     expected_ids = [plugin.id for vendor in vendors for plugin in vendor.plugins]
     actual_ids = sorted(
         path.name
@@ -526,6 +547,13 @@ def _results_from_disk(
                     f"match pin-derived {expected_version!r}"
                 )
                 raise ValueError(msg)
+            _assert_host_manifests(
+                plugin_dir=plugin_dir,
+                plugin=plugin,
+                vendor=vendor,
+                version=expected_version,
+            )
+            _assert_canonical_plugin_tree(plugin_dir=plugin_dir, plugin=plugin)
             explode_names = _baked_explode_names(plugin_dir=plugin_dir)
             disk_agents = _baked_agent_stems(plugin_dir=plugin_dir)
             _assert_plugin_matches_registry(
@@ -651,6 +679,97 @@ def _assert_plugin_matches_registry(
             f"match registry {plugin.agents!r}"
         )
         raise ValueError(msg)
+
+
+def _assert_host_manifests(
+    *,
+    plugin_dir: Path,
+    plugin: VendorPlugin,
+    vendor: Vendor,
+    version: str,
+) -> None:
+    """Require all four host manifests to match the registry pin.
+
+    Args:
+        plugin_dir: Baked plugin directory.
+        plugin: Registry plugin slice.
+        vendor: Parent vendor.
+        version: Pin-derived version.
+
+    Raises:
+        ValueError: If a host manifest is missing or stale.
+    """
+    expected = plugin_manifest_files(
+        plugin=plugin,
+        vendor=vendor,
+        version=version,
+    )
+    for relative, text in expected.items():
+        path = plugin_dir / relative
+        if not path.is_file() or path.is_symlink():
+            msg = f"Missing generated file: {path}"
+            raise ValueError(msg)
+        if path.read_text(encoding="utf-8") != text:
+            msg = f"Generated file is stale: {path}"
+            raise ValueError(msg)
+
+
+_PLUGIN_TOP_LEVEL = frozenset(
+    {
+        "plugin.json",
+        "skills",
+        "agents",
+        ".claude-plugin",
+        ".codex-plugin",
+        ".cursor-plugin",
+    },
+)
+_ADAPTER_DIRECTORIES = (
+    ".claude-plugin",
+    ".codex-plugin",
+    ".cursor-plugin",
+)
+
+
+def _assert_canonical_plugin_tree(*, plugin_dir: Path, plugin: VendorPlugin) -> None:
+    """Reject extra files that bake would never write.
+
+    Args:
+        plugin_dir: Baked plugin directory.
+        plugin: Registry plugin slice.
+
+    Raises:
+        ValueError: If the tree contains undeclared top-level paths, extra
+            adapter files, or non-markdown agent files.
+    """
+    unexpected = sorted(
+        child.name
+        for child in plugin_dir.iterdir()
+        if child.name not in _PLUGIN_TOP_LEVEL
+    )
+    if unexpected:
+        msg = f"baked plugin {plugin.id} has unexpected path {unexpected[0]!r}"
+        raise ValueError(msg)
+    for adapter in _ADAPTER_DIRECTORIES:
+        adapter_dir = plugin_dir / adapter
+        if not adapter_dir.is_dir():
+            continue
+        extra = sorted(
+            child.name for child in adapter_dir.iterdir() if child.name != "plugin.json"
+        )
+        if extra:
+            msg = (
+                f"baked plugin {plugin.id} adapter {adapter} has unexpected "
+                f"path {extra[0]!r}"
+            )
+            raise ValueError(msg)
+    agents_dir = plugin_dir / "agents"
+    if not agents_dir.is_dir():
+        return
+    for child in agents_dir.iterdir():
+        if child.is_dir() or child.suffix != ".md":
+            msg = f"baked plugin {plugin.id} has unexpected agent path {child.name!r}"
+            raise ValueError(msg)
 
 
 def _renamed_basename(*, selector: str, rename_map: dict[str, str]) -> str:

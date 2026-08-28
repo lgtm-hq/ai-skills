@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import ctypes
+import functools
+import os
 import shutil
+import sys
 from collections.abc import Iterator
+from ctypes.util import find_library
 from pathlib import Path
+
+_AT_FDCWD = -100
+_RENAME_EXCHANGE = 2
+_RENAME_SWAP = 0x00000002
 
 
 def iter_directory_entries(*, directory: Path) -> Iterator[Path]:
@@ -140,11 +149,12 @@ def find_skill_markdown(*, root: Path) -> tuple[str, ...]:
 
 
 def install_directory(*, source: Path, destination: Path) -> None:
-    """Rename a completed ``source`` tree onto ``destination``.
+    """Publish a completed ``source`` tree onto ``destination``.
 
-    Existing output is moved aside first. If the install rename fails, the
-    previous tree is restored so callers never observe an empty destination.
-    Backup is removed only after the new tree is in place.
+    When ``destination`` already exists, the two directories are exchanged
+    with a single kernel rename so the destination path is never absent.
+    The previous tree is left at ``source`` for the caller to delete.
+    When ``destination`` does not exist, ``source`` is renamed onto it.
 
     Args:
         source: Completed tree on the same filesystem as ``destination``.
@@ -152,37 +162,107 @@ def install_directory(*, source: Path, destination: Path) -> None:
 
     Raises:
         ValueError: If ``source`` or ``destination`` is a symlink.
-        OSError: If the install rename fails after restore is attempted.
+        OSError: If the exchange or rename fails.
     """
     if source.is_symlink():
         msg = f"symlink rejected: {source}"
         raise ValueError(msg)
-    if destination.exists() and destination.is_symlink():
+    if destination.is_symlink():
         msg = f"symlink rejected: {destination}"
         raise ValueError(msg)
-    backup: Path | None = None
     if destination.exists():
-        backup = destination.with_name(f".{destination.name}.bak")
-        if backup.exists():
-            _remove_path(path=backup)
-        destination.rename(target=backup)
-    try:
-        source.rename(target=destination)
-    except OSError:
-        if backup is not None and not destination.exists():
-            backup.rename(target=destination)
-        raise
-    if backup is not None:
-        _remove_path(path=backup)
+        _exchange_paths(first=source, second=destination)
+        return
+    source.rename(target=destination)
 
 
-def _remove_path(*, path: Path) -> None:
-    """Remove a file or directory.
+@functools.cache
+def _libc() -> ctypes.CDLL:
+    """Return the process libc for atomic directory exchange.
+
+    Returns:
+        Loaded libc.
+
+    Raises:
+        OSError: If libc cannot be loaded.
+    """
+    libname = find_library(name="c")
+    if libname is None:
+        msg = "libc not found"
+        raise OSError(msg)
+    return ctypes.CDLL(name=libname, use_errno=True)
+
+
+def _exchange_paths(*, first: Path, second: Path) -> None:
+    """Atomically swap two existing paths on the same filesystem.
 
     Args:
-        path: Path to delete.
+        first: First path (the staged tree).
+        second: Second path (the live destination).
+
+    Raises:
+        OSError: If the platform cannot exchange directories or the
+            syscall fails.
     """
-    if path.is_dir() and not path.is_symlink():
-        shutil.rmtree(path)
+    if sys.platform == "linux":
+        _linux_rename_exchange(first=first, second=second)
         return
-    path.unlink()
+    if sys.platform == "darwin":
+        _darwin_rename_swap(first=first, second=second)
+        return
+    msg = f"atomic directory exchange is not supported on {sys.platform}"
+    raise OSError(msg)
+
+
+def _linux_rename_exchange(*, first: Path, second: Path) -> None:
+    """Swap two paths with ``renameat2(RENAME_EXCHANGE)``.
+
+    Args:
+        first: First path.
+        second: Second path.
+
+    Raises:
+        OSError: If the syscall fails.
+    """
+    libc = _libc()
+    libc.renameat2.argtypes = [
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    ]
+    libc.renameat2.restype = ctypes.c_int
+    result = libc.renameat2(
+        _AT_FDCWD,
+        os.fsencode(first),
+        _AT_FDCWD,
+        os.fsencode(second),
+        _RENAME_EXCHANGE,
+    )
+    if result != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err), str(first), None, str(second))
+
+
+def _darwin_rename_swap(*, first: Path, second: Path) -> None:
+    """Swap two paths with ``renamex_np(RENAME_SWAP)``.
+
+    Args:
+        first: First path.
+        second: Second path.
+
+    Raises:
+        OSError: If the syscall fails.
+    """
+    libc = _libc()
+    libc.renamex_np.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    libc.renamex_np.restype = ctypes.c_int
+    result = libc.renamex_np(
+        os.fsencode(first),
+        os.fsencode(second),
+        _RENAME_SWAP,
+    )
+    if result != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err), str(first), None, str(second))

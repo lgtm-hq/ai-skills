@@ -1,0 +1,36 @@
+{
+  "$generated": "do not edit — regenerate via scripts/bake_vendor_plugins.py",
+  "coverageSha256": "12496144f9ce81a1cc314ad3f787ee99510a5b65d4e9a12422c2beb358bfdc45",
+  "vendors": [
+    {
+      "id": "mattpocock",
+      "sha": "391a2701dd948f94f56a39f7533f8eea9a859c87",
+      "displayRef": "latest",
+      "plugins": []
+    },
+    {
+      "id": "anthropics",
+      "sha": "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+      "displayRef": "latest",
+      "plugins": []
+    },
+    {
+      "id": "anthropics-claude-code",
+      "sha": "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2",
+      "displayRef": "latest",
+      "plugins": []
+    },
+    {
+      "id": "caveman",
+      "sha": "0d95a81d35a9f2d123a5e9430d1cfc43d55f1bb0",
+      "displayRef": "latest",
+      "plugins": []
+    },
+    {
+      "id": "davidondrej",
+      "sha": "6e5545081c888b89576a620d9b2e54e9a6590f68",
+      "displayRef": "latest",
+      "plugins": []
+    }
+  ]
+}

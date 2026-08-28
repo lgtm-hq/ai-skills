@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,44 @@ def plugin_description(*, plugin: VendorPlugin, vendor: Vendor) -> str:
     return f"{plugin.description} [baked from vendor '{vendor.id}']"
 
 
+def plugin_manifest_files(
+    *,
+    plugin: VendorPlugin,
+    vendor: Vendor,
+    version: str,
+) -> dict[str, str]:
+    """Return relative path → JSON text for the four host manifests.
+
+    Args:
+        plugin: Registry plugin slice.
+        vendor: Vendor that owns the slice.
+        version: Pin-derived plugin version.
+
+    Returns:
+        POSIX relative paths mapped to pretty JSON.
+    """
+    author = {"name": vendor.repo.split("/", maxsplit=1)[0]}
+    base = {
+        "name": plugin.id,
+        "version": version,
+        "description": plugin_description(plugin=plugin, vendor=vendor),
+        "author": author,
+    }
+    return {
+        "plugin.json": render_json(payload={**base, "skills": "./skills/"}),
+        ".claude-plugin/plugin.json": render_json(payload=base),
+        ".codex-plugin/plugin.json": render_json(payload=base),
+        ".cursor-plugin/plugin.json": render_json(
+            payload={
+                **base,
+                "displayName": plugin.id,
+                "license": vendor.license,
+                "skills": "./skills/",
+            },
+        ),
+    }
+
+
 def write_plugin_manifests(
     *,
     destination: Path,
@@ -57,42 +96,14 @@ def write_plugin_manifests(
         vendor: Vendor that owns the slice.
         version: Pin-derived plugin version.
     """
-    author = {"name": vendor.repo.split("/", maxsplit=1)[0]}
-    base = {
-        "name": plugin.id,
-        "version": version,
-        "description": plugin_description(plugin=plugin, vendor=vendor),
-        "author": author,
-    }
-    claude_dir = destination / ".claude-plugin"
-    cursor_dir = destination / ".cursor-plugin"
-    codex_dir = destination / ".codex-plugin"
-    claude_dir.mkdir(parents=True, exist_ok=True)
-    cursor_dir.mkdir(parents=True, exist_ok=True)
-    codex_dir.mkdir(parents=True, exist_ok=True)
-    (claude_dir / "plugin.json").write_text(
-        render_json(payload=base),
-        encoding="utf-8",
-    )
-    (codex_dir / "plugin.json").write_text(
-        render_json(payload=base),
-        encoding="utf-8",
-    )
-    (cursor_dir / "plugin.json").write_text(
-        render_json(
-            payload={
-                **base,
-                "displayName": plugin.id,
-                "license": vendor.license,
-                "skills": "./skills/",
-            },
-        ),
-        encoding="utf-8",
-    )
-    (destination / "plugin.json").write_text(
-        render_json(payload={**base, "skills": "./skills/"}),
-        encoding="utf-8",
-    )
+    for relative, text in plugin_manifest_files(
+        plugin=plugin,
+        vendor=vendor,
+        version=version,
+    ).items():
+        path = destination / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
 
 
 def render_marketplace(*, plugins: list[dict[str, str]]) -> str:
@@ -112,3 +123,70 @@ def render_marketplace(*, plugins: list[dict[str, str]]) -> str:
             "plugins": plugins,
         },
     )
+
+
+def render_bake_manifest(*, vendors: tuple[Vendor, ...], coverage: str) -> str:
+    """Render the bake lock that ``--check`` compares to ``vendors.yaml``.
+
+    The lock records the plugin-relevant registry slice and a digest of
+    ``COVERAGE.md`` so a registry edit or a forged coverage report fails
+    without fetching vendor trees.
+
+    Args:
+        vendors: Registry vendors in source order.
+        coverage: Coverage report text whose digest is stored.
+
+    Returns:
+        Pretty JSON text with a trailing newline.
+    """
+    return render_json(
+        payload={
+            "$generated": GENERATED_NOTICE,
+            "coverageSha256": hashlib.sha256(
+                coverage.encode(encoding="utf-8"),
+            ).hexdigest(),
+            "vendors": [_bake_lock_vendor(vendor=vendor) for vendor in vendors],
+        },
+    )
+
+
+def _bake_lock_vendor(*, vendor: Vendor) -> dict[str, object]:
+    """Serialize one vendor's pin and plugin slice for the bake lock.
+
+    Args:
+        vendor: Registry vendor.
+
+    Returns:
+        JSON-serializable vendor lock object.
+    """
+    return {
+        "id": vendor.id,
+        "sha": vendor.sha,
+        "displayRef": vendor.display_ref,
+        "plugins": [_bake_lock_plugin(plugin=plugin) for plugin in vendor.plugins],
+    }
+
+
+def _bake_lock_plugin(*, plugin: VendorPlugin) -> dict[str, object]:
+    """Serialize one plugin declaration for the bake lock.
+
+    Args:
+        plugin: Registry plugin slice.
+
+    Returns:
+        JSON-serializable plugin lock object.
+    """
+    skills: str | list[str]
+    if plugin.skills == "*":
+        skills = "*"
+    else:
+        skills = list(plugin.skills)
+    return {
+        "id": plugin.id,
+        "description": plugin.description,
+        "skillsRoot": plugin.skills_root,
+        "skills": skills,
+        "extraSkills": list(plugin.extra_skills),
+        "renameSkills": dict(plugin.rename_skills),
+        "agents": list(plugin.agents),
+    }
