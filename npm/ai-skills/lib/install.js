@@ -8,6 +8,7 @@ import {
   hashFile,
   hashTree,
   isCliOwnedNativeInstall,
+  ownedCursorTreeFiles,
   LOCKFILE_VERSION,
   mergeLockEntries,
   PROJECTOR_EXPLODE,
@@ -924,7 +925,7 @@ async function createLockEntries(
         continue;
       }
       agents[agent] = {
-        files: await hashTree(root, hash),
+        files: ownedCursorTreeFiles(await hashTree(root, hash), options.skills),
         projector,
         root,
       };

@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { loadVendorIndex } from "../lib/catalog.js";
 import { batchesFromCliOptions, install } from "../lib/install.js";
+import { removeSkills } from "../lib/gateway-commands.js";
 import { MINIMUM_SKILLS_VERSION } from "../lib/options.js";
 import { buildSkillsArguments } from "../lib/skills-runner.js";
 
@@ -1010,6 +1011,65 @@ describe("native projectors", () => {
       expect(lock.plugins.review.agents.cursor.files["skills/lint/SKILL.md"]).toMatch(
         /^[a-f0-9]{64}$/,
       );
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("does not lock untracked Cursor files so remove leaves them", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-untracked-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      const nativeOptions = {
+        ...unattendedOptions,
+        global: false,
+        projector: "native",
+        project: true,
+      };
+      await install(
+        nativeOptions,
+        async () => {
+          throw new Error("explode runner must not run");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      const pluginDir = join(cwd, ".cursor/plugins/local/review");
+      await writeFile(join(pluginDir, "USER-DATA.txt"), "keep\n");
+      await install(
+        nativeOptions,
+        async () => {
+          throw new Error("explode runner must not run");
+        },
+        () => new Date("2026-07-10T17:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.review.agents.cursor.files["USER-DATA.txt"]).toBeUndefined();
+      expect(lock.plugins.review.agents.cursor.files[".claude-plugin/plugin.json"]).toMatch(
+        /^[a-f0-9]{64}$/,
+      );
+      await removeSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: [],
+          yes: true,
+        },
+        {
+          lockEnvironment: { cwd },
+          readLock: async () => lock,
+          writeLock: async () => {},
+        },
+      );
+      expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

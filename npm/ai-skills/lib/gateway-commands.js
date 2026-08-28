@@ -8,6 +8,7 @@ import {
   hashFile,
   hashTree,
   isCliOwnedNativeInstall,
+  ownedCursorTreeFiles,
   LOCKFILE_VERSION,
   pluginAgentNames,
   pluginSkillNames,
@@ -455,7 +456,10 @@ async function rematerializePluginFiles(entry, skillNames, hash) {
   for (const [agent, install] of Object.entries(entry.agents)) {
     const projector = agentProjector(entry, agent);
     if (projector === PROJECTOR_NATIVE && agent === "cursor") {
-      agents[agent] = { ...install, files: await hashTree(install.root, hash) };
+      agents[agent] = {
+        ...install,
+        files: ownedCursorTreeFiles(await hashTree(install.root, hash), skillNames),
+      };
       continue;
     }
     if (isCliOwnedNativeInstall(install, entry.projector)) {

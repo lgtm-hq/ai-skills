@@ -384,6 +384,30 @@ export async function hashTree(root, hash = hashFile) {
 }
 
 /**
+ * Keep only gateway-owned Cursor plugin paths so untracked dest files stay
+ * out of the lock (and therefore out of hash-verified remove).
+ *
+ * @param {Record<string, string>} files - Relative path to digest.
+ * @param {string[]} skillNames - Catalog skill directory names.
+ * @returns {Record<string, string>} Manifest plus `skills/<name>/` paths.
+ */
+export function ownedCursorTreeFiles(files, skillNames) {
+  const names = new Set(skillNames);
+  const owned = {};
+  for (const [relative, digest] of Object.entries(files)) {
+    if (relative === ".claude-plugin/plugin.json") {
+      owned[relative] = digest;
+      continue;
+    }
+    const match = /^skills\/([^/]+)\//.exec(relative);
+    if (match && names.has(match[1])) {
+      owned[relative] = digest;
+    }
+  }
+  return owned;
+}
+
+/**
  * @typedef {PluginLockEntry} LockEntry
  */
 

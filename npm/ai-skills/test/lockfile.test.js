@@ -9,6 +9,7 @@ import {
   isCliOwnedNativeInstall,
   isPluginInstalled,
   mergeLockEntries,
+  ownedCursorTreeFiles,
   pluginSkillNames,
   pruneMissingLockEntries,
   readLockfile,
@@ -359,5 +360,18 @@ describe("gateway lockfile", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
+  });
+
+  test("drops untracked Cursor files from the owned hash map", async () => {
+    const files = {
+      ".claude-plugin/plugin.json": "aaa",
+      "USER-DATA.txt": "bbb",
+      "skills/lint/SKILL.md": "ccc",
+      "skills/retired/SKILL.md": "ddd",
+    };
+    expect(ownedCursorTreeFiles(files, ["lint"])).toEqual({
+      ".claude-plugin/plugin.json": "aaa",
+      "skills/lint/SKILL.md": "ccc",
+    });
   });
 });
