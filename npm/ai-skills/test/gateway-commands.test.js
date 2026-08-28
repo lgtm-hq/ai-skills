@@ -792,6 +792,85 @@ describe("gateway maintenance commands", () => {
     }
   });
 
+  test("stale cleanup does not unlink a dest another plugin still catalogs", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-stale-keep-sibling-"));
+    try {
+      const destRoot = join(cwd, ".cursor/skills");
+      await mkdir(join(destRoot, "lint"), { recursive: true });
+      await writeFile(join(destRoot, "lint/SKILL.md"), "# lint\n");
+      const lintHash = await hashFile(join(destRoot, "lint/SKILL.md"));
+      await updateSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: [],
+          yes: true,
+        },
+        {
+          explode: async (args) => ({
+            claimed: args.skills.includes("lint")
+              ? { cursor: { "test/SKILL.md": "keep" } }
+              : { cursor: { "branch/SKILL.md": "keep" } },
+            createdDests: [],
+            createdStores: [],
+            skipped: args.skills.includes("lint")
+              ? [{ agent: "cursor", dest: join(destRoot, "lint"), skill: "lint" }]
+              : [],
+            swappedDests: [],
+            swappedStores: [],
+          }),
+          hash: hashFile,
+          isInstalled: async () => true,
+          now: () => new Date("2026-07-10T17:00:00.000Z"),
+          readLock: async () => ({
+            gatewayVersion: "0.0.0-dev",
+            plugins: {
+              review: pluginEntry({
+                agents: {
+                  cursor: {
+                    files: { "test/SKILL.md": "keep" },
+                    projector: "explode",
+                    root: destRoot,
+                  },
+                },
+                projector: "explode",
+                repo: "lgtm-hq/ai-skills",
+                sha: "v0.21.0",
+                vendor: "lgtm-hq",
+                version: "0.21.0",
+              }),
+              "git-pr": pluginEntry({
+                agents: {
+                  cursor: {
+                    files: {
+                      "branch/SKILL.md": "keep",
+                      "lint/SKILL.md": lintHash,
+                    },
+                    projector: "explode",
+                    root: destRoot,
+                  },
+                },
+                projector: "explode",
+                repo: "lgtm-hq/ai-skills",
+                sha: "v0.21.0",
+                vendor: "lgtm-hq",
+                version: "0.21.0",
+              }),
+            },
+            scope: "project",
+            version: 2,
+          }),
+          sourceSkills: {},
+          writeLock: async () => {},
+        },
+      );
+      expect(await readFile(join(destRoot, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("CLI fallback update hashes nested dest files so remove deletes them", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cli-update-nested-"));
     try {

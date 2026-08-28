@@ -262,7 +262,10 @@ export async function updateSkills(options, dependencies = {}) {
     for (const pluginId of updated) {
       const entry = selected[pluginId];
       await removeStalePluginSkills(pluginId, entry, catalogSkills[pluginId] ?? [], {
+        catalogSkills,
         hash,
+        lock: prunedLock,
+        pluginId,
         removeDir,
         removeFile,
         staleDestBackups,
@@ -574,7 +577,9 @@ function resolveVendorSource(entry, vendors) {
  * @param {import("./lockfile.js").PluginLockEntry} entry - Pre-update lock entry.
  * @param {string[]} currentSkills - Skill names in the current catalog.
  * @param {{
+ *   catalogSkills?: Record<string, string[]>,
  *   hash: typeof hashFile,
+ *   lock?: import("./lockfile.js").GatewayLock,
  *   removeDir: typeof rmdir,
  *   removeFile: typeof unlink,
  *   staleDestBackups?: Array<{backup: string, dest: string}>,
@@ -588,8 +593,20 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
   if (staleNames.length === 0) {
     return;
   }
+  const keepDest = (dest, relative) =>
+    Boolean(
+      dest &&
+      io.lock &&
+      otherPluginsKeepStaleDest(
+        pluginId,
+        dest,
+        [...skillNamesFromFiles({ [relative]: "" })][0] ?? "",
+        io.lock,
+        io.catalogSkills ?? {},
+      ),
+    );
   if (io.staleDestBackups) {
-    await snapshotStaleSkillDests(entry, staleNames, io.staleDestBackups);
+    await snapshotStaleSkillDests(entry, staleNames, io.staleDestBackups, keepDest);
   }
   const stale = {
     ...entry,
@@ -600,9 +617,12 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
         {
           ...install,
           files: Object.fromEntries(
-            Object.entries(install.files).filter(([relative]) =>
-              skillNamesBelongTo(relative, staleNames),
-            ),
+            Object.entries(install.files).filter(([relative]) => {
+              if (!skillNamesBelongTo(relative, staleNames)) {
+                return false;
+              }
+              return !keepDest(staleSkillDestPath(install.root, relative), relative);
+            }),
           ),
         },
       ]),
@@ -816,9 +836,10 @@ function sourceSha(vendor, currentSha, vendors) {
  * @param {import("./lockfile.js").PluginLockEntry} entry - Pre-update lock entry.
  * @param {string[]} staleNames - Skill names leaving the catalog.
  * @param {Array<{backup: string, dest: string}>} backups - Accumulator for restore/discard.
+ * @param {(dest: string | null, relative: string) => boolean} [keepDest] - Skip dests another plugin still catalogs.
  * @returns {Promise<void>} Resolves when existing dests are snapshotted.
  */
-async function snapshotStaleSkillDests(entry, staleNames, backups) {
+async function snapshotStaleSkillDests(entry, staleNames, backups, keepDest = () => false) {
   const seen = new Set();
   for (const install of Object.values(entry.agents)) {
     if (isCliOwnedNativeInstall(install, entry.projector)) {
@@ -829,7 +850,7 @@ async function snapshotStaleSkillDests(entry, staleNames, backups) {
         continue;
       }
       const dest = staleSkillDestPath(install.root, relative);
-      if (!dest || seen.has(dest)) {
+      if (!dest || seen.has(dest) || keepDest(dest, relative)) {
         continue;
       }
       seen.add(dest);
@@ -863,6 +884,49 @@ function staleSkillDestPath(root, relative) {
     return join(root, parts[0]);
   }
   return null;
+}
+
+/**
+ * Whether another lock plugin still catalogs this skill at the same dest root.
+ *
+ * A skill-move in one update must not let the retiring plugin unlink a dest
+ * the surviving plugin skipped or still catalogs.
+ *
+ * @param {string} pluginId - Plugin whose stale dests are being considered.
+ * @param {string} dest - Absolute dest skill directory.
+ * @param {string} skillName - Skill directory name.
+ * @param {import("./lockfile.js").GatewayLock} lock - Pre-update lock.
+ * @param {Record<string, string[]>} catalogSkills - Current catalog names for plugins in this update.
+ * @returns {boolean} True when another plugin still wants this dest.
+ */
+function otherPluginsKeepStaleDest(pluginId, dest, skillName, lock, catalogSkills) {
+  if (!skillName) {
+    return false;
+  }
+  for (const [otherId, other] of Object.entries(lock.plugins ?? {})) {
+    if (otherId === pluginId) {
+      continue;
+    }
+    const names = catalogSkills[otherId] ?? pluginSkillNames(other);
+    if (!names.includes(skillName)) {
+      continue;
+    }
+    for (const install of Object.values(other.agents ?? {})) {
+      if (isCliOwnedNativeInstall(install, other.projector)) {
+        continue;
+      }
+      if (typeof install.root !== "string" || install.root.startsWith("cli:")) {
+        continue;
+      }
+      if (
+        dest === join(install.root, skillName) ||
+        dest === join(install.root, "skills", skillName)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**

@@ -32,7 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   regular file at a dest skill path is a collision, not a `SKILL.md` match.
   Update snapshots catalog-retired dests, then unlinks them before writing
   the new lock. A cleanup failure leaves the previous lock owning those
-  paths; a later lock-write failure restores the snapshots. Empty explode
+  paths; a later lock-write failure restores the snapshots. Stale cleanup
+  does not unlink a dest another plugin in the same update still catalogs.
+  Empty explode
   claims retain prior owned files still in the current catalog. A CLI-fallback
   update hashes the full dest skill tree so nested files are locked and later
   remove can delete them.
