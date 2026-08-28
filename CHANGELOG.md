@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.27.0] - 2026-08-28
+
+### Added
+
+- **vendors**: add registry schema for vendor plugin definitions (#408) (35fe46c)
 - **vendors**: registry schema for vendor plugin definitions — optional
   `plugins[]` with `skillsRoot`, `skills` (`"*"` or paths), `extraSkills`,
   `renameSkills`, and `agents` (kebab-case agent `.md` component names).
@@ -23,14 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **vendors**: `skillRoots` entries must be canonical relative POSIX
   paths (no trailing slash, whitespace, backslashes, or `.` / `..`
   components), matching plugin `skillsRoot` rules. Globs remain allowed.
-
-### Deprecated
-
-### Removed
-
-### Fixed
-
-### Security
 
 ## [0.26.0] - 2026-08-28
 
@@ -891,7 +898,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.23.0...v0.24.0
