@@ -96,22 +96,28 @@ uv run python scripts/manage_vendors.py check
 Each vendor may declare `plugins:` — reviewed bake slices, not runtime
 improvisation ([ADR-0005](docs/adr/0005-collision-doctrine.md),
 [ADR-0006](docs/adr/0006-vendor-bake-safety.md)). Omit the field or use
-`plugins: []` until a slice is declared. Filling the five registered vendors
-is a separate issue; this schema is validated whenever `vendors.yaml` loads.
+`plugins: []` until a slice is declared; `plugins: null` is rejected.
+Filling the five registered vendors is a separate issue; this schema is
+validated whenever `vendors.yaml` loads.
 
 Per plugin:
 
 - `id` — kebab-case plugin id, unique across vendors and first-party
   `bundles.yaml` group ids
-- `description` — non-empty string
-- `skillsRoot` — relative POSIX path or glob (no `..`, not absolute)
+- `description` — non-empty single-line string
+- `skillsRoot` — canonical relative POSIX path or glob (no whitespace,
+  backslashes, `.` / `..` / empty components, not absolute)
 - `skills` — `"*"` (every skill under `skillsRoot`) or a non-empty list of
-  paths relative to `skillsRoot`
-- `extraSkills` — optional repo-relative paths to ingest in addition
-- `renameSkills` — optional `{old: new}` kebab-case map; every collision
-  rename is a reviewed registry edit, never a bake/install guess
+  canonical paths relative to `skillsRoot` (no glob metacharacters; the
+  list must not contain `"*"`)
+- `extraSkills` — optional repo-relative canonical paths to ingest in
+  addition (no globs; omit the key rather than `null`)
+- `renameSkills` — optional `{old: new}` kebab-case map; targets are unique
+  across **all** vendors (global explode namespace). Every collision rename
+  is a reviewed registry edit, never a bake/install guess. Duplicate YAML
+  keys are rejected.
 - `agents` — optional non-empty list of `claude-code`, `copilot`, `cursor`,
-  `codex`
+  `codex` (omit the key rather than `null`)
 
 ```yaml
     plugins:

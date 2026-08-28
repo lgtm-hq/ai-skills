@@ -573,6 +573,66 @@ def test_load_registry_accepts_skill_path_list(valid_registry_path: Path) -> Non
             "agents must be a non-empty list",
             id="empty-agents",
         ),
+        pytest.param(
+            "agents:\n          - cursor\n          - claude-code",
+            "agents: null",
+            "agents must be a list",
+            id="null-agents",
+        ),
+        pytest.param(
+            "extraSkills:\n          - extras/bonus",
+            "extraSkills: null",
+            "extraSkills must be a list",
+            id="null-extra-skills",
+        ),
+        pytest.param(
+            "renameSkills:\n          teach: teach-example",
+            "renameSkills: null",
+            "renameSkills must be a mapping",
+            id="null-rename-skills",
+        ),
+        pytest.param(
+            "extraSkills:\n          - extras/bonus",
+            'extraSkills:\n          - " ../escape "',
+            "extraSkills entries must be relative",
+            id="whitespace-dotdot-extra",
+        ),
+        pytest.param(
+            "extraSkills:\n          - extras/bonus",
+            'extraSkills:\n          - "extras\\\\bonus"',
+            "extraSkills entries must be relative",
+            id="backslash-extra",
+        ),
+        pytest.param(
+            "extraSkills:\n          - extras/bonus",
+            "extraSkills:\n          - extras/./bonus",
+            "extraSkills entries must be relative",
+            id="dot-component-extra",
+        ),
+        pytest.param(
+            "extraSkills:\n          - extras/bonus",
+            "extraSkills:\n          - extras/../bonus",
+            "extraSkills entries must be relative",
+            id="dotdot-component-extra",
+        ),
+        pytest.param(
+            "extraSkills:\n          - extras/bonus",
+            "extraSkills:\n          - extras/*.md",
+            "extraSkills entries must not contain glob metacharacters",
+            id="glob-extra",
+        ),
+        pytest.param(
+            'skills: "*"',
+            "skills:\n          - '*'",
+            r'skills list must not contain "\*"',
+            id="star-in-skills-list",
+        ),
+        pytest.param(
+            "description: Example vendor plugin.",
+            "description: |\n          Example vendor plugin.",
+            "must not contain newlines",
+            id="multiline-description",
+        ),
     ],
 )
 def test_load_registry_rejects_invalid_plugin_fields(
@@ -712,3 +772,118 @@ def test_load_registry_rejects_duplicate_rename_targets_across_plugins(
 
     with pytest.raises(ValueError, match="renameSkills targets must be unique"):
         load_registry(registry_path=valid_registry_path)
+
+
+def test_load_registry_rejects_null_plugins(valid_registry_path: Path) -> None:
+    """Reject ``plugins: null``; omit the key or use an empty list instead."""
+    _with_plugins(
+        registry_path=valid_registry_path,
+        plugins="\n    plugins: null",
+    )
+
+    with pytest.raises(TypeError, match="plugins must be a list"):
+        load_registry(registry_path=valid_registry_path)
+
+
+def test_load_registry_rejects_duplicate_yaml_keys(
+    valid_registry_path: Path,
+) -> None:
+    """Fail closed when YAML last-wins would drop a colliding mapping key."""
+    _with_plugins(
+        registry_path=valid_registry_path,
+        plugins="""
+    plugins:
+      - id: example-plugin
+        description: Example vendor plugin.
+        skillsRoot: skills
+        skills: "*"
+        renameSkills:
+          teach: teach-example
+          teach: teach-other
+""",
+    )
+
+    with pytest.raises(ValueError, match="duplicate key"):
+        load_registry(registry_path=valid_registry_path)
+
+
+def test_load_registry_rejects_malformed_first_party_group(
+    valid_registry_path: Path,
+) -> None:
+    """Fail closed when bundles.yaml groups are not mappings."""
+    valid_registry_path.parent.joinpath("bundles.yaml").write_text(
+        """---
+groups:
+  broken: not-a-mapping
+""",
+        encoding="utf-8",
+    )
+    _with_plugins(registry_path=valid_registry_path)
+
+    with pytest.raises(TypeError, match="must be a mapping"):
+        load_registry(registry_path=valid_registry_path)
+
+
+def test_load_registry_rejects_first_party_group_without_id(
+    valid_registry_path: Path,
+) -> None:
+    """Fail closed when a bundles.yaml group is missing its plugin id."""
+    valid_registry_path.parent.joinpath("bundles.yaml").write_text(
+        """---
+groups:
+  broken:
+    name: Missing id
+""",
+        encoding="utf-8",
+    )
+    _with_plugins(registry_path=valid_registry_path)
+
+    with pytest.raises(ValueError, match="must have a non-empty string id"):
+        load_registry(registry_path=valid_registry_path)
+
+
+def test_load_registry_rejects_cross_vendor_rename_target_collision(
+    tmp_path: Path,
+) -> None:
+    """Reject two vendors renaming different skills onto the same explode name."""
+    registry_path = tmp_path / "vendors.yaml"
+    registry_path.write_text(
+        """---
+vendors:
+  - id: first-vendor
+    repo: owner/first
+    sha: "0123456789abcdef0123456789abcdef01234567"
+    skillRoots:
+      - skills
+    license: MIT
+    homepage: https://example.com/first
+    plugins:
+      - id: first-plugin
+        description: First vendor slice.
+        skillsRoot: skills
+        skills: "*"
+        renameSkills:
+          teach: shared-explode
+  - id: second-vendor
+    repo: owner/second
+    sha: "89abcdef0123456789abcdef0123456789abcdef"
+    skillRoots:
+      - skills
+    license: MIT
+    homepage: https://example.com/second
+    plugins:
+      - id: second-plugin
+        description: Second vendor slice.
+        skillsRoot: skills
+        skills: "*"
+        renameSkills:
+          handoff: shared-explode
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="renameSkills targets must be unique across vendors",
+    ):
+        load_registry(registry_path=registry_path)

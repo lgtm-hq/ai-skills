@@ -152,7 +152,7 @@ def _needs_quote(*, value: str) -> bool:
     Returns:
         Whether the value would be misparsed as plain YAML.
     """
-    if not value or value != value.strip():
+    if not value or value != value.strip() or "\n" in value or "\r" in value:
         return True
     if value[0] in "!&*?|>%@`\"'#,[]{}:-":
         return True
@@ -176,7 +176,12 @@ def _scalar(*, value: str, quote: bool = False) -> str:
         The serialized scalar text.
     """
     if quote or _needs_quote(value=value):
-        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        escaped = (
+            value.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+        )
         return f'"{escaped}"'
     return value
 
