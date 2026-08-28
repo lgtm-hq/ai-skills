@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readdir, readFile, readlink, rename, writeFile } from "node:fs/promises";
+import {
+  access,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  readlink,
+  rename,
+  writeFile,
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -655,10 +664,27 @@ async function pathExists(path) {
  */
 async function hashTrackedPath(path, hash) {
   try {
-    return await hash(path);
+    return await hashLockEntryPath(path, hash);
   } catch {
     return "";
   }
+}
+
+/**
+ * Hash a path the same way ``hashTree`` records it: symlink targets as
+ * ``sha256("symlink:" + target)``, regular files via ``hash``.
+ *
+ * @param {string} path - Absolute file path.
+ * @param {(path: string) => Promise<string>} [hash] - Injectable hasher.
+ * @returns {Promise<string>} Hex digest.
+ */
+export async function hashLockEntryPath(path, hash = hashFile) {
+  const info = await lstat(path);
+  if (info.isSymbolicLink()) {
+    const target = await readlink(path);
+    return createHash("sha256").update(`symlink:${target}`).digest("hex");
+  }
+  return hash(path);
 }
 
 /**

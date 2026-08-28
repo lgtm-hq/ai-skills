@@ -1641,6 +1641,8 @@ describe("gateway maintenance commands", () => {
         },
       );
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.leftover.sha).not.toBe("v0.0.0-old");
+      expect(lock.plugins.leftover.installedAt).not.toBe("2026-07-10T16:00:00.000Z");
       expect(Object.keys(lock.plugins.leftover.agents.cursor.files).sort()).toEqual([
         "test/SKILL.md",
       ]);

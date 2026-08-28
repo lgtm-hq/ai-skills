@@ -333,7 +333,7 @@ describe("gateway lockfile", () => {
           projector: "native",
           agents: {
             cursor: {
-              files: { "skills/lint/SKILL.md": "abc" },
+              files: { "skills/unique-native/SKILL.md": "abc" },
               projector: "native",
               root: "/tmp/.cursor/plugins/local/local",
             },

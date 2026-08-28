@@ -6,6 +6,7 @@ import {
   agentProjector,
   allAgentSkillRoots,
   hashFile,
+  hashLockEntryPath,
   hashTree,
   isCliOwnedNativeInstall,
   ownedCursorTreeFiles,
@@ -767,7 +768,7 @@ async function classifyPluginFiles(pluginId, entry, io) {
     for (const [relative, digest] of Object.entries(install.files)) {
       const absolute = resolveTrackedPath(install.root, relative);
       try {
-        const current = await io.hash(absolute);
+        const current = await hashLockEntryPath(absolute, io.hash);
         if (current !== digest) {
           io.warn(`left modified ${pluginId} file ${relative}`);
           for (const skillName of skillNamesFromFiles({ [relative]: digest })) {

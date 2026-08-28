@@ -622,14 +622,22 @@ describe("removeExplodedFiles", () => {
       const dest = join(root, ".cursor/skills");
       await mkdir(join(dest, "lint"), { recursive: true });
       await writeFile(join(dest, "lint/SKILL.md"), "# lint\n");
-      const digest = await hashFile(join(dest, "lint/SKILL.md"));
+      await mkdir(join(dest, "keep"), { recursive: true });
+      await writeFile(join(dest, "keep/SKILL.md"), "# keep\n");
+      const keepDigest = await hashFile(join(dest, "keep/SKILL.md"));
       const result = await removeExplodedFiles({
-        files: [],
+        files: [
+          {
+            absolute: join(dest, "keep/SKILL.md"),
+            digest: keepDigest,
+            relative: "keep/SKILL.md",
+            root: dest,
+          },
+        ],
         pluginId: "review",
       });
-      expect(result.removed).toEqual([]);
+      expect(result.removed).toEqual(["keep/SKILL.md"]);
       expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
-      expect(digest).toHaveLength(64);
     } finally {
       await rm(root, { force: true, recursive: true });
     }
