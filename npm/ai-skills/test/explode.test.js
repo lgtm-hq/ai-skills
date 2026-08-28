@@ -20,6 +20,8 @@ import {
   explodePlugin,
   pruneEmptyDirTrees,
   removeExplodedFiles,
+  restoreExplodeInstall,
+  snapshotDestPath,
 } from "../lib/projectors/explode.js";
 
 /**
@@ -248,6 +250,32 @@ describe("explodePlugin", () => {
     }
   });
 
+  test("preserves relative in-tree symlink targets in copy and store materialization", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-verbatim-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      await symlink("SKILL.md", join(source, "lint/alias.md"));
+      await explodePlugin({
+        agents: [{ id: "cursor", root: dest }],
+        copy: true,
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+      });
+      expect(await readlink(join(dest, "lint/alias.md"))).toBe("SKILL.md");
+      await rm(join(dest, "lint"), { force: true, recursive: true });
+      await explodePlugin({
+        agents: [{ id: "cursor", root: dest }],
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+        storeRoot: store,
+      });
+      expect(await readlink(join(store, "lint/alias.md"))).toBe("SKILL.md");
+      expect(await readlink(join(dest, "lint"))).toBe(join(store, "lint"));
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   test("per-agent copy keeps dest directories when the call-level flag is false", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-copy-agent-"));
     try {
@@ -356,6 +384,27 @@ describe("explodePlugin", () => {
       await discardExplodeBackups(result);
       expect(await readFile(join(dest, "lint.bak/USER.txt"), "utf8")).toBe("keep\n");
       expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint v2\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("snapshotDestPath copies a dest symlink and restore puts it back", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-snapshot-"));
+    try {
+      const dest = join(root, ".cursor/skills/lint");
+      const store = join(root, ".agents/skills/lint");
+      await mkdir(store, { recursive: true });
+      await writeFile(join(store, "SKILL.md"), "# lint\n");
+      await mkdir(join(root, ".cursor/skills"), { recursive: true });
+      await symlink(store, dest);
+      const snapshot = await snapshotDestPath(dest);
+      expect(snapshot).not.toBeNull();
+      expect(await readlink(snapshot.backup)).toBe(store);
+      await rm(dest, { force: true, recursive: true });
+      await restoreExplodeInstall({ swappedDests: [snapshot] });
+      expect(await readlink(dest)).toBe(store);
+      expect(await readFile(join(dest, "SKILL.md"), "utf8")).toBe("# lint\n");
     } finally {
       await rm(root, { force: true, recursive: true });
     }

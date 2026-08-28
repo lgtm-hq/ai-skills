@@ -722,6 +722,63 @@ describe("gateway maintenance commands", () => {
     expect(warnings).toEqual([]);
   });
 
+  test("restores stale dests when the lock write fails after cleanup", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-stale-lock-fail-"));
+    try {
+      const dest = join(cwd, ".cursor/skills");
+      await mkdir(join(dest, "lint"), { recursive: true });
+      await mkdir(join(dest, "retired"), { recursive: true });
+      await writeFile(join(dest, "lint/SKILL.md"), "# lint\n");
+      await writeFile(join(dest, "retired/SKILL.md"), "# retired\n");
+      const lintHash = await hashFile(join(dest, "lint/SKILL.md"));
+      const retiredHash = await hashFile(join(dest, "retired/SKILL.md"));
+
+      await expect(
+        updateSkills(options, {
+          hash: hashFile,
+          isInstalled: async () => true,
+          now: () => new Date("2026-07-10T17:00:00.000Z"),
+          readLock: async () => ({
+            ...lock,
+            plugins: {
+              review: pluginEntry({
+                agents: {
+                  cursor: {
+                    files: {
+                      "lint/SKILL.md": lintHash,
+                      "retired/SKILL.md": retiredHash,
+                    },
+                    projector: "explode",
+                    root: dest,
+                  },
+                },
+                projector: "explode",
+                repo: "lgtm-hq/ai-skills",
+                sha: "v0.21.0",
+                skills: ["lint", "retired"],
+                vendor: "lgtm-hq",
+                version: "0.21.0",
+              }),
+            },
+          }),
+          run: async () => {},
+          sourceRoot: null,
+          writeLock: async () => {
+            throw new Error("ENOSPC: lock write failed");
+          },
+        }),
+      ).rejects.toThrow("ENOSPC");
+
+      expect(await readFile(join(dest, "retired/SKILL.md"), "utf8")).toBe("# retired\n");
+      expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      const { readdir } = await import("node:fs/promises");
+      const names = await readdir(dest);
+      expect(names.filter((name) => name.includes(".bak."))).toEqual([]);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("drops only catalog-removed skills when the lock lists a v2 skills array", async () => {
     const calls = [];
     const unlinked = [];

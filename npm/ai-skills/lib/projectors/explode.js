@@ -17,6 +17,9 @@ import { dirname, join, resolve, sep } from "node:path";
 
 import { hashFile, hashLockEntryPath, hashTree, isSafePluginId } from "../lockfile.js";
 
+/** Recursive copy that keeps relative symlink targets as written. */
+const EXPLODE_COPY_OPTIONS = { recursive: true, verbatimSymlinks: true };
+
 /**
  * @typedef {{copy?: boolean, id: string, replace?: Set<string>, root: string}} ExplodeAgent
  * Agent id plus the exploded skills directory root. ``replace`` is the set of
@@ -196,7 +199,7 @@ export async function explodePlugin(args) {
       const dest = join(staging, name);
       assertInsideRoot(staging, dest);
       await assertSafeSourceTree(source);
-      await copyFn(source, dest, { recursive: true });
+      await copyFn(source, dest, EXPLODE_COPY_OPTIONS);
       stagedSkills[name] = dest;
       stagedHashes[name] = await hashTree(dest, hash);
     }
@@ -346,6 +349,7 @@ export async function restoreExplodeInstall(result, io = {}) {
   for (const item of [...(result.swappedDests ?? [])].reverse()) {
     try {
       await remove(item.dest, { force: true, recursive: true });
+      await mkdir(dirname(item.dest), { recursive: true });
       await move(item.backup, item.dest);
     } catch (failed) {
       rollbackErrors.push(failed);
@@ -373,6 +377,27 @@ export async function restoreExplodeInstall(result, io = {}) {
         .join("; "),
     );
   }
+}
+
+/**
+ * Copy a dest path to a unique sidecar so a later lock-write failure can restore it.
+ *
+ * @param {string} dest - File, directory, or symlink to snapshot.
+ * @param {{copy?: typeof cp}} [io] - Injectable copy.
+ * @returns {Promise<{backup: string, dest: string} | null>} Sidecar pair, or null when dest is absent.
+ */
+export async function snapshotDestPath(dest, io = {}) {
+  const copyFn = io.copy ?? cp;
+  const backup = uniqueBackupPath(dest);
+  try {
+    await copyFn(dest, backup, EXPLODE_COPY_OPTIONS);
+  } catch (error) {
+    if (isAbsentFsError(error)) {
+      return null;
+    }
+    throw error;
+  }
+  return { backup, dest };
 }
 
 /**
@@ -939,7 +964,7 @@ async function commitCopiedSkill(args) {
   await args.makeDir(dirname(args.dest), { recursive: true });
   const destStage = `${args.dest}.staging.${randomUUID()}`;
   args.trackStaging(destStage);
-  await args.copyFn(args.staged, destStage, { recursive: true });
+  await args.copyFn(args.staged, destStage, EXPLODE_COPY_OPTIONS);
   try {
     await args.move(destStage, args.dest);
   } catch (error) {
@@ -947,7 +972,7 @@ async function commitCopiedSkill(args) {
       await args.remove(destStage, { force: true, recursive: true });
       throw error;
     }
-    await args.copyFn(destStage, args.dest, { recursive: true });
+    await args.copyFn(destStage, args.dest, EXPLODE_COPY_OPTIONS);
     await args.remove(destStage, { force: true, recursive: true });
   }
 }
@@ -972,7 +997,7 @@ async function commitStoreSkill(args) {
   await args.makeDir(dirname(args.storeDir), { recursive: true });
   const storeStage = `${args.storeDir}.staging.${randomUUID()}`;
   args.trackStaging(storeStage);
-  await args.copyFn(args.staged, storeStage, { recursive: true });
+  await args.copyFn(args.staged, storeStage, EXPLODE_COPY_OPTIONS);
   if (existed) {
     await args.remove(args.storeDir, { force: true, recursive: true });
   }
@@ -983,7 +1008,7 @@ async function commitStoreSkill(args) {
       await args.remove(storeStage, { force: true, recursive: true });
       throw error;
     }
-    await args.copyFn(storeStage, args.storeDir, { recursive: true });
+    await args.copyFn(storeStage, args.storeDir, EXPLODE_COPY_OPTIONS);
     await args.remove(storeStage, { force: true, recursive: true });
   }
   return !existed;

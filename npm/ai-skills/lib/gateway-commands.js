@@ -36,6 +36,7 @@ import {
   resolveExplodeSourceSkills,
   resolveTrackedPath,
   restoreExplodeInstall,
+  snapshotDestPath,
   unlinkDestSkillSymlink,
   warnSkippedExplodeDests,
 } from "./projectors/explode.js";
@@ -109,6 +110,8 @@ export async function updateSkills(options, dependencies = {}) {
   const cursorBackups = [];
   /** @type {import("./projectors/explode.js").ExplodeResult[]} */
   const explodeBackups = [];
+  /** @type {Array<{backup: string, dest: string}>} */
+  const staleDestBackups = [];
   let lockCommitted = false;
   try {
     for (const pluginId of updated) {
@@ -262,6 +265,7 @@ export async function updateSkills(options, dependencies = {}) {
         hash,
         removeDir,
         removeFile,
+        staleDestBackups,
         warn,
       });
     }
@@ -287,10 +291,27 @@ export async function updateSkills(options, dependencies = {}) {
         warn(`Warning: could not discard Cursor plugin backup after update (${detail})`);
       }
     }
+    try {
+      await discardExplodeBackups({ swappedDests: staleDestBackups });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      warn(`Warning: could not discard stale dest backups after update (${detail})`);
+    }
     return { pruned, updated };
   } catch (error) {
     const restoreErrors = [];
     if (!lockCommitted) {
+      try {
+        await restoreExplodeInstall(
+          { swappedDests: staleDestBackups },
+          {
+            move: dependencies.move,
+            remove: dependencies.remove,
+          },
+        );
+      } catch (restoreError) {
+        restoreErrors.push(restoreError);
+      }
       for (const item of explodeBackups) {
         try {
           await restoreExplodeInstall(item, {
@@ -546,6 +567,9 @@ function resolveVendorSource(entry, vendors) {
 /**
  * Hash-verified delete of skills that left the catalog since the last lock write.
  *
+ * Existing dest skill directories are snapshotted first so a later lock-write
+ * failure can restore paths the previous lock still claims.
+ *
  * @param {string} pluginId - Plugin id.
  * @param {import("./lockfile.js").PluginLockEntry} entry - Pre-update lock entry.
  * @param {string[]} currentSkills - Skill names in the current catalog.
@@ -553,6 +577,7 @@ function resolveVendorSource(entry, vendors) {
  *   hash: typeof hashFile,
  *   removeDir: typeof rmdir,
  *   removeFile: typeof unlink,
+ *   staleDestBackups?: Array<{backup: string, dest: string}>,
  *   warn: (message: string) => void,
  * }} io - Injectable command dependencies.
  * @returns {Promise<void>} Resolves when stale members are removed or left with a warning.
@@ -562,6 +587,9 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
   const staleNames = pluginSkillNames(entry).filter((name) => !current.has(name));
   if (staleNames.length === 0) {
     return;
+  }
+  if (io.staleDestBackups) {
+    await snapshotStaleSkillDests(entry, staleNames, io.staleDestBackups);
   }
   const stale = {
     ...entry,
@@ -716,6 +744,64 @@ function sourceSha(vendor, currentSha, vendors) {
     return `v${getPackageVersion()}`;
   }
   return vendors.find((candidate) => candidate.id === vendor)?.sha ?? currentSha;
+}
+
+/**
+ * Snapshot catalog-retired skill dests before hash-verified unlink.
+ *
+ * Dest skill directories are copied (symlink-preserving) so a later lock-write
+ * failure can restore paths the previous lock still claims.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Pre-update lock entry.
+ * @param {string[]} staleNames - Skill names leaving the catalog.
+ * @param {Array<{backup: string, dest: string}>} backups - Accumulator for restore/discard.
+ * @returns {Promise<void>} Resolves when existing dests are snapshotted.
+ */
+async function snapshotStaleSkillDests(entry, staleNames, backups) {
+  const seen = new Set();
+  for (const install of Object.values(entry.agents)) {
+    if (isCliOwnedNativeInstall(install, entry.projector)) {
+      continue;
+    }
+    for (const relative of Object.keys(install.files)) {
+      if (!skillNamesBelongTo(relative, staleNames)) {
+        continue;
+      }
+      const dest = staleSkillDestPath(install.root, relative);
+      if (!dest || seen.has(dest)) {
+        continue;
+      }
+      seen.add(dest);
+      const snapshot = await snapshotDestPath(dest);
+      if (snapshot) {
+        backups.push(snapshot);
+      }
+    }
+  }
+}
+
+/**
+ * Dest skill directory for a tracked relative path.
+ *
+ * Exploded installs use ``<skill>/...``. Cursor native trees use
+ * ``skills/<skill>/...``.
+ *
+ * @param {string} root - Agent skills root from the lock.
+ * @param {string} relative - Tracked path relative to that root.
+ * @returns {string | null} Skill directory to snapshot, or null when the path is metadata.
+ */
+function staleSkillDestPath(root, relative) {
+  const parts = relative.split("/");
+  if (parts[0] === ".claude-plugin") {
+    return null;
+  }
+  if (parts[0] === "skills" && parts[1]) {
+    return join(root, "skills", parts[1]);
+  }
+  if (parts[0]) {
+    return join(root, parts[0]);
+  }
+  return null;
 }
 
 /**

@@ -30,9 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Install repair preserves existing `--copy` dest directories the same way
   update does. Identical dest skips emit a warning (ADR-0005 class 1). A
   regular file at a dest skill path is a collision, not a `SKILL.md` match.
-  Update removes catalog-retired explode dests before writing the new lock,
-  so a cleanup failure leaves the previous lock owning those paths. Empty
-  explode claims retain prior owned files still in the current catalog.
+  Update snapshots catalog-retired dests, then unlinks them before writing
+  the new lock. A cleanup failure leaves the previous lock owning those
+  paths; a later lock-write failure restores the snapshots. Empty explode
+  claims retain prior owned files still in the current catalog.
 
 ### Changed
 
