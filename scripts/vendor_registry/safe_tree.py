@@ -8,6 +8,7 @@ import os
 import shutil
 import sys
 from collections.abc import Iterator, Sequence
+from contextlib import suppress
 from ctypes.util import find_library
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -19,7 +20,29 @@ _AT_FDCWD = -100
 _RENAME_EXCHANGE = 2
 _RENAME_SWAP = 0x00000002
 _REMOTE_LINK_SCHEMES = frozenset({"http", "https", "mailto", "data"})
-_COMMONMARK = MarkdownIt("commonmark")
+
+
+class _BakeMarkdownIt(MarkdownIt):
+    """CommonMark parser that keeps destinations bake must reject.
+
+    The default validator blanks ``file:``, ``javascript:``, and
+    ``vbscript:`` hrefs, which would skip ``_local_markdown_path``.
+    """
+
+    def validateLink(self, url: str) -> bool:
+        """Keep hrefs so bake scheme checks can reject them.
+
+        Args:
+            url: Candidate href or src.
+
+        Returns:
+            Always ``True``.
+        """
+        del url
+        return True
+
+
+_COMMONMARK = _BakeMarkdownIt("commonmark")
 
 
 def iter_directory_entries(*, directory: Path) -> Iterator[Path]:
@@ -340,6 +363,23 @@ def find_skill_markdown(*, root: Path) -> tuple[str, ...]:
     return tuple(sorted(found))
 
 
+def _reject_leftover_backup(*, destination: Path) -> None:
+    """Fail closed when a leftover bake backup path already exists.
+
+    Args:
+        destination: Final output path whose sibling ``.{name}.bak`` must
+            not already exist.
+
+    Raises:
+        ValueError: If a leftover backup directory, file, or dangling
+            symlink is present.
+    """
+    leftover = destination.with_name(f".{destination.name}.bak")
+    if leftover.exists(follow_symlinks=False):
+        msg = f"leftover bake backup: {leftover}"
+        raise ValueError(msg)
+
+
 def install_directory(*, source: Path, destination: Path) -> None:
     """Publish a completed ``source`` tree onto ``destination``.
 
@@ -347,8 +387,11 @@ def install_directory(*, source: Path, destination: Path) -> None:
     the destination path in one kernel rename so that path is never absent
     or mixed, then the new contents are mirrored onto the original
     destination inode and exchanged back. A process whose cwd is
-    ``destination`` keeps a valid working directory. When ``destination``
-    does not exist, ``source`` is renamed onto it.
+    ``destination`` keeps a valid working directory, including when the
+    inode mirror fails: the original inode is swapped back onto
+    ``destination`` before the error propagates. When ``destination``
+    does not exist, ``source`` is renamed onto it. A leftover
+    ``.{name}.bak`` next to ``destination`` always fails closed.
 
     Args:
         source: Completed tree on the same filesystem as ``destination``.
@@ -366,7 +409,8 @@ def install_directory(*, source: Path, destination: Path) -> None:
     if destination.is_symlink():
         msg = f"symlink rejected: {destination}"
         raise ValueError(msg)
-    if destination.exists():
+    _reject_leftover_backup(destination=destination)
+    if destination.exists(follow_symlinks=False):
         _publish_into_existing(source=source, destination=destination)
         return
     source.rename(target=destination)
@@ -387,12 +431,14 @@ def _publish_into_existing(*, source: Path, destination: Path) -> None:
         ValueError: If a leftover backup path already exists.
         OSError: If an exchange or mirror copy fails.
     """
-    leftover = destination.with_name(f".{destination.name}.bak")
-    if leftover.exists(follow_symlinks=False):
-        msg = f"leftover bake backup: {leftover}"
-        raise ValueError(msg)
+    _reject_leftover_backup(destination=destination)
     _exchange_paths(first=source, second=destination)
-    _mirror_tree(source=destination, destination=source)
+    try:
+        _mirror_tree(source=destination, destination=source)
+    except BaseException:
+        with suppress(OSError):
+            _exchange_paths(first=source, second=destination)
+        raise
     _exchange_paths(first=source, second=destination)
 
 
@@ -410,7 +456,7 @@ def _mirror_tree(*, source: Path, destination: Path) -> None:
     incoming = {child.name for child in source.iterdir()}
     for child in list(source.iterdir()):
         dest_child = destination / child.name
-        if dest_child.exists():
+        if dest_child.exists(follow_symlinks=False):
             _remove_path(path=dest_child)
         if child.is_dir():
             copy_tree(source=child, destination=dest_child, source_root=source)

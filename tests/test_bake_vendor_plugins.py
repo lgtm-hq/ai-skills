@@ -755,6 +755,21 @@ def test_bake_rejects_multiline_reference_style_markdown_link(
             "path escape rejected",
             id="backslash-path",
         ),
+        pytest.param(
+            "See [x](file:../../../outside.md).\n",
+            "path escape rejected",
+            id="file-scheme",
+        ),
+        pytest.param(
+            "See [x](javascript:alert(1)).\n",
+            "path escape rejected",
+            id="javascript-scheme",
+        ),
+        pytest.param(
+            "See [x](vbscript:foo).\n",
+            "path escape rejected",
+            id="vbscript-scheme",
+        ),
     ],
 )
 def test_bake_rejects_commonmark_markdown_link_forms(
@@ -1803,7 +1818,7 @@ def test_install_directory_restores_complete_tree_on_mirror_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A failed inode mirror must not leave a mixed destination path."""
+    """A failed inode mirror restores the original dest inode and cwd."""
     dest = tmp_path / "plugins-baked"
     dest.mkdir()
     (dest / "a.txt").write_text("old-a\n", encoding="utf-8")
@@ -1812,6 +1827,7 @@ def test_install_directory_restores_complete_tree_on_mirror_failure(
     source.mkdir()
     (source / "a.txt").write_text("new-a\n", encoding="utf-8")
     (source / "b.txt").write_text("new-b\n", encoding="utf-8")
+    dest_inode = dest.stat().st_ino
 
     def _fail_mirror(*, source: Path, destination: Path) -> None:
         """Inject a failure after the destination path already holds the new tree.
@@ -1827,15 +1843,25 @@ def test_install_directory_restores_complete_tree_on_mirror_failure(
         raise OSError(msg)
 
     monkeypatch.setattr(safe_tree, "_mirror_tree", _fail_mirror)
+    previous_cwd = Path.cwd()
+    try:
+        os.chdir(dest)
+        with pytest.raises(OSError, match="injected mirror failure"):
+            install_directory(source=source, destination=dest)
+        Path("probe.txt").write_text("ok\n", encoding="utf-8")
+        assert_that(Path.cwd().resolve()).is_equal_to(dest.resolve())
+    finally:
+        os.chdir(previous_cwd)
 
-    with pytest.raises(OSError, match="injected mirror failure"):
-        install_directory(source=source, destination=dest)
-
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
     assert_that((dest / "a.txt").read_text(encoding="utf-8")).is_equal_to(
-        "new-a\n",
+        "old-a\n",
     )
     assert_that((dest / "b.txt").read_text(encoding="utf-8")).is_equal_to(
-        "new-b\n",
+        "old-b\n",
+    )
+    assert_that((dest / "probe.txt").read_text(encoding="utf-8")).is_equal_to(
+        "ok\n",
     )
     assert_that((tmp_path / ".plugins-baked.bak").exists()).is_false()
 
@@ -1868,6 +1894,26 @@ def test_install_directory_preserves_destination_inode_for_resident_cwd(
     )
 
 
+def test_install_directory_replaces_dangling_destination_child_symlink(
+    tmp_path: Path,
+) -> None:
+    """A dangling dest child symlink must not be followed while mirroring."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    outside = tmp_path / "outside-target"
+    (dest / "COVERAGE.md").symlink_to(outside)
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+
+    install_directory(source=source, destination=dest)
+
+    coverage = dest / "COVERAGE.md"
+    assert_that(coverage.is_symlink()).is_false()
+    assert_that(coverage.read_text(encoding="utf-8")).is_equal_to("new\n")
+    assert_that(outside.exists()).is_false()
+
+
 def test_install_directory_rejects_leftover_backup(
     tmp_path: Path,
 ) -> None:
@@ -1886,6 +1932,38 @@ def test_install_directory_rejects_leftover_backup(
     assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to(
         "old\n",
     )
+
+
+def test_install_directory_rejects_leftover_backup_when_destination_missing(
+    tmp_path: Path,
+) -> None:
+    """A leftover backup still fails closed when dest has not been created."""
+    dest = tmp_path / "plugins-baked"
+    (tmp_path / ".plugins-baked.bak").mkdir()
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="leftover bake backup"):
+        install_directory(source=source, destination=dest)
+
+    assert_that(dest.exists()).is_false()
+
+
+def test_install_directory_rejects_dangling_backup_when_destination_missing(
+    tmp_path: Path,
+) -> None:
+    """A dangling leftover backup symlink fails closed when dest is absent."""
+    dest = tmp_path / "plugins-baked"
+    (tmp_path / ".plugins-baked.bak").symlink_to(tmp_path / "missing-backup")
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="leftover bake backup"):
+        install_directory(source=source, destination=dest)
+
+    assert_that(dest.exists()).is_false()
 
 
 def test_install_directory_rejects_dangling_backup_symlink(
@@ -1926,6 +2004,51 @@ def test_bake_preserves_plugins_baked_cwd(
         os.chdir(previous_cwd)
 
     assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
+    assert_that((dest / "probe.txt").read_text(encoding="utf-8")).is_equal_to(
+        "ok\n",
+    )
+
+
+def test_bake_restores_plugins_baked_cwd_on_mirror_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed inode mirror during bake must leave resident cwd valid."""
+    _write_registry(repo_root=tmp_path, plugins_yaml="")
+    bake_vendor_plugins.bake(repo_root=tmp_path)
+    dest = tmp_path / "plugins-baked"
+    dest_inode = dest.stat().st_ino
+    coverage_before = (dest / "COVERAGE.md").read_text(encoding="utf-8")
+
+    def _fail_mirror(*, source: Path, destination: Path) -> None:
+        """Inject a failure after the destination path already holds the new tree.
+
+        Args:
+            source: Staged tree now at the live path.
+            destination: Original destination inode.
+
+        Raises:
+            OSError: Always.
+        """
+        del source, destination
+        msg = "injected mirror failure"
+        raise OSError(msg)
+
+    monkeypatch.setattr(safe_tree, "_mirror_tree", _fail_mirror)
+    previous_cwd = Path.cwd()
+    try:
+        os.chdir(dest)
+        with pytest.raises(OSError, match="injected mirror failure"):
+            bake_vendor_plugins.bake(repo_root=tmp_path)
+        Path("probe.txt").write_text("ok\n", encoding="utf-8")
+        assert_that(Path.cwd().resolve()).is_equal_to(dest.resolve())
+    finally:
+        os.chdir(previous_cwd)
+
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
+    assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to(
+        coverage_before,
+    )
     assert_that((dest / "probe.txt").read_text(encoding="utf-8")).is_equal_to(
         "ok\n",
     )
