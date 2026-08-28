@@ -731,6 +731,13 @@ async function planExplodeCommits(args) {
    *     storeDir: string,
    *   }>} */
   const toWrite = [];
+  /** @type {Record<string, string[]>} */
+  const transactionDests = {};
+  for (const agent of args.agents) {
+    for (const skill of Object.keys(args.stagedSkills)) {
+      (transactionDests[skill] ??= []).push(join(agent.root, skill));
+    }
+  }
   for (const agent of args.agents) {
     claimed[agent.id] = {};
     const owned = agent.replace ?? new Set();
@@ -742,16 +749,28 @@ async function planExplodeCommits(args) {
       if (!copy && args.storeRoot) {
         assertInsideRoot(args.storeRoot, storeDir);
       }
-      let replace = owned.has(skill);
+      const storePlan = () =>
+        planStoreReplacement({
+          copy,
+          destRoots: args.destRoots,
+          hash: args.hash,
+          retainStoreSkills: args.retainStoreSkills,
+          skill,
+          skipDests: transactionDests[skill] ?? [],
+          stagedHashes: args.stagedHashes,
+          storeDir,
+          storeRoot: args.storeRoot,
+        });
       if (await pathExists(dest)) {
         const existing = await hashExistingTree(dest, args.hash);
         const isEmpty = Object.keys(existing).length === 0;
         if (!isEmpty && owned.has(skill)) {
+          const storeReplace = await storePlan();
           toWrite.push({
             agent: agent.id,
             copy,
             dest,
-            replace: true,
+            replace: copy || storeReplace,
             skill,
             staged,
             storeDir,
@@ -771,32 +790,12 @@ async function planExplodeCommits(args) {
           );
         }
       }
-      if (!copy && args.storeRoot && !owned.has(skill) && (await pathExists(storeDir))) {
-        const storeHashes = await hashExistingTree(storeDir, args.hash);
-        const storeEmpty = Object.keys(storeHashes).length === 0;
-        if (storeEmpty) {
-          replace = true;
-        } else if (!sameHashes(storeHashes, args.stagedHashes[skill])) {
-          if (args.retainStoreSkills.has(skill)) {
-            throw new Error(
-              `Explode collision at ${storeDir}: existing store content differs from incoming ${skill}`,
-            );
-          }
-          const consumers = await destsSymlinkedToStore(storeDir, skill, args.destRoots, dest);
-          if (consumers.length > 0) {
-            throw new Error(
-              `Explode collision at ${storeDir}: existing store content differs from incoming ` +
-                `${skill} (also linked from ${consumers.join(", ")})`,
-            );
-          }
-          replace = true;
-        }
-      }
+      const storeReplace = await storePlan();
       toWrite.push({
         agent: agent.id,
         copy,
         dest,
-        replace,
+        replace: owned.has(skill) ? copy || storeReplace : storeReplace,
         skill,
         staged,
         storeDir,
@@ -811,15 +810,69 @@ async function planExplodeCommits(args) {
 }
 
 /**
- * Dest skill symlinks (other than ``skipDest``) that resolve to ``storeDir``.
+ * Whether the managed store must be replaced for this skill.
+ *
+ * Identical leftover stores are reused. Empty stores and true residue
+ * (no other explode plugin, no dest symlink outside this transaction) are
+ * replaced. A live consumer of different content is a hard error, including
+ * owned updates that would rewrite a shared store.
+ *
+ * @param {object} args - Store plan inputs.
+ * @param {boolean} args.copy - Copy dests do not consume the store.
+ * @param {string[]} args.destRoots - Agent skill dirs that may still link the store.
+ * @param {(path: string) => Promise<string>} args.hash - Hasher.
+ * @param {Set<string>} args.retainStoreSkills - Skills owned by other explode plugins.
+ * @param {string} args.skill - Skill directory name.
+ * @param {string[]} args.skipDests - Dest skill paths in this explode transaction.
+ * @param {Record<string, Record<string, string>>} args.stagedHashes - Staged trees.
+ * @param {string} args.storeDir - Managed store skill directory.
+ * @param {string | undefined} args.storeRoot - Store root for symlink mode.
+ * @returns {Promise<boolean>} True when the store tree must be replaced.
+ */
+async function planStoreReplacement(args) {
+  if (args.copy || !args.storeRoot || !(await pathExists(args.storeDir))) {
+    return false;
+  }
+  const storeHashes = await hashExistingTree(args.storeDir, args.hash);
+  if (Object.keys(storeHashes).length === 0) {
+    return true;
+  }
+  if (sameHashes(storeHashes, args.stagedHashes[args.skill])) {
+    return false;
+  }
+  if (args.retainStoreSkills.has(args.skill)) {
+    throw new Error(
+      `Explode collision at ${args.storeDir}: existing store content differs from incoming ${args.skill}`,
+    );
+  }
+  const consumers = await destsSymlinkedToStore(
+    args.storeDir,
+    args.skill,
+    args.destRoots,
+    args.skipDests,
+  );
+  if (consumers.length > 0) {
+    throw new Error(
+      `Explode collision at ${args.storeDir}: existing store content differs from incoming ` +
+        `${args.skill} (also linked from ${consumers.join(", ")})`,
+    );
+  }
+  return true;
+}
+
+/**
+ * Dest skill symlinks (other than this transaction) that resolve to ``storeDir``.
+ *
+ * Scans known agent layouts plus caller-supplied dest roots. Dest trees that
+ * are neither in ``destRoots`` nor recorded in the lock are not discovered.
  *
  * @param {string} storeDir - Managed store skill directory.
  * @param {string} skill - Skill directory name.
  * @param {string[]} destRoots - Agent skills roots to scan.
- * @param {string} skipDest - Incoming dest that is allowed to reuse the store.
+ * @param {string[]} skipDests - Dest skill paths in this explode transaction.
  * @returns {Promise<string[]>} Absolute dest paths that still consume the store.
  */
-async function destsSymlinkedToStore(storeDir, skill, destRoots, skipDest) {
+async function destsSymlinkedToStore(storeDir, skill, destRoots, skipDests) {
   let resolvedStore;
   try {
     resolvedStore = await realpath(storeDir);
@@ -829,12 +882,12 @@ async function destsSymlinkedToStore(storeDir, skill, destRoots, skipDest) {
     }
     throw error;
   }
-  const resolvedSkip = resolve(skipDest);
+  const skipped = new Set((skipDests ?? []).map((path) => resolve(path)));
   /** @type {string[]} */
   const hits = [];
   for (const root of destRoots) {
     const candidate = join(root, skill);
-    if (resolve(candidate) === resolvedSkip) {
+    if (skipped.has(resolve(candidate))) {
       continue;
     }
     try {

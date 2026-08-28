@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on remove) so they cannot poison later installs. An unowned leftover store
   is replaced when dest is absent and no other dest or lock plugin still
   consumes it, so remove-then-reinstall cannot collide. A live consumer of
-  that store is a hard error. Update preserves `--copy` dest directories
+  that store is a hard error, including owned updates that would rewrite a
+  shared store. Update preserves `--copy` dest directories
   instead of rewriting them as store symlinks, including the skills-CLI
   fallback path. Vendor installs
   and first-party installs without a catalog checkout still use the skills

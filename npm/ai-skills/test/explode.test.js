@@ -485,6 +485,94 @@ describe("explodePlugin", () => {
     }
   });
 
+  test("hard-errors when an owned update would rewrite a store still linked elsewhere", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-owned-live-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      const other = join(root, ".codex/skills");
+      await explodePlugin({
+        agents: [{ id: "cursor", root: dest }],
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+        storeRoot: store,
+      });
+      await mkdir(other, { recursive: true });
+      await symlink(join(store, "lint"), join(other, "lint"));
+      await writeFile(join(source, "lint/SKILL.md"), "# lint v2\n");
+      await expect(
+        explodePlugin({
+          agents: [{ id: "cursor", replace: new Set(["lint"]), root: dest }],
+          destRoots: [dest, other],
+          skills: ["lint"],
+          sourceSkills: { lint: join(source, "lint") },
+          storeRoot: store,
+        }),
+      ).rejects.toThrow("also linked from");
+      expect(await readFile(join(other, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("owned update rewrites a shared store when every linked dest is in the transaction", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-owned-txn-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      const other = join(root, ".codex/skills");
+      await explodePlugin({
+        agents: [
+          { id: "cursor", root: dest },
+          { id: "codex", root: other },
+        ],
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+        storeRoot: store,
+      });
+      await writeFile(join(source, "lint/SKILL.md"), "# lint v2\n");
+      await explodePlugin({
+        agents: [
+          { id: "cursor", replace: new Set(["lint"]), root: dest },
+          { id: "codex", replace: new Set(["lint"]), root: other },
+        ],
+        destRoots: [dest, other],
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+        storeRoot: store,
+      });
+      expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint v2\n");
+      expect(await readFile(join(other, "lint/SKILL.md"), "utf8")).toBe("# lint v2\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("hard-errors when an owned update would replace a store another plugin still owns", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-owned-retain-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      await explodePlugin({
+        agents: [{ id: "cursor", root: dest }],
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+        storeRoot: store,
+      });
+      await writeFile(join(source, "lint/SKILL.md"), "# lint v2\n");
+      await expect(
+        explodePlugin({
+          agents: [{ id: "cursor", replace: new Set(["lint"]), root: dest }],
+          retainStoreSkills: new Set(["lint"]),
+          skills: ["lint"],
+          sourceSkills: { lint: join(source, "lint") },
+          storeRoot: store,
+        }),
+      ).rejects.toThrow("existing store content differs");
+      expect(await readFile(join(store, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   test("in-tree source symlink is part of the collision hash", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-alias-"));
     try {
