@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **vendors**: registry schema for vendor plugin definitions — optional
+  `plugins[]` with `skillsRoot`, `skills` (`"*"` or paths), `extraSkills`,
+  `renameSkills`, and `agents`. Python tooling fail-closed validates slices;
+  collision renames are reviewed registry edits (ADR-0005). The five
+  vendors stay index-only until the bake-the-vendors issue fills them.
+
 ### Changed
 
 ### Deprecated

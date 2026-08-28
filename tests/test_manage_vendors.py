@@ -385,3 +385,46 @@ def test_add_via_main_rejects_empty_skill_roots(repo_root: Path) -> None:
 
     assert_that(exit_code).is_equal_to(1)
     assert_that(registry_path.read_text(encoding="utf-8")).is_equal_to(original)
+
+
+def test_update_preserves_plugin_slices(repo_root: Path) -> None:
+    """SHA refresh must round-trip reviewed plugin slices instead of dropping them."""
+    registry_path = repo_root / "vendors.yaml"
+    contents = registry_path.read_text(encoding="utf-8")
+    registry_path.write_text(
+        contents.replace(
+            "homepage: https://github.com/owner/existing\n",
+            "homepage: https://github.com/owner/existing\n"
+            "    plugins:\n"
+            "      - id: existing-plugin\n"
+            "        description: Existing vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+            "        renameSkills:\n"
+            "          teach: teach-existing\n"
+            "        agents:\n"
+            "          - cursor\n",
+        ),
+        encoding="utf-8",
+    )
+
+    manage_vendors.update(
+        repo_root=repo_root,
+        vendor_id="existing",
+        repo=None,
+        sha=_NEW_SHA,
+        skill_roots=None,
+        license_name=None,
+        homepage=None,
+        display_ref=None,
+    )
+
+    vendors = load_registry(registry_path=registry_path)
+    plugin = vendors[0].plugins[0]
+    assert_that(plugin.id).is_equal_to("existing-plugin")
+    assert_that(plugin.skills).is_equal_to("*")
+    assert_that(plugin.rename_skills).is_equal_to((("teach", "teach-existing"),))
+    assert_that(plugin.agents).is_equal_to(("cursor",))
+    dumped = registry_path.read_text(encoding="utf-8")
+    assert_that(dumped).contains("existing-plugin")
+    assert_that(dumped).contains("teach: teach-existing")

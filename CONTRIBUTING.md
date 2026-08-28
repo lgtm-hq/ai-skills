@@ -91,6 +91,46 @@ uv run python scripts/manage_vendors.py check
 **`README.md`** and record the change under the Unreleased section of
 **`CHANGELOG.md`**. The script prints this reminder and never edits those files.
 
+### Vendor plugin slices
+
+Each vendor may declare `plugins:` — reviewed bake slices, not runtime
+improvisation ([ADR-0005](docs/adr/0005-collision-doctrine.md),
+[ADR-0006](docs/adr/0006-vendor-bake-safety.md)). Omit the field or use
+`plugins: []` until a slice is declared. Filling the five registered vendors
+is a separate issue; this schema is validated whenever `vendors.yaml` loads.
+
+Per plugin:
+
+- `id` — kebab-case plugin id, unique across vendors and first-party
+  `bundles.yaml` group ids
+- `description` — non-empty string
+- `skillsRoot` — relative POSIX path or glob (no `..`, not absolute)
+- `skills` — `"*"` (every skill under `skillsRoot`) or a non-empty list of
+  paths relative to `skillsRoot`
+- `extraSkills` — optional repo-relative paths to ingest in addition
+- `renameSkills` — optional `{old: new}` kebab-case map; every collision
+  rename is a reviewed registry edit, never a bake/install guess
+- `agents` — optional non-empty list of `claude-code`, `copilot`, `cursor`,
+  `codex`
+
+```yaml
+    plugins:
+      - id: example-plugin
+        description: Example vendor plugin.
+        skillsRoot: skills
+        skills: "*"
+        extraSkills:
+          - extras/bonus
+        renameSkills:
+          teach: teach-example
+        agents:
+          - cursor
+          - claude-code
+```
+
+`scripts/manage_vendors.py` round-trips `plugins` when refreshing SHAs. Do
+not hand-edit baked indexes to encode a slice.
+
 ## Pull requests
 
 - Use **[Conventional Commits](https://www.conventionalcommits.org/)** in PR titles;

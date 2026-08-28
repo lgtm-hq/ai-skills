@@ -432,3 +432,283 @@ vendors:
     assert_that(notice_path.read_text(encoding="utf-8")).is_equal_to(
         "existing notice\n"
     )
+
+
+_PLUGIN_SLICE = """
+    plugins:
+      - id: example-plugin
+        description: Example vendor plugin.
+        skillsRoot: skills
+        skills: "*"
+        extraSkills:
+          - extras/bonus
+        renameSkills:
+          teach: teach-example
+        agents:
+          - cursor
+          - claude-code
+"""
+
+
+def _with_plugins(*, registry_path: Path, plugins: str = _PLUGIN_SLICE) -> Path:
+    """Append a plugin slice after the fixture homepage field.
+
+    Args:
+        registry_path: Isolated ``vendors.yaml`` path.
+        plugins: YAML block to insert.
+
+    Returns:
+        The same ``registry_path``.
+    """
+    contents = registry_path.read_text(encoding="utf-8")
+    registry_path.write_text(
+        _replace_once(
+            contents=contents,
+            source="homepage: https://example.com/repository",
+            replacement=f"homepage: https://example.com/repository{plugins}",
+        ),
+        encoding="utf-8",
+    )
+    return registry_path
+
+
+def test_load_registry_accepts_plugin_slice(valid_registry_path: Path) -> None:
+    """Accept a reviewed plugin slice with glob ingest and collision rename."""
+    vendors = load_registry(
+        registry_path=_with_plugins(registry_path=valid_registry_path),
+    )
+
+    assert_that(vendors).is_length(1)
+    plugin = vendors[0].plugins[0]
+    assert_that(plugin.id).is_equal_to("example-plugin")
+    assert_that(plugin.description).is_equal_to("Example vendor plugin.")
+    assert_that(plugin.skills_root).is_equal_to("skills")
+    assert_that(plugin.skills).is_equal_to("*")
+    assert_that(plugin.extra_skills).is_equal_to(("extras/bonus",))
+    assert_that(plugin.rename_skills).is_equal_to((("teach", "teach-example"),))
+    assert_that(plugin.agents).is_equal_to(("cursor", "claude-code"))
+
+
+def test_load_registry_accepts_omitted_plugins(valid_registry_path: Path) -> None:
+    """Keep current vendors.yaml valid before bake-the-vendors fills slices."""
+    vendors = load_registry(registry_path=valid_registry_path)
+
+    assert_that(vendors[0].plugins).is_equal_to(())
+
+
+def test_load_registry_accepts_empty_plugins_list(valid_registry_path: Path) -> None:
+    """Allow an explicit empty plugins list as a schema-only declaration."""
+    vendors = load_registry(
+        registry_path=_with_plugins(
+            registry_path=valid_registry_path,
+            plugins="\n    plugins: []",
+        ),
+    )
+
+    assert_that(vendors[0].plugins).is_equal_to(())
+
+
+def test_load_registry_accepts_skill_path_list(valid_registry_path: Path) -> None:
+    """Accept an explicit skill-path list relative to skillsRoot."""
+    vendors = load_registry(
+        registry_path=_with_plugins(
+            registry_path=valid_registry_path,
+            plugins="""
+    plugins:
+      - id: example-plugin
+        description: Example vendor plugin.
+        skillsRoot: skills
+        skills:
+          - alpha
+          - nested/beta
+""",
+        ),
+    )
+
+    assert_that(vendors[0].plugins[0].skills).is_equal_to(("alpha", "nested/beta"))
+
+
+@pytest.mark.parametrize(
+    ("source", "replacement", "message"),
+    [
+        pytest.param(
+            "id: example-plugin",
+            "id: ExamplePlugin",
+            "id must be a lowercase slug",
+            id="invalid-plugin-id",
+        ),
+        pytest.param(
+            'skills: "*"',
+            "skills: []",
+            r'skills must be "\*" or a non-empty list',
+            id="empty-skills",
+        ),
+        pytest.param(
+            "extraSkills:\n          - extras/bonus",
+            "extraSkills:\n          - /extras/bonus",
+            "extraSkills entries must be relative",
+            id="absolute-extra-skill",
+        ),
+        pytest.param(
+            "teach: teach-example",
+            "teach: teach",
+            "renameSkills must change the skill name",
+            id="identity-rename",
+        ),
+        pytest.param(
+            "teach: teach-example",
+            "Teach: teach-example",
+            "renameSkills keys and values must be lowercase slugs",
+            id="rename-not-slug",
+        ),
+        pytest.param(
+            "- cursor\n          - claude-code",
+            "- notepad",
+            "agents entries must be one of",
+            id="unknown-agent",
+        ),
+        pytest.param(
+            "agents:\n          - cursor\n          - claude-code",
+            "agents: []",
+            "agents must be a non-empty list",
+            id="empty-agents",
+        ),
+    ],
+)
+def test_load_registry_rejects_invalid_plugin_fields(
+    valid_registry_path: Path,
+    source: str,
+    replacement: str,
+    message: str,
+) -> None:
+    """Fail closed when a plugin slice violates the reviewed schema."""
+    registry_path = _with_plugins(registry_path=valid_registry_path)
+    contents = registry_path.read_text(encoding="utf-8")
+    registry_path.write_text(
+        _replace_once(contents=contents, source=source, replacement=replacement),
+        encoding="utf-8",
+    )
+
+    with pytest.raises((TypeError, ValueError), match=message):
+        load_registry(registry_path=registry_path)
+
+
+def test_load_registry_rejects_duplicate_plugin_ids(
+    valid_registry_path: Path,
+) -> None:
+    """Reject two slices on one vendor that share a plugin id."""
+    _with_plugins(
+        registry_path=valid_registry_path,
+        plugins="""
+    plugins:
+      - id: example-plugin
+        description: First slice.
+        skillsRoot: skills
+        skills: "*"
+      - id: example-plugin
+        description: Duplicate slice.
+        skillsRoot: skills
+        skills: "*"
+""",
+    )
+
+    with pytest.raises(ValueError, match="plugin ids must be unique"):
+        load_registry(registry_path=valid_registry_path)
+
+
+def test_load_registry_rejects_cross_vendor_plugin_id_collision(
+    tmp_path: Path,
+) -> None:
+    """Reject the same plugin id declared by two vendors."""
+    registry_path = tmp_path / "vendors.yaml"
+    registry_path.write_text(
+        """---
+vendors:
+  - id: first-vendor
+    repo: owner/first
+    sha: "0123456789abcdef0123456789abcdef01234567"
+    skillRoots:
+      - skills
+    license: MIT
+    homepage: https://example.com/first
+    plugins:
+      - id: shared-plugin
+        description: First vendor slice.
+        skillsRoot: skills
+        skills: "*"
+  - id: second-vendor
+    repo: owner/second
+    sha: "89abcdef0123456789abcdef0123456789abcdef"
+    skillRoots:
+      - skills
+    license: MIT
+    homepage: https://example.com/second
+    plugins:
+      - id: shared-plugin
+        description: Second vendor slice.
+        skillsRoot: skills
+        skills: "*"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="must be unique across vendors"):
+        load_registry(registry_path=registry_path)
+
+
+def test_load_registry_rejects_first_party_plugin_id_collision(
+    valid_registry_path: Path,
+) -> None:
+    """Reject a vendor plugin id that matches a bundles.yaml group id."""
+    valid_registry_path.parent.joinpath("bundles.yaml").write_text(
+        """---
+groups:
+  git-pr:
+    id: git-pr
+    name: Git & PR Workflow
+    description: First-party plugin.
+    skills:
+      - branch
+""",
+        encoding="utf-8",
+    )
+    _with_plugins(
+        registry_path=valid_registry_path,
+        plugins="""
+    plugins:
+      - id: git-pr
+        description: Collides with first-party plugin.
+        skillsRoot: skills
+        skills: "*"
+""",
+    )
+
+    with pytest.raises(ValueError, match="collides with a first-party plugin id"):
+        load_registry(registry_path=valid_registry_path)
+
+
+def test_load_registry_rejects_duplicate_rename_targets_across_plugins(
+    valid_registry_path: Path,
+) -> None:
+    """Reject two plugins renaming different skills onto the same explode name."""
+    _with_plugins(
+        registry_path=valid_registry_path,
+        plugins="""
+    plugins:
+      - id: first-plugin
+        description: First slice.
+        skillsRoot: skills
+        skills: "*"
+        renameSkills:
+          teach: shared-name
+      - id: second-plugin
+        description: Second slice.
+        skillsRoot: extras
+        skills: "*"
+        renameSkills:
+          handoff: shared-name
+""",
+    )
+
+    with pytest.raises(ValueError, match="renameSkills targets must be unique"):
+        load_registry(registry_path=valid_registry_path)

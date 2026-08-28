@@ -53,8 +53,18 @@ _FIELD_ORDER = (
     "sha",
     "displayRef",
     "skillRoots",
+    "plugins",
     "license",
     "homepage",
+)
+_PLUGIN_FIELD_ORDER = (
+    "id",
+    "description",
+    "skillsRoot",
+    "skills",
+    "extraSkills",
+    "renameSkills",
+    "agents",
 )
 _DEFAULT_DISPLAY_REF = "latest"
 
@@ -200,11 +210,83 @@ def _dump_registry(*, vendors: list[dict[str, Any]]) -> str:
                     for root in vendor["skillRoots"]
                 )
                 continue
+            if field == "plugins":
+                lines.extend(
+                    _dump_plugins(plugins=vendor["plugins"], prefix=prefix),
+                )
+                continue
             lines.append(
                 f"{prefix}{field}: "
                 f"{_scalar(value=str(vendor[field]), quote=field == 'sha')}",
             )
     return "\n".join(lines) + "\n"
+
+
+def _dump_plugins(*, plugins: object, prefix: str) -> list[str]:
+    """Serialize a vendor's plugin slices.
+
+    Args:
+        plugins: Plugin mappings in source order.
+        prefix: Indent prefix matching the current vendor field.
+
+    Returns:
+        YAML lines for the ``plugins`` field.
+    """
+    if not isinstance(plugins, list) or not plugins:
+        return [f"{prefix}plugins: []"]
+    lines = [f"{prefix}plugins:"]
+    for plugin in plugins:
+        if not isinstance(plugin, dict):
+            continue
+        lines.extend(_dump_plugin(plugin=plugin))
+    return lines
+
+
+def _dump_plugin(*, plugin: dict[str, Any]) -> list[str]:
+    """Serialize one plugin mapping.
+
+    Args:
+        plugin: CamelCase plugin fields from ``vendors.yaml``.
+
+    Returns:
+        YAML lines for one plugin list item.
+    """
+    lines: list[str] = []
+    emitted = False
+    for field in _PLUGIN_FIELD_ORDER:
+        if field not in plugin:
+            continue
+        prefix = "      - " if not emitted else "        "
+        emitted = True
+        value = plugin[field]
+        if field == "skills":
+            if value == "*":
+                lines.append(f'{prefix}skills: "*"')
+            elif isinstance(value, list):
+                lines.append(f"{prefix}skills:")
+                lines.extend(
+                    f"          - {_scalar(value=str(path))}" for path in value
+                )
+            continue
+        if field in {"extraSkills", "agents"} and isinstance(value, list):
+            if not value:
+                lines.append(f"{prefix}{field}: []")
+                continue
+            lines.append(f"{prefix}{field}:")
+            lines.extend(f"          - {_scalar(value=str(item))}" for item in value)
+            continue
+        if field == "renameSkills" and isinstance(value, dict):
+            if not value:
+                lines.append(f"{prefix}renameSkills: {{}}")
+                continue
+            lines.append(f"{prefix}renameSkills:")
+            for old, new in value.items():
+                lines.append(
+                    f"          {_scalar(value=str(old))}: {_scalar(value=str(new))}",
+                )
+            continue
+        lines.append(f"{prefix}{field}: {_scalar(value=str(value))}")
+    return lines
 
 
 def _read_raw_registry(*, registry_path: Path) -> list[dict[str, Any]]:

@@ -11,15 +11,23 @@ from urllib.parse import urlparse
 import yaml
 
 from vendor_registry.vendor import Vendor
+from vendor_registry.vendor_plugin import VendorPlugin
 
 _ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _REPO_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+# Must match AGENT_SKILL_PATHS in npm/ai-skills/lib/lockfile.js.
+_KNOWN_HOST_AGENTS = frozenset({"claude-code", "codex", "copilot", "cursor"})
 _VENDOR_REQUIRED_FIELDS = frozenset(
     {"id", "repo", "sha", "skillRoots", "license", "homepage"},
 )
-_VENDOR_OPTIONAL_FIELDS = frozenset({"displayRef"})
+_VENDOR_OPTIONAL_FIELDS = frozenset({"displayRef", "plugins"})
 _VENDOR_FIELDS = _VENDOR_REQUIRED_FIELDS | _VENDOR_OPTIONAL_FIELDS
+_PLUGIN_REQUIRED_FIELDS = frozenset(
+    {"id", "description", "skillsRoot", "skills"},
+)
+_PLUGIN_OPTIONAL_FIELDS = frozenset({"extraSkills", "renameSkills", "agents"})
+_PLUGIN_FIELDS = _PLUGIN_REQUIRED_FIELDS | _PLUGIN_OPTIONAL_FIELDS
 
 
 def load_registry(*, registry_path: Path) -> tuple[Vendor, ...]:
@@ -52,6 +60,10 @@ def load_registry(*, registry_path: Path) -> tuple[Vendor, ...]:
     if len(ids) != len(set(ids)):
         msg = "vendors.yaml vendor ids must be unique"
         raise ValueError(msg)
+    _validate_plugin_id_uniqueness(
+        vendors=vendors,
+        registry_path=registry_path,
+    )
     return vendors
 
 
@@ -135,6 +147,10 @@ def _parse_vendor(*, raw_vendor: object, position: int) -> Vendor:
         value=raw_vendor["skillRoots"],
         position=position,
     )
+    plugins = _parse_plugins(
+        value=raw_vendor.get("plugins", []),
+        position=position,
+    )
     return Vendor(
         id=vendor_id,
         repo=repo,
@@ -142,6 +158,7 @@ def _parse_vendor(*, raw_vendor: object, position: int) -> Vendor:
         skill_roots=skill_roots,
         license=license_name,
         homepage=homepage,
+        plugins=plugins,
     )
 
 
@@ -188,28 +205,433 @@ def _parse_skill_roots(*, value: object, position: int) -> tuple[str, ...]:
         raise ValueError(msg)
     roots: list[str] = []
     for root in value:
-        if not isinstance(root, str):
-            msg = f"Vendor {position} skillRoots entries must be strings"
-            raise TypeError(msg)
-        if root.startswith("/"):
-            msg = (
-                f"Vendor {position} skillRoots entries must be relative, "
-                "non-empty paths"
-            )
-            raise ValueError(msg)
-        normalized = root.strip("/")
-        path = PurePosixPath(normalized)
-        if not normalized or path.is_absolute() or ".." in path.parts:
-            msg = (
-                f"Vendor {position} skillRoots entries must be relative, "
-                "non-empty paths"
-            )
-            raise ValueError(msg)
-        roots.append(normalized)
+        roots.append(
+            _parse_relative_posix_path(
+                value=root,
+                field="skillRoots",
+                position=position,
+            ),
+        )
     if len(roots) != len(set(roots)):
         msg = f"Vendor {position} skillRoots entries must be unique"
         raise ValueError(msg)
     return tuple(roots)
+
+
+def _parse_relative_posix_path(
+    *,
+    value: object,
+    field: str,
+    position: int,
+    plugin_id: str | None = None,
+) -> str:
+    """Return a relative POSIX path or glob without ``..`` or absolute form.
+
+    Args:
+        value: Raw YAML path value.
+        field: Field name for error messages.
+        position: One-based vendor position for error messages.
+        plugin_id: Plugin id when the field belongs to a plugin slice.
+
+    Returns:
+        Normalized relative POSIX path with trailing slashes stripped.
+
+    Raises:
+        TypeError: If the value is not a string.
+        ValueError: If the path is blank, absolute, or escapes with ``..``.
+    """
+    where = _plugin_where(position=position, plugin_id=plugin_id)
+    if not isinstance(value, str):
+        msg = f"{where} {field} entries must be strings"
+        raise TypeError(msg)
+    if value.startswith("/"):
+        msg = f"{where} {field} entries must be relative, non-empty paths"
+        raise ValueError(msg)
+    normalized = value.strip("/")
+    path = PurePosixPath(normalized)
+    if not normalized or path.is_absolute() or ".." in path.parts:
+        msg = f"{where} {field} entries must be relative, non-empty paths"
+        raise ValueError(msg)
+    return normalized
+
+
+def _plugin_where(*, position: int, plugin_id: str | None) -> str:
+    """Return a vendor/plugin prefix for schema error messages.
+
+    Args:
+        position: One-based vendor position.
+        plugin_id: Plugin id when reporting a plugin-field error.
+
+    Returns:
+        ``Vendor N`` or ``Vendor N plugin <id>``.
+    """
+    if plugin_id is None:
+        return f"Vendor {position}"
+    return f"Vendor {position} plugin {plugin_id}"
+
+
+def _parse_plugins(*, value: object, position: int) -> tuple[VendorPlugin, ...]:
+    """Validate optional plugin slices on one vendor.
+
+    Args:
+        value: Raw YAML ``plugins`` value, or an empty list when omitted.
+        position: One-based vendor position for error messages.
+
+    Returns:
+        Validated plugin records in source order.
+
+    Raises:
+        TypeError: If ``plugins`` is not a list of mappings.
+        ValueError: If a plugin slice violates the schema.
+    """
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        msg = f"Vendor {position} plugins must be a list"
+        raise TypeError(msg)
+    plugins = tuple(
+        _parse_plugin(raw_plugin=raw_plugin, position=position, index=index)
+        for index, raw_plugin in enumerate(value, start=1)
+    )
+    plugin_ids = [plugin.id for plugin in plugins]
+    if len(plugin_ids) != len(set(plugin_ids)):
+        msg = f"Vendor {position} plugin ids must be unique"
+        raise ValueError(msg)
+    rename_targets = [new for plugin in plugins for _, new in plugin.rename_skills]
+    if len(rename_targets) != len(set(rename_targets)):
+        msg = f"Vendor {position} renameSkills targets must be unique"
+        raise ValueError(msg)
+    return plugins
+
+
+def _parse_plugin(
+    *,
+    raw_plugin: object,
+    position: int,
+    index: int,
+) -> VendorPlugin:
+    """Validate and convert one vendor plugin mapping.
+
+    Args:
+        raw_plugin: YAML value for one plugin slice.
+        position: One-based vendor position for error messages.
+        index: One-based plugin position within the vendor.
+
+    Returns:
+        Validated plugin record.
+
+    Raises:
+        TypeError: If the plugin is not a mapping.
+        ValueError: If a required field is invalid.
+    """
+    if not isinstance(raw_plugin, dict):
+        msg = f"Vendor {position} plugin {index} must be a mapping"
+        raise TypeError(msg)
+    preview_id = raw_plugin.get("id")
+    plugin_label = (
+        preview_id if isinstance(preview_id, str) and preview_id else str(index)
+    )
+    raw_keys = set(raw_plugin)
+    missing = _PLUGIN_REQUIRED_FIELDS - raw_keys
+    unknown = raw_keys - _PLUGIN_FIELDS
+    if missing or unknown:
+        msg = (
+            f"Vendor {position} plugin {plugin_label} must contain required fields "
+            f"{', '.join(sorted(_PLUGIN_REQUIRED_FIELDS))}"
+            f" and may include optional: {', '.join(sorted(_PLUGIN_OPTIONAL_FIELDS))}"
+        )
+        raise ValueError(msg)
+    plugin_id = _required_string(
+        value=raw_plugin["id"],
+        field="id",
+        position=position,
+    )
+    if _ID_PATTERN.fullmatch(plugin_id) is None:
+        msg = f"Vendor {position} plugin {plugin_id} id must be a lowercase slug"
+        raise ValueError(msg)
+    description = _required_string(
+        value=raw_plugin["description"],
+        field="description",
+        position=position,
+    )
+    skills_root = _parse_relative_posix_path(
+        value=raw_plugin["skillsRoot"],
+        field="skillsRoot",
+        position=position,
+        plugin_id=plugin_id,
+    )
+    skills = _parse_plugin_skills(
+        value=raw_plugin["skills"],
+        position=position,
+        plugin_id=plugin_id,
+    )
+    extra_skills = _parse_optional_path_list(
+        value=raw_plugin.get("extraSkills", []),
+        field="extraSkills",
+        position=position,
+        plugin_id=plugin_id,
+    )
+    rename_skills = _parse_rename_skills(
+        value=raw_plugin.get("renameSkills", {}),
+        position=position,
+        plugin_id=plugin_id,
+    )
+    agents = _parse_plugin_agents(
+        value=raw_plugin.get("agents"),
+        position=position,
+        plugin_id=plugin_id,
+    )
+    return VendorPlugin(
+        id=plugin_id,
+        description=description,
+        skills_root=skills_root,
+        skills=skills,
+        extra_skills=extra_skills,
+        rename_skills=rename_skills,
+        agents=agents,
+    )
+
+
+def _parse_plugin_skills(
+    *,
+    value: object,
+    position: int,
+    plugin_id: str,
+) -> str | tuple[str, ...]:
+    """Validate ``skills: "*"`` or a non-empty list of relative paths.
+
+    Args:
+        value: Raw YAML ``skills`` value.
+        position: One-based vendor position.
+        plugin_id: Plugin id for error messages.
+
+    Returns:
+        ``"*"`` or a tuple of paths relative to ``skillsRoot``.
+
+    Raises:
+        TypeError: If ``skills`` is neither a string nor a list of strings.
+        ValueError: If the selector is empty or uses unsafe paths.
+    """
+    where = _plugin_where(position=position, plugin_id=plugin_id)
+    if value == "*":
+        return "*"
+    if not isinstance(value, list) or not value:
+        msg = f'{where} skills must be "*" or a non-empty list of relative paths'
+        raise ValueError(msg)
+    paths = tuple(
+        _parse_relative_posix_path(
+            value=path,
+            field="skills",
+            position=position,
+            plugin_id=plugin_id,
+        )
+        for path in value
+    )
+    if len(paths) != len(set(paths)):
+        msg = f"{where} skills paths must be unique"
+        raise ValueError(msg)
+    return paths
+
+
+def _parse_optional_path_list(
+    *,
+    value: object,
+    field: str,
+    position: int,
+    plugin_id: str,
+) -> tuple[str, ...]:
+    """Validate an optional list of relative POSIX paths.
+
+    Args:
+        value: Raw YAML list value.
+        field: Field name for error messages.
+        position: One-based vendor position.
+        plugin_id: Plugin id for error messages.
+
+    Returns:
+        Validated relative paths.
+
+    Raises:
+        TypeError: If the value is not a list of strings.
+        ValueError: If a path is unsafe or duplicated.
+    """
+    where = _plugin_where(position=position, plugin_id=plugin_id)
+    if not isinstance(value, list):
+        msg = f"{where} {field} must be a list"
+        raise TypeError(msg)
+    paths = tuple(
+        _parse_relative_posix_path(
+            value=path,
+            field=field,
+            position=position,
+            plugin_id=plugin_id,
+        )
+        for path in value
+    )
+    if len(paths) != len(set(paths)):
+        msg = f"{where} {field} entries must be unique"
+        raise ValueError(msg)
+    return paths
+
+
+def _parse_rename_skills(
+    *,
+    value: object,
+    position: int,
+    plugin_id: str,
+) -> tuple[tuple[str, str], ...]:
+    """Validate reviewed skill-directory renames.
+
+    Args:
+        value: Raw YAML ``renameSkills`` mapping.
+        position: One-based vendor position.
+        plugin_id: Plugin id for error messages.
+
+    Returns:
+        Ordered ``(old, new)`` kebab-case pairs.
+
+    Raises:
+        TypeError: If the value is not a string mapping.
+        ValueError: If a name is not kebab-case, is identity, or collides.
+    """
+    where = _plugin_where(position=position, plugin_id=plugin_id)
+    if not isinstance(value, dict):
+        msg = f"{where} renameSkills must be a mapping"
+        raise TypeError(msg)
+    pairs: list[tuple[str, str]] = []
+    for raw_old, raw_new in value.items():
+        if not isinstance(raw_old, str) or not isinstance(raw_new, str):
+            msg = f"{where} renameSkills keys and values must be strings"
+            raise TypeError(msg)
+        old = raw_old.strip()
+        new = raw_new.strip()
+        if _ID_PATTERN.fullmatch(old) is None or _ID_PATTERN.fullmatch(new) is None:
+            msg = f"{where} renameSkills keys and values must be lowercase slugs"
+            raise ValueError(msg)
+        if old == new:
+            msg = f"{where} renameSkills must change the skill name"
+            raise ValueError(msg)
+        pairs.append((old, new))
+    targets = [new for _, new in pairs]
+    if len(targets) != len(set(targets)):
+        msg = f"{where} renameSkills targets must be unique"
+        raise ValueError(msg)
+    return tuple(pairs)
+
+
+def _parse_plugin_agents(
+    *,
+    value: object,
+    position: int,
+    plugin_id: str,
+) -> tuple[str, ...]:
+    """Validate an optional list of known host agent names.
+
+    Args:
+        value: Raw YAML ``agents`` value, or ``None`` when omitted.
+        position: One-based vendor position.
+        plugin_id: Plugin id for error messages.
+
+    Returns:
+        Unique known agent names in source order.
+
+    Raises:
+        TypeError: If ``agents`` is not a string list.
+        ValueError: If the list is empty, duplicated, or names an unknown host.
+    """
+    if value is None:
+        return ()
+    where = _plugin_where(position=position, plugin_id=plugin_id)
+    if not isinstance(value, list) or not value:
+        msg = f"{where} agents must be a non-empty list"
+        raise ValueError(msg)
+    agents: list[str] = []
+    for raw_agent in value:
+        if not isinstance(raw_agent, str):
+            msg = f"{where} agents entries must be strings"
+            raise TypeError(msg)
+        agent = raw_agent.strip()
+        if agent not in _KNOWN_HOST_AGENTS:
+            msg = (
+                f"{where} agents entries must be one of: "
+                f"{', '.join(sorted(_KNOWN_HOST_AGENTS))}"
+            )
+            raise ValueError(msg)
+        agents.append(agent)
+    if len(agents) != len(set(agents)):
+        msg = f"{where} agents entries must be unique"
+        raise ValueError(msg)
+    return tuple(agents)
+
+
+def _validate_plugin_id_uniqueness(
+    *,
+    vendors: tuple[Vendor, ...],
+    registry_path: Path,
+) -> None:
+    """Reject vendor plugin ids that collide with each other or first-party ids.
+
+    Args:
+        vendors: Validated vendor records.
+        registry_path: Path to ``vendors.yaml``; sibling ``bundles.yaml``
+            supplies first-party plugin ids when present.
+
+    Raises:
+        ValueError: If a plugin id is duplicated or collides with a bundle id.
+    """
+    first_party = _first_party_plugin_ids(registry_path=registry_path)
+    seen: dict[str, str] = {}
+    for vendor in vendors:
+        for plugin in vendor.plugins:
+            if plugin.id in first_party:
+                msg = (
+                    f"Vendor plugin id {plugin.id!r} collides with a "
+                    "first-party plugin id"
+                )
+                raise ValueError(msg)
+            owner = seen.get(plugin.id)
+            if owner is not None:
+                msg = (
+                    f"Vendor plugin ids must be unique across vendors: "
+                    f"{plugin.id!r} is declared by {owner} and {vendor.id}"
+                )
+                raise ValueError(msg)
+            seen[plugin.id] = vendor.id
+
+
+def _first_party_plugin_ids(*, registry_path: Path) -> frozenset[str]:
+    """Read kebab-case plugin ids from sibling ``bundles.yaml`` when present.
+
+    Args:
+        registry_path: Path to ``vendors.yaml``.
+
+    Returns:
+        First-party plugin ids, or empty when ``bundles.yaml`` is absent.
+
+    Raises:
+        ValueError: If ``bundles.yaml`` exists but is not a mapping of groups.
+    """
+    bundles_path = registry_path.parent / "bundles.yaml"
+    if not bundles_path.is_file():
+        return frozenset()
+    data = yaml.safe_load(bundles_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or "groups" not in data:
+        msg = "bundles.yaml must contain a 'groups' mapping"
+        raise ValueError(msg)
+    groups = data["groups"]
+    if groups is None:
+        return frozenset()
+    if not isinstance(groups, dict):
+        msg = "bundles.yaml 'groups' must be a mapping"
+        raise TypeError(msg)
+    ids: set[str] = set()
+    for group in groups.values():
+        if not isinstance(group, dict):
+            continue
+        plugin_id = group.get("id")
+        if isinstance(plugin_id, str) and plugin_id:
+            ids.add(plugin_id)
+    return frozenset(ids)
 
 
 def discover_skills(
