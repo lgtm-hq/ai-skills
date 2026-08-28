@@ -1988,6 +1988,58 @@ def test_install_directory_preserves_inode_when_rollback_exchange_fails(
     assert_that((tmp_path / ".plugins-baked.hold").exists()).is_true()
 
 
+def test_install_directory_restores_on_snapshot_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed snapshot copy must swap the untouched original inode back."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "a.txt").write_text("old-a\n", encoding="utf-8")
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "a.txt").write_text("new-a\n", encoding="utf-8")
+    dest_inode = dest.stat().st_ino
+    real_replace = safe_tree._replace_tree_contents
+    calls = {"count": 0}
+
+    def _fail_first_replace(*, source: Path, destination: Path) -> None:
+        """Fail the snapshot copy and otherwise defer to the real helper.
+
+        Args:
+            source: Tree being copied.
+            destination: Copy destination.
+
+        Raises:
+            OSError: On the first call.
+        """
+        calls["count"] += 1
+        if calls["count"] == 1:
+            msg = "injected snapshot failure"
+            raise OSError(msg)
+        real_replace(source=source, destination=destination)
+
+    monkeypatch.setattr(safe_tree, "_replace_tree_contents", _fail_first_replace)
+    previous_cwd = Path.cwd()
+    try:
+        os.chdir(dest)
+        with pytest.raises(OSError, match="injected snapshot failure"):
+            install_directory(source=source, destination=dest)
+        Path("probe.txt").write_text("ok\n", encoding="utf-8")
+        assert_that(Path.cwd().resolve()).is_equal_to(dest.resolve())
+    finally:
+        os.chdir(previous_cwd)
+
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
+    assert_that((dest / "a.txt").read_text(encoding="utf-8")).is_equal_to(
+        "old-a\n",
+    )
+    assert_that((dest / "probe.txt").read_text(encoding="utf-8")).is_equal_to(
+        "ok\n",
+    )
+    assert_that((tmp_path / ".plugins-baked.hold").exists()).is_false()
+
+
 def test_install_directory_preserves_inode_when_final_exchange_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2271,6 +2323,65 @@ def test_install_directory_rejects_symlink_planted_before_exclusive_create(
         "old\n",
     )
     assert_that((tmp_path / ".plugins-baked.hold").exists()).is_false()
+
+
+def test_install_directory_retries_partial_writes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A short os.write must be retried until the full payload is stored."""
+    payload = "abcdefghijklmnop"
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "payload.txt").write_text("old\n", encoding="utf-8")
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "payload.txt").write_text(payload, encoding="utf-8")
+    real_write = os.write
+
+    def _partial_write(fd: int, data: bytes | bytearray | memoryview) -> int:
+        """Write at most eight bytes per call.
+
+        Args:
+            fd: Destination file descriptor.
+            data: Buffer passed to ``os.write``.
+
+        Returns:
+            Number of bytes written.
+        """
+        buffer = bytes(data)
+        if len(buffer) > 8:
+            return real_write(fd, buffer[:8])
+        return real_write(fd, buffer)
+
+    monkeypatch.setattr(safe_tree.os, "write", _partial_write)
+    install_directory(source=source, destination=dest)
+    assert_that((dest / "payload.txt").read_text(encoding="utf-8")).is_equal_to(
+        payload,
+    )
+
+
+def test_write_all_rejects_zero_length_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A write that returns zero before the buffer is exhausted fails closed."""
+
+    def _zero_write(fd: int, data: bytes | bytearray | memoryview) -> int:
+        """Pretend the descriptor accepted no bytes.
+
+        Args:
+            fd: Destination file descriptor.
+            data: Buffer passed to ``os.write``.
+
+        Returns:
+            Always ``0``.
+        """
+        del fd, data
+        return 0
+
+    monkeypatch.setattr(safe_tree.os, "write", _zero_write)
+    with pytest.raises(OSError, match="short write"):
+        safe_tree._write_all(fd=1, data=b"hello")
 
 
 def test_bake_preserves_plugins_baked_cwd(

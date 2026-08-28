@@ -466,9 +466,11 @@ def _publish_into_existing(*, source: Path, destination: Path) -> None:
         exchanged = True
         source.rename(target=inode_home)
         parked = True
-        snapshot.mkdir()
-        _replace_tree_contents(source=inode_home, destination=snapshot)
+        snapshot_ready = False
         try:
+            snapshot.mkdir()
+            _replace_tree_contents(source=inode_home, destination=snapshot)
+            snapshot_ready = True
             _mirror_tree(source=destination, destination=inode_home)
             _exchange_paths(first=inode_home, second=destination)
         except BaseException as exc:  # noqa: BLE001 - restore dest inode on interrupt
@@ -476,6 +478,7 @@ def _publish_into_existing(*, source: Path, destination: Path) -> None:
                 snapshot=snapshot,
                 inode_home=inode_home,
                 destination=destination,
+                restore_from_snapshot=snapshot_ready,
                 original=exc,
             )
     except BaseException as exc:
@@ -498,6 +501,7 @@ def _rollback_original_inode(
     snapshot: Path,
     inode_home: Path,
     destination: Path,
+    restore_from_snapshot: bool,
     original: BaseException,
 ) -> None:
     """Put complete old contents on the original inode and swap it back.
@@ -506,6 +510,9 @@ def _rollback_original_inode(
         snapshot: Complete copy of the pre-publish destination tree.
         inode_home: Current path of the original destination inode.
         destination: Live destination path.
+        restore_from_snapshot: When ``True``, copy ``snapshot`` onto
+            ``inode_home`` before exchanging. When ``False``,
+            ``inode_home`` still holds the untouched original tree.
         original: Error that interrupted publish.
 
     Raises:
@@ -513,7 +520,7 @@ def _rollback_original_inode(
         BaseException: Re-raises ``original`` after a successful restore.
     """
     try:
-        if snapshot.exists(follow_symlinks=False):
+        if restore_from_snapshot and snapshot.exists(follow_symlinks=False):
             _replace_tree_contents(source=snapshot, destination=inode_home)
         _exchange_paths(first=inode_home, second=destination)
     except BaseException as restore_exc:  # noqa: BLE001 - pair with publish error
@@ -688,10 +695,30 @@ def _create_exclusive_copy_at(
             chunk = os.read(source_fd, 1024 * 1024)
             if not chunk:
                 break
-            os.write(dst_fd, chunk)
+            _write_all(fd=dst_fd, data=chunk)
         os.fchmod(dst_fd, mode)
     finally:
         os.close(dst_fd)
+
+
+def _write_all(*, fd: int, data: bytes) -> None:
+    """Write ``data`` to ``fd``, retrying until every byte is sent.
+
+    Args:
+        fd: Destination file descriptor.
+        data: Bytes to write.
+
+    Raises:
+        OSError: If a write returns zero before ``data`` is exhausted.
+    """
+    view = memoryview(data)
+    offset = 0
+    while offset < len(view):
+        written = os.write(fd, view[offset:])
+        if written == 0:
+            msg = "short write"
+            raise OSError(msg)
+        offset += written
 
 
 def _remove_path(*, path: Path) -> None:
