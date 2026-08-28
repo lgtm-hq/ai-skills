@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 import bake_vendor_indexes
+import bake_vendor_plugins
 import yaml
 from vendor_registry.registry import load_registry
 
@@ -397,42 +398,58 @@ def _generated_artifact_paths(*, repo_root: Path) -> tuple[Path, ...]:
     return (
         repo_root / "vendor-indexes",
         repo_root / "NOTICE.md",
+        repo_root / "plugins-baked",
         package_root / "data",
         package_root / "NOTICE.md",
         package_root / "package.json",
     )
 
 
-def _snapshot_artifacts(*, paths: tuple[Path, ...]) -> dict[Path, bytes]:
-    """Capture the current contents of every existing file below ``paths``.
+def _snapshot_artifacts(
+    *,
+    paths: tuple[Path, ...],
+) -> tuple[dict[Path, bytes], frozenset[Path]]:
+    """Capture files and directories under ``paths``.
 
     Args:
         paths: Files or directory roots to snapshot.
 
     Returns:
-        Mapping of existing file paths to their byte contents.
+        File contents and the set of directories that existed, including
+        empty directories such as agent-only ``skills/``.
     """
     snapshot: dict[Path, bytes] = {}
+    directories: set[Path] = set()
     for path in paths:
         if path.is_dir():
-            snapshot.update(
-                {file: file.read_bytes() for file in path.rglob("*") if file.is_file()},
-            )
+            directories.add(path)
+            for child in path.rglob("*"):
+                if child.is_dir():
+                    directories.add(child)
+                    continue
+                if child.is_file():
+                    snapshot[child] = child.read_bytes()
         elif path.is_file():
             snapshot[path] = path.read_bytes()
-    return snapshot
+    return snapshot, frozenset(directories)
 
 
 def _restore_artifacts(
     *,
     paths: tuple[Path, ...],
     snapshot: dict[Path, bytes],
+    directories: frozenset[Path],
 ) -> None:
-    """Restore snapshotted files and delete any created after the snapshot.
+    """Restore snapshotted files and directories.
+
+    Extra files are unlinked. Directories that did not exist in the
+    snapshot are removed. Empty directories that were snapshotted are
+    recreated.
 
     Args:
         paths: Files or directory roots covered by the snapshot.
         snapshot: Pre-change file contents from ``_snapshot_artifacts``.
+        directories: Pre-change directories from ``_snapshot_artifacts``.
     """
     for path in paths:
         if path.is_dir():
@@ -444,10 +461,35 @@ def _restore_artifacts(
         for file in current:
             if file not in snapshot:
                 file.unlink()
+        if path.is_dir():
+            _prune_empty_directories(root=path, keep=directories)
+            if path not in directories and not any(path.iterdir()):
+                path.rmdir()
+    for directory in sorted(directories, key=lambda item: len(item.parts)):
+        directory.mkdir(parents=True, exist_ok=True)
     for file, content in snapshot.items():
         file.parent.mkdir(parents=True, exist_ok=True)
         if not file.is_file() or file.read_bytes() != content:
             file.write_bytes(content)
+
+
+def _prune_empty_directories(*, root: Path, keep: frozenset[Path]) -> None:
+    """Remove empty directories under ``root`` that were not snapshotted.
+
+    Args:
+        root: Directory tree that may contain extra empty directories.
+        keep: Directories that existed before the failed refresh.
+    """
+    directories = sorted(
+        (candidate for candidate in root.rglob("*") if candidate.is_dir()),
+        key=lambda candidate: len(candidate.parts),
+        reverse=True,
+    )
+    for directory in directories:
+        if directory in keep:
+            continue
+        if not any(directory.iterdir()):
+            directory.rmdir()
 
 
 def _refresh_or_restore(
@@ -470,7 +512,7 @@ def _refresh_or_restore(
             newly created file.
     """
     artifact_paths = _generated_artifact_paths(repo_root=repo_root)
-    snapshot = _snapshot_artifacts(paths=artifact_paths)
+    snapshot, directories = _snapshot_artifacts(paths=artifact_paths)
     refreshed = False
     try:
         refresh(repo_root=repo_root)
@@ -481,7 +523,11 @@ def _refresh_or_restore(
                 registry_path.write_text(original, encoding="utf-8")
             elif registry_path.is_file():
                 registry_path.unlink()
-            _restore_artifacts(paths=artifact_paths, snapshot=snapshot)
+            _restore_artifacts(
+                paths=artifact_paths,
+                snapshot=snapshot,
+                directories=directories,
+            )
 
 
 def _normalize_skill_roots(*, values: list[str]) -> tuple[str, ...]:
@@ -554,7 +600,10 @@ def _print_summary(*, action: str, vendor_id: str) -> None:
         vendor_id: Vendor slug that was changed.
     """
     print(f"{action} vendor '{vendor_id}' in vendors.yaml.")
-    print("Rebaked vendor indexes and synchronized ai-skills npm package data.")
+    print(
+        "Rebaked vendor indexes, plugin trees, and synchronized "
+        "ai-skills npm package data.",
+    )
     print()
     print("Manual follow-up still required (not automated):")
     print("  - Add or update the vendor bullet in README.md.")
@@ -562,17 +611,18 @@ def _print_summary(*, action: str, vendor_id: str) -> None:
 
 
 def refresh(*, repo_root: Path) -> None:
-    """Rebake every vendor index and synchronize npm package data.
+    """Rebake every vendor index and plugin tree, then synchronize npm data.
 
     Args:
         repo_root: Repository root containing ``vendors.yaml``.
     """
     bake_vendor_indexes.bake(repo_root=repo_root)
+    bake_vendor_plugins.bake(repo_root=repo_root)
     _sync_artifacts(repo_root=repo_root, check_only=False)
 
 
 def check(*, repo_root: Path) -> int:
-    """Verify baked indexes and npm package data are current and consistent.
+    """Verify baked indexes, plugin trees, and npm package data are current.
 
     Args:
         repo_root: Repository root containing generated artifacts.
@@ -581,8 +631,9 @@ def check(*, repo_root: Path) -> int:
         ``0`` when nothing is stale, otherwise ``1``.
     """
     bake_status = int(bake_vendor_indexes.check(repo_root=repo_root))
+    plugin_status = int(bake_vendor_plugins.check(repo_root=repo_root))
     sync_status = _sync_artifacts(repo_root=repo_root, check_only=True)
-    return max(bake_status, sync_status)
+    return max(bake_status, plugin_status, sync_status)
 
 
 def add(
@@ -770,12 +821,15 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "refresh",
         parents=[common],
-        help="Rebake indexes and synchronize npm data (no YAML changes)",
+        help=(
+            "Rebake indexes and plugin trees, then synchronize npm data "
+            "(no YAML changes)"
+        ),
     )
     subparsers.add_parser(
         "check",
         parents=[common],
-        help="Verify baked indexes and npm data are current",
+        help="Verify baked indexes, plugin trees, and npm data are current",
     )
     return parser
 

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import bake_vendor_indexes
+import bake_vendor_plugins
 import manage_vendors
 import pytest
 import yaml
@@ -31,6 +32,42 @@ def _fake_tree(*, vendor: Vendor) -> list[str]:
     return list(_FETCHED_TREE)
 
 
+def _write_skill(*, directory: Path, name: str) -> None:
+    """Write a minimal SKILL.md into ``directory``.
+
+    Args:
+        directory: Skill directory to create.
+        name: Frontmatter ``name`` value.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    directory.joinpath("SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: {name} skill.\n---\n",
+        encoding="utf-8",
+    )
+
+
+def _fake_vendor_plugin_tree(*, vendor: Vendor, dest: Path) -> None:
+    """Populate a local vendor tree used when plugin slices are baked.
+
+    Args:
+        vendor: Vendor whose archive would normally be fetched.
+        dest: Directory that receives the unpacked tree.
+    """
+    del vendor
+    dest.mkdir(parents=True, exist_ok=True)
+    _write_skill(directory=dest / "skills" / "alpha", name="alpha")
+    _write_skill(directory=dest / "skills" / "gamma", name="gamma")
+    _write_skill(directory=dest / "skills" / "teach", name="teach")
+    _write_skill(directory=dest / "skills" / "nested" / "beta", name="beta")
+    _write_skill(directory=dest / "extras" / "bonus", name="bonus")
+    agents = dest / "agents"
+    agents.mkdir()
+    agents.joinpath("comment-sicko.md").write_text(
+        "# comment-sicko\n",
+        encoding="utf-8",
+    )
+
+
 @pytest.fixture
 def repo_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Build an isolated repository root with baked, synchronized artifacts.
@@ -43,6 +80,11 @@ def repo_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         Path to a repository root ready for management commands.
     """
     monkeypatch.setattr(bake_vendor_indexes, "_fetch_tree_paths", _fake_tree)
+    monkeypatch.setattr(
+        bake_vendor_plugins,
+        "_fetch_vendor_tree",
+        _fake_vendor_plugin_tree,
+    )
     tmp_path.joinpath("vendors.yaml").write_text(
         "---\n"
         "vendors:\n"
@@ -191,6 +233,22 @@ def test_check_detects_registry_drift(repo_root: Path) -> None:
     )
 
     assert_that(manage_vendors.check(repo_root=repo_root)).is_equal_to(1)
+
+
+def test_check_detects_plugin_bake_drift(repo_root: Path) -> None:
+    """Report drift when only plugins-baked/ diverges from the lock."""
+    coverage = repo_root / "plugins-baked" / "COVERAGE.md"
+    coverage.write_text(
+        coverage.read_text(encoding="utf-8") + "tamper\n",
+        encoding="utf-8",
+    )
+    assert_that(manage_vendors.check(repo_root=repo_root)).is_equal_to(1)
+
+
+def test_parser_help_mentions_plugin_trees() -> None:
+    """refresh and check help strings mention plugin trees."""
+    help_text = manage_vendors._build_parser().format_help()
+    assert_that(help_text).contains("plugin trees")
 
 
 def test_add_rolls_back_registry_when_rebake_fails(
@@ -432,6 +490,18 @@ def test_update_preserves_plugin_slices(repo_root: Path) -> None:
     assert_that(plugin.skills).is_equal_to("*")
     assert_that(plugin.rename_skills).is_equal_to((("teach", "teach-existing"),))
     assert_that(plugin.agents).is_equal_to(("comment-sicko",))
+    assert_that(
+        (repo_root / "plugins-baked" / "existing-plugin" / "skills" / "teach-existing")
+        .joinpath("SKILL.md")
+        .is_file(),
+    ).is_true()
+    skill_markdown = (
+        repo_root / "plugins-baked" / "existing-plugin" / "skills" / "teach-existing"
+    ).joinpath("SKILL.md")
+    assert_that(skill_markdown.read_text(encoding="utf-8")).contains(
+        "name: teach-existing",
+    )
+    assert_that(manage_vendors.check(repo_root=repo_root)).is_zero()
     dumped = registry_path.read_text(encoding="utf-8")
     assert_that(dumped).contains(
         "    plugins:\n"
@@ -577,3 +647,68 @@ def test_write_registry_rejects_malformed_skills(tmp_path: Path) -> None:
     assert_that(registry_path.read_text(encoding="utf-8")).is_equal_to(
         "---\nvendors: []\n",
     )
+
+
+def test_restore_artifacts_prunes_empty_directories(tmp_path: Path) -> None:
+    """Rollback must not leave skill directories without SKILL.md."""
+    baked = tmp_path / "plugins-baked"
+    skill = baked / "example-plugin" / "skills" / "alpha"
+    skill.mkdir(parents=True)
+    skill_markdown = skill / "SKILL.md"
+    skill_markdown.write_text("old\n", encoding="utf-8")
+    snapshot, directories = manage_vendors._snapshot_artifacts(paths=(baked,))
+    beta = baked / "example-plugin" / "skills" / "beta"
+    beta.mkdir()
+    (beta / "SKILL.md").write_text("new\n", encoding="utf-8")
+
+    manage_vendors._restore_artifacts(
+        paths=(baked,),
+        snapshot=snapshot,
+        directories=directories,
+    )
+
+    assert_that(skill_markdown.read_text(encoding="utf-8")).is_equal_to("old\n")
+    assert_that(beta.exists()).is_false()
+
+
+def test_restore_artifacts_removes_root_absent_from_snapshot(
+    tmp_path: Path,
+) -> None:
+    """Rollback must not leave a plugins-baked/ root that did not exist."""
+    baked = tmp_path / "plugins-baked"
+    snapshot, directories = manage_vendors._snapshot_artifacts(paths=(baked,))
+    baked.mkdir()
+    (baked / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+
+    manage_vendors._restore_artifacts(
+        paths=(baked,),
+        snapshot=snapshot,
+        directories=directories,
+    )
+
+    assert_that(baked.exists()).is_false()
+
+
+def test_restore_artifacts_keeps_empty_snapshotted_directories(
+    tmp_path: Path,
+) -> None:
+    """Agent-only plugins keep an empty skills/ directory after rollback."""
+    baked = tmp_path / "plugins-baked"
+    plugin = baked / "example-plugin"
+    skills = plugin / "skills"
+    skills.mkdir(parents=True)
+    (plugin / "plugin.json").write_text("{}\n", encoding="utf-8")
+    snapshot, directories = manage_vendors._snapshot_artifacts(paths=(baked,))
+    beta = skills / "beta"
+    beta.mkdir()
+    (beta / "SKILL.md").write_text("new\n", encoding="utf-8")
+
+    manage_vendors._restore_artifacts(
+        paths=(baked,),
+        snapshot=snapshot,
+        directories=directories,
+    )
+
+    assert_that(skills.is_dir()).is_true()
+    assert_that(beta.exists()).is_false()
+    assert_that(any(skills.iterdir())).is_false()

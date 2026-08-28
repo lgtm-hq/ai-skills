@@ -24,8 +24,10 @@ Checks:
      uv run python scripts/check_suppressions.py
   8. Test assertions use assertpy (no bare `assert` statements in tests/;
      use assert_that(...) — pytest.raises contexts remain as-is)
-  9. vendors.yaml schema, baked vendor indexes, and NOTICE.md are current via:
+    9. vendors.yaml schema, baked vendor indexes, NOTICE.md, and
+     plugins-baked/ (coverage + marketplace) are current via:
      uv run python scripts/bake_vendor_indexes.py --check
+     uv run python scripts/bake_vendor_plugins.py --check
 EOF
   exit 0
 fi
@@ -66,6 +68,9 @@ if command -v uv >/dev/null 2>&1; then
     errors=$((errors + 1))
   fi
   if ! uv run python "$script_dir/bake_vendor_indexes.py" --check; then
+    errors=$((errors + 1))
+  fi
+  if ! uv run python "$script_dir/bake_vendor_plugins.py" --check; then
     errors=$((errors + 1))
   fi
 fi

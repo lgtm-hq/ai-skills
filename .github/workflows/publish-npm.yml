@@ -89,5 +89,8 @@ jobs:
           uv run python scripts/ci/npm/sync_ai_skills_package.py
           --check --version "$RELEASE_TAG"
 
+      - name: Verify vendor plugin bake
+        run: uv run python scripts/bake_vendor_plugins.py --check
+
       - name: Publish package
         run: scripts/ci/npm/publish_ai_skills_package.sh

@@ -22,6 +22,8 @@ dev = [
   # validate.sh requires the rg binary; the wheel ships it so pytest is
   # self-contained on CI runners without system ripgrep.
   "ripgrep>=15.1.0",
+  # Bake validates internal markdown destinations via a CommonMark parse.
+  "markdown-it-py>=4.2.0",
 ]
 
 [tool.bandit]

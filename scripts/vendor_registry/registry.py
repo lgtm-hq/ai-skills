@@ -26,7 +26,7 @@ _PLUGIN_REQUIRED_FIELDS = frozenset(
 )
 _PLUGIN_OPTIONAL_FIELDS = frozenset({"extraSkills", "renameSkills", "agents"})
 _PLUGIN_FIELDS = _PLUGIN_REQUIRED_FIELDS | _PLUGIN_OPTIONAL_FIELDS
-_GLOB_METACHARS = frozenset("*?[]{}")
+GLOB_METACHARS = frozenset("*?[]{}")
 _DOT_PARTS = frozenset({"", ".", ".."})
 
 
@@ -85,6 +85,30 @@ class UniqueKeyLoader(yaml.SafeLoader):
         return mapping
 
 
+def load_unique_yaml_text(*, text: str, source: str = "YAML") -> object:
+    """Parse YAML text and reject duplicate mapping keys.
+
+    Args:
+        text: YAML document.
+        source: Label used in error messages.
+
+    Returns:
+        The document root.
+
+    Raises:
+        ValueError: If the document is invalid YAML or repeats a mapping key.
+    """
+    try:
+        loader = UniqueKeyLoader(text)
+        try:
+            return loader.get_single_data()
+        finally:
+            loader.dispose()
+    except yaml.YAMLError as exc:
+        msg = f"invalid YAML in {source}: {exc}"
+        raise ValueError(msg) from exc
+
+
 def _load_unique_yaml(*, path: Path) -> object:
     """Parse YAML and reject duplicate mapping keys.
 
@@ -97,15 +121,10 @@ def _load_unique_yaml(*, path: Path) -> object:
     Raises:
         ValueError: If the document is invalid YAML or repeats a mapping key.
     """
-    try:
-        loader = UniqueKeyLoader(path.read_text(encoding="utf-8"))
-        try:
-            return loader.get_single_data()
-        finally:
-            loader.dispose()
-    except yaml.YAMLError as exc:
-        msg = f"invalid YAML in {path.name}: {exc}"
-        raise ValueError(msg) from exc
+    return load_unique_yaml_text(
+        text=path.read_text(encoding="utf-8"),
+        source=path.name,
+    )
 
 
 def load_registry(*, registry_path: Path) -> tuple[Vendor, ...]:
@@ -172,6 +191,7 @@ def _parse_vendor(*, raw_vendor: object, position: int) -> Vendor:
             f" and may include optional: {', '.join(sorted(_VENDOR_OPTIONAL_FIELDS))}"
         )
         raise ValueError(msg)
+    display_ref: str | None = None
     if "displayRef" in raw_vendor:
         display_ref = _required_string(
             value=raw_vendor["displayRef"],
@@ -237,6 +257,7 @@ def _parse_vendor(*, raw_vendor: object, position: int) -> Vendor:
         skill_roots=skill_roots,
         license=license_name,
         homepage=homepage,
+        display_ref=display_ref,
         plugins=plugins,
     )
 
@@ -352,7 +373,7 @@ def _parse_relative_posix_path(
     if any(part in _DOT_PARTS for part in parts):
         msg = f"{where} {field} entries must be relative, non-empty paths"
         raise ValueError(msg)
-    if not allow_glob and any(char in _GLOB_METACHARS for char in value):
+    if not allow_glob and any(char in GLOB_METACHARS for char in value):
         msg = f"{where} {field} entries must not contain glob metacharacters"
         raise ValueError(msg)
     return value

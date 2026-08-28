@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 from assertpy import assert_that
-from skill_frontmatter import split_frontmatter
+from skill_frontmatter import (
+    read_frontmatter_name,
+    rewrite_frontmatter_name,
+    split_frontmatter,
+)
 
 
 @pytest.mark.parametrize(
@@ -79,3 +83,57 @@ def test_split_frontmatter_empty_frontmatter_is_not_none() -> None:
 
     assert_that(frontmatter).is_empty()
     assert_that(body).is_equal_to("body\n")
+
+
+def test_rewrite_frontmatter_name_preserves_other_keys() -> None:
+    """Rename rewrites only the name line and keeps remaining frontmatter."""
+    rewritten = rewrite_frontmatter_name(
+        text="---\nname: teach\ndescription: Old name.\n---\n\n# Body\n",
+        name="teach-example",
+    )
+
+    assert_that(rewritten).is_equal_to(
+        "---\nname: teach-example\ndescription: Old name.\n---\n\n# Body\n",
+    )
+
+
+def test_rewrite_frontmatter_name_rewrites_quoted_key() -> None:
+    """Quoted YAML name keys are rewritten to the unquoted canonical form."""
+    rewritten = rewrite_frontmatter_name(
+        text='---\n"name": teach\ndescription: Old name.\n---\n',
+        name="teach-renamed",
+    )
+
+    assert_that(rewritten).is_equal_to(
+        "---\nname: teach-renamed\ndescription: Old name.\n---\n",
+    )
+
+
+def test_rewrite_frontmatter_name_rejects_missing_block() -> None:
+    """Documents without frontmatter cannot be renamed at bake time."""
+    with pytest.raises(ValueError, match="missing YAML frontmatter"):
+        rewrite_frontmatter_name(text="# No fence\n", name="renamed")
+
+
+def test_rewrite_frontmatter_name_rejects_missing_name_field() -> None:
+    """Frontmatter without a name field cannot be renamed at bake time."""
+    with pytest.raises(ValueError, match="missing name"):
+        rewrite_frontmatter_name(
+            text="---\ndescription: No name.\n---\n",
+            name="renamed",
+        )
+
+
+def test_read_frontmatter_name_strips_quotes() -> None:
+    """Quoted YAML name values are returned unquoted."""
+    assert_that(
+        read_frontmatter_name(text='---\nname: "branch"\n---\n'),
+    ).is_equal_to("branch")
+
+
+def test_read_frontmatter_name_rejects_duplicate_keys() -> None:
+    """Duplicate name keys cannot hide a colliding explode identity."""
+    with pytest.raises(ValueError, match="duplicate key"):
+        read_frontmatter_name(
+            text="---\nname: alpha\nname: branch\n---\n",
+        )
