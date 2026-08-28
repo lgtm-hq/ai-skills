@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Harness-agnostic agent skills generated from bundles.yaml.",
-    "version": "0.22.0",
+    "version": "0.22.1",
     "$generated": "do not edit — regenerate via scripts/generate_marketplace.py"
   },
   "plugins": [
