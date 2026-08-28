@@ -97,6 +97,18 @@ def test_rewrite_frontmatter_name_preserves_other_keys() -> None:
     )
 
 
+def test_rewrite_frontmatter_name_rewrites_quoted_key() -> None:
+    """Quoted YAML name keys are rewritten to the unquoted canonical form."""
+    rewritten = rewrite_frontmatter_name(
+        text='---\n"name": teach\ndescription: Old name.\n---\n',
+        name="teach-renamed",
+    )
+
+    assert_that(rewritten).is_equal_to(
+        "---\nname: teach-renamed\ndescription: Old name.\n---\n",
+    )
+
+
 def test_rewrite_frontmatter_name_rejects_missing_block() -> None:
     """Documents without frontmatter cannot be renamed at bake time."""
     with pytest.raises(ValueError, match="missing YAML frontmatter"):

@@ -203,6 +203,12 @@ def _bake_plugin(
             renamed=renamed,
         )
 
+    applied = {old for old, _new in renamed}
+    unused = [old for old, _new in plugin.rename_skills if old not in applied]
+    if unused:
+        msg = f"plugin {plugin.id} unused renameSkills {unused[0]!r}"
+        raise ValueError(msg)
+
     agent_stems = _copy_agents(
         vendor=vendor,
         plugin=plugin,

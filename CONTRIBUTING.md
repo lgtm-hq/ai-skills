@@ -165,9 +165,9 @@ plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-sa
   `plugins-baked/` is never absent. A failed exchange leaves the
   previous tree in place.
 - Write `plugins-baked/BAKE.json` (registry pin + plugin slice +
-  coverage digest). `--check` compares it to `vendors.yaml` and the
-  committed `COVERAGE.md`, and requires all four host manifests to
-  match the pin-derived version.
+  coverage digest + a path→digest inventory of generated files).
+  `--check` compares it to `vendors.yaml` and the committed tree, and
+  requires all four host manifests to match the pin-derived version.
 - Stamp plugin versions from `displayRef` when it is a tag; floating
   pins such as `latest` use the short SHA.
 
@@ -181,7 +181,8 @@ filled; bake still emits an empty marketplace, coverage file, and
 `BAKE.json` lock so `--check` has a drift gate. ``--check`` compares
 that lock to `vendors.yaml` (SHA, displayRef, plugin slices) and to
 the committed coverage digest, and requires all four host manifests
-to match the pin-derived version.
+to match the pin-derived version. A path→digest inventory in
+`BAKE.json` rejects extra, missing, or modified generated files.
 
 ## Pull requests
 

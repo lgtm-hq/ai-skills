@@ -15,7 +15,7 @@ from vendor_registry.registry import load_unique_yaml_text
 
 _FENCE_OPEN = "---\n"
 _FENCE_CLOSE = "\n---\n"
-_NAME_LINE = re.compile(r"^name:\s*.*$", re.MULTILINE)
+_NAME_LINE = re.compile(r"^['\"]?name['\"]?\s*:.*$", re.MULTILINE)
 
 
 def split_frontmatter(
@@ -57,10 +57,10 @@ def split_frontmatter(
 def rewrite_frontmatter_name(*, text: str, name: str) -> str:
     """Rewrite the YAML frontmatter ``name`` field, preserving other keys.
 
-    Line endings are normalized the same way as ``split_frontmatter``. Only
-    the first ``name:`` line inside the frontmatter block is replaced so
-    bake-time collision renames (ADR-0005) stay reviewable diffs instead of
-    a full YAML dump.
+    Line endings are normalized the same way as ``split_frontmatter``. The
+    first YAML ``name`` key in the frontmatter block is rewritten, including
+    quoted-key forms such as ``"name":``, so bake-time collision renames
+    (ADR-0005) stay reviewable diffs instead of a full YAML dump.
 
     Args:
         text: Full SKILL.md document content.

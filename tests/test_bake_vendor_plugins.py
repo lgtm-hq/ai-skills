@@ -819,6 +819,189 @@ def test_check_rejects_unexpected_hooks_in_baked_plugin(
     assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
 
 
+def test_check_rejects_deleted_wildcard_skill(
+    tmp_path: Path,
+) -> None:
+    """--check fails when a wildcard-selected skill is removed from disk."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_skill(directory=vendor_root / "skills" / "teach", name="teach")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    skill = tmp_path / "plugins-baked" / "example-plugin" / "skills" / "teach"
+    skill.joinpath("SKILL.md").unlink()
+    skill.rmdir()
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_injected_undeclared_skill(
+    tmp_path: Path,
+) -> None:
+    """--check fails when an extra skill directory is added after bake."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            "        skills:\n"
+            "          - alpha\n"
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    _write_skill(
+        directory=tmp_path / "plugins-baked" / "example-plugin" / "skills" / "teach",
+        name="teach",
+    )
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_modified_skill_body(
+    tmp_path: Path,
+) -> None:
+    """--check fails when a baked SKILL.md body is edited."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    skill_markdown = (
+        tmp_path / "plugins-baked" / "example-plugin" / "skills" / "alpha" / "SKILL.md"
+    )
+    skill_markdown.write_text(
+        skill_markdown.read_text(encoding="utf-8") + "# edited\n",
+        encoding="utf-8",
+    )
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_extra_generated_files(
+    tmp_path: Path,
+) -> None:
+    """--check fails when unexpected files appear in plugins-baked."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    (tmp_path / "plugins-baked" / "evil.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (tmp_path / "plugins-baked" / "example-plugin" / "skills" / "evil.sh").write_text(
+        "#!/bin/sh\n", encoding="utf-8"
+    )
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_bake_rejects_unused_rename_skills(
+    tmp_path: Path,
+) -> None:
+    """A renameSkills entry that matches no ingested skill fails bake."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+            "        renameSkills:\n"
+            "          ghost: renamed-ghost\n"
+        ),
+    )
+
+    with pytest.raises(ValueError, match="unused renameSkills 'ghost'"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
+def test_bake_renames_quoted_frontmatter_name_key(
+    tmp_path: Path,
+) -> None:
+    """Quoted YAML name keys are rewritten during renameSkills."""
+    vendor_root = tmp_path / "vendor-src"
+    skill = vendor_root / "skills" / "teach"
+    skill.mkdir(parents=True)
+    skill.joinpath("SKILL.md").write_text(
+        '---\n"name": teach\ndescription: teach skill.\n---\n',
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+            "        renameSkills:\n"
+            "          teach: teach-renamed\n"
+        ),
+    )
+
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    rewritten = (
+        tmp_path
+        / "plugins-baked"
+        / "example-plugin"
+        / "skills"
+        / "teach-renamed"
+        / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert_that(rewritten).contains("name: teach-renamed")
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
+
+
 def test_bake_rejects_duplicate_frontmatter_name_keys(
     tmp_path: Path,
 ) -> None:

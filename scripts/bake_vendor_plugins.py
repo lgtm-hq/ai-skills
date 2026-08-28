@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
 import sys
@@ -39,6 +40,7 @@ from vendor_registry.safe_tree import (
     find_skill_markdown,
     install_directory,
     validate_tree,
+    walk_files,
 )
 from vendor_registry.vendor import Vendor
 from vendor_registry.vendor_plugin import VendorPlugin
@@ -136,7 +138,11 @@ def bake(
         marketplace_path.write_text(marketplace, encoding="utf-8")
         (output_root / COVERAGE_FILENAME).write_text(coverage, encoding="utf-8")
         (output_root / BAKE_MANIFEST_FILENAME).write_text(
-            render_bake_manifest(vendors=vendors, coverage=coverage),
+            render_bake_manifest(
+                vendors=vendors,
+                coverage=coverage,
+                files=_baked_file_digests(baked_root=output_root),
+            ),
             encoding="utf-8",
         )
         print(coverage, end="")
@@ -421,6 +427,24 @@ def _marketplace_entries(
     return entries
 
 
+def _baked_file_digests(*, baked_root: Path) -> dict[str, str]:
+    """Return SHA-256 digests of generated bake files.
+
+    Args:
+        baked_root: ``plugins-baked`` directory.
+
+    Returns:
+        POSIX relative path → hex digest, excluding ``BAKE.json``.
+    """
+    digests: dict[str, str] = {}
+    for file_path in walk_files(root=baked_root):
+        relative = file_path.relative_to(baked_root).as_posix()
+        if relative == BAKE_MANIFEST_FILENAME:
+            continue
+        digests[relative] = hashlib.sha256(file_path.read_bytes()).hexdigest()
+    return dict(sorted(digests.items()))
+
+
 def _check_baked_output(*, repo_root: Path) -> None:
     """Fail closed if committed bake output is missing, stale, or unsafe.
 
@@ -459,6 +483,7 @@ def _check_baked_output(*, repo_root: Path) -> None:
     expected_bake_manifest = render_bake_manifest(
         vendors=vendors,
         coverage=coverage_text,
+        files=_baked_file_digests(baked_root=baked_root),
     )
     if not bake_manifest_path.is_file():
         msg = f"Missing generated file: {bake_manifest_path}"

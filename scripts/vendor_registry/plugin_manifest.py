@@ -125,16 +125,22 @@ def render_marketplace(*, plugins: list[dict[str, str]]) -> str:
     )
 
 
-def render_bake_manifest(*, vendors: tuple[Vendor, ...], coverage: str) -> str:
+def render_bake_manifest(
+    *,
+    vendors: tuple[Vendor, ...],
+    coverage: str,
+    files: dict[str, str],
+) -> str:
     """Render the bake lock that ``--check`` compares to ``vendors.yaml``.
 
-    The lock records the plugin-relevant registry slice and a digest of
-    ``COVERAGE.md`` so a registry edit or a forged coverage report fails
-    without fetching vendor trees.
+    The lock records the plugin-relevant registry slice, a digest of
+    ``COVERAGE.md``, and a path→digest map of every generated file except
+    the lock itself so truncated, modified, or extra bake output fails.
 
     Args:
         vendors: Registry vendors in source order.
         coverage: Coverage report text whose digest is stored.
+        files: POSIX relative path → SHA-256 hex digest.
 
     Returns:
         Pretty JSON text with a trailing newline.
@@ -146,6 +152,7 @@ def render_bake_manifest(*, vendors: tuple[Vendor, ...], coverage: str) -> str:
                 coverage.encode(encoding="utf-8"),
             ).hexdigest(),
             "vendors": [_bake_lock_vendor(vendor=vendor) for vendor in vendors],
+            "files": files,
         },
     )
 

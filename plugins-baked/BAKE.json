@@ -32,5 +32,9 @@
       "displayRef": "latest",
       "plugins": []
     }
-  ]
+  ],
+  "files": {
+    ".claude-plugin/marketplace.json": "a88939b82ee219be30ad516caf6555ee38b928667515103d1f89ff1b35a5b7cb",
+    "COVERAGE.md": "12496144f9ce81a1cc314ad3f787ee99510a5b65d4e9a12422c2beb358bfdc45"
+  }
 }
