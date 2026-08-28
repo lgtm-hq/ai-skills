@@ -79,16 +79,26 @@ export async function runCli(argv) {
   validateUnattendedOptions(options);
   if (options.yes) {
     const totals = { alreadyPresent: 0, installed: 0, repaired: 0 };
+    const finished = [];
     for (const batch of await batchesFromCliOptions(options)) {
-      const counts = await install({
-        ...options,
-        bundle: batch.vendor ? null : batch.pluginId,
-        vendor: batch.vendor,
-        skills: batch.skills,
-      });
-      totals.alreadyPresent += counts.alreadyPresent;
-      totals.installed += counts.installed;
-      totals.repaired += counts.repaired;
+      try {
+        const counts = await install({
+          ...options,
+          bundle: batch.vendor ? null : batch.pluginId,
+          vendor: batch.vendor,
+          skills: batch.skills,
+        });
+        totals.alreadyPresent += counts.alreadyPresent;
+        totals.installed += counts.installed;
+        totals.repaired += counts.repaired;
+        finished.push(batch.pluginId);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `Install failed for "${batch.pluginId}" after completing: ` +
+            `${finished.length > 0 ? finished.join(", ") : "none"}. ${detail}`,
+        );
+      }
     }
     console.log(formatInstallCounts(totals));
     return;

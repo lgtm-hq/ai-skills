@@ -636,11 +636,21 @@ export async function install(
       throw new Error(`Unknown vendor: ${options.vendor}`);
     }
     const index = await loadVendorIndex(vendor.id);
-    const unknownSkill = options.skills.find(
-      (skillName) => !index.skills.some((skill) => skill.name === skillName),
-    );
-    if (unknownSkill) {
-      throw new Error(`Unknown skill for vendor ${vendor.id}: ${unknownSkill}`);
+    const catalogSkills = index.skills.map((skill) => skill.name);
+    if (options.skills.length === 0) {
+      selectedOptions = { ...options, skills: catalogSkills };
+    } else {
+      const unknownSkill = options.skills.find((skillName) => !catalogSkills.includes(skillName));
+      if (unknownSkill) {
+        throw new Error(`Unknown skill for vendor ${vendor.id}: ${unknownSkill}`);
+      }
+      const requested = new Set(options.skills);
+      if (
+        requested.size !== catalogSkills.length ||
+        catalogSkills.some((name) => !requested.has(name))
+      ) {
+        throw new Error("Vendor installs are plugin-atomic; omit --skill and --bundle");
+      }
     }
     source = `${vendor.repo}@${vendor.sha}`;
   } else {
@@ -738,7 +748,14 @@ export async function install(
     }
     return { alreadyPresent, installed, repaired };
   } catch (error) {
-    await rollbackNewSkillDirs(scopedOptions, rollbackAgents, preexisting, lockEnvironment);
+    try {
+      await rollbackNewSkillDirs(scopedOptions, rollbackAgents, preexisting, lockEnvironment);
+    } catch (rollbackError) {
+      const original = error instanceof Error ? error.message : String(error);
+      const rollback =
+        rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+      throw new Error(`${original} (rollback also failed: ${rollback})`);
+    }
     throw error;
   }
 }

@@ -361,11 +361,26 @@ async function currentPluginSkills(pluginId, entry) {
  * @returns {Promise<import("./lockfile.js").PluginLockEntry>} Entry with rebuilt file maps.
  */
 async function rematerializePluginFiles(entry, skillNames, hash) {
+  const current = new Set(skillNames);
   const agents = {};
   for (const [agent, install] of Object.entries(entry.agents)) {
     const files = {};
+    for (const relative of Object.keys(install.files)) {
+      const name = relative.split("/")[0];
+      if (!current.has(name)) {
+        continue;
+      }
+      try {
+        files[relative] = await hash(join(install.root, relative));
+      } catch {
+        files[relative] = "";
+      }
+    }
     for (const name of skillNames) {
       const relative = `${name}/SKILL.md`;
+      if (relative in files) {
+        continue;
+      }
       try {
         files[relative] = await hash(join(install.root, relative));
       } catch {
@@ -392,7 +407,6 @@ function sourceSha(vendor, currentSha, vendors) {
   return vendors.find((candidate) => candidate.id === vendor)?.sha ?? currentSha;
 }
 
-/**
 /**
  * Classify tracked files before any delete so modified paths stay on disk.
  *

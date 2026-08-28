@@ -452,6 +452,53 @@ describe("gateway maintenance commands", () => {
     ]);
   });
 
+  test("keeps nested tracked files for remaining skills on update", async () => {
+    let written;
+    const stale = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            cursor: {
+              files: {
+                "lint/SKILL.md": "abc",
+                "lint/docs/guide.md": "abc",
+                "retired/docs/old.md": "abc",
+              },
+              root: "/tmp/project/.cursor/skills",
+            },
+          },
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.21.0",
+          vendor: "lgtm-hq",
+          version: "0.21.0",
+        }),
+      },
+    };
+
+    await updateSkills(options, {
+      hash: async () => "refreshed",
+      isInstalled: async () => true,
+      now: () => new Date("2026-07-10T17:00:00.000Z"),
+      readLock: async () => stale,
+      rmdir: async () => {},
+      run: async () => {},
+      unlink: async () => {},
+      warn: () => {},
+      writeLock: async (next) => {
+        written = next;
+      },
+    });
+
+    expect(written.plugins.review.agents.cursor.files).toMatchObject({
+      "lint/SKILL.md": "refreshed",
+      "lint/docs/guide.md": "refreshed",
+    });
+    expect(Object.keys(written.plugins.review.agents.cursor.files)).not.toContain(
+      "retired/docs/old.md",
+    );
+  });
+
   test("hash-verifies and drops skills removed from the catalog on update", async () => {
     const calls = [];
     const unlinked = [];
