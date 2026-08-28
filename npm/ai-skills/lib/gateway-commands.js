@@ -2,18 +2,30 @@ import { rmdir, unlink } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 
 import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
-import { getPackageVersion } from "./package-version.js";
 import {
+  agentProjector,
   hashFile,
+  hashTree,
+  isCliOwnedNativeInstall,
   LOCKFILE_VERSION,
   pluginAgentNames,
   pluginSkillNames,
+  PROJECTOR_EXPLODE,
+  PROJECTOR_NATIVE,
   pruneMissingLockEntries,
   readLockfile,
   reconcileLock,
   writeLockfile,
 } from "./lockfile.js";
 import { resolveScope } from "./options.js";
+import { getPackageVersion } from "./package-version.js";
+import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
+import {
+  cursorPluginsRoot,
+  findCatalogSourceRoot,
+  installCursorPlugin,
+  removeCursorPlugin,
+} from "./projectors/native-cursor.js";
 import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./skills-runner.js";
 
 /**
@@ -22,7 +34,20 @@ import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./s
  * Entries absent from every tracked agent directory are pruned instead of reinstalled.
  *
  * @param {{agents: string[], global: boolean, project: boolean, skills: string[], yes: boolean}} options - Validated command options.
- * @param {{hash?: typeof import("./lockfile.js").hashFile, isInstalled?: Parameters<typeof pruneMissingLockEntries>[1], lockEnvironment?: Parameters<typeof reconcileLock>[1], now?: () => Date, readLock?: typeof readLockfile, rmdir?: typeof rmdir, run?: typeof runSkills, unlink?: typeof unlink, warn?: (message: string) => void, writeLock?: typeof writeLockfile}} [dependencies] - Injectable command dependencies.
+ * @param {{
+ *   exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>,
+ *   hash?: typeof import("./lockfile.js").hashFile,
+ *   isInstalled?: Parameters<typeof pruneMissingLockEntries>[1],
+ *   lockEnvironment?: Parameters<typeof reconcileLock>[1],
+ *   now?: () => Date,
+ *   readLock?: typeof readLockfile,
+ *   rmdir?: typeof rmdir,
+ *   run?: typeof runSkills,
+ *   sourceRoot?: string | null,
+ *   unlink?: typeof unlink,
+ *   warn?: (message: string) => void,
+ *   writeLock?: typeof writeLockfile,
+ * }} [dependencies] - Injectable command dependencies.
  * @returns {Promise<{pruned: string[], updated: string[]}>} Updated and pruned plugin ids.
  */
 export async function updateSkills(options, dependencies = {}) {
@@ -62,25 +87,38 @@ export async function updateSkills(options, dependencies = {}) {
       entry.vendor === "lgtm-hq"
         ? `lgtm-hq/ai-skills@v${getPackageVersion()}`
         : resolveVendorSource(entry, vendors);
-    const agents = pluginAgentNames(entry);
-    await run(
-      buildSkillsArguments(
-        {
-          ...scopedOptions,
-          agents: agents.length > 0 ? agents : scopedOptions.agents,
-          copy: false,
-          onConflict: "overwrite",
-          skills,
-        },
+    const lanes = partitionLockedLanes(entry);
+    if (lanes.explode.length > 0) {
+      await run(
+        buildSkillsArguments(
+          {
+            ...scopedOptions,
+            agents: lanes.explode,
+            copy: false,
+            onConflict: "overwrite",
+            skills,
+          },
+          source,
+        ),
+      );
+    }
+    if (lanes.cursorNative.length > 0) {
+      await rematerializeCursorPlugin(pluginId, entry, skills, dependencies, prunedLock.scope);
+    }
+    for (const agent of lanes.cliNative) {
+      await installCliPlugin({
+        agent,
+        exec: dependencies.exec,
+        pluginId,
         source,
-      ),
-    );
+      });
+    }
     await removeStalePluginSkills(pluginId, entry, skills, {
       hash,
       removeDir,
       removeFile,
       run,
-      scopedOptions,
+      scopedOptions: { ...scopedOptions, agents: lanes.explode },
       warn,
     });
   }
@@ -99,6 +137,7 @@ export async function updateSkills(options, dependencies = {}) {
     plugins[pluginId] = {
       ...hashed,
       installedAt,
+      skills: catalogSkills[pluginId] ?? pluginSkillNames(entry),
       sha: sourceSha(entry.vendor, entry.sha, vendors),
       version:
         entry.vendor === "lgtm-hq"
@@ -119,7 +158,9 @@ export async function updateSkills(options, dependencies = {}) {
  *
  * @param {{agents: string[], global: boolean, project: boolean, skills: string[], yes: boolean}} options - Validated command options.
  * @param {{
+ *   exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>,
  *   hash?: typeof hashFile,
+ *   lockEnvironment?: Parameters<typeof reconcileLock>[1],
  *   readLock?: typeof readLockfile,
  *   rmdir?: typeof rmdir,
  *   run?: typeof runSkills,
@@ -151,18 +192,34 @@ export async function removeSkills(options, dependencies = {}) {
   for (const pluginId of selected) {
     const entry = lock.plugins[pluginId];
     const classified = await classifyPluginFiles(pluginId, entry, { hash, warn });
-    if (classified.removableSkills.length > 0) {
+    const lanes = partitionLockedLanes(entry);
+    if (lanes.explode.length > 0 && classified.removableSkills.length > 0) {
       await run(
         buildSkillsRemoveArguments(
           {
             ...scopedOptions,
-            agents: pluginAgentNames(entry),
+            agents: lanes.explode,
           },
           classified.removableSkills,
         ),
       );
     }
     await deleteVerifiedFiles(classified.verified, { removeDir, removeFile });
+    if (lanes.cursorNative.length > 0 && !classified.modified) {
+      const destRoot = cursorPluginsRoot({
+        cwd: dependencies.lockEnvironment?.cwd,
+        home: dependencies.lockEnvironment?.home,
+        scope,
+      });
+      await removeCursorPlugin({ destRoot, pluginId });
+    }
+    for (const agent of lanes.cliNative) {
+      await uninstallCliPlugin({
+        agent,
+        exec: dependencies.exec,
+        pluginId,
+      });
+    }
   }
   const plugins = { ...lock.plugins };
   selected.forEach((pluginId) => delete plugins[pluginId]);
@@ -311,7 +368,7 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
     ),
   };
   const classified = await classifyPluginFiles(pluginId, stale, { hash: io.hash, warn: io.warn });
-  if (classified.removableSkills.length > 0) {
+  if (classified.removableSkills.length > 0 && io.scopedOptions.agents.length > 0) {
     await io.run(
       buildSkillsRemoveArguments(
         {
@@ -364,6 +421,18 @@ async function rematerializePluginFiles(entry, skillNames, hash) {
   const current = new Set(skillNames);
   const agents = {};
   for (const [agent, install] of Object.entries(entry.agents)) {
+    const projector = agentProjector(entry, agent);
+    if (projector === PROJECTOR_NATIVE && agent === "cursor") {
+      agents[agent] = { ...install, files: await hashTree(install.root, hash) };
+      continue;
+    }
+    if (isCliOwnedNativeInstall(install, entry.projector)) {
+      agents[agent] = {
+        ...install,
+        files: Object.fromEntries(skillNames.map((name) => [`${name}/SKILL.md`, ""])),
+      };
+      continue;
+    }
     const files = {};
     for (const relative of Object.keys(install.files)) {
       const name = relative.split("/")[0];
@@ -427,6 +496,9 @@ async function classifyPluginFiles(pluginId, entry, io) {
   /** @type {Array<{absolute: string, root: string}>} */
   const verified = [];
   for (const install of Object.values(entry.agents)) {
+    if (isCliOwnedNativeInstall(install, entry.projector)) {
+      continue;
+    }
     for (const [relative, digest] of Object.entries(install.files)) {
       const absolute = resolveTrackedPath(install.root, relative);
       try {
@@ -449,6 +521,7 @@ async function classifyPluginFiles(pluginId, entry, io) {
     }
   }
   return {
+    modified: modifiedSkills.size > 0,
     removableSkills: pluginSkillNames(entry).filter((name) => !modifiedSkills.has(name)),
     verified,
   };
@@ -580,4 +653,68 @@ function pluginReconcileStatus(reconciliation) {
     status.set(item.pluginId, "MISSING");
   }
   return status;
+}
+
+/**
+ * Split a lock entry's agents by owning projector.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Plugin lock entry.
+ * @returns {{cliNative: string[], cursorNative: string[], explode: string[]}} Lanes.
+ */
+function partitionLockedLanes(entry) {
+  const explode = [];
+  const cursorNative = [];
+  const cliNative = [];
+  for (const agent of pluginAgentNames(entry)) {
+    const projector = agentProjector(entry, agent);
+    if (projector === PROJECTOR_EXPLODE) {
+      explode.push(agent);
+    } else if (agent === "cursor") {
+      cursorNative.push(agent);
+    } else {
+      cliNative.push(agent);
+    }
+  }
+  return { cliNative, cursorNative, explode };
+}
+
+/**
+ * Re-assemble a Cursor-local plugin tree from the current catalog membership.
+ *
+ * @param {string} pluginId - Plugin id.
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Lock entry.
+ * @param {string[]} skills - Current catalog skill names.
+ * @param {{
+ *   lockEnvironment?: Parameters<typeof reconcileLock>[1],
+ *   sourceRoot?: string | null,
+ * }} dependencies - Injectable catalog root and paths.
+ * @param {"global" | "project"} scope - Installation scope.
+ * @returns {Promise<void>} Resolves when the tree is rewritten.
+ */
+async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, scope) {
+  const sourceRoot =
+    dependencies.sourceRoot !== undefined
+      ? dependencies.sourceRoot
+      : findCatalogSourceRoot(dependencies.lockEnvironment?.cwd ?? process.cwd());
+  if (!sourceRoot) {
+    throw new Error(
+      "Native Cursor projector requires a catalog checkout (skills/ + " +
+        ".claude-plugin/marketplace.json). Use --projector explode, or run from the " +
+        "ai-skills repository.",
+    );
+  }
+  const destRoot = cursorPluginsRoot({
+    cwd: dependencies.lockEnvironment?.cwd,
+    home: dependencies.lockEnvironment?.home,
+    scope,
+  });
+  const bundles = await loadBundles();
+  await installCursorPlugin({
+    description: bundles.groups[pluginId]?.description ?? pluginId,
+    destRoot,
+    pluginId,
+    skills,
+    sourceRoot,
+    version: entry.vendor === "lgtm-hq" ? getPackageVersion() : entry.version,
+  });
 }

@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   LOCKFILE_VERSION,
+  hashTree,
+  isCliOwnedNativeInstall,
   isPluginInstalled,
   mergeLockEntries,
+  pluginSkillNames,
   pruneMissingLockEntries,
   readLockfile,
   reconcileLock,
@@ -212,5 +218,70 @@ describe("gateway lockfile", () => {
 
     expect(removed).toEqual([]);
     expect(Object.keys(kept.plugins).sort()).toEqual(["pdf", "review"]);
+  });
+
+  test("reads skill names from Cursor native trees and explicit skills lists", () => {
+    expect(
+      pluginSkillNames({
+        ...explodeEntry,
+        agents: {
+          cursor: {
+            files: {
+              ".claude-plugin/plugin.json": "abc",
+              "skills/lint/SKILL.md": "def",
+              "skills/test/SKILL.md": "ghi",
+            },
+            root: "/tmp/.cursor/plugins/local/review",
+          },
+        },
+      }),
+    ).toEqual(["lint", "test"]);
+    expect(pluginSkillNames({ ...explodeEntry, skills: ["lint", "test"] })).toEqual([
+      "lint",
+      "test",
+    ]);
+  });
+
+  test("treats CLI-owned native installs as present without hashing", async () => {
+    const entry = {
+      ...explodeEntry,
+      projector: "native",
+      agents: {
+        "claude-code": {
+          files: { "lint/SKILL.md": "" },
+          projector: "native",
+          root: "cli:claude-code",
+        },
+      },
+    };
+    expect(isCliOwnedNativeInstall(entry.agents["claude-code"], "native")).toBe(true);
+    const result = await reconcileLock(
+      {
+        gatewayVersion: "0.0.0-dev",
+        plugins: { review: entry },
+        scope: "project",
+        version: LOCKFILE_VERSION,
+      },
+      {
+        exists: async () => false,
+        hash: async () => {
+          throw new Error("CLI native must not hash");
+        },
+      },
+    );
+    expect(result.present).toEqual([{ agent: "claude-code", pluginId: "review" }]);
+    expect(result.missing).toEqual([]);
+  });
+
+  test("hashes every regular file in a plugin tree", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-hash-tree-"));
+    try {
+      await mkdir(join(root, ".claude-plugin"), { recursive: true });
+      await writeFile(join(root, ".claude-plugin/plugin.json"), "{}\n");
+      const files = await hashTree(root);
+      expect(files[".claude-plugin/plugin.json"]).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
   });
 });

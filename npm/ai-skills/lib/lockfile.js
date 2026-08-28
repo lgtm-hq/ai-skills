@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -12,13 +12,19 @@ export const PROJECTOR_NATIVE = "native";
 
 export const AGENT_SKILL_PATHS = {
   "claude-code": ".claude/skills",
+  copilot: ".copilot/skills",
   cursor: ".cursor/skills",
   codex: ".codex/skills",
 };
 
 /**
- * @typedef {{root: string, files: Record<string, string>}} AgentInstall
+ * @typedef {{
+ *   files: Record<string, string>,
+ *   projector?: "native" | "explode",
+ *   root: string,
+ * }} AgentInstall
  * Per-agent tracked paths and sha256 hashes, relative to ``root``.
+ * ``projector`` overrides the plugin-level projector for this agent.
  */
 
 /**
@@ -28,6 +34,7 @@ export const AGENT_SKILL_PATHS = {
  *   projector: "native" | "explode",
  *   repo: string,
  *   sha: string,
+ *   skills?: string[],
  *   vendor: string,
  *   version: string,
  * }} PluginLockEntry
@@ -152,7 +159,7 @@ export async function reconcileLock(lock, environment = {}) {
   for (const [pluginId, entry] of Object.entries(lock.plugins)) {
     for (const [agent, install] of Object.entries(entry.agents)) {
       const item = { agent, pluginId };
-      const status = await reconcileAgentInstall(install, exists, hash);
+      const status = await reconcileAgentInstall(install, exists, hash, entry.projector);
       result[status].push(item);
     }
   }
@@ -276,22 +283,90 @@ export function pluginAgentNames(entry) {
 }
 
 /**
- * Exploded skill directory names tracked on a plugin lock entry.
+ * Skill directory names tracked on a plugin lock entry.
  *
  * @param {PluginLockEntry} entry - Plugin lock entry.
  * @returns {string[]} Sorted skill directory names.
  */
 export function pluginSkillNames(entry) {
+  if (Array.isArray(entry.skills) && entry.skills.every((name) => typeof name === "string")) {
+    return [...new Set(entry.skills)].sort();
+  }
   const names = new Set();
   for (const install of Object.values(entry.agents)) {
-    for (const relative of Object.keys(install.files)) {
-      const name = relative.split("/")[0];
-      if (name) {
-        names.add(name);
-      }
+    for (const name of skillNamesFromFiles(install.files)) {
+      names.add(name);
     }
   }
   return [...names].sort();
+}
+
+/**
+ * Skill directory names implied by a tracked file map.
+ *
+ * Exploded installs use ``<skill>/SKILL.md``. Cursor native trees use
+ * ``skills/<skill>/...`` plus ``.claude-plugin/plugin.json`` (ignored).
+ *
+ * @param {Record<string, string>} files - Relative path to digest.
+ * @returns {Set<string>} Skill directory names.
+ */
+export function skillNamesFromFiles(files) {
+  const names = new Set();
+  for (const relative of Object.keys(files)) {
+    const parts = relative.split("/");
+    if (parts[0] === ".claude-plugin") {
+      continue;
+    }
+    if (parts[0] === "skills" && parts[1]) {
+      names.add(parts[1]);
+      continue;
+    }
+    if (parts[0]) {
+      names.add(parts[0]);
+    }
+  }
+  return names;
+}
+
+/**
+ * Projector recorded for one agent, falling back to the plugin-level value.
+ *
+ * @param {PluginLockEntry} entry - Plugin lock entry.
+ * @param {string} agent - Agent identifier.
+ * @returns {"native" | "explode"} Effective projector.
+ */
+export function agentProjector(entry, agent) {
+  return projectorOf(entry.agents[agent], entry.projector);
+}
+
+/**
+ * Whether a native install is CLI-owned (no hashed plugin tree).
+ *
+ * Claude Code and Copilot native installs record empty digests; Cursor native
+ * trees hash ``plugin.json`` and copied skill files.
+ *
+ * @param {AgentInstall} install - Per-agent lock record.
+ * @param {"native" | "explode"} [pluginProjector] - Plugin-level projector.
+ * @returns {boolean} True when disk hashes are not the source of truth.
+ */
+export function isCliOwnedNativeInstall(install, pluginProjector = PROJECTOR_EXPLODE) {
+  if (projectorOf(install, pluginProjector) !== PROJECTOR_NATIVE) {
+    return false;
+  }
+  return Object.values(install.files).every((digest) => digest === "");
+}
+
+/**
+ * Sha256 every regular file under ``root``, keyed by POSIX-relative paths.
+ *
+ * @param {string} root - Directory to walk.
+ * @param {(path: string) => Promise<string>} [hash] - Injectable hasher.
+ * @returns {Promise<Record<string, string>>} Relative path to hex digest.
+ */
+export async function hashTree(root, hash = hashFile) {
+  const files = {};
+  await walkHashTree(root, "", files, hash);
+  return files;
 }
 
 /**
@@ -362,16 +437,38 @@ function isValidPluginEntry(entry) {
   if (typeof entry.agents !== "object" || entry.agents === null || Array.isArray(entry.agents)) {
     return false;
   }
-  return Object.values(entry.agents).every(
-    (install) =>
-      typeof install === "object" &&
-      install !== null &&
-      typeof install.root === "string" &&
-      typeof install.files === "object" &&
-      install.files !== null &&
-      !Array.isArray(install.files) &&
-      Object.values(install.files).every((digest) => typeof digest === "string"),
-  );
+  return Object.values(entry.agents).every((install) => isValidAgentInstall(install));
+}
+
+/**
+ * Whether a per-agent install record is structurally valid.
+ *
+ * @param {unknown} install - Candidate agent install.
+ * @returns {boolean} Whether the install can be consumed.
+ */
+function isValidAgentInstall(install) {
+  if (typeof install !== "object" || install === null) {
+    return false;
+  }
+  if (typeof install.root !== "string") {
+    return false;
+  }
+  if (
+    typeof install.files !== "object" ||
+    install.files === null ||
+    Array.isArray(install.files) ||
+    !Object.values(install.files).every((digest) => typeof digest === "string")
+  ) {
+    return false;
+  }
+  if (
+    install.projector != null &&
+    install.projector !== PROJECTOR_EXPLODE &&
+    install.projector !== PROJECTOR_NATIVE
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -385,12 +482,7 @@ function mergePluginEntries(existing, incoming) {
   const agents = { ...existing.agents };
   for (const [agent, install] of Object.entries(incoming.agents)) {
     const previous = agents[agent];
-    agents[agent] = previous
-      ? {
-          root: install.root,
-          files: { ...previous.files, ...install.files },
-        }
-      : install;
+    agents[agent] = previous ? mergeAgentInstalls(previous, install) : install;
   }
   return {
     ...incoming,
@@ -406,7 +498,10 @@ function mergePluginEntries(existing, incoming) {
  * @param {(path: string) => Promise<string>} hash - Content hash.
  * @returns {Promise<"present" | "missing" | "modified">} Classification.
  */
-async function reconcileAgentInstall(install, exists, hash) {
+async function reconcileAgentInstall(install, exists, hash, pluginProjector = PROJECTOR_EXPLODE) {
+  if (isCliOwnedNativeInstall(install, pluginProjector)) {
+    return "present";
+  }
   const paths = Object.entries(install.files);
   if (paths.length === 0) {
     return (await exists(install.root)) ? "present" : "missing";
@@ -459,5 +554,61 @@ async function hashTrackedPath(path, hash) {
     return await hash(path);
   } catch {
     return "";
+  }
+}
+
+/**
+ * Merge two per-agent installs, unioning file maps and keeping a projector.
+ *
+ * @param {AgentInstall} previous - Previously tracked agent install.
+ * @param {AgentInstall} incoming - Newly installed agent install.
+ * @returns {AgentInstall} Combined install.
+ */
+function mergeAgentInstalls(previous, incoming) {
+  const projector = incoming.projector ?? previous.projector;
+  return {
+    files: { ...previous.files, ...incoming.files },
+    root: incoming.root,
+    ...(projector === PROJECTOR_NATIVE || projector === PROJECTOR_EXPLODE ? { projector } : {}),
+  };
+}
+
+/**
+ * @param {AgentInstall | undefined} install - Per-agent lock record.
+ * @param {"native" | "explode"} pluginProjector - Plugin-level projector.
+ * @returns {"native" | "explode"} Effective projector.
+ */
+function projectorOf(install, pluginProjector) {
+  if (install?.projector === PROJECTOR_NATIVE || install?.projector === PROJECTOR_EXPLODE) {
+    return install.projector;
+  }
+  return pluginProjector === PROJECTOR_NATIVE ? PROJECTOR_NATIVE : PROJECTOR_EXPLODE;
+}
+
+/**
+ * @param {string} dir - Directory to walk.
+ * @param {string} prefix - Relative prefix from the tree root.
+ * @param {Record<string, string>} files - Accumulator.
+ * @param {(path: string) => Promise<string>} hash - Hasher.
+ * @returns {Promise<void>} Resolves when this directory has been walked.
+ */
+async function walkHashTree(dir, prefix, files, hash) {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+  for (const entry of entries) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const absolute = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await walkHashTree(absolute, relative, files, hash);
+    } else if (entry.isFile()) {
+      files[relative] = await hash(absolute);
+    }
   }
 }

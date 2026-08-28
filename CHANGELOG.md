@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **gateway**: native projectors for Cursor (local plugin tree), Claude Code,
+  and GitHub Copilot (host CLI). `--projector native|explode` overrides the
+  per-host default until `sk doctor` lands. Vendor installs stay exploded.
+
 ### Changed
 
 ### Deprecated

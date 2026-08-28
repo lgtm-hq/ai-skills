@@ -9,8 +9,9 @@ import { pluginAgentNames } from "./lockfile.js";
  */
 export const KNOWN_AGENTS = [
   { value: "claude-code", label: "Claude Code (~/.claude/skills)" },
-  { value: "cursor", label: "Cursor (~/.cursor/skills)" },
+  { value: "cursor", label: "Cursor (~/.cursor/plugins/local)" },
   { value: "codex", label: "Codex (~/.codex/skills)" },
+  { value: "copilot", label: "GitHub Copilot (~/.copilot/skills)" },
 ];
 
 /**

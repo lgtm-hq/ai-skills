@@ -673,4 +673,138 @@ describe("gateway maintenance commands", () => {
       ]),
     );
   });
+
+  test("updates a native CLI plugin through the host CLI instead of skills add", async () => {
+    const calls = [];
+    const execCalls = [];
+    const nativeLock = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            "claude-code": {
+              files: { "lint/SKILL.md": "" },
+              projector: "native",
+              root: "cli:claude-code",
+            },
+          },
+          projector: "native",
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.0.0-old",
+          vendor: "lgtm-hq",
+          version: "0.0.0-old",
+        }),
+      },
+    };
+    await updateSkills(options, {
+      exec: async (command, args) => {
+        execCalls.push([command, ...args]);
+        return { status: 0, stderr: "", stdout: "" };
+      },
+      hash: async () => "",
+      isInstalled: async () => true,
+      now: () => new Date("2026-07-10T17:00:00.000Z"),
+      readLock: async () => nativeLock,
+      run: async (args) => {
+        calls.push(args);
+      },
+      writeLock: async () => {},
+    });
+    expect(calls).toEqual([]);
+    expect(execCalls).toEqual([
+      ["claude", "plugin", "marketplace", "add", `lgtm-hq/ai-skills@v${getPackageVersion()}`],
+      ["claude", "plugin", "install", "review@ai-skills"],
+    ]);
+  });
+
+  test("removes a native CLI plugin through the host CLI", async () => {
+    const calls = [];
+    const execCalls = [];
+    const nativeLock = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            "claude-code": {
+              files: { "lint/SKILL.md": "" },
+              projector: "native",
+              root: "cli:claude-code",
+            },
+          },
+          projector: "native",
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.0.0-dev",
+          vendor: "lgtm-hq",
+          version: "0.0.0-dev",
+        }),
+      },
+    };
+    const removed = await removeSkills(options, {
+      exec: async (command, args) => {
+        execCalls.push([command, ...args]);
+        return { status: 0, stderr: "", stdout: "" };
+      },
+      readLock: async () => nativeLock,
+      run: async (args) => {
+        calls.push(args);
+      },
+      writeLock: async () => {},
+    });
+    expect(removed).toEqual(["review"]);
+    expect(calls).toEqual([]);
+    expect(execCalls).toEqual([["claude", "plugin", "uninstall", "review@ai-skills"]]);
+  });
+
+  test("updates a native Cursor plugin by reassembling the local tree", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cursor-update-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint v2\n");
+      const pluginDir = join(cwd, ".cursor/plugins/local/lint");
+      const calls = [];
+      let written;
+      await updateSkills(options, {
+        isInstalled: async () => true,
+        lockEnvironment: { cwd },
+        now: () => new Date("2026-07-10T17:00:00.000Z"),
+        readLock: async () => ({
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            lint: pluginEntry({
+              agents: {
+                cursor: {
+                  files: { ".claude-plugin/plugin.json": "old" },
+                  projector: "native",
+                  root: pluginDir,
+                },
+              },
+              projector: "native",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-old",
+              skills: ["lint"],
+              vendor: "lgtm-hq",
+              version: "0.0.0-old",
+            }),
+          },
+          scope: "project",
+          version: 2,
+        }),
+        run: async (args) => {
+          calls.push(args);
+        },
+        sourceRoot,
+        writeLock: async (next) => {
+          written = next;
+        },
+      });
+      expect(calls).toEqual([]);
+      expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint v2\n");
+      expect(written.plugins.lint.agents.cursor.files["skills/lint/SKILL.md"]).toMatch(
+        /^[a-f0-9]{64}$/,
+      );
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
 });

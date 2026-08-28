@@ -14,6 +14,7 @@ const unattendedOptions = {
   copy: false,
   global: true,
   onConflict: "overwrite",
+  projector: "explode",
   project: false,
   skills: ["lint", "test"],
   vendor: null,
@@ -925,5 +926,198 @@ describe("install conflict policy", () => {
         onConflict: "keep",
       }),
     ).rejects.toThrow("--on-conflict=keep is unsupported");
+  });
+});
+
+describe("native projectors", () => {
+  test("assembles a Cursor plugin tree and records native hashes", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cursor-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      let ran = false;
+      await install(
+        {
+          ...unattendedOptions,
+          global: false,
+          projector: "native",
+          project: true,
+        },
+        async () => {
+          ran = true;
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+
+      expect(ran).toBe(false);
+      const pluginDir = join(cwd, ".cursor/plugins/local/review");
+      expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.review.projector).toBe("native");
+      expect(lock.plugins.review.agents.cursor.projector).toBe("native");
+      expect(lock.plugins.review.agents.cursor.root).toBe(pluginDir);
+      expect(lock.plugins.review.agents.cursor.files[".claude-plugin/plugin.json"]).toMatch(
+        /^[a-f0-9]{64}$/,
+      );
+      expect(lock.plugins.review.agents.cursor.files["skills/lint/SKILL.md"]).toMatch(
+        /^[a-f0-9]{64}$/,
+      );
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("fails closed when Cursor native has no catalog checkout", async () => {
+    await expect(
+      install(
+        {
+          ...unattendedOptions,
+          projector: "native",
+        },
+        async () => {},
+        undefined,
+        { cwd: "/tmp/ai-skills-no-catalog" },
+        { sourceRoot: null },
+      ),
+    ).rejects.toThrow("Native Cursor projector requires a catalog checkout");
+  });
+
+  test("installs Claude Code through the host CLI", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cli-"));
+    try {
+      const calls = [];
+      await install(
+        {
+          ...unattendedOptions,
+          agents: ["claude-code"],
+          global: false,
+          projector: "native",
+          project: true,
+        },
+        async () => {
+          throw new Error("explode runner must not run");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        {
+          exec: async (command, args) => {
+            calls.push([command, ...args]);
+            return { status: 0, stderr: "", stdout: "ok" };
+          },
+        },
+      );
+      expect(calls).toEqual([
+        ["claude", "plugin", "marketplace", "add", "lgtm-hq/ai-skills@v0.0.0-dev"],
+        ["claude", "plugin", "install", "review@ai-skills"],
+      ]);
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.review.projector).toBe("native");
+      expect(lock.plugins.review.agents["claude-code"]).toMatchObject({
+        projector: "native",
+        root: "cli:claude-code",
+      });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("rejects native projector when agents are left empty for detection", async () => {
+    await expect(
+      install({
+        ...unattendedOptions,
+        agents: [],
+        projector: "native",
+      }),
+    ).rejects.toThrow("Native projector requires -a/--agent");
+  });
+
+  test("rejects --projector native for Codex", async () => {
+    await expect(
+      install({
+        ...unattendedOptions,
+        agents: ["codex"],
+        projector: "native",
+      }),
+    ).rejects.toThrow('Native projector is not supported for agent "codex"');
+  });
+
+  test("rolls back a failed Claude Code CLI install", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cli-rollback-"));
+    try {
+      const calls = [];
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            agents: ["claude-code"],
+            global: false,
+            projector: "native",
+            project: true,
+          },
+          async () => {
+            throw new Error("explode runner must not run");
+          },
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          { cwd },
+          {
+            exec: async (command, args) => {
+              calls.push([command, ...args]);
+              if (args.includes("install")) {
+                return { status: 1, stderr: "boom", stdout: "" };
+              }
+              return { status: 0, stderr: "", stdout: "ok" };
+            },
+          },
+        ),
+      ).rejects.toThrow("claude plugin install failed: boom");
+      expect(calls).toEqual([
+        ["claude", "plugin", "marketplace", "add", "lgtm-hq/ai-skills@v0.0.0-dev"],
+        ["claude", "plugin", "install", "review@ai-skills"],
+        ["claude", "plugin", "uninstall", "review@ai-skills"],
+      ]);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("splits mixed Cursor native and Codex explode in one install", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-mixed-projectors-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      const received = [];
+      await install(
+        {
+          ...unattendedOptions,
+          agents: ["cursor", "codex"],
+          global: false,
+          projector: null,
+          project: true,
+        },
+        async (args) => {
+          received.push(args);
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      expect(received[0]).toContain("-a");
+      expect(received[0]).toContain("codex");
+      expect(received[0]).not.toContain("cursor");
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.review.agents.cursor.projector).toBe("native");
+      expect(lock.plugins.review.agents.codex.projector).toBe("explode");
+      expect(lock.plugins.review.projector).toBe("explode");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
   });
 });

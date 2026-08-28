@@ -1,4 +1,4 @@
-import { AGENT_SKILL_PATHS } from "./lockfile.js";
+import { AGENT_SKILL_PATHS, PROJECTOR_EXPLODE, PROJECTOR_NATIVE } from "./lockfile.js";
 
 /**
  * Minimum supported version of the upstream skills CLI (npm package `skills`).
@@ -12,7 +12,7 @@ export const MINIMUM_SKILLS_VERSION = "1.5.0";
  * Parse wrapper command-line arguments.
  *
  * @param {string[]} argv - Arguments after the executable name.
- * @returns {{command: string, options: {agents: string[], bundle: string | null, copy: boolean, global: boolean, project: boolean, yes: boolean, onConflict: string | null, skills: string[], vendor: string | null}}} Parsed command and options.
+ * @returns {{command: string, options: {agents: string[], bundle: string | null, copy: boolean, global: boolean, project: boolean, projector: "native" | "explode" | null, yes: boolean, onConflict: string | null, skills: string[], vendor: string | null}}} Parsed command and options.
  * @throws {Error} When an option is malformed or unsupported.
  */
 export function parseArguments(argv) {
@@ -25,6 +25,7 @@ export function parseArguments(argv) {
     copy: false,
     global: false,
     project: false,
+    projector: null,
     yes: false,
     onConflict: null,
     skills: [],
@@ -60,6 +61,12 @@ export function parseArguments(argv) {
       }
       options.skills.push(value);
       index += 1;
+    } else if (argument === "--projector") {
+      if (value !== PROJECTOR_NATIVE && value !== PROJECTOR_EXPLODE) {
+        throw new Error("--projector must be native or explode");
+      }
+      options.projector = value;
+      index += 1;
     } else if (argument === "--on-conflict") {
       if (!["keep", "overwrite", "skip"].includes(value)) {
         throw new Error("--on-conflict must be keep, overwrite, or skip");
@@ -84,9 +91,14 @@ export function parseArguments(argv) {
   if (command === "vendors" && args.length > 0) {
     throw new Error("vendors does not accept options");
   }
+  if (options.vendor && options.projector === PROJECTOR_NATIVE) {
+    throw new Error(
+      "--projector native is first-party only; omit --vendor or use --projector explode",
+    );
+  }
   if (
     ["adopt", "list", "remove", "update"].includes(command) &&
-    (options.bundle || options.copy || options.onConflict || options.vendor)
+    (options.bundle || options.copy || options.onConflict || options.vendor || options.projector)
   ) {
     throw new Error(`${command} does not accept install source options`);
   }

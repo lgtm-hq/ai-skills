@@ -17,6 +17,7 @@ describe("parseArguments", () => {
         global: true,
         onConflict: null,
         project: false,
+        projector: null,
         skills: [],
         vendor: null,
         yes: false,
@@ -129,5 +130,32 @@ describe("parseArguments", () => {
 
   test("rejects an unknown agent id before install", () => {
     expect(() => parseArguments(["-y", "--global", "-a", "notepad"])).toThrow("Unknown agent");
+  });
+
+  test("accepts --projector native or explode", () => {
+    expect(parseArguments(["--projector", "native"]).options.projector).toBe("native");
+    expect(parseArguments(["--projector", "explode"]).options.projector).toBe("explode");
+  });
+
+  test("rejects an unknown --projector value", () => {
+    expect(() => parseArguments(["--projector", "both"])).toThrow(
+      "--projector must be native or explode",
+    );
+  });
+
+  test("rejects native projector with a vendor source", () => {
+    expect(() => parseArguments(["--vendor", "anthropics", "--projector", "native"])).toThrow(
+      "first-party only",
+    );
+  });
+
+  test("rejects --projector on update", () => {
+    expect(() => parseArguments(["update", "--projector", "explode"])).toThrow(
+      "does not accept install source options",
+    );
+  });
+
+  test("accepts copilot as a known agent", () => {
+    expect(parseArguments(["-a", "copilot"]).options.agents).toEqual(["copilot"]);
   });
 });
