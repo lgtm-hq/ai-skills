@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.22.1] - 2026-08-28
+
+### Fixed
+
+- **gateway**: default lockEnvironment so production install writes a lock (#396)
+  (a5f0197)
+
 ## [0.22.0] - 2026-08-28
 
 ### Added
@@ -800,7 +807,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.22.1...HEAD
+[0.22.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.19.0...v0.20.0
