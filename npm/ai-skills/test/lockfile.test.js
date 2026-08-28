@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   LOCKFILE_VERSION,
+  agentProjector,
   hashTree,
   isCliOwnedNativeInstall,
   isPluginInstalled,
@@ -110,6 +111,25 @@ describe("gateway lockfile", () => {
       "lint/SKILL.md": "abc",
       "test/SKILL.md": "new",
     });
+  });
+
+  test("does not flip exploded agents to native when merging a native install", () => {
+    const merged = mergeLockEntries(lock, {
+      review: {
+        ...explodeEntry,
+        agents: {
+          "claude-code": {
+            files: { "lint/SKILL.md": "" },
+            projector: "native",
+            root: "cli:claude-code",
+          },
+        },
+        projector: "native",
+      },
+    });
+    expect(agentProjector(merged.plugins.review, "cursor")).toBe("explode");
+    expect(agentProjector(merged.plugins.review, "claude-code")).toBe("native");
+    expect(merged.plugins.review.projector).toBe("explode");
   });
 
   test("prunes entries that conflict with disk state", async () => {

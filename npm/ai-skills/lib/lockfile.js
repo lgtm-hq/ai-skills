@@ -517,14 +517,20 @@ function isValidAgentInstall(install) {
  * @returns {PluginLockEntry} Combined entry.
  */
 function mergePluginEntries(existing, incoming) {
-  const agents = { ...existing.agents };
+  /** @type {Record<string, AgentInstall>} */
+  const agents = {};
+  for (const [agent, install] of Object.entries(existing.agents)) {
+    agents[agent] = stampAgentProjector(install, existing.projector);
+  }
   for (const [agent, install] of Object.entries(incoming.agents)) {
     const previous = agents[agent];
-    agents[agent] = previous ? mergeAgentInstalls(previous, install) : install;
+    const stamped = stampAgentProjector(install, incoming.projector);
+    agents[agent] = previous ? mergeAgentInstalls(previous, stamped) : stamped;
   }
   return {
     ...incoming,
     agents,
+    projector: pluginProjectorFromAgents(agents, existing.projector),
   };
 }
 
@@ -593,6 +599,38 @@ async function hashTrackedPath(path, hash) {
   } catch {
     return "";
   }
+}
+
+/**
+ * Stamp a missing per-agent projector from the plugin-level value.
+ *
+ * @param {AgentInstall} install - Per-agent lock record.
+ * @param {"native" | "explode"} pluginProjector - Plugin-level projector.
+ * @returns {AgentInstall} Install with an explicit projector when the plugin had one.
+ */
+function stampAgentProjector(install, pluginProjector) {
+  if (install.projector === PROJECTOR_NATIVE || install.projector === PROJECTOR_EXPLODE) {
+    return install;
+  }
+  if (pluginProjector === PROJECTOR_NATIVE || pluginProjector === PROJECTOR_EXPLODE) {
+    return { ...install, projector: pluginProjector };
+  }
+  return install;
+}
+
+/**
+ * Plugin-level projector after a mixed merge: native only when every agent is native.
+ *
+ * @param {Record<string, AgentInstall>} agents - Merged agent map.
+ * @param {"native" | "explode"} fallback - Existing plugin-level projector.
+ * @returns {"native" | "explode"} Plugin-level projector.
+ */
+function pluginProjectorFromAgents(agents, fallback) {
+  const values = Object.values(agents).map((install) => projectorOf(install, fallback));
+  if (values.length === 0) {
+    return fallback === PROJECTOR_NATIVE ? PROJECTOR_NATIVE : PROJECTOR_EXPLODE;
+  }
+  return values.every((value) => value === PROJECTOR_NATIVE) ? PROJECTOR_NATIVE : PROJECTOR_EXPLODE;
 }
 
 /**
