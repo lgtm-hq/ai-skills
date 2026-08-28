@@ -580,6 +580,12 @@ def test_load_registry_accepts_skill_path_list(valid_registry_path: Path) -> Non
             id="glob-skills-list",
         ),
         pytest.param(
+            'skills: "*"',
+            "skills:\n          - alpha\n          - alpha",
+            "skills paths must be unique",
+            id="duplicate-skills-path",
+        ),
+        pytest.param(
             "description: Example vendor plugin.",
             'description: ""',
             "plugin example-plugin description must not be empty",

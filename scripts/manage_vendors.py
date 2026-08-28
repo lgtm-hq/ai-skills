@@ -290,6 +290,9 @@ def _dump_plugin(*, plugin: dict[str, Any]) -> list[str]:
                 lines.extend(
                     f"          - {_scalar(value=str(path))}" for path in value
                 )
+            else:
+                msg = 'skills must be "*" or a list'
+                raise TypeError(msg)
             continue
         if field in {"extraSkills", "agents"} and isinstance(value, list):
             if not value:

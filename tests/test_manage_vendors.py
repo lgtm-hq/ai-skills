@@ -552,3 +552,28 @@ def test_dump_registry_rejects_unknown_plugin_field() -> None:
                 ),
             ],
         )
+
+
+def test_write_registry_rejects_malformed_skills(tmp_path: Path) -> None:
+    """The write path must fail closed when skills is neither '*' nor a list."""
+    registry_path = tmp_path / "vendors.yaml"
+    registry_path.write_text("---\nvendors: []\n", encoding="utf-8")
+    with pytest.raises(TypeError, match=r'skills must be "\*" or a list'):
+        manage_vendors._write_registry(
+            registry_path=registry_path,
+            vendors=[
+                _vendor_for_dump(
+                    plugins=[
+                        {
+                            "id": "path-plugin",
+                            "description": "Path-list vendor plugin.",
+                            "skillsRoot": "skills",
+                            "skills": 123,
+                        },
+                    ],
+                ),
+            ],
+        )
+    assert_that(registry_path.read_text(encoding="utf-8")).is_equal_to(
+        "---\nvendors: []\n",
+    )
