@@ -226,6 +226,8 @@ describe("explodePlugin", () => {
         sourceSkills: { lint: join(source, "lint") },
         storeRoot: store,
       });
+      await mkdir(join(dest, "lint.bak"), { recursive: true });
+      await writeFile(join(dest, "lint.bak/USER.txt"), "keep\n");
       await writeFile(join(source, "lint/SKILL.md"), "# lint v2\n");
       const result = await explodePlugin({
         agents: [{ id: "cursor", replace: new Set(["lint"]), root: dest }],
@@ -235,12 +237,13 @@ describe("explodePlugin", () => {
         storeRoot: store,
       });
       expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint v2\n");
-      expect((await lstat(join(dest, "lint.bak"))).isSymbolicLink()).toBe(true);
-      expect(await readFile(join(store, "lint.bak/SKILL.md"), "utf8")).toBe("# lint\n");
-      expect(result.swappedDests).toHaveLength(1);
+      expect((await lstat(result.swappedDests[0].backup)).isSymbolicLink()).toBe(true);
+      expect(await readFile(join(result.swappedStores[0].backup, "SKILL.md"), "utf8")).toBe(
+        "# lint\n",
+      );
+      expect(await readFile(join(dest, "lint.bak/USER.txt"), "utf8")).toBe("keep\n");
       await discardExplodeBackups(result);
-      await expect(lstat(join(dest, "lint.bak"))).rejects.toMatchObject({ code: "ENOENT" });
-      await expect(lstat(join(store, "lint.bak"))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(join(dest, "lint.bak/USER.txt"), "utf8")).toBe("keep\n");
       expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint v2\n");
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -304,6 +307,48 @@ describe("explodePlugin", () => {
       ).rejects.toThrow("existing store content differs");
       expect(await readFile(join(store, "lint/SKILL.md"), "utf8")).toBe("# store lint\n");
       await expect(lstat(join(dest, "lint"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("empty existing store is replaced instead of reused as a dangling dest", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-empty-store-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      await mkdir(join(store, "lint"), { recursive: true });
+      const result = await explodePlugin({
+        agents: [{ id: "cursor", root: dest }],
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+        storeRoot: store,
+      });
+      expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      expect(result.claimed.cursor["lint/SKILL.md"]).toBe(
+        await hashFile(join(source, "lint/SKILL.md")),
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("in-tree source symlink is part of the collision hash", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-alias-"));
+    try {
+      const { dest, source } = await layout(root);
+      await symlink("SKILL.md", join(source, "lint/alias.md"));
+      await mkdir(join(dest, "lint/nested"), { recursive: true });
+      await writeFile(join(dest, "lint/SKILL.md"), "# lint\n");
+      await writeFile(join(dest, "lint/nested/notes.md"), "notes\n");
+      await expect(
+        explodePlugin({
+          agents: [{ id: "cursor", root: dest }],
+          copy: true,
+          skills: ["lint"],
+          sourceSkills: { lint: join(source, "lint") },
+        }),
+      ).rejects.toThrow("Explode collision");
+      expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
     } finally {
       await rm(root, { force: true, recursive: true });
     }

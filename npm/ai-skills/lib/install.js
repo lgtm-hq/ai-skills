@@ -765,8 +765,8 @@ export async function install(
     rollbackAgents,
     lockEnvironment,
   );
-  /** @type {Record<string, Record<string, string>>} */
-  let explodeClaims = {};
+  /** @type {Record<string, Record<string, string>> | null} */
+  let explodeClaims = null;
   const destRoot = cursorPluginsRoot({
     cwd: lockEnvironment.cwd,
     home: lockEnvironment.home,
@@ -993,8 +993,8 @@ export async function install(
  * @param {import("./lockfile.js").PluginLockEntry} [existing] - Previously locked plugin, if any.
  * @param {Set<string>} [explodeLockAgents] - Agents delivered via explode this run
  *   (including implicit Cursor native → explode when the catalog is absent).
- * @param {Record<string, Record<string, string>>} [explodeClaims] - Owned explode
- *   files (skipped identical dests are omitted).
+ * @param {Record<string, Record<string, string>> | null} [explodeClaims] - Owned explode
+ *   files (skipped identical dests are omitted). ``null`` means explode did not run.
  * @returns {Promise<Record<string, import("./lockfile.js").PluginLockEntry>>} Entries keyed by plugin id.
  */
 async function createLockEntries(
@@ -1006,7 +1006,7 @@ async function createLockEntries(
   onlyExistingFiles = false,
   existing,
   explodeLockAgents = new Set(),
-  explodeClaims = {},
+  explodeClaims = null,
 ) {
   lockEnvironment = lockEnvironment ?? {};
   const installedAt = now().toISOString();
@@ -1047,9 +1047,9 @@ async function createLockEntries(
       continue;
     }
     const root = agentSkillsRoot(scope, agent, lockEnvironment);
-    const claimed = explodeClaims[agent];
-    if (claimed) {
-      if (Object.keys(claimed).length === 0) {
+    if (explodeClaims !== null && explodeLockAgents.has(agent)) {
+      const claimed = explodeClaims[agent];
+      if (!claimed || Object.keys(claimed).length === 0) {
         continue;
       }
       agents[agent] = { files: claimed, projector, root };

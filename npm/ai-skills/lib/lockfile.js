@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, readlink, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -371,7 +371,9 @@ export function isCliOwnedNativeInstall(install, pluginProjector = PROJECTOR_EXP
 }
 
 /**
- * Sha256 every regular file under ``root``, keyed by POSIX-relative paths.
+ * Sha256 every regular file and in-tree symlink under ``root``, keyed by
+ * POSIX-relative paths. Symlink digests encode the link target so a dest
+ * missing the symlink does not compare equal.
  *
  * @param {string} root - Directory to walk.
  * @param {(path: string) => Promise<string>} [hash] - Injectable hasher.
@@ -688,6 +690,9 @@ async function walkHashTree(dir, prefix, files, hash) {
     const absolute = join(dir, entry.name);
     if (entry.isDirectory()) {
       await walkHashTree(absolute, relative, files, hash);
+    } else if (entry.isSymbolicLink()) {
+      const target = await readlink(absolute);
+      files[relative] = createHash("sha256").update(`symlink:${target}`).digest("hex");
     } else if (entry.isFile()) {
       files[relative] = await hash(absolute);
     }

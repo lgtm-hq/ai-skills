@@ -23,6 +23,7 @@ import { resolveScope } from "./options.js";
 import { getPackageVersion } from "./package-version.js";
 import {
   defaultStoreRoot,
+  destSkillIsSymlink,
   discardExplodeBackups,
   explodePlugin,
   pruneEmptyAncestors,
@@ -313,7 +314,11 @@ export async function removeSkills(options, dependencies = {}) {
     const entry = lock.plugins[pluginId];
     const classified = await classifyPluginFiles(pluginId, entry, { hash, warn });
     const lanes = partitionLockedLanes(entry);
-    await deleteVerifiedFiles(classified.verified, { removeDir, removeFile });
+    await deleteVerifiedFiles(classified.verified, {
+      modifiedSkills: classified.modifiedSkills,
+      removeDir,
+      removeFile,
+    });
     for (const agent of lanes.cursorNative) {
       const pluginDir = entry.agents[agent]?.root;
       if (!pluginDir) {
@@ -522,6 +527,7 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
   };
   const classified = await classifyPluginFiles(pluginId, stale, { hash: io.hash, warn: io.warn });
   await deleteVerifiedFiles(classified.verified, {
+    modifiedSkills: classified.modifiedSkills,
     removeDir: io.removeDir,
     removeFile: io.removeFile,
   });
@@ -643,6 +649,7 @@ function sourceSha(vendor, currentSha, vendors) {
  *   warn: (message: string) => void,
  * }} io - Injectable hasher and warning sink.
  * @returns {Promise<{
+ *   modifiedSkills: Set<string>,
  *   removableSkills: string[],
  *   verified: Array<{absolute: string, relative: string, root: string}>,
  * }>} Skills safe to pass upstream and files safe to unlink.
@@ -678,6 +685,7 @@ async function classifyPluginFiles(pluginId, entry, io) {
   }
   return {
     modified: modifiedSkills.size > 0,
+    modifiedSkills,
     removableSkills: pluginSkillNames(entry).filter((name) => !modifiedSkills.has(name)),
     verified,
   };
@@ -688,6 +696,7 @@ async function classifyPluginFiles(pluginId, entry, io) {
  *
  * @param {Array<{absolute: string, relative?: string, root: string}>} verified - Files that matched the lock digest.
  * @param {{
+ *   modifiedSkills?: Set<string>,
  *   removeDir: typeof rmdir,
  *   removeFile: typeof unlink,
  * }} io - Injectable filesystem.
@@ -697,17 +706,22 @@ async function deleteVerifiedFiles(verified, io) {
   /** @type {Map<string, string>} */
   const skillDirs = new Map();
   /** @type {Set<string>} */
-  const unlinkedSymlinks = new Set();
+  const skipSkillDirs = new Set();
+  const modifiedSkills = io.modifiedSkills ?? new Set();
   for (const file of verified) {
     const skillName = (file.relative ?? "").split("/")[0];
     const skillDir = skillName ? join(file.root, skillName) : "";
-    if (skillDir && !unlinkedSymlinks.has(skillDir)) {
+    if (skillDir && !skipSkillDirs.has(skillDir)) {
+      if (modifiedSkills.has(skillName) && (await destSkillIsSymlink(skillDir))) {
+        skipSkillDirs.add(skillDir);
+        continue;
+      }
       if (await unlinkDestSkillSymlink(skillDir, io.removeFile)) {
-        unlinkedSymlinks.add(skillDir);
+        skipSkillDirs.add(skillDir);
         continue;
       }
     }
-    if (skillDir && unlinkedSymlinks.has(skillDir)) {
+    if (skillDir && skipSkillDirs.has(skillDir)) {
       continue;
     }
     try {

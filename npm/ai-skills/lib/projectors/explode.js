@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   cp,
   lstat,
@@ -128,6 +129,8 @@ export async function explodePlugin(args) {
   const createdStores = [];
   /** @type {Array<{backup: string, storeDir: string}>} */
   const swappedStores = [];
+  /** @type {Set<string>} */
+  const writtenStores = new Set();
   try {
     /** @type {Record<string, string>} */
     const stagedSkills = {};
@@ -161,8 +164,7 @@ export async function explodePlugin(args) {
     for (const plan of plans.toWrite) {
       const destExisted = await pathExists(plan.dest);
       if (destExisted) {
-        const destBackup = `${plan.dest}.bak`;
-        await remove(destBackup, { force: true, recursive: true });
+        const destBackup = uniqueBackupPath(plan.dest);
         await move(plan.dest, destBackup);
         swappedDests.push({ backup: destBackup, dest: plan.dest });
       }
@@ -176,24 +178,26 @@ export async function explodePlugin(args) {
           staged: plan.staged,
         });
       } else {
-        const storeExisted = await pathExists(plan.storeDir);
-        if (storeExisted && plan.replace) {
-          const storeBackup = `${plan.storeDir}.bak`;
-          await remove(storeBackup, { force: true, recursive: true });
-          await move(plan.storeDir, storeBackup);
-          swappedStores.push({ backup: storeBackup, storeDir: plan.storeDir });
-        }
-        const createdStore = await commitStoreSkill({
-          copyFn,
-          makeDir,
-          move,
-          remove,
-          replace: plan.replace,
-          staged: plan.staged,
-          storeDir: plan.storeDir,
-        });
-        if (createdStore) {
-          createdStores.push(plan.storeDir);
+        if (!writtenStores.has(plan.storeDir)) {
+          const storeExisted = await pathExists(plan.storeDir);
+          if (storeExisted && plan.replace) {
+            const storeBackup = uniqueBackupPath(plan.storeDir);
+            await move(plan.storeDir, storeBackup);
+            swappedStores.push({ backup: storeBackup, storeDir: plan.storeDir });
+          }
+          const createdStore = await commitStoreSkill({
+            copyFn,
+            makeDir,
+            move,
+            remove,
+            replace: plan.replace,
+            staged: plan.staged,
+            storeDir: plan.storeDir,
+          });
+          if (createdStore) {
+            createdStores.push(plan.storeDir);
+          }
+          writtenStores.add(plan.storeDir);
         }
         await makeDir(dirname(plan.dest), { recursive: true });
         await link(plan.storeDir, plan.dest);
@@ -394,6 +398,24 @@ export async function removeExplodedFiles(args) {
     await pruneEmptyAncestors(dirname(join(file.root, file.relative)), file.root, removeDir);
   }
   return { modified, removed };
+}
+
+/**
+ * Whether a dest skill directory is a symlink (store layout), without following it.
+ *
+ * @param {string} skillDir - Dest skill directory.
+ * @returns {Promise<boolean>} True when the dest path is a symlink.
+ */
+export async function destSkillIsSymlink(skillDir) {
+  try {
+    const info = await lstat(skillDir);
+    return info.isSymbolicLink();
+  } catch (error) {
+    if (isAbsentFsError(error)) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -660,15 +682,17 @@ async function planExplodeCommits(args) {
       if (args.storeRoot) {
         assertInsideRoot(args.storeRoot, storeDir);
       }
+      let replace = owned.has(skill);
       if (args.storeRoot && !owned.has(skill) && (await pathExists(storeDir))) {
         const storeHashes = await hashExistingTree(storeDir, args.hash);
-        if (
-          Object.keys(storeHashes).length > 0 &&
-          !sameHashes(storeHashes, args.stagedHashes[skill])
-        ) {
+        const storeEmpty = Object.keys(storeHashes).length === 0;
+        if (!storeEmpty && !sameHashes(storeHashes, args.stagedHashes[skill])) {
           throw new Error(
             `Explode collision at ${storeDir}: existing store content differs from incoming ${skill}`,
           );
+        }
+        if (storeEmpty) {
+          replace = true;
         }
       }
       if (await pathExists(dest)) {
@@ -701,7 +725,7 @@ async function planExplodeCommits(args) {
       toWrite.push({
         agent: agent.id,
         dest,
-        replace: owned.has(skill),
+        replace,
         skill,
         staged,
         storeDir,
@@ -868,6 +892,16 @@ function prefixHashes(skill, files) {
     prefixed[`${skill}/${relative}`] = digest;
   }
   return prefixed;
+}
+
+/**
+ * Sidecar path that does not clobber an existing ``.bak`` tree.
+ *
+ * @param {string} path - Dest or store path being swapped.
+ * @returns {string} Unique backup path.
+ */
+function uniqueBackupPath(path) {
+  return `${path}.bak.${randomUUID()}`;
 }
 
 /**

@@ -2049,4 +2049,39 @@ describe("native projectors", () => {
       await rm(cwd, { force: true, recursive: true });
     }
   });
+
+  test("does not lock an all-skipped identical dest", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-all-skip-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await mkdir(join(cwd, ".cursor/skills/lint"), { recursive: true });
+      await writeFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "# lint\n");
+      const result = await install(
+        {
+          ...unattendedOptions,
+          agents: ["cursor"],
+          bundle: null,
+          global: false,
+          projector: "explode",
+          project: true,
+          skills: ["lint"],
+        },
+        async () => {
+          throw new Error("skills CLI must not run when catalog sources resolve");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      expect(result).toEqual({ alreadyPresent: 0, installed: 0, repaired: 0 });
+      await expect(readFile(join(cwd, "ai-skills-lock.json"), "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
 });
