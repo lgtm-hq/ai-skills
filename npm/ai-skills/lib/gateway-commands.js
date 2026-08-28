@@ -270,9 +270,12 @@ export async function removeSkills(options, dependencies = {}) {
     ...lock,
     plugins,
   });
-  const remainingByPlugin = new Map();
+  /** @type {Map<string, Set<string>>} */
+  const remainingAgents = new Map();
   for (const item of pendingCliUninstall) {
-    remainingByPlugin.set(item.pluginId, (remainingByPlugin.get(item.pluginId) ?? 0) + 1);
+    const agents = remainingAgents.get(item.pluginId) ?? new Set();
+    agents.add(item.agent);
+    remainingAgents.set(item.pluginId, agents);
   }
   try {
     for (const item of pendingCliUninstall) {
@@ -281,18 +284,20 @@ export async function removeSkills(options, dependencies = {}) {
         exec: dependencies.exec,
         pluginId: item.pluginId,
       });
-      const left = (remainingByPlugin.get(item.pluginId) ?? 1) - 1;
-      if (left === 0) {
-        remainingByPlugin.delete(item.pluginId);
-      } else {
-        remainingByPlugin.set(item.pluginId, left);
+      const agents = remainingAgents.get(item.pluginId);
+      if (!agents) {
+        continue;
+      }
+      agents.delete(item.agent);
+      if (agents.size === 0) {
+        remainingAgents.delete(item.pluginId);
       }
     }
   } catch (error) {
     await restoreLockAfterCliUninstallFailure({
       lock,
       plugins,
-      remainingByPlugin,
+      remainingAgents,
       warn,
       writeLock,
     });
@@ -781,24 +786,37 @@ async function siblingLockHasCliNative(pluginId, agent, scope, readLock, lockEnv
  * Put plugins back in the lock when host CLI uninstall fails after the write.
  *
  * Lock removal is persisted before uninstall so a write failure cannot drop a
- * still-tracked host plugin. If uninstall then fails, restore entries that did
- * not finish so later update/remove can still see them.
+ * still-tracked host plugin. If uninstall then fails, restore only CLI agents
+ * that did not finish so a succeeded sibling host is not recorded as present.
  *
  * @param {object} args - Named arguments.
  * @param {import("./lockfile.js").GatewayLock} args.lock - Lock snapshot from before this remove.
  * @param {import("./lockfile.js").GatewayLock["plugins"]} args.plugins - Lock plugins after this remove.
- * @param {Map<string, number>} args.remainingByPlugin - Plugin ids whose CLI uninstalls are unfinished.
+ * @param {Map<string, Set<string>>} args.remainingAgents - Unfinished CLI agents by plugin id.
  * @param {(message: string) => void} args.warn - Warning sink.
  * @param {typeof writeLockfile} args.writeLock - Lock writer.
  * @returns {Promise<void>} Resolves after restore or a failed restore warning.
  */
 async function restoreLockAfterCliUninstallFailure(args) {
-  if (args.remainingByPlugin.size === 0) {
+  if (args.remainingAgents.size === 0) {
     return;
   }
   const restoredPlugins = { ...args.plugins };
-  for (const pluginId of args.remainingByPlugin.keys()) {
-    restoredPlugins[pluginId] = args.lock.plugins[pluginId];
+  for (const [pluginId, remaining] of args.remainingAgents) {
+    const original = args.lock.plugins[pluginId];
+    const restoredAgents = { ...original.agents };
+    for (const agent of partitionLockedLanes(original).cliNative) {
+      if (!remaining.has(agent)) {
+        delete restoredAgents[agent];
+      }
+    }
+    if (Object.keys(restoredAgents).length === 0) {
+      continue;
+    }
+    restoredPlugins[pluginId] = {
+      ...original,
+      agents: restoredAgents,
+    };
   }
   try {
     await args.writeLock({

@@ -929,6 +929,57 @@ describe("gateway maintenance commands", () => {
     expect(writes[1].plugins.review).toEqual(nativeLock.plugins.review);
   });
 
+  test("does not restore a CLI agent that already uninstalled when a sibling fails", async () => {
+    const writes = [];
+    const claude = {
+      files: { "lint/SKILL.md": "" },
+      projector: "native",
+      root: "cli:claude-code",
+    };
+    const copilot = {
+      files: { "lint/SKILL.md": "" },
+      projector: "native",
+      root: "cli:copilot",
+    };
+    const nativeLock = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            "claude-code": claude,
+            copilot,
+          },
+          projector: "native",
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.0.0-dev",
+          vendor: "lgtm-hq",
+          version: "0.0.0-dev",
+        }),
+      },
+    };
+    await expect(
+      removeSkills(options, {
+        exec: async (_command, args) => {
+          if (args.includes("uninstall") && args.some((arg) => String(arg).startsWith("review@"))) {
+            if (_command === "claude") {
+              return { status: 0, stderr: "", stdout: "" };
+            }
+            return { status: 1, stderr: "permission denied", stdout: "" };
+          }
+          return { status: 0, stderr: "", stdout: "" };
+        },
+        readLock: async () => nativeLock,
+        run: async () => {},
+        writeLock: async (next) => {
+          writes.push(next);
+        },
+      }),
+    ).rejects.toThrow("copilot plugin uninstall failed: permission denied");
+    expect(writes).toHaveLength(2);
+    expect(writes[1].plugins.review.agents).toEqual({ copilot });
+    expect(writes[1].plugins.review.agents["claude-code"]).toBeUndefined();
+  });
+
   test("keeps the uninstall error when lock restore fails", async () => {
     const warnings = [];
     const nativeLock = {
