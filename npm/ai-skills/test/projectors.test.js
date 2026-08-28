@@ -209,9 +209,11 @@ describe("native CLI projector", () => {
   });
 
   test("treats already-present marketplace add as success", async () => {
+    const calls = [];
     await installCliPlugin({
       agent: "copilot",
-      exec: async (_command, args) => {
+      exec: async (command, args) => {
+        calls.push([command, ...args]);
         if (args.includes("add")) {
           return { status: 1, stderr: "already exists", stdout: "" };
         }
@@ -220,6 +222,26 @@ describe("native CLI projector", () => {
       pluginId: "review",
       source: "lgtm-hq/ai-skills@v0.23.0",
     });
+    expect(calls).toEqual([
+      ["copilot", "plugin", "marketplace", "add", "lgtm-hq/ai-skills"],
+      ["copilot", "plugin", "install", "review@ai-skills"],
+    ]);
+  });
+
+  test("does not treat does not exist as already present", async () => {
+    await expect(
+      installCliPlugin({
+        agent: "claude-code",
+        exec: async (_command, args) => {
+          if (args.includes("install")) {
+            return { status: 1, stderr: "plugin does not exist", stdout: "" };
+          }
+          return { status: 0, stderr: "", stdout: "" };
+        },
+        pluginId: "review",
+        source: "lgtm-hq/ai-skills@v0.23.0",
+      }),
+    ).rejects.toThrow("claude plugin install failed: plugin does not exist");
   });
 
   test("does not treat a missing plugin as a successful install", async () => {

@@ -14,6 +14,8 @@ const unattendedOptions = {
   copy: false,
   global: true,
   onConflict: "overwrite",
+  // Explicit explode keeps pre-native tests off the catalog-checkout path.
+  // Production default is native; projector:null cases cover that below.
   projector: "explode",
   project: false,
   skills: ["lint", "test"],

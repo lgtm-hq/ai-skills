@@ -8,10 +8,10 @@ import { pluginAgentNames } from "./lockfile.js";
  * Keep labels user-facing; values match upstream `skills -a` identifiers.
  */
 export const KNOWN_AGENTS = [
-  { value: "claude-code", label: "Claude Code (~/.claude/skills)" },
+  { value: "claude-code", label: "Claude Code (plugin CLI)" },
   { value: "cursor", label: "Cursor (~/.cursor/plugins/local)" },
   { value: "codex", label: "Codex (~/.codex/skills)" },
-  { value: "copilot", label: "GitHub Copilot (~/.copilot/skills)" },
+  { value: "copilot", label: "GitHub Copilot (plugin CLI)" },
 ];
 
 /**

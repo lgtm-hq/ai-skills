@@ -45,7 +45,8 @@ export function spawnExec(command, args) {
 }
 
 /**
- * Add a marketplace (if needed) and install one plugin through a host CLI.
+ * Native CLI installs are user-scoped by the host. The gateway lock still
+ * records `--global` / `--project`; host CLIs do not take a gateway scope flag.
  *
  * @param {object} args - Named arguments.
  * @param {string} args.agent - `claude-code` or `copilot`.
@@ -110,10 +111,15 @@ function cliForAgent(agent) {
  * @returns {boolean} Whether add/install was already satisfied.
  */
 function isAlreadyPresent(result) {
-  // Substring match is fail-open for phrases like "already exists". Exact host
-  // outcomes wait on doctor (#376).
   const text = `${result.stdout} ${result.stderr}`.toLowerCase();
-  return text.includes("already") || text.includes("exists");
+  if (
+    /\bdoes not exist\b/.test(text) ||
+    /\bnot (found|installed|exist)/.test(text) ||
+    /\bnever (found|installed)\b/.test(text)
+  ) {
+    return false;
+  }
+  return /\balready\b/.test(text) || /\bexists\b/.test(text);
 }
 
 /**

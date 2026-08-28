@@ -89,10 +89,12 @@ Unattended installs need an explicit scope and agent. `--bundle` and
 `standards`, …). `--vendor <id>` installs that vendor plugin whole.
 `--projector native|explode` selects delivery; the default is native for
 Cursor, Claude Code, and Copilot, and explode for Codex. Cursor native
-assembles `~/.cursor/plugins/local/<plugin-id>` from a catalog checkout.
-Claude Code and Copilot shell out to their plugin CLIs. Use
-`--projector explode` to keep writing `~/.cursor/skills` (and the other
-host skill directories).
+assembles `~/.cursor/plugins/local/<plugin-id>` from a catalog checkout
+(`skills/` + `.claude-plugin/`). Published npm / `bunx` installs do not
+ship that catalog, so Cursor falls back to explode unless you pass
+`--projector native`. Claude Code and Copilot shell out to their plugin
+CLIs (user-scoped by the host). Use `--projector explode` to keep writing
+`~/.cursor/skills` (and the other host skill directories).
 
 > [!WARNING]
 > Pin the gateway to a release. Plugins are instructions your agents
