@@ -129,6 +129,7 @@ function assertSafeSkillName(name) {
  * @param {typeof rm} [args.remove] - Injectable rm.
  * @param {typeof rename} [args.move] - Injectable rename used for the swap.
  * @param {typeof writeFile} [args.write] - Injectable writer.
+ * @param {{swapped?: boolean}} [args.progress] - Set `swapped` after dest moves to `.bak`.
  * @returns {Promise<string>} Absolute plugin directory.
  */
 export async function installCursorPlugin(args) {
@@ -174,14 +175,27 @@ export async function installCursorPlugin(args) {
       await remove(paths.backup, { force: true, recursive: true });
       await move(paths.pluginDir, paths.backup);
       swapped = true;
+      if (args.progress) {
+        args.progress.swapped = true;
+      }
     }
     await move(paths.staging, paths.pluginDir);
   } catch (error) {
-    if (swapped) {
-      await remove(paths.pluginDir, { force: true, recursive: true });
-      await move(paths.backup, paths.pluginDir);
+    let restoreError;
+    try {
+      if (swapped) {
+        await remove(paths.pluginDir, { force: true, recursive: true });
+        await move(paths.backup, paths.pluginDir);
+      }
+      await remove(paths.staging, { force: true, recursive: true });
+    } catch (failed) {
+      restoreError = failed;
     }
-    await remove(paths.staging, { force: true, recursive: true });
+    if (restoreError) {
+      const original = error instanceof Error ? error.message : String(error);
+      const restore = restoreError instanceof Error ? restoreError.message : String(restoreError);
+      throw new Error(`${original} (Cursor restore also failed: ${restore})`);
+    }
     throw error;
   }
   if (args.commit !== false) {

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -224,6 +224,59 @@ describe("native Cursor projector", () => {
           version: "0.23.0",
         }),
       ).rejects.toThrow("copy failed");
+      expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("records an actual swap when promote and inner restore both fail", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-cursor-swap-progress-"));
+    try {
+      const sourceRoot = join(root, "src");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      const destRoot = cursorPluginsRoot({ cwd: root, home: root, scope: "project" });
+      const pluginDir = join(destRoot, "review");
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(join(pluginDir, "USER-DATA.txt"), "keep\n");
+      const progress = { swapped: false };
+      let moves = 0;
+      await expect(
+        installCursorPlugin({
+          description: "Lint.",
+          destRoot,
+          move: async (from, to) => {
+            moves += 1;
+            if (moves === 2) {
+              throw new Error("staging promote failed");
+            }
+            if (moves === 3) {
+              throw new Error("inner restore failed");
+            }
+            return rename(from, to);
+          },
+          pluginId: "review",
+          progress,
+          replace: true,
+          skills: ["lint"],
+          sourceRoot,
+          version: "0.23.0",
+        }),
+      ).rejects.toThrow(
+        "staging promote failed (Cursor restore also failed: inner restore failed)",
+      );
+      expect(progress.swapped).toBe(true);
+      await expect(readFile(join(pluginDir, "USER-DATA.txt"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      expect(await readFile(join(`${pluginDir}.bak`, "USER-DATA.txt"), "utf8")).toBe("keep\n");
+      await restoreCursorPluginInstall({
+        created: false,
+        destRoot,
+        pluginId: "review",
+        swapped: progress.swapped,
+      });
       expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
     } finally {
       await rm(root, { force: true, recursive: true });

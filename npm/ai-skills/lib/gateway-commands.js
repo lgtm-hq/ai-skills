@@ -23,7 +23,6 @@ import { resolveScope } from "./options.js";
 import { getPackageVersion } from "./package-version.js";
 import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
 import {
-  cursorDestHasFiles,
   cursorPluginsRoot,
   discardCursorPluginBackup,
   findCatalogSourceRoot,
@@ -43,6 +42,7 @@ import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./s
  *   hash?: typeof import("./lockfile.js").hashFile,
  *   isInstalled?: Parameters<typeof pruneMissingLockEntries>[1],
  *   lockEnvironment?: Parameters<typeof reconcileLock>[1],
+ *   move?: typeof import("node:fs/promises").rename,
  *   now?: () => Date,
  *   readLock?: typeof readLockfile,
  *   rmdir?: typeof rmdir,
@@ -109,14 +109,28 @@ export async function updateSkills(options, dependencies = {}) {
         );
       }
       if (lanes.cursorNative.length > 0) {
-        const cursorBackup = await rematerializeCursorPlugin(
-          pluginId,
-          entry,
-          skills,
-          dependencies,
-          prunedLock.scope,
-        );
-        cursorBackups.push(cursorBackup);
+        const cursorProgress = { swapped: false };
+        try {
+          cursorBackups.push(
+            await rematerializeCursorPlugin(
+              pluginId,
+              entry,
+              skills,
+              dependencies,
+              prunedLock.scope,
+              cursorProgress,
+            ),
+          );
+        } catch (error) {
+          if (cursorProgress.swapped && cursorProgress.destRoot) {
+            cursorBackups.push({
+              destRoot: cursorProgress.destRoot,
+              pluginId,
+              swapped: true,
+            });
+          }
+          throw error;
+        }
       }
       for (const agent of lanes.cliNative) {
         await installCliPlugin({
@@ -179,6 +193,7 @@ export async function updateSkills(options, dependencies = {}) {
         await restoreCursorPluginInstall({
           ...item,
           created: !item.swapped,
+          move: dependencies.move,
         });
       } catch (restoreError) {
         restoreErrors.push(restoreError);
@@ -860,12 +875,21 @@ async function restoreLockAfterCliUninstallFailure(args) {
  * @param {string[]} skills - Current catalog skill names.
  * @param {{
  *   lockEnvironment?: Parameters<typeof reconcileLock>[1],
+ *   move?: typeof import("node:fs/promises").rename,
  *   sourceRoot?: string | null,
  * }} dependencies - Injectable catalog root and paths.
  * @param {"global" | "project"} scope - Installation scope.
+ * @param {{destRoot?: string, swapped?: boolean}} [progress] - Filled with dest root; `swapped` after dest→`.bak`.
  * @returns {Promise<{destRoot: string, pluginId: string, swapped: boolean}>} Dest root and whether dest was swapped aside.
  */
-async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, scope) {
+async function rematerializeCursorPlugin(
+  pluginId,
+  entry,
+  skills,
+  dependencies,
+  scope,
+  progress = {},
+) {
   if (entry.vendor !== "lgtm-hq") {
     throw new Error("Native Cursor projector is first-party only");
   }
@@ -885,19 +909,21 @@ async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, 
     home: dependencies.lockEnvironment?.home,
     scope,
   });
-  const swapped = await cursorDestHasFiles(join(destRoot, pluginId));
+  progress.destRoot = destRoot;
   const bundles = await loadBundles();
   await installCursorPlugin({
     commit: false,
     description: bundles.groups[pluginId]?.description ?? pluginId,
     destRoot,
+    move: dependencies.move,
     pluginId,
+    progress,
     replace: true,
     skills,
     sourceRoot,
     version: getPackageVersion(),
   });
-  return { destRoot, pluginId, swapped };
+  return { destRoot, pluginId, swapped: Boolean(progress.swapped) };
 }
 
 /**

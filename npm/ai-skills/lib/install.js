@@ -628,7 +628,7 @@ async function cancelable(ui, valuePromise) {
  * @param {(args: string[]) => Promise<void>} [run] - Injectable skills process runner.
  * @param {() => Date} [now] - Injectable clock.
  * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable lockfile environment.
- * @param {{exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>, remove?: typeof rm, sourceRoot?: string | null, warn?: (message: string) => void}} [extras] - Native projector dependencies.
+ * @param {{exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>, move?: typeof import("node:fs/promises").rename, remove?: typeof rm, sourceRoot?: string | null, warn?: (message: string) => void}} [extras] - Native projector dependencies.
  * @returns {Promise<{alreadyPresent: number, installed: number, repaired: number}>} Install summary counts.
  */
 export async function install(
@@ -766,8 +766,8 @@ export async function install(
   const cursorPluginDir = join(destRoot, pluginId);
   const cursorExisted =
     lanes.cursorNative.length > 0 ? await cursorDestHasFiles(cursorPluginDir) : false;
-  // Set only after installCursorPlugin returns: dest existence is not a swap.
-  let cursorSwapped = false;
+  // Dest existence is not a swap; installCursorPlugin sets this after dest→`.bak`.
+  const cursorProgress = { swapped: false };
   let lockCommitted = false;
   const cliCreated = [];
   try {
@@ -790,13 +790,14 @@ export async function install(
         commit: false,
         description: await pluginDescription(pluginId, vendor),
         destRoot,
+        move: extras.move,
         pluginId,
+        progress: cursorProgress,
         replace,
         skills: scopedOptions.skills,
         sourceRoot: cursorSourceRoot,
         version: vendor?.sha ?? getPackageVersion(),
       });
-      cursorSwapped = cursorExisted;
     }
     for (const agent of lanes.cliNative) {
       const cliResult = await installCliPlugin({
@@ -874,8 +875,10 @@ export async function install(
         await restoreCursorPluginInstall({
           created: !cursorExisted,
           destRoot,
+          move: extras.move,
           pluginId,
-          swapped: cursorSwapped,
+          remove: extras.remove,
+          swapped: cursorProgress.swapped,
         });
       } catch (rollbackError) {
         rollbackErrors.push(rollbackError);

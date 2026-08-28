@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -1353,6 +1353,70 @@ describe("gateway maintenance commands", () => {
           },
         }),
       ).rejects.toThrow("EACCES");
+      expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint v1\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("restores a native Cursor tree when promote and inner restore fail", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cursor-update-swap-fail-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint v2\n");
+      const pluginDir = join(cwd, ".cursor/plugins/local/lint");
+      await mkdir(join(pluginDir, "skills/lint"), { recursive: true });
+      await writeFile(join(pluginDir, "skills/lint/SKILL.md"), "# lint v1\n");
+      let moves = 0;
+      await expect(
+        updateSkills(options, {
+          isInstalled: async () => true,
+          lockEnvironment: { cwd },
+          move: async (from, to) => {
+            moves += 1;
+            if (moves === 2) {
+              throw new Error("staging promote failed");
+            }
+            if (moves === 3) {
+              throw new Error("inner restore failed");
+            }
+            return rename(from, to);
+          },
+          now: () => new Date("2026-07-10T17:00:00.000Z"),
+          readLock: async () => ({
+            gatewayVersion: "0.0.0-dev",
+            plugins: {
+              lint: pluginEntry({
+                agents: {
+                  cursor: {
+                    files: { "skills/lint/SKILL.md": "old" },
+                    projector: "native",
+                    root: pluginDir,
+                  },
+                },
+                projector: "native",
+                repo: "lgtm-hq/ai-skills",
+                sha: "v0.0.0-old",
+                skills: ["lint"],
+                vendor: "lgtm-hq",
+                version: "0.0.0-old",
+              }),
+            },
+            scope: "project",
+            version: 2,
+          }),
+          run: async () => {
+            throw new Error("explode runner must not run");
+          },
+          sourceRoot,
+          writeLock: async () => {
+            throw new Error("writeLock must not run");
+          },
+        }),
+      ).rejects.toThrow(
+        "staging promote failed (Cursor restore also failed: inner restore failed)",
+      );
       expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint v1\n");
     } finally {
       await rm(cwd, { force: true, recursive: true });

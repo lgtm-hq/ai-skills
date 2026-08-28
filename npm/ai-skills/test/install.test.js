@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -1629,6 +1629,82 @@ describe("native projectors", () => {
       await expect(readFile(join(pluginDir, "skills/lint/SKILL.md"))).rejects.toMatchObject({
         code: "ENOENT",
       });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("restores a prior native Cursor tree when promote and inner restore fail", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cursor-swap-fail-restore-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      const pluginDir = join(cwd, ".cursor/plugins/local/review");
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(join(pluginDir, "USER-DATA.txt"), "keep\n");
+      await Bun.write(
+        join(cwd, "ai-skills-lock.json"),
+        `${JSON.stringify(
+          {
+            gatewayVersion: "0.0.0-dev",
+            plugins: {
+              review: {
+                agents: {
+                  cursor: {
+                    files: { ".claude-plugin/plugin.json": "old" },
+                    projector: "native",
+                    root: pluginDir,
+                  },
+                },
+                installedAt: "2026-07-10T16:00:00.000Z",
+                projector: "native",
+                repo: "lgtm-hq/ai-skills",
+                sha: "v0.0.0-old",
+                skills: ["lint", "test"],
+                vendor: "lgtm-hq",
+                version: "0.0.0-old",
+              },
+            },
+            scope: "project",
+            version: 2,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      let moves = 0;
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            global: false,
+            projector: "native",
+            project: true,
+          },
+          async () => {},
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          { cwd },
+          {
+            move: async (from, to) => {
+              moves += 1;
+              if (moves === 2) {
+                throw new Error("staging promote failed");
+              }
+              if (moves === 3) {
+                throw new Error("inner restore failed");
+              }
+              return rename(from, to);
+            },
+            sourceRoot,
+          },
+        ),
+      ).rejects.toThrow(
+        "staging promote failed (Cursor restore also failed: inner restore failed)",
+      );
+      expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
