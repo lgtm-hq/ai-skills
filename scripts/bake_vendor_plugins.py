@@ -39,6 +39,7 @@ from vendor_registry.plugin_report import (
 from vendor_registry.plugin_version import plugin_version
 from vendor_registry.registry import load_registry
 from vendor_registry.safe_tree import (
+    _reject_leftover_backup,
     find_skill_markdown,
     install_directory,
     validate_internal_references,
@@ -785,6 +786,7 @@ def _check_baked_output(*, repo_root: Path) -> None:
     if not baked_root.is_dir() or baked_root.is_symlink():
         msg = f"Missing generated directory: {baked_root}"
         raise ValueError(msg)
+    _reject_leftover_backup(destination=baked_root)
     validate_tree(root=baked_root)
     coverage_path = baked_root / COVERAGE_FILENAME
     if not coverage_path.is_file():

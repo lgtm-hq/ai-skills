@@ -2040,6 +2040,142 @@ def test_install_directory_restores_on_snapshot_failure(
     assert_that((tmp_path / ".plugins-baked.hold").exists()).is_false()
 
 
+def test_install_directory_restores_after_interrupt_on_first_exchange(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An interrupt after the first swap must still restore the original inode."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "a.txt").write_text("old-a\n", encoding="utf-8")
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "a.txt").write_text("new-a\n", encoding="utf-8")
+    dest_inode = dest.stat().st_ino
+    real_exchange = safe_tree._exchange_paths
+    calls = {"count": 0}
+
+    def _interrupt_first(*, first: Path, second: Path) -> None:
+        """Swap paths, then interrupt after the opening exchange.
+
+        Args:
+            first: First path.
+            second: Second path.
+
+        Raises:
+            KeyboardInterrupt: After the first successful swap.
+        """
+        real_exchange(first=first, second=second)
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(safe_tree, "_exchange_paths", _interrupt_first)
+    previous_cwd = Path.cwd()
+    try:
+        os.chdir(dest)
+        with pytest.raises(KeyboardInterrupt):
+            install_directory(source=source, destination=dest)
+        Path("probe.txt").write_text("ok\n", encoding="utf-8")
+        assert_that(Path.cwd().resolve()).is_equal_to(dest.resolve())
+    finally:
+        os.chdir(previous_cwd)
+
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
+    assert_that((dest / "a.txt").read_text(encoding="utf-8")).is_equal_to(
+        "old-a\n",
+    )
+    assert_that((tmp_path / ".plugins-baked.hold").exists()).is_false()
+
+
+def test_install_directory_keeps_publish_after_interrupt_on_closing_exchange(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An interrupt after the closing swap must not undo a finished publish."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "a.txt").write_text("old-a\n", encoding="utf-8")
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "a.txt").write_text("new-a\n", encoding="utf-8")
+    dest_inode = dest.stat().st_ino
+    real_exchange = safe_tree._exchange_paths
+    calls = {"count": 0}
+
+    def _interrupt_second(*, first: Path, second: Path) -> None:
+        """Swap paths, then interrupt after the closing exchange.
+
+        Args:
+            first: First path.
+            second: Second path.
+
+        Raises:
+            KeyboardInterrupt: After the second successful swap.
+        """
+        real_exchange(first=first, second=second)
+        calls["count"] += 1
+        if calls["count"] == 2:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(safe_tree, "_exchange_paths", _interrupt_second)
+    previous_cwd = Path.cwd()
+    try:
+        os.chdir(dest)
+        with pytest.raises(KeyboardInterrupt):
+            install_directory(source=source, destination=dest)
+        Path("probe.txt").write_text("ok\n", encoding="utf-8")
+        assert_that(Path.cwd().resolve()).is_equal_to(dest.resolve())
+    finally:
+        os.chdir(previous_cwd)
+
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
+    assert_that((dest / "a.txt").read_text(encoding="utf-8")).is_equal_to(
+        "new-a\n",
+    )
+    assert_that((tmp_path / ".plugins-baked.hold").exists()).is_false()
+
+
+def test_install_directory_surfaces_hold_cleanup_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed hold cleanup must not hide a leftover sidecar from --check."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "a.txt").write_text("old-a\n", encoding="utf-8")
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "a.txt").write_text("new-a\n", encoding="utf-8")
+    dest_inode = dest.stat().st_ino
+    hold = tmp_path / ".plugins-baked.hold"
+    real_remove = safe_tree._remove_path
+
+    def _fail_hold_reap(*, path: Path) -> None:
+        """Fail only when removing the sibling hold directory.
+
+        Args:
+            path: Path being removed.
+
+        Raises:
+            OSError: When ``path`` is the hold directory.
+        """
+        if path.resolve() == hold.resolve():
+            msg = "injected hold cleanup failure"
+            raise OSError(msg)
+        real_remove(path=path)
+
+    monkeypatch.setattr(safe_tree, "_remove_path", _fail_hold_reap)
+    with pytest.raises(OSError, match="injected hold cleanup failure"):
+        install_directory(source=source, destination=dest)
+
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
+    assert_that((dest / "a.txt").read_text(encoding="utf-8")).is_equal_to(
+        "new-a\n",
+    )
+    assert_that(hold.exists()).is_true()
+
+
 def test_install_directory_preserves_inode_when_final_exchange_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2565,6 +2701,26 @@ def test_validate_tree_rejects_symlink(
 
     with pytest.raises(ValueError, match="symlink rejected"):
         validate_tree(root=root)
+
+
+def test_check_rejects_leftover_hold(
+    tmp_path: Path,
+) -> None:
+    """Offline --check must fail closed when a bake hold sidecar remains."""
+    _write_registry(repo_root=tmp_path, plugins_yaml="")
+    bake_vendor_plugins.bake(repo_root=tmp_path)
+    (tmp_path / ".plugins-baked.hold").mkdir()
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_leftover_backup(
+    tmp_path: Path,
+) -> None:
+    """Offline --check must fail closed when a bake backup sidecar remains."""
+    _write_registry(repo_root=tmp_path, plugins_yaml="")
+    bake_vendor_plugins.bake(repo_root=tmp_path)
+    (tmp_path / ".plugins-baked.bak").mkdir()
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
 
 
 def test_main_check_returns_zero_for_empty_bake(

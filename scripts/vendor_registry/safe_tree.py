@@ -403,11 +403,15 @@ def install_directory(*, source: Path, destination: Path) -> None:
     the destination path in one kernel rename so that path is never absent
     or mixed. The original destination inode is moved to a sibling hold
     directory (outside any caller temporary tree), snapshotted, then
-    filled with the new contents and exchanged back. On mirror failure the
-    snapshot is copied back onto that inode before it returns to
-    ``destination``, so readers and a resident cwd see the complete old
-    tree. When ``destination`` does not exist, ``source`` is renamed onto
-    it. Leftover ``.{name}.bak`` or ``.{name}.hold`` sidecars fail closed.
+    filled with the new contents and exchanged back. Recovery uses the
+    live inode locations rather than "did the swap call return": an
+    interrupt after the closing swap leaves the published tree on the
+    original inode. On mirror failure the snapshot is copied back onto
+    that inode before it returns to ``destination``, so readers and a
+    resident cwd see the complete old tree. When ``destination`` does
+    not exist, ``source`` is renamed onto it. Leftover ``.{name}.bak``
+    or ``.{name}.hold`` sidecars fail closed, including during
+    ``--check``.
 
     Args:
         source: Completed tree on the same filesystem as ``destination``.
@@ -459,35 +463,25 @@ def _publish_into_existing(*, source: Path, destination: Path) -> None:
     inode_home = hold / "inode"
     snapshot = hold / "snapshot"
     hold.mkdir()
-    exchanged = False
-    parked = False
+    snapshot_ready = False
     try:
         _exchange_paths(first=source, second=destination)
-        exchanged = True
         source.rename(target=inode_home)
-        parked = True
-        snapshot_ready = False
-        try:
-            snapshot.mkdir()
-            _replace_tree_contents(source=inode_home, destination=snapshot)
-            snapshot_ready = True
-            _mirror_tree(source=destination, destination=inode_home)
-            _exchange_paths(first=inode_home, second=destination)
-        except BaseException as exc:  # noqa: BLE001 - restore dest inode on interrupt
-            _rollback_original_inode(
-                snapshot=snapshot,
-                inode_home=inode_home,
-                destination=destination,
-                restore_from_snapshot=snapshot_ready,
-                original=exc,
-            )
-    except BaseException as exc:
-        if exchanged and not parked:
-            try:
-                _exchange_paths(first=source, second=destination)
-            except BaseException as restore_exc:  # noqa: BLE001 - pair with publish error
-                _raise_publish_failures(original=exc, restore=restore_exc)
-        raise
+        snapshot.mkdir()
+        _replace_tree_contents(source=inode_home, destination=snapshot)
+        snapshot_ready = True
+        _mirror_tree(source=destination, destination=inode_home)
+        _exchange_paths(first=inode_home, second=destination)
+    except BaseException as exc:  # noqa: BLE001 - restore dest inode on interrupt
+        _recover_original_inode(
+            destination=destination,
+            source=source,
+            inode_home=inode_home,
+            snapshot=snapshot,
+            original_inode=original_inode,
+            snapshot_ready=snapshot_ready,
+            original=exc,
+        )
     finally:
         if _inode_is(
             path=destination,
@@ -525,6 +519,56 @@ def _rollback_original_inode(
         _exchange_paths(first=inode_home, second=destination)
     except BaseException as restore_exc:  # noqa: BLE001 - pair with publish error
         _raise_publish_failures(original=original, restore=restore_exc)
+    raise original
+
+
+def _recover_original_inode(
+    *,
+    destination: Path,
+    source: Path,
+    inode_home: Path,
+    snapshot: Path,
+    original_inode: int,
+    snapshot_ready: bool,
+    original: BaseException,
+) -> None:
+    """Restore the original dest inode using current path topology.
+
+    If ``destination`` already names the original inode, publish or
+    rollback finished and this re-raises ``original``. If the original
+    inode is still at ``source`` or ``inode_home``, it is exchanged back.
+
+    Args:
+        destination: Live destination path.
+        source: Staged-tree path from before parking.
+        inode_home: Hold path that may contain the original inode.
+        snapshot: Complete copy of the pre-publish destination tree.
+        original_inode: Inode ``destination`` must name after recovery.
+        snapshot_ready: When ``True``, restore ``snapshot`` onto the
+            original inode before exchanging it back.
+        original: Error that interrupted publish.
+
+    Raises:
+        ExceptionGroup: If exchanging the original inode back fails.
+        BaseException: Re-raises ``original`` after recovery, or when
+            ``destination`` already names the original inode.
+    """
+    if _inode_is(path=destination, ino=original_inode):
+        raise original
+    if _inode_is(path=inode_home, ino=original_inode):
+        _rollback_original_inode(
+            snapshot=snapshot,
+            inode_home=inode_home,
+            destination=destination,
+            restore_from_snapshot=snapshot_ready,
+            original=original,
+        )
+    if _inode_is(path=source, ino=original_inode):
+        try:
+            _exchange_paths(first=source, second=destination)
+        except BaseException as restore_exc:  # noqa: BLE001 - pair with publish error
+            _raise_publish_failures(original=original, restore=restore_exc)
+        raise original
     raise original
 
 
