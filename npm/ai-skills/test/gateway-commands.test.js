@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { listSkills, removeSkills, updateSkills } from "../lib/gateway-commands.js";
-import { hashFile } from "../lib/lockfile.js";
+import { hashFile, readLockfile, writeLockfile } from "../lib/lockfile.js";
 import { getPackageVersion } from "../lib/package-version.js";
 
 const pluginEntry = (overrides) => ({
@@ -959,6 +959,69 @@ describe("gateway maintenance commands", () => {
     });
     expect(removed).toEqual(["review"]);
     expect(execCalls).toEqual([]);
+  });
+
+  test("skips host uninstall on global remove when the cwd project lock still owns it", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-sibling-project-"));
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-sibling-home-"));
+    try {
+      const entry = pluginEntry({
+        agents: {
+          "claude-code": {
+            files: { "lint/SKILL.md": "" },
+            projector: "native",
+            root: "cli:claude-code",
+          },
+        },
+        projector: "native",
+        repo: "lgtm-hq/ai-skills",
+        sha: "v0.0.0-dev",
+        vendor: "lgtm-hq",
+        version: "0.0.0-dev",
+      });
+      const projectLock = {
+        gatewayVersion: "0.0.0-dev",
+        plugins: { review: entry },
+        scope: "project",
+        version: 2,
+      };
+      const globalLock = { ...projectLock, scope: "global" };
+      await mkdir(join(home, ".ai-skills"), { recursive: true });
+      await writeFile(
+        join(cwd, "ai-skills-lock.json"),
+        `${JSON.stringify(projectLock, null, 2)}\n`,
+      );
+      await writeFile(
+        join(home, ".ai-skills/lock.json"),
+        `${JSON.stringify(globalLock, null, 2)}\n`,
+      );
+      const execCalls = [];
+      const lockEnvironment = { cwd, home };
+      const removed = await removeSkills(
+        {
+          agents: ["claude-code"],
+          global: true,
+          project: false,
+          skills: [],
+          yes: true,
+        },
+        {
+          exec: async (command, args) => {
+            execCalls.push([command, ...args]);
+            return { status: 0, stderr: "", stdout: "" };
+          },
+          lockEnvironment,
+          readLock: async (scope) => readLockfile(scope, lockEnvironment),
+          run: async () => {},
+          writeLock: async (next) => writeLockfile(next, lockEnvironment),
+        },
+      );
+      expect(removed).toEqual(["review"]);
+      expect(execCalls).toEqual([]);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+      await rm(home, { force: true, recursive: true });
+    }
   });
 
   test("updates a native Cursor plugin by reassembling the local tree", async () => {
