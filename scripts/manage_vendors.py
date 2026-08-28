@@ -239,6 +239,7 @@ def _dump_plugins(*, plugins: object, prefix: str) -> list[str]:
 
     Raises:
         TypeError: If ``plugins`` is not a list of mappings.
+        ValueError: If a plugin mapping contains unknown fields.
     """
     if not isinstance(plugins, list):
         msg = "plugins must be a list"
@@ -262,8 +263,18 @@ def _dump_plugin(*, plugin: dict[str, Any]) -> list[str]:
 
     Returns:
         YAML lines for one plugin list item.
+
+    Raises:
+        ValueError: If the mapping contains keys outside ``_PLUGIN_FIELD_ORDER``.
     """
     lines: list[str] = []
+    extra = set(plugin) - set(_PLUGIN_FIELD_ORDER)
+    if extra:
+        msg = (
+            "plugin contains unknown fields: "
+            f"{', '.join(sorted(str(key) for key in extra))}"
+        )
+        raise ValueError(msg)
     emitted = False
     for field in _PLUGIN_FIELD_ORDER:
         if field not in plugin:

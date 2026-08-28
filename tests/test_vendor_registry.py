@@ -116,6 +116,24 @@ def test_load_registry_accepts_valid_vendor(
             id="absolute-root",
         ),
         pytest.param(
+            "skillRoots:\n      - plugins/*/skills\n      - skills",
+            "skillRoots:\n      - skills/",
+            "skillRoots entries must be relative",
+            id="trailing-slash-root",
+        ),
+        pytest.param(
+            "skillRoots:\n      - plugins/*/skills\n      - skills",
+            "skillRoots:\n      - skills/./nested",
+            "skillRoots entries must be relative",
+            id="dot-component-root",
+        ),
+        pytest.param(
+            "skillRoots:\n      - plugins/*/skills\n      - skills",
+            'skillRoots:\n      - " skills"',
+            "skillRoots entries must be relative",
+            id="whitespace-root",
+        ),
+        pytest.param(
             "homepage: https://example.com/repository",
             "homepage: ftp://example.com",
             r"homepage must be an http\(s\) URL",
@@ -656,6 +674,18 @@ def test_load_registry_accepts_skill_path_list(valid_registry_path: Path) -> Non
             "extraSkills:\n          - extras/*.md",
             "extraSkills entries must not contain glob metacharacters",
             id="glob-extra",
+        ),
+        pytest.param(
+            "extraSkills:\n          - extras/bonus",
+            "extraSkills:\n          - extras/bonus\n          - extras/bonus",
+            "extraSkills entries must be unique",
+            id="duplicate-extra",
+        ),
+        pytest.param(
+            "- comment-sicko\n          - code-reviewer",
+            "- comment-sicko\n          - comment-sicko",
+            "agents entries must be unique",
+            id="duplicate-agents",
         ),
         pytest.param(
             "extraSkills:\n          - extras/bonus",

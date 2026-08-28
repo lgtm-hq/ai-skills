@@ -498,13 +498,57 @@ def test_update_preserves_skill_paths_and_extra_skills(repo_root: Path) -> None:
     )
 
 
-def test_dump_plugins_rejects_non_list() -> None:
+def _vendor_for_dump(*, plugins: object) -> dict[str, object]:
+    """Return a vendor mapping used to exercise dump-time plugin validation.
+
+    Args:
+        plugins: Raw ``plugins`` value to serialize.
+
+    Returns:
+        A camelCase vendor mapping for ``_dump_registry``.
+    """
+    return {
+        "id": "existing",
+        "repo": "owner/existing",
+        "sha": _EXISTING_SHA,
+        "skillRoots": ["skills"],
+        "plugins": plugins,
+        "license": "MIT",
+        "homepage": "https://github.com/owner/existing",
+    }
+
+
+def test_dump_registry_rejects_non_list_plugins() -> None:
     """Dumping must fail closed instead of coercing invalid plugin values."""
     with pytest.raises(TypeError, match="plugins must be a list"):
-        manage_vendors._dump_plugins(plugins=None, prefix="    ")
+        manage_vendors._dump_registry(
+            vendors=[_vendor_for_dump(plugins=None)],
+        )
 
 
-def test_dump_plugins_rejects_non_mapping_entry() -> None:
+def test_dump_registry_rejects_non_mapping_plugin() -> None:
     """Dumping must fail closed on a non-mapping plugin list item."""
     with pytest.raises(TypeError, match="plugins entries must be mappings"):
-        manage_vendors._dump_plugins(plugins=["not-a-mapping"], prefix="    ")
+        manage_vendors._dump_registry(
+            vendors=[_vendor_for_dump(plugins=["not-a-mapping"])],
+        )
+
+
+def test_dump_registry_rejects_unknown_plugin_field() -> None:
+    """Dumping must fail closed if a plugin key is not in the dump order."""
+    with pytest.raises(ValueError, match="unknown fields"):
+        manage_vendors._dump_registry(
+            vendors=[
+                _vendor_for_dump(
+                    plugins=[
+                        {
+                            "id": "path-plugin",
+                            "description": "Path-list vendor plugin.",
+                            "skillsRoot": "skills",
+                            "skills": "*",
+                            "mystery": True,
+                        },
+                    ],
+                ),
+            ],
+        )
