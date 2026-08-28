@@ -633,12 +633,41 @@ def test_restore_artifacts_prunes_empty_directories(tmp_path: Path) -> None:
     skill.mkdir(parents=True)
     skill_markdown = skill / "SKILL.md"
     skill_markdown.write_text("old\n", encoding="utf-8")
-    snapshot = manage_vendors._snapshot_artifacts(paths=(baked,))
+    snapshot, directories = manage_vendors._snapshot_artifacts(paths=(baked,))
     beta = baked / "example-plugin" / "skills" / "beta"
     beta.mkdir()
     (beta / "SKILL.md").write_text("new\n", encoding="utf-8")
 
-    manage_vendors._restore_artifacts(paths=(baked,), snapshot=snapshot)
+    manage_vendors._restore_artifacts(
+        paths=(baked,),
+        snapshot=snapshot,
+        directories=directories,
+    )
 
     assert_that(skill_markdown.read_text(encoding="utf-8")).is_equal_to("old\n")
     assert_that(beta.exists()).is_false()
+
+
+def test_restore_artifacts_keeps_empty_snapshotted_directories(
+    tmp_path: Path,
+) -> None:
+    """Agent-only plugins keep an empty skills/ directory after rollback."""
+    baked = tmp_path / "plugins-baked"
+    plugin = baked / "example-plugin"
+    skills = plugin / "skills"
+    skills.mkdir(parents=True)
+    (plugin / "plugin.json").write_text("{}\n", encoding="utf-8")
+    snapshot, directories = manage_vendors._snapshot_artifacts(paths=(baked,))
+    beta = skills / "beta"
+    beta.mkdir()
+    (beta / "SKILL.md").write_text("new\n", encoding="utf-8")
+
+    manage_vendors._restore_artifacts(
+        paths=(baked,),
+        snapshot=snapshot,
+        directories=directories,
+    )
+
+    assert_that(skills.is_dir()).is_true()
+    assert_that(beta.exists()).is_false()
+    assert_that(any(skills.iterdir())).is_false()

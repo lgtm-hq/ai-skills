@@ -18,6 +18,10 @@ _RENAME_SWAP = 0x00000002
 _MARKDOWN_LINK_TARGET = re.compile(
     r"\[[^\]\n]*\]\(\s*<?([^>\s)]+)[^)]*>?\)",
 )
+_MARKDOWN_REF_DEF = re.compile(
+    r"^[ \t]*\[([^\]]+)\]:[ \t]*<?([^\s>]+)",
+    re.MULTILINE,
+)
 _REMOTE_LINK_PREFIXES = ("http://", "https://", "mailto:", "data:")
 
 
@@ -70,6 +74,33 @@ def walk_files(*, root: Path) -> Iterator[Path]:
             yield child
 
 
+def walk_directories(*, root: Path) -> Iterator[Path]:
+    """Walk directories under ``root``, rejecting symlinks.
+
+    Args:
+        root: Tree root. Must not itself be a symlink.
+
+    Yields:
+        Directories under ``root``, excluding ``root`` itself.
+
+    Raises:
+        ValueError: If a symlink is encountered.
+    """
+    if root.is_symlink():
+        msg = f"symlink rejected: {root}"
+        raise ValueError(msg)
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        for child in iter_directory_entries(directory=current):
+            if child.is_symlink():
+                msg = f"symlink rejected: {child}"
+                raise ValueError(msg)
+            if child.is_dir():
+                yield child
+                stack.append(child)
+
+
 def contained_path(*, path: Path, root: Path) -> Path:
     """Return ``path`` resolved and confirm it stays inside ``root``.
 
@@ -114,6 +145,10 @@ def copy_tree(*, source: Path, destination: Path, source_root: Path) -> None:
         msg = f"destination already exists: {destination}"
         raise FileExistsError(msg)
     destination.mkdir(parents=True)
+    for dir_path in walk_directories(root=source):
+        target = destination / dir_path.relative_to(source)
+        contained_path(path=target, root=destination)
+        target.mkdir(parents=True, exist_ok=True)
     for file_path in walk_files(root=source):
         relative = file_path.relative_to(source)
         target = destination / relative
@@ -154,19 +189,49 @@ def validate_internal_references(*, root: Path) -> None:
             continue
         text = file_path.read_text(encoding="utf-8")
         for match in _MARKDOWN_LINK_TARGET.finditer(text):
-            raw_target = match.group(1)
-            target = raw_target.split("#", maxsplit=1)[0]
-            if not target or target.lower().startswith(_REMOTE_LINK_PREFIXES):
-                continue
-            resolved = (file_path.parent / target).resolve()
-            try:
-                resolved.relative_to(root.resolve())
-            except ValueError as exc:
-                msg = f"path escape rejected: {raw_target}"
-                raise ValueError(msg) from exc
-            if not resolved.is_file():
-                msg = f"internal reference missing: {raw_target}"
-                raise ValueError(msg)
+            _assert_relative_markdown_target(
+                raw_target=match.group(1),
+                file_path=file_path,
+                root=root,
+            )
+        for match in _MARKDOWN_REF_DEF.finditer(text):
+            _assert_relative_markdown_target(
+                raw_target=match.group(2),
+                file_path=file_path,
+                root=root,
+            )
+
+
+def _assert_relative_markdown_target(
+    *,
+    raw_target: str,
+    file_path: Path,
+    root: Path,
+) -> None:
+    """Fail closed when a relative markdown target is missing or escapes.
+
+    Args:
+        raw_target: Link destination from inline syntax or a reference
+            definition.
+        file_path: Markdown file that contains the link.
+        root: Plugin tree the target must stay inside.
+
+    Raises:
+        ValueError: If the target escapes ``root`` or is not an existing
+            file.
+    """
+    target = raw_target.split("#", maxsplit=1)[0]
+    if not target or target.lower().startswith(_REMOTE_LINK_PREFIXES):
+        return
+    resolved = (file_path.parent / target).resolve()
+    try:
+        resolved.relative_to(root.resolve())
+    except ValueError as exc:
+        msg = f"path escape rejected: {raw_target}"
+        raise ValueError(msg) from exc
+    if not resolved.is_file():
+        msg = f"internal reference missing: {raw_target}"
+        raise ValueError(msg)
 
 
 def find_skill_markdown(*, root: Path) -> tuple[str, ...]:
@@ -189,11 +254,12 @@ def find_skill_markdown(*, root: Path) -> tuple[str, ...]:
 def install_directory(*, source: Path, destination: Path) -> None:
     """Publish a completed ``source`` tree onto ``destination``.
 
-    When ``destination`` already exists, a complete backup is copied first
-    and children are published into the live directory so its path and
-    inode stay put. The destination is never removed. On failure, children
-    are restored from the backup. When ``destination`` does not exist,
-    ``source`` is renamed onto it.
+    When ``destination`` already exists, the staged tree is exchanged onto
+    the destination path in one kernel rename so that path is never absent
+    or mixed, then the new contents are mirrored onto the original
+    destination inode and exchanged back. A process whose cwd is
+    ``destination`` keeps a valid working directory. When ``destination``
+    does not exist, ``source`` is renamed onto it.
 
     Args:
         source: Completed tree on the same filesystem as ``destination``.
@@ -202,7 +268,7 @@ def install_directory(*, source: Path, destination: Path) -> None:
     Raises:
         ValueError: If ``source`` or ``destination`` is a symlink, or a
             leftover backup directory already exists.
-        OSError: If publishing or restoring children fails.
+        OSError: If the exchange or mirror fails.
     """
     if source.is_symlink():
         msg = f"symlink rejected: {source}"
@@ -217,57 +283,55 @@ def install_directory(*, source: Path, destination: Path) -> None:
 
 
 def _publish_into_existing(*, source: Path, destination: Path) -> None:
-    """Replace ``destination`` children while preserving the dest inode.
+    """Atomically publish ``source`` while restoring the dest inode.
+
+    The destination path is swapped onto the staged tree first so readers
+    never see a mixed generation. The new tree is then copied onto the
+    original destination inode and swapped back.
 
     Args:
         source: Staged complete tree.
-        destination: Live directory to update in place.
+        destination: Live directory whose inode should be preserved.
 
     Raises:
         ValueError: If a leftover backup directory already exists.
-        OSError: If a child publish fails after the backup was taken.
+        OSError: If an exchange or mirror copy fails.
     """
-    backup = destination.with_name(f".{destination.name}.bak")
-    if backup.exists():
-        msg = f"leftover bake backup: {backup}"
+    leftover = destination.with_name(f".{destination.name}.bak")
+    if leftover.exists():
+        msg = f"leftover bake backup: {leftover}"
         raise ValueError(msg)
-    copy_tree(source=destination, destination=backup, source_root=destination.parent)
-    try:
-        incoming = {child.name for child in source.iterdir()}
-        for child in list(source.iterdir()):
-            dest_child = destination / child.name
-            if dest_child.exists():
-                _exchange_paths(first=child, second=dest_child)
-                _remove_path(path=child)
-            else:
-                child.rename(target=dest_child)
-        for dest_child in list(destination.iterdir()):
-            if dest_child.name not in incoming:
-                _remove_path(path=dest_child)
-    except OSError:
-        _restore_from_backup(destination=destination, backup=backup)
-        raise
-    shutil.rmtree(backup)
+    _exchange_paths(first=source, second=destination)
+    _mirror_tree(source=destination, destination=source)
+    _exchange_paths(first=source, second=destination)
 
 
-def _restore_from_backup(*, destination: Path, backup: Path) -> None:
-    """Replace live children with the pre-publish backup.
+def _mirror_tree(*, source: Path, destination: Path) -> None:
+    """Make ``destination`` children match ``source`` without renaming dest.
 
     Args:
-        destination: Live directory whose inode must be preserved.
-        backup: Complete copy of the previous children.
+        source: Tree whose children are the desired contents.
+        destination: Directory whose inode must be preserved.
+
+    Raises:
+        ValueError: If a child is a symlink or unsupported node.
+        OSError: If a copy or removal fails.
     """
-    backup_names = {child.name for child in backup.iterdir()}
-    for child in list(backup.iterdir()):
+    incoming = {child.name for child in source.iterdir()}
+    for child in list(source.iterdir()):
         dest_child = destination / child.name
         if dest_child.exists():
             _remove_path(path=dest_child)
-        child.rename(target=dest_child)
+        if child.is_dir():
+            copy_tree(source=child, destination=dest_child, source_root=source)
+            continue
+        if not child.is_file():
+            msg = f"unsupported file type rejected: {child}"
+            raise ValueError(msg)
+        shutil.copy2(src=child, dst=dest_child)
     for dest_child in list(destination.iterdir()):
-        if dest_child.name not in backup_names:
+        if dest_child.name not in incoming:
             _remove_path(path=dest_child)
-    if backup.exists():
-        shutil.rmtree(backup)
 
 
 def _remove_path(*, path: Path) -> None:

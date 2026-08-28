@@ -160,11 +160,11 @@ plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-sa
   `SKILL.md` listed as `SKIPPED`) and fail CI on unresolved explode-name
   or agent-stem collisions against other baked plugins or first-party
   `skills/` names.
-- Stage the complete tree in a temp directory and publish it into the
-  existing `plugins-baked/` directory so the destination path and inode
-  stay put (resident shells keep a valid cwd). A complete backup is
-  copied first; a failed publish restores those children. The destination
-  directory is never removed.
+- Stage the complete tree in a temp directory and publish it with an
+  atomic directory exchange so `plugins-baked/` is never absent or mixed,
+  then mirror onto the original destination inode so resident shells keep
+  a valid cwd. A leftover `.plugins-baked.bak` from a crashed older bake
+  fails closed.
 - Write `plugins-baked/BAKE.json` (registry pin including repo + plugin
   slice + coverage renderer inputs + a path→digest inventory).
   `--check` allowlists lock keys, re-derives ingested counts / explode

@@ -12,6 +12,7 @@ from pathlib import Path
 import bake_vendor_plugins
 import pytest
 from assertpy import assert_that
+from vendor_registry import safe_tree
 from vendor_registry.plugin_version import plugin_version
 from vendor_registry.safe_tree import (
     copy_tree,
@@ -655,6 +656,36 @@ def test_bake_rejects_escaping_internal_markdown_link(
     )
 
     with pytest.raises(ValueError, match="path escape rejected"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
+def test_bake_rejects_reference_style_markdown_link(
+    tmp_path: Path,
+) -> None:
+    """Reference-style markdown definitions are validated like inline links."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    skill = vendor_root / "skills" / "alpha" / "SKILL.md"
+    skill.write_text(
+        skill.read_text(encoding="utf-8")
+        + "See [shared][doc].\n\n[doc]: ../../shared.md\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    with pytest.raises(ValueError, match="internal reference missing"):
         bake_vendor_plugins.bake(
             repo_root=tmp_path,
             vendor_trees={"example-vendor": vendor_root},
@@ -1479,56 +1510,45 @@ def test_install_directory_does_not_rename_live_destination(
     )
 
 
-def test_install_directory_restores_previous_tree_on_publish_failure(
+def test_install_directory_restores_complete_tree_on_mirror_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A failed child publish must restore every previous dest file."""
+    """A failed inode mirror must not leave a mixed destination path."""
     dest = tmp_path / "plugins-baked"
     dest.mkdir()
-    (dest / "old-a.txt").write_text("a\n", encoding="utf-8")
-    (dest / "old-b.txt").write_text("b\n", encoding="utf-8")
+    (dest / "a.txt").write_text("old-a\n", encoding="utf-8")
+    (dest / "b.txt").write_text("old-b\n", encoding="utf-8")
     source = tmp_path / "next"
     source.mkdir()
-    (source / "new.txt").write_text("new\n", encoding="utf-8")
-    dest_inode = dest.stat().st_ino
-    original_rename = Path.rename
+    (source / "a.txt").write_text("new-a\n", encoding="utf-8")
+    (source / "b.txt").write_text("new-b\n", encoding="utf-8")
 
-    def _fail_publish(self: Path, target: Path | str) -> Path:
-        """Inject a failure while publishing a new child into dest.
+    def _fail_mirror(*, source: Path, destination: Path) -> None:
+        """Inject a failure after the destination path already holds the new tree.
 
         Args:
-            self: Path being renamed.
-            target: Rename destination.
-
-        Returns:
-            The renamed path when the publish is not the injected failure.
+            source: Staged tree now at the live path.
+            destination: Original destination inode.
 
         Raises:
-            OSError: When renaming the new child into the live destination.
+            OSError: Always.
         """
-        target_path = Path(target)
-        if (
-            target_path.name == "new.txt"
-            and target_path.parent.resolve() == dest.resolve()
-        ):
-            msg = "injected publish failure"
-            raise OSError(msg)
-        return original_rename(self, target)
+        msg = "injected mirror failure"
+        raise OSError(msg)
 
-    monkeypatch.setattr(Path, "rename", _fail_publish)
+    monkeypatch.setattr(safe_tree, "_mirror_tree", _fail_mirror)
 
-    with pytest.raises(OSError, match="injected publish failure"):
+    with pytest.raises(OSError, match="injected mirror failure"):
         install_directory(source=source, destination=dest)
 
-    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
-    assert_that((dest / "old-a.txt").read_text(encoding="utf-8")).is_equal_to(
-        "a\n",
+    assert_that((dest / "a.txt").read_text(encoding="utf-8")).is_equal_to(
+        "new-a\n",
     )
-    assert_that((dest / "old-b.txt").read_text(encoding="utf-8")).is_equal_to(
-        "b\n",
+    assert_that((dest / "b.txt").read_text(encoding="utf-8")).is_equal_to(
+        "new-b\n",
     )
-    assert_that((dest / "new.txt").exists()).is_false()
+    assert_that((tmp_path / ".plugins-baked.bak").exists()).is_false()
 
 
 def test_install_directory_preserves_destination_inode_for_resident_cwd(

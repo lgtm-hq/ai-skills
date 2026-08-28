@@ -405,40 +405,51 @@ def _generated_artifact_paths(*, repo_root: Path) -> tuple[Path, ...]:
     )
 
 
-def _snapshot_artifacts(*, paths: tuple[Path, ...]) -> dict[Path, bytes]:
-    """Capture the current contents of every existing file below ``paths``.
+def _snapshot_artifacts(
+    *,
+    paths: tuple[Path, ...],
+) -> tuple[dict[Path, bytes], frozenset[Path]]:
+    """Capture files and directories under ``paths``.
 
     Args:
         paths: Files or directory roots to snapshot.
 
     Returns:
-        Mapping of existing file paths to their byte contents.
+        File contents and the set of directories that existed, including
+        empty directories such as agent-only ``skills/``.
     """
     snapshot: dict[Path, bytes] = {}
+    directories: set[Path] = set()
     for path in paths:
         if path.is_dir():
-            snapshot.update(
-                {file: file.read_bytes() for file in path.rglob("*") if file.is_file()},
-            )
+            directories.add(path)
+            for child in path.rglob("*"):
+                if child.is_dir():
+                    directories.add(child)
+                    continue
+                if child.is_file():
+                    snapshot[child] = child.read_bytes()
         elif path.is_file():
             snapshot[path] = path.read_bytes()
-    return snapshot
+    return snapshot, frozenset(directories)
 
 
 def _restore_artifacts(
     *,
     paths: tuple[Path, ...],
     snapshot: dict[Path, bytes],
+    directories: frozenset[Path],
 ) -> None:
-    """Restore snapshotted files and delete any created after the snapshot.
+    """Restore snapshotted files and directories.
 
-    Extra files are unlinked, then empty directories left behind are
-    removed so a rolled-back bake does not keep skill directories without
-    ``SKILL.md``.
+    Extra files are unlinked. Directories that did not exist in the
+    snapshot are removed. Empty directories that were snapshotted are
+    recreated.
 
     Args:
         paths: Files or directory roots covered by the snapshot.
         snapshot: Pre-change file contents from ``_snapshot_artifacts``.
+        directories: Pre-change directories from ``_snapshot_artifacts``.
     """
     for path in paths:
         if path.is_dir():
@@ -451,19 +462,21 @@ def _restore_artifacts(
             if file not in snapshot:
                 file.unlink()
         if path.is_dir():
-            _prune_empty_directories(root=path)
+            _prune_empty_directories(root=path, keep=directories)
+    for directory in sorted(directories, key=lambda item: len(item.parts)):
+        directory.mkdir(parents=True, exist_ok=True)
     for file, content in snapshot.items():
         file.parent.mkdir(parents=True, exist_ok=True)
         if not file.is_file() or file.read_bytes() != content:
             file.write_bytes(content)
 
 
-def _prune_empty_directories(*, root: Path) -> None:
-    """Remove empty directories under ``root`` from the bottom up.
+def _prune_empty_directories(*, root: Path, keep: frozenset[Path]) -> None:
+    """Remove empty directories under ``root`` that were not snapshotted.
 
     Args:
-        root: Directory tree that may contain empty directories after
-            extra files were unlinked.
+        root: Directory tree that may contain extra empty directories.
+        keep: Directories that existed before the failed refresh.
     """
     directories = sorted(
         (candidate for candidate in root.rglob("*") if candidate.is_dir()),
@@ -471,6 +484,8 @@ def _prune_empty_directories(*, root: Path) -> None:
         reverse=True,
     )
     for directory in directories:
+        if directory in keep:
+            continue
         if not any(directory.iterdir()):
             directory.rmdir()
 
@@ -495,7 +510,7 @@ def _refresh_or_restore(
             newly created file.
     """
     artifact_paths = _generated_artifact_paths(repo_root=repo_root)
-    snapshot = _snapshot_artifacts(paths=artifact_paths)
+    snapshot, directories = _snapshot_artifacts(paths=artifact_paths)
     refreshed = False
     try:
         refresh(repo_root=repo_root)
@@ -506,7 +521,11 @@ def _refresh_or_restore(
                 registry_path.write_text(original, encoding="utf-8")
             elif registry_path.is_file():
                 registry_path.unlink()
-            _restore_artifacts(paths=artifact_paths, snapshot=snapshot)
+            _restore_artifacts(
+                paths=artifact_paths,
+                snapshot=snapshot,
+                directories=directories,
+            )
 
 
 def _normalize_skill_roots(*, values: list[str]) -> tuple[str, ...]:
