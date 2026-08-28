@@ -10,7 +10,7 @@ import sys
 from collections.abc import Iterator, Sequence
 from ctypes.util import find_library
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
@@ -18,7 +18,7 @@ from markdown_it.token import Token
 _AT_FDCWD = -100
 _RENAME_EXCHANGE = 2
 _RENAME_SWAP = 0x00000002
-_REMOTE_LINK_PREFIXES = ("http://", "https://", "mailto:", "data:")
+_REMOTE_LINK_SCHEMES = frozenset({"http", "https", "mailto", "data"})
 _COMMONMARK = MarkdownIt("commonmark")
 
 
@@ -172,7 +172,8 @@ def validate_internal_references(*, root: Path) -> None:
     """Reject markdown links that escape ``root`` or point at missing files.
 
     Destinations are taken from a CommonMark parse of each markdown file.
-    Remote URLs and in-page anchors are ignored. Relative targets must
+    Remote URLs and in-page anchors are ignored. Query and fragment
+    components are not filename characters. Relative path components must
     resolve to an existing file inside ``root``.
 
     Args:
@@ -256,6 +257,41 @@ def _iter_reference_destinations(*, env: dict[str, object]) -> Iterator[str]:
             yield href
 
 
+def _local_markdown_path(*, raw_target: str) -> str | None:
+    """Return the local path component of a markdown destination.
+
+    Query and fragment are dropped. The remaining path is then
+    percent-decoded. Remote ``http``/``https``/``mailto``/``data`` URLs
+    and empty paths are ignored.
+
+    Args:
+        raw_target: Destination from the CommonMark parser.
+
+    Returns:
+        Decoded path to resolve, or ``None`` to skip.
+
+    Raises:
+        ValueError: If the destination uses an unsafe scheme or contains
+            a backslash.
+    """
+    parts = urlsplit(raw_target)
+    scheme = parts.scheme.lower()
+    if scheme in _REMOTE_LINK_SCHEMES:
+        return None
+    if not scheme and parts.netloc:
+        return None
+    if scheme:
+        msg = f"path escape rejected: {raw_target}"
+        raise ValueError(msg)
+    path = unquote(parts.path)
+    if not path:
+        return None
+    if "\\" in path or "\0" in path:
+        msg = f"path escape rejected: {raw_target}"
+        raise ValueError(msg)
+    return path
+
+
 def _assert_relative_markdown_target(
     *,
     raw_target: str,
@@ -273,8 +309,8 @@ def _assert_relative_markdown_target(
         ValueError: If the target escapes ``root`` or is not an existing
             file.
     """
-    target = unquote(raw_target.split("#", maxsplit=1)[0])
-    if not target or target.lower().startswith(_REMOTE_LINK_PREFIXES):
+    target = _local_markdown_path(raw_target=raw_target)
+    if target is None:
         return
     resolved = (file_path.parent / target).resolve()
     try:

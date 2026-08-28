@@ -750,6 +750,11 @@ def test_bake_rejects_multiline_reference_style_markdown_link(
             "internal reference missing",
             id="blockquote-ref-def",
         ),
+        pytest.param(
+            "See [x](..\\..\\outside.md).\n",
+            "path escape rejected",
+            id="backslash-path",
+        ),
     ],
 )
 def test_bake_rejects_commonmark_markdown_link_forms(
@@ -777,6 +782,37 @@ def test_bake_rejects_commonmark_markdown_link_forms(
     )
 
     with pytest.raises(ValueError, match=message):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
+def test_bake_rejects_query_string_decoy_markdown_target(
+    tmp_path: Path,
+) -> None:
+    """Query components are not filename characters."""
+    vendor_root = tmp_path / "vendor-src"
+    skill_dir = vendor_root / "skills" / "alpha"
+    _write_skill(directory=skill_dir, name="alpha")
+    (skill_dir / "missing.md?raw=1").write_text("decoy\n", encoding="utf-8")
+    skill = skill_dir / "SKILL.md"
+    skill.write_text(
+        skill.read_text(encoding="utf-8") + "See [x](missing.md?raw=1).\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    with pytest.raises(ValueError, match="internal reference missing"):
         bake_vendor_plugins.bake(
             repo_root=tmp_path,
             vendor_trees={"example-vendor": vendor_root},
@@ -867,6 +903,44 @@ def test_check_rejects_commonmark_markdown_links(
     lock_path = tmp_path / "plugins-baked" / "BAKE.json"
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
     lock["files"][relative] = digest
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_query_string_decoy_markdown_target(
+    tmp_path: Path,
+) -> None:
+    """Offline --check ignores query-named decoy files even after digest rewrite."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    skill_dir = tmp_path / "plugins-baked" / "example-plugin" / "skills" / "alpha"
+    decoy = skill_dir / "missing.md?raw=1"
+    decoy.write_text("decoy\n", encoding="utf-8")
+    skill = skill_dir / "SKILL.md"
+    skill.write_text(
+        skill.read_text(encoding="utf-8") + "See [x](missing.md?raw=1).\n",
+        encoding="utf-8",
+    )
+    lock_path = tmp_path / "plugins-baked" / "BAKE.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["files"] = bake_vendor_plugins._baked_file_digests(
+        baked_root=tmp_path / "plugins-baked",
+    )
     lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
 
     assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
