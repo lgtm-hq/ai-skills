@@ -432,6 +432,10 @@ def _restore_artifacts(
 ) -> None:
     """Restore snapshotted files and delete any created after the snapshot.
 
+    Extra files are unlinked, then empty directories left behind are
+    removed so a rolled-back bake does not keep skill directories without
+    ``SKILL.md``.
+
     Args:
         paths: Files or directory roots covered by the snapshot.
         snapshot: Pre-change file contents from ``_snapshot_artifacts``.
@@ -446,10 +450,29 @@ def _restore_artifacts(
         for file in current:
             if file not in snapshot:
                 file.unlink()
+        if path.is_dir():
+            _prune_empty_directories(root=path)
     for file, content in snapshot.items():
         file.parent.mkdir(parents=True, exist_ok=True)
         if not file.is_file() or file.read_bytes() != content:
             file.write_bytes(content)
+
+
+def _prune_empty_directories(*, root: Path) -> None:
+    """Remove empty directories under ``root`` from the bottom up.
+
+    Args:
+        root: Directory tree that may contain empty directories after
+            extra files were unlinked.
+    """
+    directories = sorted(
+        (candidate for candidate in root.rglob("*") if candidate.is_dir()),
+        key=lambda candidate: len(candidate.parts),
+        reverse=True,
+    )
+    for directory in directories:
+        if not any(directory.iterdir()):
+            directory.rmdir()
 
 
 def _refresh_or_restore(

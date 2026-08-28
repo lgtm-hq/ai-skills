@@ -624,3 +624,21 @@ def test_write_registry_rejects_malformed_skills(tmp_path: Path) -> None:
     assert_that(registry_path.read_text(encoding="utf-8")).is_equal_to(
         "---\nvendors: []\n",
     )
+
+
+def test_restore_artifacts_prunes_empty_directories(tmp_path: Path) -> None:
+    """Rollback must not leave skill directories without SKILL.md."""
+    baked = tmp_path / "plugins-baked"
+    skill = baked / "example-plugin" / "skills" / "alpha"
+    skill.mkdir(parents=True)
+    skill_markdown = skill / "SKILL.md"
+    skill_markdown.write_text("old\n", encoding="utf-8")
+    snapshot = manage_vendors._snapshot_artifacts(paths=(baked,))
+    beta = baked / "example-plugin" / "skills" / "beta"
+    beta.mkdir()
+    (beta / "SKILL.md").write_text("new\n", encoding="utf-8")
+
+    manage_vendors._restore_artifacts(paths=(baked,), snapshot=snapshot)
+
+    assert_that(skill_markdown.read_text(encoding="utf-8")).is_equal_to("old\n")
+    assert_that(beta.exists()).is_false()

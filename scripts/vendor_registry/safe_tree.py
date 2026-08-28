@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 import functools
 import os
+import re
 import shutil
 import sys
 from collections.abc import Iterator
@@ -14,6 +15,10 @@ from pathlib import Path
 _AT_FDCWD = -100
 _RENAME_EXCHANGE = 2
 _RENAME_SWAP = 0x00000002
+_MARKDOWN_LINK_TARGET = re.compile(
+    r"\[[^\]\n]*\]\(\s*<?([^>\s)]+)[^)]*>?\)",
+)
+_REMOTE_LINK_PREFIXES = ("http://", "https://", "mailto:", "data:")
 
 
 def iter_directory_entries(*, directory: Path) -> Iterator[Path]:
@@ -131,6 +136,39 @@ def validate_tree(*, root: Path) -> None:
         contained_path(path=file_path, root=root)
 
 
+def validate_internal_references(*, root: Path) -> None:
+    """Reject markdown links that escape ``root`` or point at missing files.
+
+    Remote URLs and in-page anchors are ignored. Relative targets must
+    resolve to an existing file inside ``root``.
+
+    Args:
+        root: Plugin tree to validate.
+
+    Raises:
+        ValueError: If a relative markdown link escapes ``root`` or the
+            target file does not exist.
+    """
+    for file_path in walk_files(root=root):
+        if file_path.suffix.lower() not in {".md", ".markdown"}:
+            continue
+        text = file_path.read_text(encoding="utf-8")
+        for match in _MARKDOWN_LINK_TARGET.finditer(text):
+            raw_target = match.group(1)
+            target = raw_target.split("#", maxsplit=1)[0]
+            if not target or target.lower().startswith(_REMOTE_LINK_PREFIXES):
+                continue
+            resolved = (file_path.parent / target).resolve()
+            try:
+                resolved.relative_to(root.resolve())
+            except ValueError as exc:
+                msg = f"path escape rejected: {raw_target}"
+                raise ValueError(msg) from exc
+            if not resolved.is_file():
+                msg = f"internal reference missing: {raw_target}"
+                raise ValueError(msg)
+
+
 def find_skill_markdown(*, root: Path) -> tuple[str, ...]:
     """Return POSIX paths of every ``SKILL.md`` under ``root``.
 
@@ -151,11 +189,10 @@ def find_skill_markdown(*, root: Path) -> tuple[str, ...]:
 def install_directory(*, source: Path, destination: Path) -> None:
     """Publish a completed ``source`` tree onto ``destination``.
 
-    When ``destination`` already exists, the two directories are exchanged
-    with a single kernel rename so the destination path is never absent
-    and never holds a partial tree. The previous tree is left at
-    ``source`` for the caller to delete. A failed exchange leaves
-    ``destination`` byte-identical. When ``destination`` does not exist,
+    When ``destination`` already exists, a complete backup is copied first
+    and children are published into the live directory so its path and
+    inode stay put. The destination is never removed. On failure, children
+    are restored from the backup. When ``destination`` does not exist,
     ``source`` is renamed onto it.
 
     Args:
@@ -163,8 +200,9 @@ def install_directory(*, source: Path, destination: Path) -> None:
         destination: Final output path.
 
     Raises:
-        ValueError: If ``source`` or ``destination`` is a symlink.
-        OSError: If the exchange or rename fails.
+        ValueError: If ``source`` or ``destination`` is a symlink, or a
+            leftover backup directory already exists.
+        OSError: If publishing or restoring children fails.
     """
     if source.is_symlink():
         msg = f"symlink rejected: {source}"
@@ -173,9 +211,75 @@ def install_directory(*, source: Path, destination: Path) -> None:
         msg = f"symlink rejected: {destination}"
         raise ValueError(msg)
     if destination.exists():
-        _exchange_paths(first=source, second=destination)
+        _publish_into_existing(source=source, destination=destination)
         return
     source.rename(target=destination)
+
+
+def _publish_into_existing(*, source: Path, destination: Path) -> None:
+    """Replace ``destination`` children while preserving the dest inode.
+
+    Args:
+        source: Staged complete tree.
+        destination: Live directory to update in place.
+
+    Raises:
+        ValueError: If a leftover backup directory already exists.
+        OSError: If a child publish fails after the backup was taken.
+    """
+    backup = destination.with_name(f".{destination.name}.bak")
+    if backup.exists():
+        msg = f"leftover bake backup: {backup}"
+        raise ValueError(msg)
+    copy_tree(source=destination, destination=backup, source_root=destination.parent)
+    try:
+        incoming = {child.name for child in source.iterdir()}
+        for child in list(source.iterdir()):
+            dest_child = destination / child.name
+            if dest_child.exists():
+                _exchange_paths(first=child, second=dest_child)
+                _remove_path(path=child)
+            else:
+                child.rename(target=dest_child)
+        for dest_child in list(destination.iterdir()):
+            if dest_child.name not in incoming:
+                _remove_path(path=dest_child)
+    except OSError:
+        _restore_from_backup(destination=destination, backup=backup)
+        raise
+    shutil.rmtree(backup)
+
+
+def _restore_from_backup(*, destination: Path, backup: Path) -> None:
+    """Replace live children with the pre-publish backup.
+
+    Args:
+        destination: Live directory whose inode must be preserved.
+        backup: Complete copy of the previous children.
+    """
+    backup_names = {child.name for child in backup.iterdir()}
+    for child in list(backup.iterdir()):
+        dest_child = destination / child.name
+        if dest_child.exists():
+            _remove_path(path=dest_child)
+        child.rename(target=dest_child)
+    for dest_child in list(destination.iterdir()):
+        if dest_child.name not in backup_names:
+            _remove_path(path=dest_child)
+    if backup.exists():
+        shutil.rmtree(backup)
+
+
+def _remove_path(*, path: Path) -> None:
+    """Remove a file or directory.
+
+    Args:
+        path: Path to unlink or recursively delete.
+    """
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+        return
+    path.unlink()
 
 
 @functools.cache

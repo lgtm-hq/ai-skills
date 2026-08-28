@@ -160,10 +160,11 @@ plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-sa
   `SKILL.md` listed as `SKIPPED`) and fail CI on unresolved explode-name
   or agent-stem collisions against other baked plugins or first-party
   `skills/` names.
-- Stage the complete tree in a temp directory and publish it with an
-  atomic directory exchange (`renameat2` / `renamex_np`) so
-  `plugins-baked/` is never absent or partial. A failed exchange leaves
-  the previous tree in place.
+- Stage the complete tree in a temp directory and publish it into the
+  existing `plugins-baked/` directory so the destination path and inode
+  stay put (resident shells keep a valid cwd). A complete backup is
+  copied first; a failed publish restores those children. The destination
+  directory is never removed.
 - Write `plugins-baked/BAKE.json` (registry pin including repo + plugin
   slice + coverage renderer inputs + a path→digest inventory).
   `--check` allowlists lock keys, re-derives ingested counts / explode
@@ -171,6 +172,8 @@ plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-sa
   compares the lock to `vendors.yaml` and the committed tree, and
   requires all four host manifests to match the pin-derived version.
   Skipped vendor-tree paths cannot be reconstructed without a fetch.
+  Relative markdown links in baked plugin files must resolve to a file
+  inside the plugin.
 - Stamp plugin versions from `displayRef` when it is a `major.minor.patch`
   tag (optional `v` prefix and prerelease suffix); floating pins such as
   `latest` and non-tag prefixes such as `v1.2-not-a-version` use the

@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **vendors**: bake pipeline for registry plugin slices — `plugins-baked/`
   marketplace-shaped output with symlink/path-escape rejection, coverage
   report, global explode-name collision guard, pin-derived versions, and
-  atomic directory exchange so `plugins-baked/` is never absent or
-  partial (ADR-0005, ADR-0006).
+  inode-preserving publish with backup restore so `plugins-baked/` stays
+  present for resident shells (ADR-0005, ADR-0006).
 
 ### Changed
 

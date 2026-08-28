@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tarfile
 from io import BytesIO
 from pathlib import Path
@@ -11,7 +12,6 @@ from pathlib import Path
 import bake_vendor_plugins
 import pytest
 from assertpy import assert_that
-from vendor_registry import safe_tree
 from vendor_registry.plugin_version import plugin_version
 from vendor_registry.safe_tree import (
     copy_tree,
@@ -565,6 +565,100 @@ def test_check_rejects_forged_coverage_inputs(
     lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
 
     assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_accepts_overlapping_renamed_slices(
+    tmp_path: Path,
+) -> None:
+    """Two plugins may ingest the same source skill when one is renamed."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "shared", name="shared")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: plugin-a\n"
+            "        description: First overlapping slice.\n"
+            "        skillsRoot: skills\n"
+            "        skills:\n"
+            "          - shared\n"
+            "      - id: plugin-b\n"
+            "        description: Second overlapping slice.\n"
+            "        skillsRoot: skills\n"
+            "        skills:\n"
+            "          - shared\n"
+            "        renameSkills:\n"
+            "          shared: shared-renamed\n"
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    coverage = (tmp_path / "plugins-baked" / "COVERAGE.md").read_text(
+        encoding="utf-8",
+    )
+
+    assert_that(coverage).contains("2 ingested")
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
+
+
+def test_bake_rejects_missing_internal_markdown_link(
+    tmp_path: Path,
+) -> None:
+    """Relative markdown links must resolve to a file inside the plugin."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    skill = vendor_root / "skills" / "alpha" / "SKILL.md"
+    skill.write_text(
+        skill.read_text(encoding="utf-8") + "See [shared](../../shared.md).\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    with pytest.raises(ValueError, match="internal reference missing"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
+def test_bake_rejects_escaping_internal_markdown_link(
+    tmp_path: Path,
+) -> None:
+    """Markdown links must not escape the baked plugin directory."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    skill = vendor_root / "skills" / "alpha" / "SKILL.md"
+    skill.write_text(
+        skill.read_text(encoding="utf-8") + "See [out](../../../outside.md).\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    with pytest.raises(ValueError, match="path escape rejected"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
 
 
 def test_check_rejects_extra_bake_lock_keys(
@@ -1354,69 +1448,158 @@ def test_install_directory_does_not_rename_live_destination(
     source.mkdir()
     (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
 
+    original_rename = Path.rename
+
     def _forbidden_rename(self: Path, target: Path | str) -> Path:
-        """Fail if the live destination is renamed aside.
+        """Fail if the live destination directory itself is renamed.
 
         Args:
             self: Path being renamed.
             target: Rename destination.
 
         Returns:
-            Never returns.
+            The renamed path when ``self`` is not the live destination.
 
         Raises:
-            AssertionError: Always; dest must stay at its path.
+            AssertionError: If the live destination directory is renamed.
         """
-        msg = "Path.rename must not move the live destination aside"
-        raise AssertionError(msg)
+        if self.resolve() == dest.resolve():
+            msg = "Path.rename must not move the live destination aside"
+            raise AssertionError(msg)
+        return original_rename(self, target)
 
     monkeypatch.setattr(Path, "rename", _forbidden_rename)
+    dest_inode = dest.stat().st_ino
     install_directory(source=source, destination=dest)
 
     assert_that(dest.is_dir()).is_true()
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
     assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to(
         "new\n",
     )
 
 
-def test_install_directory_leaves_previous_tree_on_exchange_failure(
+def test_install_directory_restores_previous_tree_on_publish_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A failed atomic exchange must not remove or partially rewrite dest."""
+    """A failed child publish must restore every previous dest file."""
     dest = tmp_path / "plugins-baked"
     dest.mkdir()
     (dest / "old-a.txt").write_text("a\n", encoding="utf-8")
     (dest / "old-b.txt").write_text("b\n", encoding="utf-8")
     source = tmp_path / "next"
     source.mkdir()
-    (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+    (source / "new.txt").write_text("new\n", encoding="utf-8")
+    dest_inode = dest.stat().st_ino
+    original_rename = Path.rename
 
-    def _fail_exchange(*, first: Path, second: Path) -> None:
-        """Inject an exchange failure.
+    def _fail_publish(self: Path, target: Path | str) -> Path:
+        """Inject a failure while publishing a new child into dest.
 
         Args:
-            first: Staged tree.
-            second: Live destination.
+            self: Path being renamed.
+            target: Rename destination.
+
+        Returns:
+            The renamed path when the publish is not the injected failure.
 
         Raises:
-            OSError: Always.
+            OSError: When renaming the new child into the live destination.
         """
-        msg = "injected exchange failure"
-        raise OSError(msg)
+        target_path = Path(target)
+        if (
+            target_path.name == "new.txt"
+            and target_path.parent.resolve() == dest.resolve()
+        ):
+            msg = "injected publish failure"
+            raise OSError(msg)
+        return original_rename(self, target)
 
-    monkeypatch.setattr(safe_tree, "_exchange_paths", _fail_exchange)
+    monkeypatch.setattr(Path, "rename", _fail_publish)
 
-    with pytest.raises(OSError, match="injected exchange failure"):
+    with pytest.raises(OSError, match="injected publish failure"):
         install_directory(source=source, destination=dest)
 
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
     assert_that((dest / "old-a.txt").read_text(encoding="utf-8")).is_equal_to(
         "a\n",
     )
     assert_that((dest / "old-b.txt").read_text(encoding="utf-8")).is_equal_to(
         "b\n",
     )
-    assert_that((dest / "COVERAGE.md").exists()).is_false()
+    assert_that((dest / "new.txt").exists()).is_false()
+
+
+def test_install_directory_preserves_destination_inode_for_resident_cwd(
+    tmp_path: Path,
+) -> None:
+    """A process cwd'd into plugins-baked keeps a valid working directory."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "old.txt").write_text("old\n", encoding="utf-8")
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "new.txt").write_text("new\n", encoding="utf-8")
+    dest_inode = dest.stat().st_ino
+    previous_cwd = Path.cwd()
+    try:
+        os.chdir(dest)
+        install_directory(source=source, destination=dest)
+        Path("probe.txt").write_text("ok\n", encoding="utf-8")
+        assert_that(Path.cwd().resolve()).is_equal_to(dest.resolve())
+    finally:
+        os.chdir(previous_cwd)
+
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
+    assert_that((dest / "new.txt").is_file()).is_true()
+    assert_that((dest / "old.txt").exists()).is_false()
+    assert_that((dest / "probe.txt").read_text(encoding="utf-8")).is_equal_to(
+        "ok\n",
+    )
+
+
+def test_install_directory_rejects_leftover_backup(
+    tmp_path: Path,
+) -> None:
+    """A leftover backup directory must not be overwritten silently."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "COVERAGE.md").write_text("old\n", encoding="utf-8")
+    (tmp_path / ".plugins-baked.bak").mkdir()
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="leftover bake backup"):
+        install_directory(source=source, destination=dest)
+
+    assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to(
+        "old\n",
+    )
+
+
+def test_bake_preserves_plugins_baked_cwd(
+    tmp_path: Path,
+) -> None:
+    """A full bake while cwd is plugins-baked must not invalidate getcwd."""
+    _write_registry(repo_root=tmp_path, plugins_yaml="")
+    bake_vendor_plugins.bake(repo_root=tmp_path)
+    dest = tmp_path / "plugins-baked"
+    dest_inode = dest.stat().st_ino
+    previous_cwd = Path.cwd()
+    try:
+        os.chdir(dest)
+        bake_vendor_plugins.bake(repo_root=tmp_path)
+        Path("probe.txt").write_text("ok\n", encoding="utf-8")
+        assert_that(Path.cwd().resolve()).is_equal_to(dest.resolve())
+    finally:
+        os.chdir(previous_cwd)
+
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
+    assert_that((dest / "probe.txt").read_text(encoding="utf-8")).is_equal_to(
+        "ok\n",
+    )
 
 
 def test_extract_tarball_strips_root_and_rejects_escape(

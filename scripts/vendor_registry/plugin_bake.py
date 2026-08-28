@@ -13,6 +13,7 @@ from vendor_registry.safe_tree import (
     contained_path,
     copy_tree,
     iter_directory_entries,
+    validate_internal_references,
     validate_tree,
     walk_files,
 )
@@ -226,6 +227,7 @@ def _bake_plugin(
         version=version,
     )
     validate_tree(root=destination)
+    validate_internal_references(root=destination)
     return PluginBakeResult(
         plugin_id=plugin.id,
         version=version,

@@ -41,6 +41,7 @@ from vendor_registry.registry import load_registry
 from vendor_registry.safe_tree import (
     find_skill_markdown,
     install_directory,
+    validate_internal_references,
     validate_tree,
     walk_files,
 )
@@ -260,7 +261,10 @@ def _bake_into(
             for path in find_skill_markdown(root=vendor_root)
             if path not in ingested
         )
-        ingested_counts[vendor.id] = len(ingested)
+        ingested_counts[vendor.id] = sum(
+            len(find_skill_markdown(root=output_root / result.plugin_id))
+            for result in plugin_results
+        )
         for result in plugin_results:
             for old, new in result.renamed:
                 print(
@@ -924,6 +928,7 @@ def _results_from_disk(
                 version=expected_version,
             )
             _assert_canonical_plugin_tree(plugin_dir=plugin_dir, plugin=plugin)
+            validate_internal_references(root=plugin_dir)
             explode_names = _baked_explode_names(plugin_dir=plugin_dir)
             disk_agents = _baked_agent_stems(plugin_dir=plugin_dir)
             _assert_plugin_matches_registry(
