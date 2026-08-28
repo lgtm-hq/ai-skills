@@ -658,7 +658,13 @@ async function cancelable(ui, valuePromise) {
  * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable lockfile environment.
  * @returns {Promise<{alreadyPresent: number, installed: number, repaired: number}>} Install summary counts.
  */
-export async function install(options, run = runSkills, now = () => new Date(), lockEnvironment) {
+export async function install(
+  options,
+  run = runSkills,
+  now = () => new Date(),
+  lockEnvironment = {},
+) {
+  lockEnvironment = lockEnvironment ?? {};
   if (options.onConflict && options.onConflict !== "overwrite") {
     throw new Error(
       `--on-conflict=${options.onConflict} is unsupported: upstream skills CLI has no conflict policy. Omit the flag, use overwrite, or remove the existing skill first.`,
@@ -782,14 +788,15 @@ async function createLockEntries(
   options,
   vendor,
   now,
-  lockEnvironment,
+  lockEnvironment = {},
   pluginId,
   onlyExistingFiles = false,
 ) {
+  lockEnvironment = lockEnvironment ?? {};
   const installedAt = now().toISOString();
   const scope = resolveScope(options);
   const packageVersion = getPackageVersion();
-  const exists = lockEnvironment.exists ?? pathExists;
+  const exists = lockEnvironment?.exists ?? pathExists;
   const agents = {};
   for (const agent of options.agents) {
     const root = agentSkillsRoot(scope, agent, lockEnvironment);

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -708,6 +708,59 @@ describe("install", () => {
         "xlsx/SKILL.md": "abc",
       });
     } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("writes a lock when lockEnvironment is omitted", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-no-env-"));
+    const previous = process.cwd();
+    try {
+      await mkdir(join(cwd, ".cursor/skills/lint"), { recursive: true });
+      await writeFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "# lint\n");
+      process.chdir(cwd);
+      await install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["lint"],
+        },
+        async () => {},
+        () => new Date("2026-07-10T16:00:00.000Z"),
+      );
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.lint.agents.cursor.files["lint/SKILL.md"]).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      process.chdir(previous);
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("writes a lock when lockEnvironment is explicitly null", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-null-env-"));
+    const previous = process.cwd();
+    try {
+      await mkdir(join(cwd, ".cursor/skills/lint"), { recursive: true });
+      await writeFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "# lint\n");
+      process.chdir(cwd);
+      await install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["lint"],
+        },
+        async () => {},
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        null,
+      );
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.lint.agents.cursor.files["lint/SKILL.md"]).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      process.chdir(previous);
       await rm(cwd, { force: true, recursive: true });
     }
   });
