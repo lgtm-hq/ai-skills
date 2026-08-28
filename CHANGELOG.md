@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.25.0] - 2026-08-28
+
+### Added
+
+- **gateway**: transactional explode fallback with collision handling (#402) (84f4415)
 - **gateway**: transactional explode fallback — stage, collision-check, then
   commit. Byte-identical dests are skipped and not owned; different content
   hard-errors before any dest write. Remove unlinks dest skill symlinks
@@ -38,16 +53,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   claims retain prior owned files still in the current catalog. A CLI-fallback
   update hashes the full dest skill tree so nested files are locked and later
   remove can delete them.
-
-### Changed
-
-### Deprecated
-
-### Removed
-
-### Fixed
-
-### Security
 
 ## [0.24.0] - 2026-08-28
 
@@ -860,7 +865,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.22.0...v0.22.1
