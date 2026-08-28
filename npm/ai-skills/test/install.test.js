@@ -1466,6 +1466,75 @@ describe("native projectors", () => {
     }
   });
 
+  test("fails closed when --projector cannot remove the old explode dests", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-projector-override-rmfail-"));
+    const explodeFile = join(cwd, ".cursor/skills/jira/SKILL.md");
+    const sourceRoot = join(cwd, "catalog");
+    const warnings = [];
+    try {
+      await mkdir(join(cwd, ".cursor/skills/jira"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
+      await writeFile(explodeFile, "# jira\n");
+      await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            jira: {
+              agents: {
+                cursor: {
+                  files: { "jira/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-07-10T16:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            agents: ["cursor"],
+            bundle: null,
+            global: false,
+            projector: "native",
+            project: true,
+            skills: ["jira"],
+          },
+          async () => {
+            throw new Error("explode runner must not run");
+          },
+          () => new Date("2026-07-10T17:00:00.000Z"),
+          { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          {
+            remove: async () => {
+              throw new Error("rm boom");
+            },
+            sourceRoot,
+            warn: (message) => warnings.push(message),
+          },
+        ),
+      ).rejects.toThrow("rm boom");
+      expect(warnings.some((message) => message.includes("could not remove"))).toBe(true);
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.jira.agents.cursor.projector).toBe("native");
+      expect(await readFile(explodeFile, "utf8")).toBe("# jira\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("does not demote a locked native Cursor install when catalog is absent", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-repair-native-no-catalog-"));
     try {

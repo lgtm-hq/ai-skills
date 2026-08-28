@@ -95,8 +95,9 @@ Copilot for a working `plugin` subcommand, and Cursor for
 exploded. Cursor native still needs a catalog checkout (`skills/` +
 `.claude-plugin/`); published npm / `bunx` installs fall back to explode.
 `sk doctor` prints capability, lock↔disk drift, and orphans;
-`--repair` restores missing files; `--migrate <host>` is the only projector
-cutover. See [docs/smoke-test.md](docs/smoke-test.md).
+`--repair` restores missing files; `--migrate <host>` cutovers every locked
+plugin on that host. `sk install --projector` cutovers one plugin.
+See [docs/smoke-test.md](docs/smoke-test.md).
 
 > [!WARNING]
 > Pin the gateway to a release. Plugins are instructions your agents

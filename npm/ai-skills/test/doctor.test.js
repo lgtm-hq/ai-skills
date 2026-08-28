@@ -258,6 +258,27 @@ describe("ensureHostCapability", () => {
       await rm(home, { force: true, recursive: true });
     }
   });
+
+  test("warns when doctor cache cannot be written", async () => {
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-doctor-cache-warn-"));
+    const warnings = [];
+    try {
+      const result = await ensureHostCapability("codex", {
+        home,
+        warn: (message) => warnings.push(message),
+        write: async () => {
+          throw new Error("EACCES");
+        },
+        yes: true,
+      });
+      expect(result.capability).toBe("explode");
+      expect(warnings.some((message) => message.includes("could not write doctor cache"))).toBe(
+        true,
+      );
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
+  });
 });
 
 describe("runDoctor", () => {
@@ -1188,7 +1209,7 @@ describe("runDoctor", () => {
     }
   });
 
-  test("keeps a successful migrate when old dest uninstall fails", async () => {
+  test("fails closed when migrate cannot remove the old dests", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-uninstall-fail-"));
     const explodeFile = join(cwd, ".cursor/skills/jira/SKILL.md");
     const sourceRoot = join(cwd, "catalog");
@@ -1224,38 +1245,39 @@ describe("runDoctor", () => {
         },
         { cwd },
       );
-      const result = await runDoctor(
-        {
-          agents: ["cursor"],
-          global: false,
-          migrate: "cursor",
-          project: true,
-          repair: false,
-          yes: true,
-        },
-        {
-          exec: async () => {
-            const error = new Error("not found");
-            error.code = "ENOENT";
-            throw error;
+      await expect(
+        runDoctor(
+          {
+            agents: ["cursor"],
+            global: false,
+            migrate: "cursor",
+            project: true,
+            repair: false,
+            yes: true,
           },
-          home: cwd,
-          installExtras: {
+          {
+            exec: async () => {
+              const error = new Error("not found");
+              error.code = "ENOENT";
+              throw error;
+            },
+            home: cwd,
+            installExtras: {
+              remove: async () => {
+                throw new Error("rm boom");
+              },
+              sourceRoot,
+            },
+            lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+            log: () => {},
             remove: async () => {
               throw new Error("rm boom");
             },
-            sourceRoot,
+            warn: (message) => warnings.push(message),
           },
-          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
-          log: () => {},
-          remove: async () => {
-            throw new Error("rm boom");
-          },
-          warn: (message) => warnings.push(message),
-        },
-      );
-      expect(result.migrated).toEqual(["jira"]);
-      expect(warnings.some((message) => message.includes("could not remove"))).toBe(true);
+        ),
+      ).rejects.toThrow("Migrate failed for jira");
+      expect(warnings.some((message) => message.includes("rm boom"))).toBe(true);
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
       expect(lock.plugins.jira.agents.cursor.projector).toBe("native");
       expect(await readFile(explodeFile, "utf8")).toBe("# jira\n");

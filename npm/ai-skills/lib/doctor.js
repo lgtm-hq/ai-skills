@@ -298,14 +298,16 @@ function emptyDoctorCache() {
  * Persist the doctor cache, ignoring write failures so a probe still returns.
  *
  * @param {DoctorCache} cache - Cache to write.
- * @param {Parameters<typeof writeDoctorCache>[1]} environment - Injectable fs.
+ * @param {Parameters<typeof writeDoctorCache>[1] & {warn?: (message: string) => void}} environment - Injectable fs.
  * @returns {Promise<void>} Resolves after write or a swallowed persistence error.
  */
 async function persistDoctorCache(cache, environment = {}) {
   try {
     await writeDoctorCache(cache, environment);
-  } catch {
-    // Capability is already known; a missing cache only costs another probe.
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const warn = environment.warn ?? ((message) => console.warn(message));
+    warn(`could not write doctor cache: ${detail}`);
   }
 }
 
@@ -664,6 +666,8 @@ async function migrateHost(host, options, environment, dependencies = {}) {
       warn(
         `migrate installed ${pluginId} on ${host} but could not remove the old projection: ${detail}`,
       );
+      failed.push(pluginId);
+      continue;
     }
     migrated.push(pluginId);
   }

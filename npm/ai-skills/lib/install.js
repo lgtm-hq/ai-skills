@@ -1363,6 +1363,7 @@ async function removeSupersededProjections(args) {
       warn(
         `installed ${args.pluginId} on ${agent} but could not remove the old projection: ${detail}`,
       );
+      throw error;
     }
   }
 }
