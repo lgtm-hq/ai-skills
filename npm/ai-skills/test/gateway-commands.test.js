@@ -339,6 +339,28 @@ describe("gateway maintenance commands", () => {
     expect(written).toBeUndefined();
   });
 
+  test("does not write the lock when update hashing fails", async () => {
+    let written;
+    const denied = Object.assign(new Error("EACCES"), { code: "EACCES" });
+    await expect(
+      updateSkills(options, {
+        hash: async () => {
+          throw denied;
+        },
+        isInstalled: async () => true,
+        readLock: async () => ({
+          ...lock,
+          plugins: { pdf: lock.plugins.pdf },
+        }),
+        run: async () => {},
+        writeLock: async (next) => {
+          written = next;
+        },
+      }),
+    ).rejects.toThrow("EACCES");
+    expect(written).toBeUndefined();
+  });
+
   test("refuses to delete lock paths that escape the agent root", async () => {
     const evil = {
       ...lock,

@@ -441,7 +441,10 @@ async function rematerializePluginFiles(entry, skillNames, hash) {
       }
       try {
         files[relative] = await hash(join(install.root, relative));
-      } catch {
+      } catch (error) {
+        if (!isAbsentFsError(error)) {
+          throw error;
+        }
         files[relative] = "";
       }
     }
@@ -452,7 +455,10 @@ async function rematerializePluginFiles(entry, skillNames, hash) {
       }
       try {
         files[relative] = await hash(join(install.root, relative));
-      } catch {
+      } catch (error) {
+        if (!isAbsentFsError(error)) {
+          throw error;
+        }
         files[relative] = "";
       }
     }

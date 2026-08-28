@@ -124,6 +124,22 @@ describe("native CLI projector", () => {
     });
   });
 
+  test("does not treat a missing plugin as a successful install", async () => {
+    await expect(
+      installCliPlugin({
+        agent: "claude-code",
+        exec: async (_command, args) => {
+          if (args.includes("install")) {
+            return { status: 1, stderr: "plugin not found", stdout: "" };
+          }
+          return { status: 0, stderr: "", stdout: "" };
+        },
+        pluginId: "review",
+        source: "lgtm-hq/ai-skills@v0.23.0",
+      }),
+    ).rejects.toThrow("claude plugin install failed: plugin not found");
+  });
+
   test("surfaces a failed install instead of swallowing it", async () => {
     await expect(
       installCliPlugin({
@@ -138,6 +154,14 @@ describe("native CLI projector", () => {
         source: "lgtm-hq/ai-skills@v0.23.0",
       }),
     ).rejects.toThrow("claude plugin install failed: boom");
+  });
+
+  test("treats uninstall of an already-missing plugin as success", async () => {
+    await uninstallCliPlugin({
+      agent: "copilot",
+      exec: async () => ({ status: 1, stderr: "not installed", stdout: "" }),
+      pluginId: "review",
+    });
   });
 
   test("uninstalls through the host CLI", async () => {

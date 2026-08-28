@@ -58,11 +58,11 @@ export async function installCliPlugin(args) {
   const exec = args.exec ?? spawnExec;
   const marketplace = args.marketplace ?? FIRST_PARTY_MARKETPLACE;
   const added = await exec(cli, ["plugin", "marketplace", "add", args.source]);
-  if (added.status !== 0 && !isIdempotent(added)) {
+  if (added.status !== 0 && !isAlreadyPresent(added)) {
     throw new Error(`${cli} plugin marketplace add failed: ${detail(added)}`);
   }
   const installed = await exec(cli, ["plugin", "install", `${args.pluginId}@${marketplace}`]);
-  if (installed.status !== 0 && !isIdempotent(installed)) {
+  if (installed.status !== 0 && !isAlreadyPresent(installed)) {
     throw new Error(`${cli} plugin install failed: ${detail(installed)}`);
   }
 }
@@ -82,7 +82,7 @@ export async function uninstallCliPlugin(args) {
   const exec = args.exec ?? spawnExec;
   const marketplace = args.marketplace ?? FIRST_PARTY_MARKETPLACE;
   const removed = await exec(cli, ["plugin", "uninstall", `${args.pluginId}@${marketplace}`]);
-  if (removed.status !== 0 && !isIdempotent(removed)) {
+  if (removed.status !== 0 && !isAlreadyAbsent(removed)) {
     throw new Error(`${cli} plugin uninstall failed: ${detail(removed)}`);
   }
 }
@@ -101,16 +101,20 @@ function cliForAgent(agent) {
 
 /**
  * @param {ExecResult} result - CLI result.
- * @returns {boolean} Whether stderr/stdout indicate the request was already satisfied.
+ * @returns {boolean} Whether add/install was already satisfied.
  */
-function isIdempotent(result) {
+function isAlreadyPresent(result) {
   const text = `${result.stdout} ${result.stderr}`.toLowerCase();
-  return (
-    text.includes("already") ||
-    text.includes("exists") ||
-    text.includes("not found") ||
-    text.includes("not installed")
-  );
+  return text.includes("already") || text.includes("exists");
+}
+
+/**
+ * @param {ExecResult} result - CLI result.
+ * @returns {boolean} Whether uninstall was already a no-op.
+ */
+function isAlreadyAbsent(result) {
+  const text = `${result.stdout} ${result.stderr}`.toLowerCase();
+  return isAlreadyPresent(result) || text.includes("not found") || text.includes("not installed");
 }
 
 /**
