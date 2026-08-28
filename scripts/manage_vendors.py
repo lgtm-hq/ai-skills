@@ -463,6 +463,8 @@ def _restore_artifacts(
                 file.unlink()
         if path.is_dir():
             _prune_empty_directories(root=path, keep=directories)
+            if path not in directories and not any(path.iterdir()):
+                path.rmdir()
     for directory in sorted(directories, key=lambda item: len(item.parts)):
         directory.mkdir(parents=True, exist_ok=True)
     for file, content in snapshot.items():

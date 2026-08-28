@@ -671,6 +671,24 @@ def test_restore_artifacts_prunes_empty_directories(tmp_path: Path) -> None:
     assert_that(beta.exists()).is_false()
 
 
+def test_restore_artifacts_removes_root_absent_from_snapshot(
+    tmp_path: Path,
+) -> None:
+    """Rollback must not leave a plugins-baked/ root that did not exist."""
+    baked = tmp_path / "plugins-baked"
+    snapshot, directories = manage_vendors._snapshot_artifacts(paths=(baked,))
+    baked.mkdir()
+    (baked / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+
+    manage_vendors._restore_artifacts(
+        paths=(baked,),
+        snapshot=snapshot,
+        directories=directories,
+    )
+
+    assert_that(baked.exists()).is_false()
+
+
 def test_restore_artifacts_keeps_empty_snapshotted_directories(
     tmp_path: Path,
 ) -> None:
