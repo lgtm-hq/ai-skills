@@ -174,6 +174,38 @@ describe("native Cursor projector", () => {
     }
   });
 
+  test("does not restore a leftover backup when staging fails before swap", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-cursor-stale-bak-"));
+    try {
+      const sourceRoot = join(root, "src");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      const destRoot = cursorPluginsRoot({ cwd: root, home: root, scope: "project" });
+      const pluginDir = join(destRoot, "review");
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(join(pluginDir, "USER-DATA.txt"), "keep\n");
+      await mkdir(`${pluginDir}.bak`, { recursive: true });
+      await writeFile(join(`${pluginDir}.bak`, "USER-DATA.txt"), "stale\n");
+      await expect(
+        installCursorPlugin({
+          copy: async () => {
+            throw new Error("copy failed");
+          },
+          description: "Lint.",
+          destRoot,
+          pluginId: "review",
+          replace: true,
+          skills: ["lint"],
+          sourceRoot,
+          version: "0.23.0",
+        }),
+      ).rejects.toThrow("copy failed");
+      expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   test("finds a catalog checkout from cwd", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-catalog-root-"));
     try {
@@ -267,6 +299,22 @@ describe("native CLI projector", () => {
     ).rejects.toThrow("claude plugin install failed: plugin does not exist");
   });
 
+  test("does not treat no plugin exists as already present", async () => {
+    await expect(
+      installCliPlugin({
+        agent: "claude-code",
+        exec: async (_command, args) => {
+          if (args.includes("install")) {
+            return { status: 1, stderr: "no plugin exists", stdout: "" };
+          }
+          return { status: 0, stderr: "", stdout: "" };
+        },
+        pluginId: "review",
+        source: "lgtm-hq/ai-skills@v0.23.0",
+      }),
+    ).rejects.toThrow("claude plugin install failed: no plugin exists");
+  });
+
   test("does not treat a missing plugin as a successful install", async () => {
     await expect(
       installCliPlugin({
@@ -305,6 +353,16 @@ describe("native CLI projector", () => {
       exec: async () => ({ status: 1, stderr: "not installed", stdout: "" }),
       pluginId: "review",
     });
+  });
+
+  test("does not treat uninstall still exists as already absent", async () => {
+    await expect(
+      uninstallCliPlugin({
+        agent: "copilot",
+        exec: async () => ({ status: 1, stderr: "plugin still exists", stdout: "" }),
+        pluginId: "review",
+      }),
+    ).rejects.toThrow("copilot plugin uninstall failed: plugin still exists");
   });
 
   test("uninstalls through the host CLI", async () => {

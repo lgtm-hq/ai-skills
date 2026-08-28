@@ -112,14 +112,7 @@ function cliForAgent(agent) {
  */
 function isAlreadyPresent(result) {
   const text = `${result.stdout} ${result.stderr}`.toLowerCase();
-  if (
-    /\bdoes not exist\b/.test(text) ||
-    /\bnot (found|installed|exist)/.test(text) ||
-    /\bnever (found|installed)\b/.test(text)
-  ) {
-    return false;
-  }
-  return /\balready\b/.test(text) || /\bexists\b/.test(text);
+  return /\balready (exists|installed|added|present)\b/.test(text);
 }
 
 /**
@@ -128,7 +121,11 @@ function isAlreadyPresent(result) {
  */
 function isAlreadyAbsent(result) {
   const text = `${result.stdout} ${result.stderr}`.toLowerCase();
-  return isAlreadyPresent(result) || text.includes("not found") || text.includes("not installed");
+  return (
+    /\bnot (found|installed)\b/.test(text) ||
+    /\bdoes not exist\b/.test(text) ||
+    /\balready (uninstalled|removed|absent)\b/.test(text)
+  );
 }
 
 /**

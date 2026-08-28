@@ -106,6 +106,7 @@ export async function installCursorPlugin(args) {
   }
 
   await remove(paths.staging, { force: true, recursive: true });
+  let swapped = false;
   try {
     await makeDir(paths.staging, { recursive: true });
     for (const name of args.skills) {
@@ -130,10 +131,11 @@ export async function installCursorPlugin(args) {
     if (existed) {
       await remove(paths.backup, { force: true, recursive: true });
       await move(paths.pluginDir, paths.backup);
+      swapped = true;
     }
     await move(paths.staging, paths.pluginDir);
   } catch (error) {
-    if (existed && existsSync(paths.backup)) {
+    if (swapped) {
       await remove(paths.pluginDir, { force: true, recursive: true });
       await move(paths.backup, paths.pluginDir);
     }
