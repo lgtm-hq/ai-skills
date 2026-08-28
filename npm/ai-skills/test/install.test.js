@@ -1962,7 +1962,7 @@ describe("native projectors", () => {
     }
   });
 
-  test("remove unlinks dest skill symlink and leaves the managed store", async () => {
+  test("remove unlinks dest skill symlink and deletes the unmodified store", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-store-keep-"));
     try {
       const sourceRoot = join(cwd, "catalog");
@@ -2003,7 +2003,7 @@ describe("native projectors", () => {
         },
       );
       await expect(lstat(dest)).rejects.toMatchObject({ code: "ENOENT" });
-      expect(await readFile(join(store, "SKILL.md"), "utf8")).toBe("# test\n");
+      await expect(lstat(store)).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -2204,6 +2204,60 @@ describe("native projectors", () => {
       expect(result.installed).toBe(1);
       expect(await readlink(dest)).toBe(store);
       expect(await readFile(join(dest, "SKILL.md"), "utf8")).toBe("# test\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("remove then reinstall with drifted content does not collide on a leftover store", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-store-gc-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      const options = {
+        ...unattendedOptions,
+        agents: ["cursor"],
+        bundle: null,
+        global: false,
+        projector: "explode",
+        project: true,
+        skills: ["test"],
+      };
+      await install(
+        options,
+        async () => {
+          throw new Error("skills CLI must not run when catalog sources resolve");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      await removeSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: ["test"],
+          yes: true,
+        },
+        {
+          lockEnvironment: { cwd },
+          readLock: (scope) => readLockfile(scope, { cwd }),
+          writeLock: (next) => writeLockfile(next, { cwd }),
+        },
+      );
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test v2\n");
+      await install(
+        options,
+        async () => {
+          throw new Error("skills CLI must not run when catalog sources resolve");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      expect(await readFile(join(cwd, ".cursor/skills/test/SKILL.md"), "utf8")).toBe("# test v2\n");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

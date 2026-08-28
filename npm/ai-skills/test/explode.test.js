@@ -343,6 +343,61 @@ describe("explodePlugin", () => {
     }
   });
 
+  test("identical unowned dest is skipped even when leftover store content differs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-dest-skip-store-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      await mkdir(join(dest, "lint/nested"), { recursive: true });
+      await writeFile(join(dest, "lint/SKILL.md"), "# lint\n");
+      await writeFile(join(dest, "lint/nested/notes.md"), "notes\n");
+      await mkdir(join(store, "lint"), { recursive: true });
+      await writeFile(join(store, "lint/SKILL.md"), "# other\n");
+      const result = await explodePlugin({
+        agents: [{ id: "cursor", root: dest }],
+        skills: ["lint"],
+        sourceSkills: { lint: join(source, "lint") },
+        storeRoot: store,
+      });
+      expect(result.skipped).toEqual([
+        { agent: "cursor", dest: join(dest, "lint"), skill: "lint" },
+      ]);
+      expect(result.claimed.cursor).toBeUndefined();
+      expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      expect(await readFile(join(store, "lint/SKILL.md"), "utf8")).toBe("# other\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("injected copy failure does not leave a dest.staging sidecar", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-staging-"));
+    try {
+      const { dest, source } = await layout(root);
+      const { cp } = await import("node:fs/promises");
+      let copies = 0;
+      await expect(
+        explodePlugin({
+          agents: [{ id: "cursor", root: dest }],
+          copy: true,
+          copyFn: async (from, to, options) => {
+            copies += 1;
+            await cp(from, to, options);
+            if (copies > 1) {
+              throw new Error("copy failed");
+            }
+          },
+          skills: ["lint"],
+          sourceSkills: { lint: join(source, "lint") },
+        }),
+      ).rejects.toThrow("copy failed");
+      const { readdir } = await import("node:fs/promises");
+      const names = await readdir(dest).catch(() => []);
+      expect(names.filter((name) => name.includes("staging"))).toEqual([]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   test("different existing store content is a hard collision", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-store-"));
     try {
@@ -478,6 +533,36 @@ describe("removeExplodedFiles", () => {
       expect(result.modified).toEqual(["lint/SKILL.md"]);
       expect(warnings).toEqual(["left modified review file lint/SKILL.md"]);
       expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# dirty\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("unlinks a dest skill symlink and deletes a matching unshared store", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-store-rm-"));
+    try {
+      const dest = join(root, ".cursor/skills");
+      const store = join(root, ".agents/skills");
+      await mkdir(join(store, "lint"), { recursive: true });
+      await writeFile(join(store, "lint/SKILL.md"), "# lint\n");
+      await mkdir(dest, { recursive: true });
+      await symlink(join(store, "lint"), join(dest, "lint"));
+      const digest = await hashFile(join(store, "lint/SKILL.md"));
+      const result = await removeExplodedFiles({
+        files: [
+          {
+            absolute: join(dest, "lint/SKILL.md"),
+            digest,
+            relative: "lint/SKILL.md",
+            root: dest,
+          },
+        ],
+        pluginId: "review",
+        storeRoot: store,
+      });
+      expect(result.removed).toEqual(["lint/SKILL.md"]);
+      await expect(lstat(join(dest, "lint"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(lstat(join(store, "lint"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await rm(root, { force: true, recursive: true });
     }

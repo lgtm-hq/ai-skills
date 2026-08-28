@@ -105,6 +105,7 @@ export async function updateSkills(options, dependencies = {}) {
   const cursorBackups = [];
   /** @type {import("./projectors/explode.js").ExplodeResult[]} */
   const explodeBackups = [];
+  let lockCommitted = false;
   try {
     for (const pluginId of updated) {
       const entry = selected[pluginId];
@@ -122,7 +123,7 @@ export async function updateSkills(options, dependencies = {}) {
           entry.vendor === "lgtm-hq"
             ? dependencies.sourceRoot !== undefined
               ? dependencies.sourceRoot
-              : findCatalogSourceRoot()
+              : findCatalogSourceRoot(dependencies.lockEnvironment?.cwd ?? process.cwd())
             : null,
         );
         if (explodeSources) {
@@ -154,18 +155,38 @@ export async function updateSkills(options, dependencies = {}) {
           explodeBackups.push(exploded);
         } else {
           // Vendor / non-checkout first-party still uses the skills CLI.
-          await run(
-            buildSkillsArguments(
-              {
-                ...scopedOptions,
-                agents: lanes.explode,
-                copy: false,
-                onConflict: "overwrite",
-                skills,
-              },
-              source,
-            ),
-          );
+          const copyAgents = [];
+          const symlinkAgents = [];
+          for (const agent of lanes.explode) {
+            const root = entry.agents[agent].root;
+            const files = entry.agents[agent]?.files ?? {};
+            const names = [...new Set([...skills, ...skillNamesFromFiles(files)])];
+            if (await destUsesCopyMaterialization(root, names)) {
+              copyAgents.push(agent);
+            } else {
+              symlinkAgents.push(agent);
+            }
+          }
+          for (const [agents, copy] of [
+            [symlinkAgents, false],
+            [copyAgents, true],
+          ]) {
+            if (agents.length === 0) {
+              continue;
+            }
+            await run(
+              buildSkillsArguments(
+                {
+                  ...scopedOptions,
+                  agents,
+                  copy,
+                  onConflict: "overwrite",
+                  skills,
+                },
+                source,
+              ),
+            );
+          }
         }
       }
       if (lanes.cursorNative.length > 0) {
@@ -200,14 +221,6 @@ export async function updateSkills(options, dependencies = {}) {
           source,
         });
       }
-      await removeStalePluginSkills(pluginId, entry, skills, {
-        hash,
-        removeDir,
-        removeFile,
-        run,
-        scopedOptions: { ...scopedOptions, agents: lanes.explode },
-        warn,
-      });
     }
     const installedAt = now().toISOString();
     const plugins = {};
@@ -222,6 +235,9 @@ export async function updateSkills(options, dependencies = {}) {
         hash,
         explodeClaimsByPlugin[pluginId],
       );
+      if (Object.keys(hashed.agents).length === 0) {
+        continue;
+      }
       plugins[pluginId] = {
         ...hashed,
         installedAt,
@@ -238,6 +254,7 @@ export async function updateSkills(options, dependencies = {}) {
       gatewayVersion: getPackageVersion(),
       plugins,
     });
+    lockCommitted = true;
     for (const item of explodeBackups) {
       try {
         await discardExplodeBackups(item);
@@ -254,36 +271,51 @@ export async function updateSkills(options, dependencies = {}) {
         warn(`Warning: could not discard Cursor plugin backup after update (${detail})`);
       }
     }
+    const storeRoot =
+      dependencies.storeRoot ?? defaultStoreRoot(scope, dependencies.lockEnvironment);
+    for (const pluginId of updated) {
+      const entry = selected[pluginId];
+      await removeStalePluginSkills(pluginId, entry, catalogSkills[pluginId] ?? [], {
+        hash,
+        keepStoreSkills: keepStoreSkillNames(prunedLock, [pluginId], catalogSkills[pluginId] ?? []),
+        removeDir,
+        removeFile,
+        storeRoot,
+        warn,
+      });
+    }
     return { pruned, updated };
   } catch (error) {
     const restoreErrors = [];
-    for (const item of explodeBackups) {
-      try {
-        await restoreExplodeInstall(item, {
-          move: dependencies.move,
-          remove: dependencies.remove,
-        });
-      } catch (restoreError) {
-        restoreErrors.push(restoreError);
+    if (!lockCommitted) {
+      for (const item of explodeBackups) {
+        try {
+          await restoreExplodeInstall(item, {
+            move: dependencies.move,
+            remove: dependencies.remove,
+          });
+        } catch (restoreError) {
+          restoreErrors.push(restoreError);
+        }
       }
-    }
-    for (const item of cursorBackups) {
-      try {
-        await restoreCursorPluginInstall({
-          ...item,
-          created: !item.swapped,
-          move: dependencies.move,
-        });
-      } catch (restoreError) {
-        restoreErrors.push(restoreError);
+      for (const item of cursorBackups) {
+        try {
+          await restoreCursorPluginInstall({
+            ...item,
+            created: !item.swapped,
+            move: dependencies.move,
+          });
+        } catch (restoreError) {
+          restoreErrors.push(restoreError);
+        }
       }
-    }
-    if (restoreErrors.length > 0) {
-      const original = error instanceof Error ? error.message : String(error);
-      const restore = restoreErrors
-        .map((item) => (item instanceof Error ? item.message : String(item)))
-        .join("; ");
-      throw new Error(`${original} (update restore also failed: ${restore})`);
+      if (restoreErrors.length > 0) {
+        const original = error instanceof Error ? error.message : String(error);
+        const restore = restoreErrors
+          .map((item) => (item instanceof Error ? item.message : String(item)))
+          .join("; ");
+        throw new Error(`${original} (update restore also failed: ${restore})`);
+      }
     }
     throw error;
   }
@@ -328,9 +360,11 @@ export async function removeSkills(options, dependencies = {}) {
       await removeExplodedFiles({
         files: explodeFiles,
         hash,
+        keepStoreSkills: keepStoreSkillNames(lock, selected),
         pluginId,
         removeDir,
         removeFile,
+        storeRoot: dependencies.storeRoot ?? defaultStoreRoot(scope, dependencies.lockEnvironment),
         warn,
       });
     }
@@ -516,10 +550,10 @@ function resolveVendorSource(entry, vendors) {
  * @param {string[]} currentSkills - Skill names in the current catalog.
  * @param {{
  *   hash: typeof hashFile,
+ *   keepStoreSkills?: Set<string>,
  *   removeDir: typeof rmdir,
  *   removeFile: typeof unlink,
- *   run: typeof runSkills,
- *   scopedOptions: {agents: string[], global: boolean, project: boolean, yes: boolean},
+ *   storeRoot?: string,
  *   warn: (message: string) => void,
  * }} io - Injectable command dependencies.
  * @returns {Promise<void>} Resolves when stale members are removed or left with a warning.
@@ -552,9 +586,11 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
     await removeExplodedFiles({
       files: explodeFiles,
       hash: io.hash,
+      keepStoreSkills: io.keepStoreSkills,
       pluginId,
       removeDir: io.removeDir,
       removeFile: io.removeFile,
+      storeRoot: io.storeRoot,
       warn: io.warn,
     });
   }
@@ -606,7 +642,11 @@ async function rematerializePluginFiles(entry, skillNames, hash, explodeClaims) 
   for (const [agent, install] of Object.entries(entry.agents)) {
     const projector = agentProjector(entry, agent);
     if (explodeClaims && projector === PROJECTOR_EXPLODE) {
-      agents[agent] = { ...install, files: explodeClaims[agent] ?? {} };
+      const claimed = explodeClaims[agent];
+      if (!claimed || Object.keys(claimed).length === 0) {
+        continue;
+      }
+      agents[agent] = { ...install, files: claimed };
       continue;
     }
     if (projector === PROJECTOR_NATIVE && agent === "cursor") {
@@ -670,6 +710,29 @@ function sourceSha(vendor, currentSha, vendors) {
     return `v${getPackageVersion()}`;
   }
   return vendors.find((candidate) => candidate.id === vendor)?.sha ?? currentSha;
+}
+
+/**
+ * Skill names whose managed store trees must stay because another lock plugin
+ * still owns them, or because this plugin is only dropping a subset.
+ *
+ * @param {import("./lockfile.js").GatewayLock} lock - Current lock.
+ * @param {string[]} removingPluginIds - Plugins whose dests are being removed.
+ * @param {string[]} [retainSkills] - Skills the listed plugins still own.
+ * @returns {Set<string>} Skill names that must not have their store deleted.
+ */
+function keepStoreSkillNames(lock, removingPluginIds, retainSkills = []) {
+  const removing = new Set(removingPluginIds);
+  const keep = new Set(retainSkills);
+  for (const [pluginId, entry] of Object.entries(lock.plugins)) {
+    if (removing.has(pluginId)) {
+      continue;
+    }
+    for (const name of pluginSkillNames(entry)) {
+      keep.add(name);
+    }
+  }
+  return keep;
 }
 
 /**

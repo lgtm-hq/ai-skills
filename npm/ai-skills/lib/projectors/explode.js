@@ -86,8 +86,8 @@ export function defaultStoreRoot(scope, environment = {}) {
 
 /**
  * Whether existing dest skills are real directories (``--copy``), not store
- * symlinks. First existing dest wins: a directory forces copy; only symlinks
- * keep symlink mode. Absent dests are ignored so a later sibling can decide.
+ * symlinks. Any real dest directory selects copy mode for that agent so an
+ * update cannot rewrite ``--copy`` installs into store symlinks.
  *
  * @param {string} destRoot - Agent skills directory.
  * @param {string[]} skillNames - Candidate dest skill names.
@@ -161,6 +161,11 @@ export async function explodePlugin(args) {
   const swappedStores = [];
   /** @type {Set<string>} */
   const writtenStores = new Set();
+  /** @type {string[]} */
+  const stagingSidecars = [];
+  const trackStaging = (path) => {
+    stagingSidecars.push(path);
+  };
   try {
     /** @type {Record<string, string>} */
     const stagedSkills = {};
@@ -206,6 +211,7 @@ export async function explodePlugin(args) {
           move,
           remove,
           staged: plan.staged,
+          trackStaging,
         });
       } else {
         if (!writtenStores.has(plan.storeDir)) {
@@ -223,6 +229,7 @@ export async function explodePlugin(args) {
             replace: plan.replace,
             staged: plan.staged,
             storeDir: plan.storeDir,
+            trackStaging,
           });
           if (createdStore) {
             createdStores.push(plan.storeDir);
@@ -259,6 +266,13 @@ export async function explodePlugin(args) {
       );
     } catch (failed) {
       rollbackErrors.push(failed);
+    }
+    for (const sidecar of stagingSidecars) {
+      try {
+        await remove(sidecar, { force: true, recursive: true });
+      } catch (failed) {
+        rollbackErrors.push(failed);
+      }
     }
     try {
       await remove(staging, { force: true, recursive: true });
@@ -356,6 +370,9 @@ export async function restoreExplodeInstall(result, io = {}) {
  * @param {typeof unlink} [args.removeFile] - Injectable unlink.
  * @param {typeof rmdir} [args.removeDir] - Injectable rmdir.
  * @param {(dir: string) => Promise<import("node:fs").Dirent[]>} [args.readDir] - Injectable readdir.
+ * @param {typeof rm} [args.removeTree] - Injectable recursive rm for unused store trees.
+ * @param {string} [args.storeRoot] - Managed store root; unlinked dests may drop matching store trees.
+ * @param {Set<string>} [args.keepStoreSkills] - Skill names still owned by another lock plugin.
  * @param {(message: string) => void} [args.warn] - Warning sink.
  * @returns {Promise<{modified: string[], removed: string[]}>} Relative paths kept vs deleted.
  */
@@ -365,6 +382,9 @@ export async function removeExplodedFiles(args) {
   const removeDir = args.removeDir ?? rmdir;
   const readDir = args.readDir ?? ((dir) => readdir(dir, { withFileTypes: true }));
   const warn = args.warn ?? ((message) => console.warn(message));
+  const storeRoot = args.storeRoot;
+  const keepStoreSkills = args.keepStoreSkills ?? new Set();
+  const removeTree = args.removeTree ?? rm;
   /** @type {string[]} */
   const modified = [];
   /** @type {string[]} */
@@ -380,8 +400,23 @@ export async function removeExplodedFiles(args) {
   }
   /** @type {Map<string, string>} */
   const skillDirs = new Map();
+  /** @type {Map<string, {files: typeof args.files, storeTarget: string}>} */
+  const releasedStores = new Map();
   for (const [skillDir, group] of groups) {
     if (skillDir !== group.root) {
+      const skillName = group.files[0]?.relative.split("/")[0] ?? "";
+      let storeTarget = null;
+      try {
+        const info = await lstat(skillDir);
+        if (info.isSymbolicLink()) {
+          storeTarget = await readlink(skillDir);
+        }
+      } catch (error) {
+        if (!isAbsentFsError(error)) {
+          throw error;
+        }
+      }
+      const modifiedBefore = modified.length;
       const unlinked = await unlinkDestSkillIfUnmodified(
         skillDir,
         group,
@@ -392,6 +427,16 @@ export async function removeExplodedFiles(args) {
         modified,
         removed,
       );
+      if (
+        unlinked &&
+        storeTarget &&
+        skillName &&
+        storeRoot &&
+        !keepStoreSkills.has(skillName) &&
+        modified.length === modifiedBefore
+      ) {
+        releasedStores.set(skillName, { files: group.files, storeTarget });
+      }
       if (unlinked) {
         continue;
       }
@@ -426,6 +471,20 @@ export async function removeExplodedFiles(args) {
   }
   for (const file of args.files) {
     await pruneEmptyAncestors(dirname(join(file.root, file.relative)), file.root, removeDir);
+  }
+  if (storeRoot) {
+    for (const [skillName, released] of releasedStores) {
+      await removeMatchingStoreTree({
+        expectedFiles: released.files,
+        hash,
+        pluginId: args.pluginId,
+        removeTree,
+        skillName,
+        storeRoot,
+        storeTarget: released.storeTarget,
+        warn,
+      });
+    }
   }
   return { modified, removed };
 }
@@ -723,18 +782,6 @@ async function planExplodeCommits(args) {
         assertInsideRoot(args.storeRoot, storeDir);
       }
       let replace = owned.has(skill);
-      if (!copy && args.storeRoot && !owned.has(skill) && (await pathExists(storeDir))) {
-        const storeHashes = await hashExistingTree(storeDir, args.hash);
-        const storeEmpty = Object.keys(storeHashes).length === 0;
-        if (!storeEmpty && !sameHashes(storeHashes, args.stagedHashes[skill])) {
-          throw new Error(
-            `Explode collision at ${storeDir}: existing store content differs from incoming ${skill}`,
-          );
-        }
-        if (storeEmpty) {
-          replace = true;
-        }
-      }
       if (await pathExists(dest)) {
         const existing = await hashExistingTree(dest, args.hash);
         const isEmpty = Object.keys(existing).length === 0;
@@ -763,6 +810,18 @@ async function planExplodeCommits(args) {
           );
         }
       }
+      if (!copy && args.storeRoot && !owned.has(skill) && (await pathExists(storeDir))) {
+        const storeHashes = await hashExistingTree(storeDir, args.hash);
+        const storeEmpty = Object.keys(storeHashes).length === 0;
+        if (!storeEmpty && !sameHashes(storeHashes, args.stagedHashes[skill])) {
+          throw new Error(
+            `Explode collision at ${storeDir}: existing store content differs from incoming ${skill}`,
+          );
+        }
+        if (storeEmpty) {
+          replace = true;
+        }
+      }
       toWrite.push({
         agent: agent.id,
         copy,
@@ -789,13 +848,14 @@ async function planExplodeCommits(args) {
  * @param {typeof rename} args.move - rename.
  * @param {typeof rm} args.remove - rm.
  * @param {string} args.staged - Staged skill dir (shared; do not consume).
+ * @param {(path: string) => void} args.trackStaging - Record a sidecar for rollback cleanup.
  * @returns {Promise<void>} Resolves when dest exists.
  */
 async function commitCopiedSkill(args) {
   await args.remove(args.dest, { force: true, recursive: true });
   await args.makeDir(dirname(args.dest), { recursive: true });
-  const destStage = `${args.dest}.staging`;
-  await args.remove(destStage, { force: true, recursive: true });
+  const destStage = `${args.dest}.staging.${randomUUID()}`;
+  args.trackStaging(destStage);
   await args.copyFn(args.staged, destStage, { recursive: true });
   try {
     await args.move(destStage, args.dest);
@@ -818,6 +878,7 @@ async function commitCopiedSkill(args) {
  * @param {boolean} args.replace - Refresh an existing store tree this lock owns.
  * @param {string} args.staged - Staged skill dir.
  * @param {string} args.storeDir - Store skill dir.
+ * @param {(path: string) => void} args.trackStaging - Record a sidecar for rollback cleanup.
  * @returns {Promise<boolean>} True when this call created the store tree.
  */
 async function commitStoreSkill(args) {
@@ -826,8 +887,8 @@ async function commitStoreSkill(args) {
     return false;
   }
   await args.makeDir(dirname(args.storeDir), { recursive: true });
-  const storeStage = `${args.storeDir}.staging`;
-  await args.remove(storeStage, { force: true, recursive: true });
+  const storeStage = `${args.storeDir}.staging.${randomUUID()}`;
+  args.trackStaging(storeStage);
   await args.copyFn(args.staged, storeStage, { recursive: true });
   if (existed) {
     await args.remove(args.storeDir, { force: true, recursive: true });
@@ -883,6 +944,46 @@ async function walkRejectingEscapes(dir, root) {
       await walkRejectingEscapes(absolute, root);
     }
   }
+}
+
+/**
+ * Hash-verify and drop a managed store tree released by dest-symlink unlink.
+ *
+ * @param {object} args - Named arguments.
+ * @param {Array<{digest: string, relative: string}>} args.expectedFiles - Lock-owned dest files for this skill.
+ * @param {(path: string) => Promise<string>} args.hash - Hasher.
+ * @param {string} args.pluginId - Plugin id for warning text.
+ * @param {typeof rm} args.removeTree - Recursive rm.
+ * @param {string} args.skillName - Skill directory name.
+ * @param {string} args.storeRoot - Managed store root.
+ * @param {string} args.storeTarget - Dest symlink target captured before unlink.
+ * @param {(message: string) => void} args.warn - Warning sink.
+ * @returns {Promise<void>} Resolves when the store is removed or left in place.
+ */
+async function removeMatchingStoreTree(args) {
+  const storeDir = join(args.storeRoot, args.skillName);
+  assertInsideRoot(args.storeRoot, storeDir);
+  if (resolve(args.storeTarget) !== resolve(storeDir)) {
+    return;
+  }
+  if (!(await pathExists(storeDir))) {
+    return;
+  }
+  const prefix = `${args.skillName}/`;
+  /** @type {Record<string, string>} */
+  const expected = {};
+  for (const file of args.expectedFiles) {
+    const relative = file.relative.startsWith(prefix)
+      ? file.relative.slice(prefix.length)
+      : file.relative;
+    expected[relative] = file.digest;
+  }
+  const actual = await hashExistingTree(storeDir, args.hash);
+  if (!sameHashes(actual, expected)) {
+    args.warn(`left modified ${args.pluginId} store ${args.skillName}`);
+    return;
+  }
+  await args.removeTree(storeDir, { force: true, recursive: true });
 }
 
 /**
