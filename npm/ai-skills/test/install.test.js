@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -128,13 +128,13 @@ describe("install", () => {
   test("rejects the retired pre-push bundle key", async () => {
     await expect(
       batchesFromCliOptions({ bundle: "pre-push", skills: [], vendor: null }),
-    ).rejects.toThrow("Unknown first-party bundle: pre-push");
+    ).rejects.toThrow("Unknown first-party plugin: pre-push");
   });
 
   test("rejects the retired agents bundle key", async () => {
     await expect(
       batchesFromCliOptions({ bundle: "agents", skills: [], vendor: null }),
-    ).rejects.toThrow("Unknown first-party bundle: agents");
+    ).rejects.toThrow("Unknown first-party plugin: agents");
   });
 
   test("uses the pinned vendor source from baked data", async () => {
@@ -147,7 +147,7 @@ describe("install", () => {
           bundle: null,
           global: false,
           project: true,
-          skills: ["pdf"],
+          skills: [],
           vendor: "anthropics",
         },
         async (args) => {
@@ -158,6 +158,7 @@ describe("install", () => {
       );
 
       expect(received).toContain("anthropics/skills@9d2f1ae187231d8199c64b5b762e1bdf2244733d");
+      expect(received).toContain("pdf");
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
       expect(lock.plugins.anthropics).toMatchObject({
         projector: "explode",
@@ -165,7 +166,9 @@ describe("install", () => {
         sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
         vendor: "anthropics",
       });
-      expect(lock.plugins.anthropics.agents.cursor.files).toEqual({ "pdf/SKILL.md": "" });
+      const files = Object.keys(lock.plugins.anthropics.agents.cursor.files);
+      expect(files).toContain("pdf/SKILL.md");
+      expect(files.length).toBeGreaterThan(1);
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -181,7 +184,7 @@ describe("install", () => {
           bundle: null,
           global: false,
           project: true,
-          skills: ["frontend-design"],
+          skills: [],
           vendor: "anthropics-claude-code",
         },
         async (args) => {
@@ -201,7 +204,7 @@ describe("install", () => {
         sha: "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2",
         vendor: "anthropics-claude-code",
       });
-      expect(lock.plugins["anthropics-claude-code"].agents.cursor.files).toEqual({
+      expect(lock.plugins["anthropics-claude-code"].agents.cursor.files).toMatchObject({
         "frontend-design/SKILL.md": "",
       });
     } finally {
@@ -221,6 +224,20 @@ describe("install", () => {
         async () => {},
       ),
     ).rejects.toThrow("Unknown skill for vendor anthropics: typo");
+  });
+
+  test("rejects a vendor skill subset as non-atomic", async () => {
+    await expect(
+      install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          skills: ["pdf"],
+          vendor: "anthropics",
+        },
+        async () => {},
+      ),
+    ).rejects.toThrow("Vendor installs are plugin-atomic; omit --skill and --bundle");
   });
 
   test("defaults unset scope to global for both CLI and lock", async () => {
@@ -595,7 +612,7 @@ describe("install", () => {
     }
   });
 
-  test("installs newly requested skills on an otherwise healthy plugin", async () => {
+  test("completes remaining vendor membership on a full reinstall", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-add-skill-"));
     let received = [];
     try {
@@ -633,7 +650,7 @@ describe("install", () => {
           bundle: null,
           global: false,
           project: true,
-          skills: ["pdf", "xlsx"],
+          skills: [],
           vendor: "anthropics",
         },
         async (args) => {
@@ -654,12 +671,13 @@ describe("install", () => {
         "pdf/SKILL.md": "abc",
         "xlsx/SKILL.md": "abc",
       });
+      expect(Object.keys(lock.plugins.anthropics.agents.cursor.files).length).toBeGreaterThan(2);
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
   });
 
-  test("keeps a stable vendor plugin id when adding a second skill", async () => {
+  test("keeps a stable vendor plugin id across full installs", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-vendor-id-"));
     const env = {
       cwd,
@@ -673,7 +691,7 @@ describe("install", () => {
           bundle: null,
           global: false,
           project: true,
-          skills: ["pdf"],
+          skills: [],
           vendor: "anthropics",
         },
         async () => {},
@@ -682,31 +700,163 @@ describe("install", () => {
       );
       const first = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
       expect(first.plugins.pdf).toBeUndefined();
-      expect(first.plugins.anthropics.agents.cursor.files).toEqual({ "pdf/SKILL.md": "abc" });
+      expect(first.plugins.anthropics.agents.cursor.files["pdf/SKILL.md"]).toBe("abc");
+      expect(Object.keys(first.plugins.anthropics.agents.cursor.files).length).toBeGreaterThan(1);
 
-      let received = [];
       await install(
         {
           ...unattendedOptions,
           bundle: null,
           global: false,
           project: true,
-          skills: ["pdf", "xlsx"],
+          skills: [],
           vendor: "anthropics",
         },
-        async (args) => {
-          received = args;
+        async () => {
+          throw new Error("second install should no-op");
         },
         () => new Date("2026-07-10T17:00:00.000Z"),
         env,
       );
 
-      expect(received).toContain("xlsx");
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
       expect(lock.plugins.anthropics.agents.cursor.files).toMatchObject({
         "pdf/SKILL.md": "abc",
         "xlsx/SKILL.md": "abc",
       });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("rolls back a targeted install that wrote only some plugin skills", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-partial-plugin-"));
+    const lintDir = join(cwd, ".cursor/skills/lint");
+    const testDir = join(cwd, ".cursor/skills/test");
+    try {
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            bundle: null,
+            global: false,
+            project: true,
+            skills: ["lint", "test"],
+          },
+          async () => {
+            await mkdir(lintDir, { recursive: true });
+            await writeFile(join(lintDir, "SKILL.md"), "partial\n");
+          },
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          { cwd },
+        ),
+      ).rejects.toThrow("Plugin install incomplete");
+
+      await expect(access(lintDir)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(access(testDir)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("rolls back newly written skill directories when the skills CLI fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-atomic-cli-"));
+    const lintDir = join(cwd, ".cursor/skills/lint");
+    const testDir = join(cwd, ".cursor/skills/test");
+    try {
+      await mkdir(lintDir, { recursive: true });
+      await writeFile(join(lintDir, "SKILL.md"), "keep\n");
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            bundle: null,
+            global: false,
+            project: true,
+            skills: ["lint", "test"],
+          },
+          async () => {
+            await mkdir(testDir, { recursive: true });
+            await writeFile(join(testDir, "SKILL.md"), "partial\n");
+            throw new Error("skills CLI failed");
+          },
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          { cwd },
+        ),
+      ).rejects.toThrow("skills CLI failed");
+
+      expect(await readFile(join(lintDir, "SKILL.md"), "utf8")).toBe("keep\n");
+      await expect(access(testDir)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(access(join(cwd, "ai-skills-lock.json"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("rolls back newly written skill directories when lock update fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-atomic-lock-"));
+    const lintDir = join(cwd, ".cursor/skills/lint");
+    try {
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            bundle: null,
+            global: false,
+            project: true,
+            skills: ["lint"],
+          },
+          async () => {
+            await mkdir(lintDir, { recursive: true });
+            await writeFile(join(lintDir, "SKILL.md"), "partial\n");
+          },
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          {
+            cwd,
+            write: async () => {
+              throw new Error("disk full");
+            },
+          },
+        ),
+      ).rejects.toThrow("gateway lock update failed");
+
+      await expect(access(lintDir)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("keeps the original install error when rollback also fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-rollback-fail-"));
+    const lintDir = join(cwd, ".cursor/skills/lint");
+    try {
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            bundle: null,
+            global: false,
+            project: true,
+            skills: ["lint"],
+          },
+          async () => {
+            await mkdir(lintDir, { recursive: true });
+            await writeFile(join(lintDir, "SKILL.md"), "partial\n");
+            throw new Error("skills CLI failed");
+          },
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          {
+            cwd,
+            rm: async () => {
+              throw new Error("rm denied");
+            },
+          },
+        ),
+      ).rejects.toThrow("skills CLI failed (rollback also failed: rm denied)");
+
+      expect(await readFile(join(lintDir, "SKILL.md"), "utf8")).toBe("partial\n");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

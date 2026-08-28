@@ -53,9 +53,9 @@ function lockFixture() {
   return {
     gatewayVersion: getPackageVersion(),
     plugins: {
-      commit: entry("commit", "lgtm-hq", `v${getPackageVersion()}`, ["claude-code"]),
-      branch: entry("branch", "lgtm-hq", "v0.1.0", ["claude-code", "cursor"]),
-      pdf: entry("pdf", "anthropics", ANTHROPICS_PIN, ["claude-code"]),
+      review: entry("review", "lgtm-hq", `v${getPackageVersion()}`, ["claude-code"]),
+      "git-pr": entry("git-pr", "lgtm-hq", "v0.1.0", ["claude-code", "cursor"]),
+      anthropics: entry("anthropics", "anthropics", ANTHROPICS_PIN, ["claude-code"]),
     },
     scope: "global",
     version: 2,
@@ -147,8 +147,8 @@ function fakeFetch(routes, calls = []) {
 }
 
 describe("ui signal formatting", () => {
-  test("summarizes installed skills and agents, omitting when empty", () => {
-    expect(formatInstalledSummary(lockFixture())).toBe("3 skills installed · 2 agents");
+  test("summarizes installed plugins and agents, omitting when empty", () => {
+    expect(formatInstalledSummary(lockFixture())).toBe("3 plugins installed · 2 agents");
     expect(
       formatInstalledSummary({
         plugins: {
@@ -163,7 +163,7 @@ describe("ui signal formatting", () => {
           },
         },
       }),
-    ).toBe("1 skill installed · 1 agent");
+    ).toBe("1 plugin installed · 1 agent");
     expect(
       formatInstalledSummary({
         plugins: {
@@ -178,7 +178,7 @@ describe("ui signal formatting", () => {
           },
         },
       }),
-    ).toBe("2 skills installed · 1 agent");
+    ).toBe("1 plugin installed · 1 agent");
     expect(formatInstalledSummary({ plugins: {} })).toBeNull();
   });
 
@@ -220,13 +220,7 @@ describe("ui signal formatting", () => {
 
 describe("completeInteractively signals", () => {
   test("surfaces installed markers, drift, summary and update notices", async () => {
-    const captured = recordingUi([
-      "browse:first-party",
-      [],
-      "browse:vendor:anthropics",
-      [],
-      "cancel",
-    ]);
+    const captured = recordingUi([[]]);
     const dependencies = {
       env: {},
       fetchImplementation: fakeFetch({
@@ -252,43 +246,43 @@ describe("completeInteractively signals", () => {
     expect(updateNote?.message).toContain("→ v9999.0.0");
     expect(updateNote?.message).toContain("bun update -g @lgtm-hq/ai-skills");
     const installedNote = captured.notes.find((note) => note.title === "Installed");
-    expect(installedNote?.message).toBe("3 skills installed · 2 agents");
+    expect(installedNote?.message).toBe("3 plugins installed · 2 agents");
 
-    const homeLabels = captured.selects[0].map((option) => option.label);
+    const pluginLabels = captured.multiSelects[0].map((option) => option.label);
     expect(
-      homeLabels.some(
-        (label) =>
-          label.startsWith("Browse davidondrej/skills") && label.endsWith(VENDOR_DRIFT_SUFFIX),
+      pluginLabels.some(
+        (label) => label.includes("davidondrej/skills") && label.endsWith(VENDOR_DRIFT_SUFFIX),
       ),
     ).toBe(true);
     expect(
-      homeLabels.some(
-        (label) => label.startsWith("Browse anthropics/skills") && label.includes("newer commits"),
+      pluginLabels.some(
+        (label) => label.includes("anthropics/skills") && label.includes("newer commits"),
       ),
     ).toBe(false);
-
-    const firstPartyLabels = Object.values(captured.groupSelects[0])
-      .flat()
-      .map((option) => option.label);
-    expect(firstPartyLabels).toContain("commit ✔ installed (claude-code)");
-    expect(firstPartyLabels).toContain(
-      "branch ✔ installed (claude-code, cursor) · update available (run skill update)",
-    );
-
-    const anthropicsLabels = captured.multiSelects[0].map((option) => option.label);
-    expect(anthropicsLabels).toContain("pdf ✔ installed (claude-code)");
-    expect(anthropicsLabels).toContain("docx");
+    expect(
+      pluginLabels.some((label) => label.includes("Review") && label.includes("installed")),
+    ).toBe(true);
+    expect(
+      pluginLabels.some(
+        (label) => label.includes("Git & PR") && label.includes("update available"),
+      ),
+    ).toBe(true);
+    expect(
+      pluginLabels.some(
+        (label) => label.includes("anthropics/skills") && label.includes("installed"),
+      ),
+    ).toBe(true);
   });
 
   test("merges global and project lockfiles while scope is undetermined", async () => {
-    const captured = recordingUi(["browse:first-party", [], "cancel"]);
+    const captured = recordingUi([[]]);
     const projectLock = {
       gatewayVersion: getPackageVersion(),
       plugins: {
-        pr: {
+        raycast: {
           agents: {
             cursor: {
-              files: { "pr/SKILL.md": "hash" },
+              files: { "raycast/SKILL.md": "hash" },
               root: "/project/.cursor/skills",
             },
           },
@@ -299,10 +293,10 @@ describe("completeInteractively signals", () => {
           vendor: "lgtm-hq",
           version: getPackageVersion(),
         },
-        commit: {
+        "git-pr": {
           agents: {
             codex: {
-              files: { "commit/SKILL.md": "hash" },
+              files: { "git-pr/SKILL.md": "hash" },
               root: "/project/.codex/skills",
             },
           },
@@ -333,20 +327,24 @@ describe("completeInteractively signals", () => {
       completeInteractively({ ...blankOptions }, captured.ui, dependencies),
     ).rejects.toThrow("Install cancelled");
 
-    // Union of both scopes: 3 global skills + 1 project-only skill.
+    // Union of both scopes: 3 global plugins + 1 project-only plugin.
     const installedNote = captured.notes.find((note) => note.title === "Installed");
-    expect(installedNote?.message).toBe("4 skills installed · 3 agents");
+    expect(installedNote?.message).toBe("4 plugins installed · 3 agents");
 
-    const firstPartyLabels = Object.values(captured.groupSelects[0])
-      .flat()
-      .map((option) => option.label);
-    expect(firstPartyLabels).toContain("pr ✔ installed (cursor)");
-    // Shared skill merges agents across scopes.
-    expect(firstPartyLabels).toContain("commit ✔ installed (claude-code, codex)");
+    const pluginLabels = captured.multiSelects[0].map((option) => option.label);
+    expect(
+      pluginLabels.some((label) => label.includes("Raycast") && label.includes("cursor")),
+    ).toBe(true);
+    expect(
+      pluginLabels.some(
+        (label) =>
+          label.includes("Git & PR") && label.includes("claude-code") && label.includes("codex"),
+      ),
+    ).toBe(true);
   });
 
   test("explicit scope flags read only that scope's lockfile", async () => {
-    const captured = recordingUi(["browse:first-party", [], "cancel"]);
+    const captured = recordingUi([[]]);
     /** @type {string[]} */
     const readPaths = [];
     const dependencies = {
@@ -369,7 +367,7 @@ describe("completeInteractively signals", () => {
   });
 
   test("env opt-out skips every network fetch and shows no notices", async () => {
-    const captured = recordingUi(["cancel"]);
+    const captured = recordingUi([[]]);
     /** @type {string[]} */
     const calls = [];
     const dependencies = {
@@ -389,13 +387,13 @@ describe("completeInteractively signals", () => {
 
     expect(calls).toEqual([]);
     expect(captured.notes).toEqual([]);
-    expect(captured.selects[0].every((option) => !option.label.includes("newer commits"))).toBe(
-      true,
-    );
+    expect(
+      captured.multiSelects[0].every((option) => !option.label.includes("newer commits")),
+    ).toBe(true);
   });
 
   test("network errors, timeouts and a malformed lockfile stay silent", async () => {
-    const captured = recordingUi(["cancel"]);
+    const captured = recordingUi([[]]);
     const dependencies = {
       env: {},
       fetchImplementation: async (url) => {
@@ -416,8 +414,8 @@ describe("completeInteractively signals", () => {
     ).rejects.toThrow("Install cancelled");
 
     expect(captured.notes).toEqual([]);
-    const homeLabels = captured.selects[0].map((option) => option.label);
-    expect(homeLabels.every((label) => !label.includes("newer commits"))).toBe(true);
-    expect(homeLabels.every((label) => !label.includes("installed"))).toBe(true);
+    const pluginLabels = captured.multiSelects[0].map((option) => option.label);
+    expect(pluginLabels.every((label) => !label.includes("newer commits"))).toBe(true);
+    expect(pluginLabels.every((label) => !label.includes("installed"))).toBe(true);
   });
 });

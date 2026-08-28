@@ -24,7 +24,21 @@ describe("parseArguments", () => {
     });
   });
 
-  test("accepts an unattended vendor install", () => {
+  test("accepts an unattended vendor plugin install", () => {
+    const parsed = parseArguments([
+      "install",
+      "-y",
+      "--project",
+      "-a",
+      "cursor",
+      "--vendor",
+      "anthropics",
+    ]);
+
+    expect(() => validateUnattendedOptions(parsed.options)).not.toThrow();
+  });
+
+  test("rejects cherry-picking skills from a vendor plugin", () => {
     const parsed = parseArguments([
       "install",
       "-y",
@@ -36,6 +50,12 @@ describe("parseArguments", () => {
       "--skill",
       "pdf",
     ]);
+
+    expect(() => validateUnattendedOptions(parsed.options)).toThrow("plugin-atomic");
+  });
+
+  test("accepts an unattended first-party plugin id via --skill", () => {
+    const parsed = parseArguments(["-y", "--global", "-a", "cursor", "--skill", "review"]);
 
     expect(() => validateUnattendedOptions(parsed.options)).not.toThrow();
   });

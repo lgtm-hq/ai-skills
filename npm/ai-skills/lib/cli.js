@@ -1,7 +1,7 @@
 import { adoptSkills } from "./adopt.js";
 import { loadVendors } from "./catalog.js";
 import { listSkills, removeSkills, updateSkills } from "./gateway-commands.js";
-import { install, installInteractively } from "./install.js";
+import { batchesFromCliOptions, install, installInteractively } from "./install.js";
 import {
   parseArguments,
   validateUnattendedCommandOptions,
@@ -31,8 +31,15 @@ async function printLockedSkills(options) {
   const plugins = await listSkills(options);
   for (const plugin of plugins) {
     const status = plugin.status ? `\t${plugin.status}` : "";
+    const agents = plugin.agentNames
+      .map((agent) => {
+        const agentStatus = plugin.agentStatus?.[agent];
+        return agentStatus ? `${agent}:${agentStatus}` : agent;
+      })
+      .join(",");
+    const skills = (plugin.skills ?? []).join(",");
     console.log(
-      `${plugin.name}\t${plugin.vendor}\t${plugin.repo}\t${plugin.sha}\t${plugin.agentNames.join(",")}${status}`,
+      `${plugin.name}\t${plugin.vendor}\t${plugin.repo}\t${plugin.sha}\t${agents}\t${skills}${status}`,
     );
   }
 }
@@ -71,8 +78,29 @@ export async function runCli(argv) {
   }
   validateUnattendedOptions(options);
   if (options.yes) {
-    const counts = await install(options);
-    console.log(formatInstallCounts(counts));
+    const totals = { alreadyPresent: 0, installed: 0, repaired: 0 };
+    const finished = [];
+    for (const batch of await batchesFromCliOptions(options)) {
+      try {
+        const counts = await install({
+          ...options,
+          bundle: batch.vendor ? null : batch.pluginId,
+          vendor: batch.vendor,
+          skills: batch.skills,
+        });
+        totals.alreadyPresent += counts.alreadyPresent;
+        totals.installed += counts.installed;
+        totals.repaired += counts.repaired;
+        finished.push(batch.pluginId);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `Install failed for "${batch.pluginId}" after completing: ` +
+            `${finished.length > 0 ? finished.join(", ") : "none"}. ${detail}`,
+        );
+      }
+    }
+    console.log(formatInstallCounts(totals));
     return;
   }
   await installInteractively(options);

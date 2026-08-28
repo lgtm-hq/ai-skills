@@ -56,7 +56,7 @@ export function parseArguments(argv) {
       index += 1;
     } else if (argument === "--skill") {
       if (!value) {
-        throw new Error("--skill requires a skill name");
+        throw new Error("--skill requires a plugin id");
       }
       options.skills.push(value);
       index += 1;
@@ -113,11 +113,14 @@ export function validateUnattendedOptions(options) {
   if (options.agents.length === 0) {
     throw new Error("-y requires at least one -a/--agent");
   }
-  if (!options.vendor && !options.bundle) {
-    throw new Error("-y requires --vendor or --bundle");
+  if (options.vendor && (options.bundle || options.skills.length > 0)) {
+    throw new Error("Vendor installs are plugin-atomic; omit --skill and --bundle");
   }
-  if (options.skills.length === 0 && !options.bundle) {
-    throw new Error("-y requires at least one --skill for a vendor");
+  if (!options.vendor && !options.bundle && options.skills.length === 0) {
+    throw new Error("-y requires --skill (plugin id), --bundle, or --vendor");
+  }
+  if (options.bundle && options.skills.length > 0) {
+    throw new Error("Choose plugins via --skill or --bundle, not both");
   }
   // Upstream `skills` has no conflict policy. Accept omitted/`overwrite` only so
   // keep|skip cannot silently no-op under a fail-closed API.

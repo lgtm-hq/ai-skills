@@ -24,10 +24,12 @@ content stays first-party only.
 
 The unit of install is a **plugin**. A plugin is a named group of skills (and,
 later, other components). Contents stay visible; native hosts install the
-plugin as a whole. The gateway (`sk`) currently projects a plugin through
-`--bundle <id>` (native projectors and plugin-only UX are later issues).
-If you previously used the skills CLI or the gateway wizard, switch to a
-host plugin marketplace command below, or `sk install --bundle`.
+plugin as a whole. The gateway (`sk`) installs plugins atomically — the
+TUI is a plugin checklist, `--skill` / `--bundle` name a plugin, and
+`--vendor` installs that vendor plugin whole. Native projectors are a
+later issue. If you previously used the skills CLI or a per-skill
+gateway cart, wipe and reinstall, or switch to a host plugin marketplace
+command below.
 
 Pin the gateway to a release. Native `marketplace add` tracks the default
 branch unless you append a git tag. The npm version matches the git tag
@@ -81,8 +83,9 @@ bunx --package=@lgtm-hq/ai-skills@0.22.1 sk install -y --global \
   -a cursor --bundle review
 ```
 
-Unattended installs need an explicit scope and agent. `--bundle` takes a
-plugin id from the table below (`git-pr`, `review`, `standards`, …).
+Unattended installs need an explicit scope and agent. `--bundle` and
+`--skill` take a plugin id from the table below (`git-pr`, `review`,
+`standards`, …). `--vendor <id>` installs that vendor plugin whole.
 
 > [!WARNING]
 > Pin the gateway to a release. Plugins are instructions your agents
@@ -136,10 +139,13 @@ JSON as build output. Settled *why* lives in
   - Project: `./ai-skills-lock.json`
   - v1 locks are treated as empty — wipe and reinstall. `list` annotates
     MISSING and MODIFIED installs instead of listing them as healthy.
-- **`update`** refreshes lock-managed installs to the current first-party tag
-  / vendor SHAs and prunes entries missing on disk.
-- **`remove`** / **`list`** operate on the gateway lock after shelling out to
-  the upstream installer where needed.
+- **`update`** refreshes lock-managed plugins whose pin moved or files
+  drifted; current matching pins are a no-op. Entries missing on disk
+  are pruned.
+- **`remove`** deletes a whole plugin: hash-verified files only, with a
+  warning for locally modified paths, then prunes empty directory trees.
+- **`list`** shows installed plugins, per-agent status, and contained
+  skill names (read-only).
 - **`adopt`** imports existing `skills add` installs into the gateway lock
   from `skills-lock.json` + on-disk agent skill dirs (no reinstall).
   Ambiguous sources are skipped with a report under `-y`, or confirmed

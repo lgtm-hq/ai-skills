@@ -193,7 +193,7 @@ def test_repo_readme_install_paths_are_plugin_level() -> None:
     assert_that(readme).contains("~/.cursor/plugins/local/ai-skills")
     assert_that(readme).contains("mkdir -p ~/.cursor/plugins/local")
     assert_that(readme).contains("Harness-agnostic by construction")
-    assert_that(readme).does_not_contain("--skill")
+    assert_that(readme).contains("`--skill` / `--bundle` name a plugin")
     assert_that(readme).does_not_contain("--all")
     assert_that(readme).does_not_contain("Toggle skills")
     assert_that(readme).does_not_contain("The seven first-party plugins")
