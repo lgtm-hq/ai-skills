@@ -980,6 +980,60 @@ describe("gateway maintenance commands", () => {
     expect(writes[1].plugins.review.agents["claude-code"]).toBeUndefined();
   });
 
+  test("does not restore deleted Cursor or explode agents after CLI uninstall fails", async () => {
+    const writes = [];
+    const claude = {
+      files: { "lint/SKILL.md": "" },
+      projector: "native",
+      root: "cli:claude-code",
+    };
+    const mixedLock = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            "claude-code": claude,
+            cursor: {
+              files: { "lint/SKILL.md": "abc" },
+              projector: "native",
+              root: "/tmp/project/.cursor/plugins/local/review",
+            },
+            codex: {
+              files: { "lint/SKILL.md": "abc" },
+              projector: "explode",
+              root: "/tmp/project/.codex/skills",
+            },
+          },
+          projector: "explode",
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.0.0-dev",
+          vendor: "lgtm-hq",
+          version: "0.0.0-dev",
+        }),
+      },
+    };
+    await expect(
+      removeSkills(options, {
+        exec: async () => ({ status: 1, stderr: "permission denied", stdout: "" }),
+        hash: async () => {
+          const error = new Error("ENOENT");
+          error.code = "ENOENT";
+          throw error;
+        },
+        readLock: async () => mixedLock,
+        run: async () => {},
+        writeLock: async (next) => {
+          writes.push(next);
+        },
+      }),
+    ).rejects.toThrow("claude plugin uninstall failed: permission denied");
+    expect(writes).toHaveLength(2);
+    expect(writes[1].plugins.review.agents).toEqual({ "claude-code": claude });
+    expect(writes[1].plugins.review.agents.cursor).toBeUndefined();
+    expect(writes[1].plugins.review.agents.codex).toBeUndefined();
+    expect(writes[1].plugins.review.projector).toBe("native");
+  });
+
   test("keeps the uninstall error when lock restore fails", async () => {
     const warnings = [];
     const nativeLock = {

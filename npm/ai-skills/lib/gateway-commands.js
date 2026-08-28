@@ -786,8 +786,9 @@ async function siblingLockHasCliNative(pluginId, agent, scope, readLock, lockEnv
  * Put plugins back in the lock when host CLI uninstall fails after the write.
  *
  * Lock removal is persisted before uninstall so a write failure cannot drop a
- * still-tracked host plugin. If uninstall then fails, restore only CLI agents
- * that did not finish so a succeeded sibling host is not recorded as present.
+ * still-tracked host plugin. If uninstall then fails, restore only unfinished
+ * CLI agents. Cursor-native and explode lanes are already deleted before the
+ * lock write; restamping them would report MISSING and rematerialize on update.
  *
  * @param {object} args - Named arguments.
  * @param {import("./lockfile.js").GatewayLock} args.lock - Lock snapshot from before this remove.
@@ -804,18 +805,29 @@ async function restoreLockAfterCliUninstallFailure(args) {
   const restoredPlugins = { ...args.plugins };
   for (const [pluginId, remaining] of args.remainingAgents) {
     const original = args.lock.plugins[pluginId];
-    const restoredAgents = { ...original.agents };
-    for (const agent of partitionLockedLanes(original).cliNative) {
-      if (!remaining.has(agent)) {
-        delete restoredAgents[agent];
+    /** @type {import("./lockfile.js").PluginLockEntry["agents"]} */
+    const restoredAgents = {};
+    for (const agent of remaining) {
+      const install = original.agents[agent];
+      if (install) {
+        restoredAgents[agent] = install;
       }
     }
     if (Object.keys(restoredAgents).length === 0) {
       continue;
     }
-    restoredPlugins[pluginId] = {
+    const restoredEntry = {
       ...original,
       agents: restoredAgents,
+    };
+    const projectorValues = Object.keys(restoredAgents).map((agent) =>
+      agentProjector(restoredEntry, agent),
+    );
+    restoredPlugins[pluginId] = {
+      ...restoredEntry,
+      projector: projectorValues.every((value) => value === PROJECTOR_NATIVE)
+        ? PROJECTOR_NATIVE
+        : PROJECTOR_EXPLODE,
     };
   }
   try {
