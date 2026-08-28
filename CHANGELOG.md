@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **gateway**: plugin-only selection for install/list/update/remove. `--skill`
+  names a plugin, not a skill; vendor cherry-picks are rejected. `update`
+  no-ops when the pin and files match; `remove` hash-verifies deletes and
+  leaves modified files with a warning. A failed plugin install rolls back
+  newly written skill directories. Wipe and reinstall (`sk remove` then
+  `sk install --bundle` / `--skill` / `--vendor`) if an older per-skill
+  cart left a mixed lock.
+
 ### Deprecated
 
 ### Removed
