@@ -160,17 +160,21 @@ plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-sa
   `SKILL.md` listed as `SKIPPED`) and fail CI on unresolved explode-name
   or agent-stem collisions against other baked plugins or first-party
   `skills/` names.
-- Stage the complete tree in a temp directory and publish it with an
-  atomic directory exchange (`renameat2` / `renamex_np`) so
-  `plugins-baked/` is never absent. A failed exchange leaves the
-  previous tree in place.
+- Stage the complete tree in a temp directory and publish it by
+  replacing children of the existing `plugins-baked/` directory so
+  the destination path and inode stay put. A failed replace restores
+  the previous children. `plugins-baked/` is never removed.
 - Write `plugins-baked/BAKE.json` (registry pin including repo + plugin
   slice + coverage renderer inputs + a path→digest inventory).
-  `--check` re-renders `COVERAGE.md` from those inputs, compares the
-  lock to `vendors.yaml` and the committed tree, and requires all four
-  host manifests to match the pin-derived version.
-- Stamp plugin versions from `displayRef` when it is a tag; floating
-  pins such as `latest` use the short SHA.
+  `--check` allowlists lock keys, re-derives ingested counts / explode
+  names / collisions from the baked tree, re-renders `COVERAGE.md`,
+  compares the lock to `vendors.yaml` and the committed tree, and
+  requires all four host manifests to match the pin-derived version.
+  Skipped vendor-tree paths cannot be reconstructed without a fetch.
+- Stamp plugin versions from `displayRef` when it is a `major.minor.patch`
+  tag (optional `v` prefix and prerelease suffix); floating pins such as
+  `latest` and non-tag prefixes such as `v1.2-not-a-version` use the
+  short SHA.
 
 ```bash
 uv run python scripts/bake_vendor_plugins.py
@@ -180,10 +184,10 @@ uv run python scripts/bake_vendor_plugins.py --check
 Production `vendors.yaml` stays index-only until plugin slices are
 filled; bake still emits an empty marketplace, coverage file, and
 `BAKE.json` lock so `--check` has a drift gate. ``--check`` compares
-that lock to `vendors.yaml` (SHA, displayRef, plugin slices) and to
-the committed coverage digest, and requires all four host manifests
-to match the pin-derived version. A path→digest inventory in
-`BAKE.json` rejects extra, missing, or modified generated files.
+that lock to `vendors.yaml` (SHA, displayRef, plugin slices) and
+cross-checks coverage inputs against the baked tree. A path→digest
+inventory in `BAKE.json` rejects extra, missing, or modified generated
+files. Extra lock keys and a non-mapping `BAKE.json` fail closed.
 
 ## Pull requests
 

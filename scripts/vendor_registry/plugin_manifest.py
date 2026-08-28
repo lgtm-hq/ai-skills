@@ -136,8 +136,10 @@ def render_bake_manifest(
 
     The lock records the plugin-relevant registry slice, coverage renderer
     inputs, and a path→digest map of every generated file except the lock
-    itself. ``--check`` re-renders ``COVERAGE.md`` from those inputs so a
-    forged report cannot be made self-consistent by updating a digest.
+    itself. ``--check`` allowlists lock keys, re-derives ingested counts,
+    explode names, and collisions from the baked tree, and re-renders
+    ``COVERAGE.md`` from those disk-derived inputs plus bake-time skipped
+    paths. A coverage report cannot be forged by editing only the lock.
 
     Args:
         vendors: Registry vendors in source order.

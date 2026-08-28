@@ -24,6 +24,7 @@ from skill_frontmatter import read_frontmatter_name
 from vendor_registry.plugin_bake import bake_vendor_plugins
 from vendor_registry.plugin_bake_result import PluginBakeResult
 from vendor_registry.plugin_manifest import (
+    GENERATED_NOTICE,
     bake_lock_vendors,
     plugin_manifest_files,
     render_bake_manifest,
@@ -52,6 +53,21 @@ BAKE_MANIFEST_FILENAME = "BAKE.json"
 MARKETPLACE_RELATIVE = Path(".claude-plugin") / "marketplace.json"
 _USER_AGENT = "lgtm-hq-ai-skills-vendor-plugin-baker"
 _MAX_REDIRECTS = 5
+_LOCK_KEYS = (
+    "$generated",
+    "coverageSha256",
+    "coverageInputs",
+    "vendors",
+    "files",
+)
+_COVERAGE_INPUT_KEYS = (
+    "skippedByVendor",
+    "ingestedCounts",
+    "fetchedVendors",
+    "collisions",
+    "agentCollisions",
+    "explodeNameCount",
+)
 
 
 def _repo_root() -> Path:
@@ -180,7 +196,14 @@ def check(*, repo_root: Path) -> int:
     """
     try:
         _check_baked_output(repo_root=repo_root)
-    except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError) as error:
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        KeyError,
+        AttributeError,
+        json.JSONDecodeError,
+    ) as error:
         print(error, file=sys.stderr)
         return 1
     return 0
@@ -488,6 +511,261 @@ def _coverage_inputs(
     }
 
 
+def _parse_bake_lock(*, lock: object) -> dict[str, object]:
+    """Validate ``BAKE.json`` shape before ``--check`` trusts any field.
+
+    Args:
+        lock: Parsed JSON value.
+
+    Returns:
+        Mapping with the allowlisted lock keys.
+
+    Raises:
+        TypeError: If the lock is not a mapping.
+        ValueError: If the lock has extra or missing keys.
+    """
+    mapping = _require_mapping(value=lock, label="BAKE.json")
+    _require_exact_keys(mapping=mapping, required=_LOCK_KEYS, label="BAKE.json")
+    if mapping["$generated"] != GENERATED_NOTICE:
+        msg = "BAKE.json $generated does not match the bake renderer"
+        raise ValueError(msg)
+    _require_mapping(value=mapping["files"], label="BAKE.json files")
+    _parse_coverage_inputs(inputs=mapping["coverageInputs"])
+    return mapping
+
+
+def _parse_coverage_inputs(*, inputs: object) -> dict[str, object]:
+    """Validate coverage renderer inputs stored in the lock.
+
+    Args:
+        inputs: Parsed ``coverageInputs`` value.
+
+    Returns:
+        Mapping with the allowlisted coverage input keys.
+
+    Raises:
+        TypeError: If the object is not a mapping.
+        ValueError: If the object has extra or missing keys.
+    """
+    mapping = _require_mapping(value=inputs, label="BAKE.json coverageInputs")
+    _require_exact_keys(
+        mapping=mapping,
+        required=_COVERAGE_INPUT_KEYS,
+        label="BAKE.json coverageInputs",
+    )
+    return mapping
+
+
+def _require_mapping(*, value: object, label: str) -> dict[str, object]:
+    """Return ``value`` when it is a JSON object.
+
+    Args:
+        value: Parsed JSON value.
+        label: Field name for error messages.
+
+    Returns:
+        The mapping.
+
+    Raises:
+        TypeError: If ``value`` is not a ``dict``.
+    """
+    if not isinstance(value, dict):
+        msg = f"{label} must be a mapping"
+        raise TypeError(msg)
+    return value
+
+
+def _require_exact_keys(
+    *,
+    mapping: dict[str, object],
+    required: tuple[str, ...],
+    label: str,
+) -> None:
+    """Fail closed when a JSON object has extra or missing keys.
+
+    Args:
+        mapping: Parsed JSON object.
+        required: Allowlisted keys in canonical order.
+        label: Field name for error messages.
+
+    Raises:
+        ValueError: If a required key is missing or an extra key is present.
+    """
+    extra = sorted(set(mapping) - set(required))
+    missing = [key for key in required if key not in mapping]
+    if missing:
+        msg = f"{label} missing key: {missing[0]!r}"
+        raise ValueError(msg)
+    if extra:
+        msg = f"{label} unexpected key: {extra[0]!r}"
+        raise ValueError(msg)
+
+
+def _assert_coverage_matches_tree(
+    *,
+    lock: dict[str, object],
+    vendors: tuple[Vendor, ...],
+    baked_root: Path,
+    results: tuple[PluginBakeResult, ...],
+    skill_collisions: tuple[str, ...],
+    agent_collisions: tuple[str, ...],
+    coverage_text: str,
+    coverage_path: Path,
+    bake_manifest_path: Path,
+) -> None:
+    """Re-derive coverage inputs from disk and re-render the report.
+
+    Skipped vendor-tree paths cannot be reconstructed without a fetch.
+    Ingested counts, explode names, fetched vendor ids, and collision
+    lines are taken from the baked tree so a two-file forge of
+    ``COVERAGE.md`` plus ``coverageInputs`` cannot invent ingest stats.
+
+    Args:
+        lock: Validated bake lock.
+        vendors: Registry vendors.
+        baked_root: ``plugins-baked`` directory.
+        results: Disk-derived bake results.
+        skill_collisions: Skill explode-name collision lines.
+        agent_collisions: Agent-stem collision lines.
+        coverage_text: Committed ``COVERAGE.md`` bytes as text.
+        coverage_path: Path to ``COVERAGE.md`` for error messages.
+        bake_manifest_path: Path to ``BAKE.json`` for error messages.
+
+    Raises:
+        ValueError: If lock coverage inputs or the committed report drift
+            from the baked tree.
+    """
+    inputs = _parse_coverage_inputs(inputs=lock["coverageInputs"])
+    (
+        ingested_counts,
+        fetched_vendors,
+        collisions,
+        agent_collision_lines,
+        explode_name_count,
+    ) = _disk_derived_coverage_inputs(
+        baked_root=baked_root,
+        vendors=vendors,
+        results=results,
+        skill_collisions=skill_collisions,
+        agent_collisions=agent_collisions,
+    )
+    if inputs["ingestedCounts"] != ingested_counts:
+        msg = f"Generated file is stale: {bake_manifest_path}"
+        raise ValueError(msg)
+    if inputs["fetchedVendors"] != fetched_vendors:
+        msg = f"Generated file is stale: {bake_manifest_path}"
+        raise ValueError(msg)
+    if inputs["collisions"] != collisions:
+        msg = f"Generated file is stale: {bake_manifest_path}"
+        raise ValueError(msg)
+    if inputs["agentCollisions"] != agent_collision_lines:
+        msg = f"Generated file is stale: {bake_manifest_path}"
+        raise ValueError(msg)
+    if inputs["explodeNameCount"] != explode_name_count:
+        msg = f"Generated file is stale: {bake_manifest_path}"
+        raise ValueError(msg)
+    skipped_by_vendor = _skipped_by_vendor_from_lock(
+        skipped=inputs["skippedByVendor"],
+        fetched_vendors=frozenset(fetched_vendors),
+    )
+    expected_coverage = render_coverage_report(
+        vendors=vendors,
+        skipped_by_vendor=skipped_by_vendor,
+        ingested_counts=ingested_counts,
+        fetched_vendors=frozenset(fetched_vendors),
+        collisions=tuple(collisions),
+        agent_collisions=tuple(agent_collision_lines),
+        explode_name_count=explode_name_count,
+    )
+    if coverage_text != expected_coverage:
+        msg = f"Generated file is stale: {coverage_path}"
+        raise ValueError(msg)
+    expected_digest = hashlib.sha256(
+        expected_coverage.encode(encoding="utf-8"),
+    ).hexdigest()
+    if lock["coverageSha256"] != expected_digest:
+        msg = f"Generated file is stale: {bake_manifest_path}"
+        raise ValueError(msg)
+
+
+def _disk_derived_coverage_inputs(
+    *,
+    baked_root: Path,
+    vendors: tuple[Vendor, ...],
+    results: tuple[PluginBakeResult, ...],
+    skill_collisions: tuple[str, ...],
+    agent_collisions: tuple[str, ...],
+) -> tuple[dict[str, int], list[str], list[str], list[str], int]:
+    """Build the coverage fields ``--check`` can re-derive without a fetch.
+
+    Args:
+        baked_root: ``plugins-baked`` directory.
+        vendors: Registry vendors.
+        results: Disk-derived bake results.
+        skill_collisions: Skill explode-name collision lines.
+        agent_collisions: Agent-stem collision lines.
+
+    Returns:
+        Ingested counts, fetched vendor ids, skill collision lines, agent
+        collision lines, and unique explode-name count.
+    """
+    ingested_counts: dict[str, int] = {}
+    fetched: list[str] = []
+    for vendor in vendors:
+        if not vendor.plugins:
+            continue
+        fetched.append(vendor.id)
+        ingested_counts[vendor.id] = sum(
+            len(find_skill_markdown(root=baked_root / plugin.id))
+            for plugin in vendor.plugins
+        )
+    explode_name_count = len(
+        {name for result in results for name in result.explode_names},
+    )
+    return (
+        ingested_counts,
+        sorted(fetched),
+        list(skill_collisions),
+        list(agent_collisions),
+        explode_name_count,
+    )
+
+
+def _skipped_by_vendor_from_lock(
+    *,
+    skipped: object,
+    fetched_vendors: frozenset[str],
+) -> dict[str, tuple[str, ...]]:
+    """Parse lock skipped paths that cannot be reconstructed offline.
+
+    Args:
+        skipped: Parsed ``skippedByVendor`` value.
+        fetched_vendors: Vendor ids that declared plugin slices.
+
+    Returns:
+        Vendor id → skipped ``SKILL.md`` paths.
+
+    Raises:
+        TypeError: If skipped values are not lists of strings.
+        ValueError: If skipped keys are not fetched vendors.
+    """
+    mapping = _require_mapping(value=skipped, label="BAKE.json skippedByVendor")
+    extra = sorted(set(mapping) - fetched_vendors)
+    if extra:
+        msg = f"BAKE.json skippedByVendor unexpected vendor: {extra[0]!r}"
+        raise ValueError(msg)
+    parsed: dict[str, tuple[str, ...]] = {}
+    for vendor_id, paths in mapping.items():
+        if not isinstance(paths, list):
+            msg = f"BAKE.json skippedByVendor[{vendor_id!r}] must be a list"
+            raise TypeError(msg)
+        if any(not isinstance(path, str) for path in paths):
+            msg = f"BAKE.json skippedByVendor[{vendor_id!r}] must be strings"
+            raise TypeError(msg)
+        parsed[vendor_id] = tuple(paths)
+    return parsed
+
+
 def _check_baked_output(*, repo_root: Path) -> None:
     """Fail closed if committed bake output is missing, stale, or unsafe.
 
@@ -513,36 +791,13 @@ def _check_baked_output(*, repo_root: Path) -> None:
     if not bake_manifest_path.is_file():
         msg = f"Missing generated file: {bake_manifest_path}"
         raise ValueError(msg)
-    lock = json.loads(bake_manifest_path.read_text(encoding="utf-8"))
-    if lock.get("vendors") != bake_lock_vendors(vendors=vendors):
-        msg = f"Generated file is stale: {bake_manifest_path}"
-        raise ValueError(msg)
-    inputs = lock["coverageInputs"]
-    expected_coverage = render_coverage_report(
-        vendors=vendors,
-        skipped_by_vendor={
-            vendor_id: tuple(paths)
-            for vendor_id, paths in inputs["skippedByVendor"].items()
-        },
-        ingested_counts={
-            vendor_id: int(count)
-            for vendor_id, count in inputs["ingestedCounts"].items()
-        },
-        fetched_vendors=frozenset(inputs["fetchedVendors"]),
-        collisions=tuple(inputs["collisions"]),
-        agent_collisions=tuple(inputs["agentCollisions"]),
-        explode_name_count=int(inputs["explodeNameCount"]),
+    lock = _parse_bake_lock(
+        lock=json.loads(bake_manifest_path.read_text(encoding="utf-8")),
     )
-    if coverage_text != expected_coverage:
-        msg = f"Generated file is stale: {coverage_path}"
-        raise ValueError(msg)
-    expected_digest = hashlib.sha256(
-        expected_coverage.encode(encoding="utf-8"),
-    ).hexdigest()
-    if lock.get("coverageSha256") != expected_digest:
+    if lock["vendors"] != bake_lock_vendors(vendors=vendors):
         msg = f"Generated file is stale: {bake_manifest_path}"
         raise ValueError(msg)
-    if lock.get("files") != _baked_file_digests(baked_root=baked_root):
+    if lock["files"] != _baked_file_digests(baked_root=baked_root):
         msg = f"Generated file is stale: {bake_manifest_path}"
         raise ValueError(msg)
     expected_ids = [plugin.id for vendor in vendors for plugin in vendor.plugins]
@@ -595,6 +850,17 @@ def _check_baked_output(*, repo_root: Path) -> None:
                 agent_collisions=agent_collisions,
             ),
         )
+    _assert_coverage_matches_tree(
+        lock=lock,
+        vendors=vendors,
+        baked_root=baked_root,
+        results=results,
+        skill_collisions=skill_collisions,
+        agent_collisions=agent_collisions,
+        coverage_text=coverage_text,
+        coverage_path=coverage_path,
+        bake_manifest_path=bake_manifest_path,
+    )
     marketplace_path = baked_root / MARKETPLACE_RELATIVE
     expected_marketplace = render_marketplace(
         plugins=_marketplace_entries(vendors=vendors),

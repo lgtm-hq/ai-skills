@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tarfile
 from io import BytesIO
 from pathlib import Path
@@ -11,7 +12,6 @@ from pathlib import Path
 import bake_vendor_plugins
 import pytest
 from assertpy import assert_that
-from vendor_registry import safe_tree
 from vendor_registry.plugin_version import plugin_version
 from vendor_registry.safe_tree import (
     copy_tree,
@@ -107,6 +107,15 @@ def test_plugin_version_uses_short_sha_for_latest() -> None:
     assert_that(plugin_version(sha=_SHA, display_ref=None)).is_equal_to(_SHORT_SHA)
     assert_that(plugin_version(sha=_SHA, display_ref="main")).is_equal_to(_SHORT_SHA)
     assert_that(plugin_version(sha=_SHA, display_ref="HEAD")).is_equal_to(_SHORT_SHA)
+    assert_that(plugin_version(sha=_SHA, display_ref="master")).is_equal_to(
+        _SHORT_SHA,
+    )
+    assert_that(
+        plugin_version(sha=_SHA, display_ref="v1.2-not-a-version"),
+    ).is_equal_to(_SHORT_SHA)
+    assert_that(plugin_version(sha=_SHA, display_ref="v1.2")).is_equal_to(
+        _SHORT_SHA,
+    )
 
 
 def test_plugin_version_uses_display_ref_tag() -> None:
@@ -114,6 +123,12 @@ def test_plugin_version_uses_display_ref_tag() -> None:
     assert_that(
         plugin_version(sha=_SHA, display_ref="v1.2.3"),
     ).is_equal_to("v1.2.3")
+    assert_that(
+        plugin_version(sha=_SHA, display_ref="1.2.3"),
+    ).is_equal_to("1.2.3")
+    assert_that(
+        plugin_version(sha=_SHA, display_ref="v1.2.3-rc.1"),
+    ).is_equal_to("v1.2.3-rc.1")
 
 
 def test_bake_emits_empty_marketplace_when_no_plugins(
@@ -511,6 +526,71 @@ def test_check_rejects_coverage_and_lock_digest_forge(
     lock["coverageSha256"] = digest
     lock["files"]["COVERAGE.md"] = digest
     lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_forged_coverage_inputs(
+    tmp_path: Path,
+) -> None:
+    """Invented ingest stats in COVERAGE.md plus BAKE.json still fail."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    coverage_path = tmp_path / "plugins-baked" / "COVERAGE.md"
+    forged = coverage_path.read_text(encoding="utf-8").replace(
+        "1 ingested, 0 SKILL.md skipped",
+        "99 ingested, 0 SKILL.md skipped",
+    )
+    coverage_path.write_text(forged, encoding="utf-8")
+    digest = hashlib.sha256(forged.encode(encoding="utf-8")).hexdigest()
+    lock_path = tmp_path / "plugins-baked" / "BAKE.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["coverageSha256"] = digest
+    lock["files"]["COVERAGE.md"] = digest
+    lock["coverageInputs"]["ingestedCounts"]["example-vendor"] = 99
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_extra_bake_lock_keys(
+    tmp_path: Path,
+) -> None:
+    """BAKE.json metadata and shape are allowlisted."""
+    _write_registry(repo_root=tmp_path, plugins_yaml="")
+    bake_vendor_plugins.bake(repo_root=tmp_path)
+    lock_path = tmp_path / "plugins-baked" / "BAKE.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["extra"] = True
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_non_mapping_bake_lock(
+    tmp_path: Path,
+) -> None:
+    """A JSON array BAKE.json fails closed instead of AttributeError."""
+    _write_registry(repo_root=tmp_path, plugins_yaml="")
+    bake_vendor_plugins.bake(repo_root=tmp_path)
+    (tmp_path / "plugins-baked" / "BAKE.json").write_text(
+        "[]\n",
+        encoding="utf-8",
+    )
 
     assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
 
@@ -1274,21 +1354,25 @@ def test_install_directory_does_not_rename_live_destination(
     source.mkdir()
     (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
 
+    original_rename = Path.rename
+
     def _forbidden_rename(self: Path, target: Path | str) -> Path:
-        """Fail if the live destination is renamed aside.
+        """Fail if the live destination directory itself is renamed.
 
         Args:
             self: Path being renamed.
             target: Rename destination.
 
         Returns:
-            Never returns.
+            The renamed path when ``self`` is not the live destination.
 
         Raises:
-            AssertionError: Always; dest must stay at its path.
+            AssertionError: If the live destination directory is renamed.
         """
-        msg = "Path.rename must not move the live destination aside"
-        raise AssertionError(msg)
+        if self.resolve() == dest.resolve():
+            msg = "Path.rename must not move the live destination aside"
+            raise AssertionError(msg)
+        return original_rename(self, target)
 
     monkeypatch.setattr(Path, "rename", _forbidden_rename)
     install_directory(source=source, destination=dest)
@@ -1299,34 +1383,93 @@ def test_install_directory_does_not_rename_live_destination(
     )
 
 
-def test_install_directory_leaves_previous_tree_on_exchange_failure(
+def test_install_directory_leaves_previous_tree_on_child_replace_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A failed atomic exchange must not remove plugins-baked."""
+    """A failed child replace must restore plugins-baked contents."""
     dest = tmp_path / "plugins-baked"
     dest.mkdir()
     (dest / "COVERAGE.md").write_text("old\n", encoding="utf-8")
     source = tmp_path / "next"
     source.mkdir()
     (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+    original_rename = Path.rename
 
-    def _fail_exchange(*, first: Path, second: Path) -> None:
-        """Inject an exchange failure.
+    def _fail_source_child(self: Path, target: Path | str) -> Path:
+        """Inject a failure while publishing staged children.
 
         Args:
-            first: Staged tree.
-            second: Live destination.
+            self: Path being renamed.
+            target: Rename destination.
+
+        Returns:
+            The renamed path when ``self`` is not a staged child.
 
         Raises:
-            OSError: Always.
+            OSError: When renaming a child of the staged tree.
         """
-        msg = "injected exchange failure"
-        raise OSError(msg)
+        try:
+            self.relative_to(source)
+            from_source = self != source
+        except ValueError:
+            from_source = False
+        if from_source:
+            msg = "injected child replace failure"
+            raise OSError(msg)
+        return original_rename(self, target)
 
-    monkeypatch.setattr(safe_tree, "_exchange_paths", _fail_exchange)
+    monkeypatch.setattr(Path, "rename", _fail_source_child)
 
-    with pytest.raises(OSError, match="injected exchange failure"):
+    with pytest.raises(OSError, match="injected child replace failure"):
+        install_directory(source=source, destination=dest)
+
+    assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to(
+        "old\n",
+    )
+
+
+def test_install_directory_preserves_destination_inode_for_resident_cwd(
+    tmp_path: Path,
+) -> None:
+    """A process cwd'd into plugins-baked keeps a valid working directory."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "old.txt").write_text("old\n", encoding="utf-8")
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "new.txt").write_text("new\n", encoding="utf-8")
+    dest_inode = dest.stat().st_ino
+    previous_cwd = Path.cwd()
+    try:
+        os.chdir(dest)
+        install_directory(source=source, destination=dest)
+        Path("probe.txt").write_text("ok\n", encoding="utf-8")
+        assert_that(Path.cwd().resolve()).is_equal_to(dest.resolve())
+    finally:
+        os.chdir(previous_cwd)
+
+    assert_that(dest.stat().st_ino).is_equal_to(dest_inode)
+    assert_that((dest / "new.txt").is_file()).is_true()
+    assert_that((dest / "old.txt").exists()).is_false()
+    assert_that((dest / "probe.txt").read_text(encoding="utf-8")).is_equal_to(
+        "ok\n",
+    )
+
+
+def test_install_directory_rejects_leftover_backup(
+    tmp_path: Path,
+) -> None:
+    """A leftover backup directory must not be overwritten silently."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "COVERAGE.md").write_text("old\n", encoding="utf-8")
+    (tmp_path / ".plugins-baked.bak").mkdir()
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="leftover bake backup"):
         install_directory(source=source, destination=dest)
 
     assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to(
