@@ -172,6 +172,11 @@ describe("parseArguments", () => {
     expect(() => parseArguments(["install", "--repair"])).toThrow("doctor-only");
   });
 
+  test("rejects --migrate on install", () => {
+    expect(() => parseArguments(["install", "--migrate", "cursor"])).toThrow("doctor-only");
+    expect(() => parseArguments(["--migrate", "cursor"])).toThrow("doctor-only");
+  });
+
   test("rejects --migrate on an unknown host", () => {
     expect(() => parseArguments(["doctor", "--migrate", "notepad"])).toThrow("Unknown agent");
   });

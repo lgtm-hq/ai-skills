@@ -240,6 +240,7 @@ describe("ensureHostCapability", () => {
         { home },
       );
       const result = await ensureHostCapability("cursor", {
+        cwd: home,
         exec: async () => {
           const error = new Error("not found");
           error.code = "ENOENT";
@@ -375,13 +376,34 @@ describe("runDoctor", () => {
 
   test("repair re-materializes only missing plugins", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-repair-"));
-    const installs = [];
+    const sourceRoot = join(cwd, "catalog");
+    const missingFile = join(cwd, ".cursor/skills/lint/SKILL.md");
+    const healthyFile = join(cwd, ".cursor/skills/jira/SKILL.md");
     try {
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(cwd, ".cursor/skills/jira"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(healthyFile, "# jira keep\n");
       await writeLockfile(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
-            review: {
+            jira: {
+              agents: {
+                cursor: {
+                  files: { "jira/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+            lint: {
               agents: {
                 cursor: {
                   files: { "lint/SKILL.md": "abc" },
@@ -412,31 +434,16 @@ describe("runDoctor", () => {
           yes: true,
         },
         {
-          access: async () => false,
           exec: async () => ({ status: 1, stderr: "", stdout: "" }),
           home: cwd,
-          installExtras: {
-            explode: async () => {
-              installs.push("explode");
-              return {
-                claimed: { cursor: { "lint/SKILL.md": "abc" } },
-                skipped: [],
-                swappedDests: [],
-              };
-            },
-            sourceRoot: cwd,
-          },
-          lockEnvironment: {
-            cwd,
-            exists: async () => false,
-            hash: async () => "abc",
-            home: cwd,
-          },
+          installExtras: { sourceRoot },
+          lockEnvironment: { cwd, hash: async () => "abc", home: cwd },
           log: () => {},
         },
       );
-      expect(result.repaired).toEqual(["review"]);
-      expect(installs).toEqual(["explode"]);
+      expect(result.repaired).toEqual(["lint"]);
+      expect(await readFile(missingFile, "utf8")).toBe("# lint\n");
+      expect(await readFile(healthyFile, "utf8")).toBe("# jira keep\n");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -510,10 +517,36 @@ describe("runDoctor", () => {
 
   test("report without --repair or --migrate does not rematerialize", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-report-only-"));
+    const installs = [];
     try {
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            review: {
+              agents: {
+                cursor: {
+                  files: { "lint/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
       const result = await runDoctor(
         {
-          agents: ["codex"],
+          agents: ["cursor"],
           global: false,
           migrate: null,
           project: true,
@@ -521,12 +554,26 @@ describe("runDoctor", () => {
           yes: true,
         },
         {
+          exec: async () => ({ status: 1, stderr: "", stdout: "" }),
           home: cwd,
-          lockEnvironment: { cwd, home: cwd },
+          installExtras: {
+            explode: async () => {
+              installs.push("explode");
+              throw new Error("report-only must not rematerialize");
+            },
+            sourceRoot: cwd,
+          },
+          lockEnvironment: {
+            cwd,
+            exists: async () => false,
+            hash: async () => "abc",
+            home: cwd,
+          },
           log: () => {},
         },
       );
       expect(result).toEqual({ migrated: [], repaired: [] });
+      expect(installs).toEqual([]);
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

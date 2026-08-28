@@ -90,16 +90,18 @@ Unattended installs need an explicit scope and agent. `--bundle` and
 `--skill` take a plugin id from the table below (`git-pr`, `review`,
 `standards`, …). `--vendor <id>` installs that vendor plugin whole.
 `--projector native|explode` overrides delivery. Without it, install consults
-`sk doctor`'s host cache (`~/.ai-skills/doctor.json`): probe Claude Code /
-Copilot for a working `plugin` subcommand, and Cursor for
-`~/.cursor/plugins/local/`. Codex stays exploded. Vendor installs stay
-exploded. Cursor native still needs a catalog checkout (`skills/` +
-`.claude-plugin/`). Published npm / `bunx` installs fall back to explode
-only when native is implicit; `--projector native` without a checkout
-fails closed.
+`sk doctor`'s host cache (`~/.ai-skills/doctor.json`) for hosts that are not
+already locked: probe Claude Code / Copilot for a working `plugin`
+subcommand, and Cursor for `~/.cursor/plugins/local/`. Locked agents keep
+their projector until `--migrate` or `--projector`. Codex stays exploded.
+Vendor installs stay exploded. Cursor native still needs a catalog checkout
+(`skills/` + `.claude-plugin/`). Published npm / `bunx` installs fall back
+to explode only when native is implicit; `--projector native` without a
+checkout fails closed.
 `sk doctor` prints capability, lock↔disk drift, and orphans;
-`--repair` restores missing files; `--migrate <host>` cutovers every locked
-plugin on that host. `sk install --projector` cutovers one plugin.
+`--repair` restores missing files; `--migrate <host>` cutovers locked
+first-party plugins on that host (native migrate skips vendor plugins).
+`sk install --projector` cutovers one plugin.
 See [docs/smoke-test.md](docs/smoke-test.md).
 
 > [!WARNING]
