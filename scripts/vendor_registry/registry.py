@@ -241,13 +241,20 @@ def _parse_vendor(*, raw_vendor: object, position: int) -> Vendor:
     )
 
 
-def _required_string(*, value: object, field: str, position: int) -> str:
+def _required_string(
+    *,
+    value: object,
+    field: str,
+    position: int,
+    plugin_id: str | None = None,
+) -> str:
     """Return a non-empty string field or raise a schema error.
 
     Args:
         value: Raw YAML field value.
         field: Field name for the error message.
         position: One-based vendor position for the error message.
+        plugin_id: Plugin id when the field belongs to a plugin slice.
 
     Returns:
         The validated non-empty string.
@@ -256,14 +263,15 @@ def _required_string(*, value: object, field: str, position: int) -> str:
         TypeError: If the field is not a string.
         ValueError: If the field is blank or contains control characters.
     """
+    where = _plugin_where(position=position, plugin_id=plugin_id)
     if not isinstance(value, str):
-        msg = f"Vendor {position} {field} must be a string"
+        msg = f"{where} {field} must be a string"
         raise TypeError(msg)
     if any(ord(char) < 32 or char == "\x7f" for char in value):
-        msg = f"Vendor {position} {field} must not contain control characters"
+        msg = f"{where} {field} must not contain control characters"
         raise ValueError(msg)
     if not value.strip():
-        msg = f"Vendor {position} {field} must not be empty"
+        msg = f"{where} {field} must not be empty"
         raise ValueError(msg)
     return value
 
@@ -439,6 +447,7 @@ def _parse_plugin(
         value=raw_plugin["id"],
         field="id",
         position=position,
+        plugin_id=plugin_label,
     )
     if _ID_PATTERN.fullmatch(plugin_id) is None:
         msg = f"Vendor {position} plugin {plugin_id} id must be a lowercase slug"
@@ -447,6 +456,7 @@ def _parse_plugin(
         value=raw_plugin["description"],
         field="description",
         position=position,
+        plugin_id=plugin_id,
     )
     skills_root = _parse_relative_posix_path(
         value=raw_plugin["skillsRoot"],
@@ -733,7 +743,8 @@ def _first_party_plugin_ids(*, registry_path: Path) -> frozenset[str]:
         registry_path: Path to ``vendors.yaml``.
 
     Returns:
-        First-party plugin ids, or empty when ``bundles.yaml`` is absent.
+        First-party plugin ids, or empty when ``bundles.yaml`` is absent
+        (isolated tests without a sibling catalog file).
 
     Raises:
         ValueError: If ``bundles.yaml`` exists but is malformed, or a group

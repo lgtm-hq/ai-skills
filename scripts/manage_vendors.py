@@ -236,13 +236,20 @@ def _dump_plugins(*, plugins: object, prefix: str) -> list[str]:
 
     Returns:
         YAML lines for the ``plugins`` field.
+
+    Raises:
+        TypeError: If ``plugins`` is not a list of mappings.
     """
-    if not isinstance(plugins, list) or not plugins:
+    if not isinstance(plugins, list):
+        msg = "plugins must be a list"
+        raise TypeError(msg)
+    if not plugins:
         return [f"{prefix}plugins: []"]
     lines = [f"{prefix}plugins:"]
     for plugin in plugins:
         if not isinstance(plugin, dict):
-            continue
+            msg = "plugins entries must be mappings"
+            raise TypeError(msg)
         lines.extend(_dump_plugin(plugin=plugin))
     return lines
 

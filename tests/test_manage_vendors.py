@@ -57,7 +57,14 @@ def repo_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         encoding="utf-8",
     )
     tmp_path.joinpath("bundles.yaml").write_text(
-        "---\ngroups: {}\n",
+        "---\n"
+        "groups:\n"
+        "  git-pr:\n"
+        "    id: git-pr\n"
+        "    name: Git & PR Workflow\n"
+        "    description: First-party plugin.\n"
+        "    skills:\n"
+        "      - branch\n",
         encoding="utf-8",
     )
     package_root = tmp_path / "npm" / "ai-skills"
@@ -438,3 +445,66 @@ def test_update_preserves_plugin_slices(repo_root: Path) -> None:
         "          - comment-sicko\n"
         "    license: MIT\n",
     )
+
+
+def test_update_preserves_skill_paths_and_extra_skills(repo_root: Path) -> None:
+    """SHA refresh must round-trip path-list skills and extraSkills."""
+    registry_path = repo_root / "vendors.yaml"
+    contents = registry_path.read_text(encoding="utf-8")
+    registry_path.write_text(
+        contents.replace(
+            "homepage: https://github.com/owner/existing\n",
+            "homepage: https://github.com/owner/existing\n"
+            "    plugins:\n"
+            "      - id: path-plugin\n"
+            "        description: Path-list vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            "        skills:\n"
+            "          - alpha\n"
+            "          - nested/beta\n"
+            "        extraSkills:\n"
+            "          - extras/bonus\n",
+        ),
+        encoding="utf-8",
+    )
+
+    manage_vendors.update(
+        repo_root=repo_root,
+        vendor_id="existing",
+        repo=None,
+        sha=_NEW_SHA,
+        skill_roots=None,
+        license_name=None,
+        homepage=None,
+        display_ref=None,
+    )
+
+    plugin = load_registry(registry_path=registry_path)[0].plugins[0]
+    assert_that(plugin.id).is_equal_to("path-plugin")
+    assert_that(plugin.skills).is_equal_to(("alpha", "nested/beta"))
+    assert_that(plugin.extra_skills).is_equal_to(("extras/bonus",))
+    dumped = registry_path.read_text(encoding="utf-8")
+    assert_that(dumped).contains(
+        "    plugins:\n"
+        "      - id: path-plugin\n"
+        "        description: Path-list vendor plugin.\n"
+        "        skillsRoot: skills\n"
+        "        skills:\n"
+        "          - alpha\n"
+        "          - nested/beta\n"
+        "        extraSkills:\n"
+        "          - extras/bonus\n"
+        "    license: MIT\n",
+    )
+
+
+def test_dump_plugins_rejects_non_list() -> None:
+    """Dumping must fail closed instead of coercing invalid plugin values."""
+    with pytest.raises(TypeError, match="plugins must be a list"):
+        manage_vendors._dump_plugins(plugins=None, prefix="    ")
+
+
+def test_dump_plugins_rejects_non_mapping_entry() -> None:
+    """Dumping must fail closed on a non-mapping plugin list item."""
+    with pytest.raises(TypeError, match="plugins entries must be mappings"):
+        manage_vendors._dump_plugins(plugins=["not-a-mapping"], prefix="    ")

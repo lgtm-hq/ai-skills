@@ -103,7 +103,8 @@ validated whenever `vendors.yaml` loads.
 Per plugin:
 
 - `id` — kebab-case plugin id, unique across vendors and first-party
-  `bundles.yaml` group ids
+  `bundles.yaml` group ids (skipped only when a sibling `bundles.yaml`
+  is absent, as in isolated tests)
 - `description` — non-empty single-line string
 - `skillsRoot` — canonical relative POSIX path or glob (no whitespace,
   backslashes, `.` / `..` / empty components, not absolute)
@@ -113,9 +114,10 @@ Per plugin:
 - `extraSkills` — optional repo-relative canonical paths to ingest in
   addition (no globs; omit the key rather than `null`)
 - `renameSkills` — optional `{old: new}` kebab-case map; targets are unique
-  across **all** vendors (global explode namespace). Every collision rename
-  is a reviewed registry edit, never a bake/install guess. Duplicate YAML
-  keys are rejected.
+  across **all** vendors. Collisions against first-party skill directory
+  names are reported at bake/CI (issue #378), not at schema load. Every
+  collision rename is a reviewed registry edit, never a bake/install
+  guess. Duplicate YAML keys are rejected.
 - `agents` — optional non-empty list of kebab-case agent markdown
   component names (the stem of `agents/*.md` files to ingest). Omit the
   key rather than `null`. This is not a host-id allowlist.

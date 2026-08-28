@@ -54,6 +54,18 @@ def valid_registry_path(tmp_path: Path) -> Path:
         FIXTURES_DIR.joinpath("valid-vendors.yaml").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    tmp_path.joinpath("bundles.yaml").write_text(
+        """---
+groups:
+  git-pr:
+    id: git-pr
+    name: Git & PR Workflow
+    description: First-party plugin.
+    skills:
+      - branch
+""",
+        encoding="utf-8",
+    )
     return registry_path
 
 
@@ -542,6 +554,24 @@ def test_load_registry_accepts_skill_path_list(valid_registry_path: Path) -> Non
             "skills: []",
             r'skills must be "\*" or a non-empty list',
             id="empty-skills",
+        ),
+        pytest.param(
+            'skills: "*"',
+            "skills:\n          - extras/*.md",
+            "skills entries must not contain glob metacharacters",
+            id="glob-skills-list",
+        ),
+        pytest.param(
+            "description: Example vendor plugin.",
+            'description: ""',
+            "plugin example-plugin description must not be empty",
+            id="empty-plugin-description",
+        ),
+        pytest.param(
+            "skillsRoot: skills",
+            "skillsRoot: skills\n        extra-field: nope",
+            "must contain required fields",
+            id="unknown-plugin-key",
         ),
         pytest.param(
             "extraSkills:\n          - extras/bonus",

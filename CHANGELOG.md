@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **vendors**: `skillRoots` entries must be canonical relative POSIX
+  paths (no trailing slash, whitespace, backslashes, or `.` / `..`
+  components), matching plugin `skillsRoot` rules. Globs remain allowed.
+
 ### Deprecated
 
 ### Removed
