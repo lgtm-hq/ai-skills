@@ -1,11 +1,24 @@
+import { access } from "node:fs/promises";
+import { join } from "node:path";
+
 import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
-import { mergeLockEntries, readLockfile, writeLockfile } from "./lockfile.js";
+import {
+  agentSkillsRoot,
+  hashFile,
+  LOCKFILE_VERSION,
+  mergeLockEntries,
+  PROJECTOR_EXPLODE,
+  readLockfile,
+  reconcileLock,
+  writeLockfile,
+} from "./lockfile.js";
 import { resolveScope } from "./options.js";
 import { getPackageVersion } from "./package-version.js";
 import { buildSkillsArguments, runSkills } from "./skills-runner.js";
 import {
   createClackUi,
   formatGatewayUpdateNotice,
+  formatInstallCounts,
   formatInstalledSummary,
   formatSkillStatusSuffix,
   KNOWN_AGENTS,
@@ -24,7 +37,7 @@ import { checkGatewayUpdate, checkSkillDrift, checkVendorDrift } from "./update-
  */
 
 /**
- * @typedef {{lock: {skills: Record<string, import("./lockfile.js").LockEntry>}, gatewayUpdate: {current: string, latest: string} | null, driftedVendors: Set<string>, driftedSkills: Set<string>}} WizardSignals
+ * @typedef {{lock: {plugins: Record<string, import("./lockfile.js").PluginLockEntry>}, gatewayUpdate: {current: string, latest: string} | null, driftedVendors: Set<string>, driftedSkills: Set<string>}} WizardSignals
  * Installed-state and update signals surfaced by the install wizard.
  */
 
@@ -267,14 +280,19 @@ async function readWizardLock(options, lockEnvironment) {
     try {
       return await readLockfile(scope, lockEnvironment);
     } catch {
-      return { skills: {} };
+      return {
+        gatewayVersion: "",
+        plugins: {},
+        scope,
+        version: LOCKFILE_VERSION,
+      };
     }
   };
   if (options.global || options.project) {
     return readScope(resolveScope(options));
   }
   const [globalLock, projectLock] = await Promise.all([readScope("global"), readScope("project")]);
-  return mergeLockEntries(globalLock, projectLock.skills);
+  return mergeLockEntries(globalLock, projectLock.plugins);
 }
 
 /**
@@ -288,11 +306,20 @@ function buildSkillMarkers(signals, vendorId) {
   /** @type {Map<string, string>} */
   const markers = new Map();
   const catalogVendor = vendorId ?? "lgtm-hq";
-  for (const [name, entry] of Object.entries(signals.lock.skills)) {
+  for (const [pluginId, entry] of Object.entries(signals.lock.plugins)) {
     if (entry.vendor !== catalogVendor) {
       continue;
     }
-    markers.set(name, formatSkillStatusSuffix({ entry, drifted: signals.driftedSkills.has(name) }));
+    const suffix = formatSkillStatusSuffix({
+      entry,
+      drifted: signals.driftedSkills.has(pluginId),
+    });
+    markers.set(pluginId, suffix);
+    for (const install of Object.values(entry.agents)) {
+      for (const relative of Object.keys(install.files)) {
+        markers.set(relative.split("/")[0], suffix);
+      }
+    }
   }
   return markers;
 }
@@ -629,7 +656,7 @@ async function cancelable(ui, valuePromise) {
  * @param {(args: string[]) => Promise<void>} [run] - Injectable skills process runner.
  * @param {() => Date} [now] - Injectable clock.
  * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable lockfile environment.
- * @returns {Promise<void>} Resolves when the skills CLI succeeds.
+ * @returns {Promise<{alreadyPresent: number, installed: number, repaired: number}>} Install summary counts.
  */
 export async function install(options, run = runSkills, now = () => new Date(), lockEnvironment) {
   if (options.onConflict && options.onConflict !== "overwrite") {
@@ -675,11 +702,59 @@ export async function install(options, run = runSkills, now = () => new Date(), 
     global: scope === "global",
     project: scope === "project",
   };
-  // Validate/read the lock before mutating agent skill dirs so a malformed lock
-  // fails closed instead of leaving an unlocked install behind.
   const lock = await readLockfile(scope, lockEnvironment);
-  const entries = await createLockEntries(scopedOptions, vendor, now);
-  await run(buildSkillsArguments(scopedOptions, source));
+  const pluginId = resolvePluginId(scopedOptions, vendor);
+  const existing = lock.plugins[pluginId];
+  const detectAgents = scopedOptions.agents.length === 0;
+  const agentsToInstall = await agentsNeedingInstall(
+    existing,
+    scopedOptions.agents,
+    scopedOptions.skills,
+    lockEnvironment,
+  );
+  const alreadyPresent = detectAgents ? 0 : scopedOptions.agents.length - agentsToInstall.length;
+  const repaired = detectAgents
+    ? existing
+      ? 1
+      : 0
+    : existing
+      ? agentsToInstall.filter(
+          (agent) =>
+            existing.agents[agent] &&
+            agentCoversSkills(existing.agents[agent], scopedOptions.skills),
+        ).length
+      : 0;
+  const installed = detectAgents ? (existing ? 0 : 1) : agentsToInstall.length - repaired;
+  if (!detectAgents && agentsToInstall.length === 0) {
+    return { alreadyPresent, installed, repaired };
+  }
+  const agentsForRun = detectAgents ? [] : agentsToInstall;
+  await run(
+    buildSkillsArguments(
+      {
+        ...scopedOptions,
+        agents: agentsForRun,
+      },
+      source,
+    ),
+  );
+  const agentsForLock = detectAgents
+    ? await discoverInstalledAgents(scopedOptions, lockEnvironment)
+    : agentsToInstall;
+  if (agentsForLock.length === 0) {
+    return { alreadyPresent: 0, installed: 0, repaired: 0 };
+  }
+  const entries = await createLockEntries(
+    { ...scopedOptions, agents: agentsForLock },
+    vendor,
+    now,
+    lockEnvironment,
+    pluginId,
+    detectAgents,
+  );
+  if (Object.keys(entries).length === 0) {
+    return { alreadyPresent: 0, installed: 0, repaired: 0 };
+  }
   try {
     await writeLockfile(mergeLockEntries(lock, entries), lockEnvironment);
   } catch (error) {
@@ -689,54 +764,188 @@ export async function install(options, run = runSkills, now = () => new Date(), 
         "Fix the lockfile path permissions and re-run install, or use adopt once available.",
     );
   }
+  return { alreadyPresent, installed, repaired };
 }
 
 /**
  * Build lockfile entries for an installation that completed successfully.
  *
- * @param {{agents: string[], skills: string[]}} options - Completed install options.
+ * @param {{agents: string[], bundle: string | null, skills: string[], global: boolean, project: boolean}} options - Completed install options.
  * @param {{id: string, repo: string, sha: string} | undefined} vendor - Selected vendor, if any.
  * @param {() => Date} now - Clock for installation metadata.
- * @returns {Promise<Record<string, import("./lockfile.js").LockEntry>>} Entries keyed by skill name.
+ * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable path/hash environment.
+ * @param {string} pluginId - Plugin id to record.
+ * @param {boolean} [onlyExistingFiles] - When true, omit missing SKILL.md paths instead of empty digests.
+ * @returns {Promise<Record<string, import("./lockfile.js").PluginLockEntry>>} Entries keyed by plugin id.
  */
-async function createLockEntries(options, vendor, now) {
+async function createLockEntries(
+  options,
+  vendor,
+  now,
+  lockEnvironment,
+  pluginId,
+  onlyExistingFiles = false,
+) {
   const installedAt = now().toISOString();
-  if (!vendor) {
-    return Object.fromEntries(
-      options.skills.map((name) => [
-        name,
-        {
-          agents: options.agents,
-          installedAt,
-          repo: "lgtm-hq/ai-skills",
-          sha: `v${getPackageVersion()}`,
-          skillPath: `skills/${name}/SKILL.md`,
-          vendor: "lgtm-hq",
-        },
-      ]),
-    );
-  }
-  const index = await loadVendorIndex(vendor.id);
-  const paths = new Map(index.skills.map((skill) => [skill.name, skill.path]));
-  return Object.fromEntries(
-    options.skills.map((name) => {
-      const path = paths.get(name);
-      if (!path) {
-        throw new Error(`Unknown ${vendor.id} skill: ${name}`);
+  const scope = resolveScope(options);
+  const packageVersion = getPackageVersion();
+  const exists = lockEnvironment.exists ?? pathExists;
+  const agents = {};
+  for (const agent of options.agents) {
+    const root = agentSkillsRoot(scope, agent, lockEnvironment);
+    const files = {};
+    for (const name of options.skills) {
+      const relative = `${name}/SKILL.md`;
+      const absolute = join(root, relative);
+      if (onlyExistingFiles && !(await exists(absolute))) {
+        continue;
       }
-      return [
-        name,
-        {
-          agents: options.agents,
-          installedAt,
-          repo: vendor.repo,
-          sha: vendor.sha,
-          skillPath: `${path}/SKILL.md`,
-          vendor: vendor.id,
-        },
-      ];
-    }),
+      files[relative] = await hashTrackedFile(absolute, lockEnvironment);
+    }
+    if (Object.keys(files).length === 0) {
+      continue;
+    }
+    agents[agent] = { files, root };
+  }
+  if (Object.keys(agents).length === 0) {
+    return {};
+  }
+  const entry = {
+    agents,
+    installedAt,
+    projector: PROJECTOR_EXPLODE,
+    repo: vendor?.repo ?? "lgtm-hq/ai-skills",
+    sha: vendor?.sha ?? `v${packageVersion}`,
+    vendor: vendor?.id ?? "lgtm-hq",
+    version: vendor?.sha ?? packageVersion,
+  };
+  return { [pluginId]: entry };
+}
+
+/**
+ * Hash a tracked file, using an empty digest when the path is absent.
+ *
+ * @param {string} path - Absolute file path.
+ * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable hash.
+ * @returns {Promise<string>} Hex digest, or empty string when missing.
+ */
+async function hashTrackedFile(path, lockEnvironment = {}) {
+  const hash = lockEnvironment.hash ?? hashFile;
+  try {
+    return await hash(path);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Plugin id for this install: bundle id, vendor skill name, or first skill.
+ *
+ * @param {{bundle: string | null, skills: string[]}} options - Install options.
+ * @param {{id: string} | undefined} vendor - Selected vendor, if any.
+ * @returns {string} Plugin id.
+ */
+function resolvePluginId(options, vendor) {
+  if (options.bundle) {
+    return options.bundle;
+  }
+  if (vendor) {
+    return vendor.id;
+  }
+  return options.skills[0] ?? "plugin";
+}
+
+/**
+ * Agents that are missing, modified, or missing requested skills for an existing plugin.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry | undefined} existing - Current lock entry.
+ * @param {string[]} requestedAgents - Agents requested for this install.
+ * @param {string[]} requestedSkills - Skills requested for this install.
+ * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable fs.
+ * @returns {Promise<string[]>} Agents that must be materialized.
+ */
+async function agentsNeedingInstall(existing, requestedAgents, requestedSkills, lockEnvironment) {
+  if (!existing) {
+    return requestedAgents;
+  }
+  const reconciliation = await reconcileLock(
+    {
+      gatewayVersion: "",
+      plugins: { plugin: existing },
+      scope: "project",
+      version: LOCKFILE_VERSION,
+    },
+    lockEnvironment,
   );
+  const healthy = new Set(
+    reconciliation.present.filter((item) => item.pluginId === "plugin").map((item) => item.agent),
+  );
+  return requestedAgents.filter((agent) => {
+    if (!healthy.has(agent)) {
+      return true;
+    }
+    return !agentCoversSkills(existing.agents[agent], requestedSkills);
+  });
+}
+
+/**
+ * Whether an agent install already tracks every requested skill directory.
+ *
+ * @param {import("./lockfile.js").AgentInstall | undefined} install - Per-agent lock record.
+ * @param {string[]} requestedSkills - Skills requested for this install.
+ * @returns {boolean} True when every requested skill is already tracked.
+ */
+function agentCoversSkills(install, requestedSkills) {
+  if (!install) {
+    return false;
+  }
+  const tracked = new Set(
+    Object.keys(install.files)
+      .map((relative) => relative.split("/")[0])
+      .filter(Boolean),
+  );
+  return requestedSkills.every((name) => tracked.has(name));
+}
+
+/**
+ * Agents that actually received requested skills after an untargeted install.
+ *
+ * @param {{agents: string[], skills: string[], global: boolean, project: boolean}} options - Install options.
+ * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable fs.
+ * @returns {Promise<string[]>} Detected agent ids.
+ */
+async function discoverInstalledAgents(options, lockEnvironment = {}) {
+  const exists = lockEnvironment.exists ?? pathExists;
+  const found = [];
+  for (const { value: agent } of KNOWN_AGENTS) {
+    const root = agentSkillsRoot(resolveScope(options), agent, lockEnvironment);
+    let present = false;
+    for (const name of options.skills) {
+      if (await exists(join(root, name, "SKILL.md"))) {
+        present = true;
+        break;
+      }
+    }
+    if (present) {
+      found.push(agent);
+    }
+  }
+  return found;
+}
+
+/**
+ * Test whether a path exists.
+ *
+ * @param {string} path - File path.
+ * @returns {Promise<boolean>} Whether the path exists.
+ */
+async function pathExists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -751,14 +960,18 @@ async function createLockEntries(options, vendor, now) {
 export async function installInteractively(options) {
   const completed = await completeInteractively(options);
   const finished = [];
+  const totals = { alreadyPresent: 0, installed: 0, repaired: 0 };
   for (const batch of completed.installBatches) {
     try {
-      await install({
+      const counts = await install({
         ...completed,
         bundle: null,
         vendor: batch.vendor,
         skills: batch.skills,
       });
+      totals.alreadyPresent += counts.alreadyPresent;
+      totals.installed += counts.installed;
+      totals.repaired += counts.repaired;
       finished.push(batch.vendor ?? "first-party");
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
@@ -768,4 +981,5 @@ export async function installInteractively(options) {
       );
     }
   }
+  console.log(formatInstallCounts(totals));
 }

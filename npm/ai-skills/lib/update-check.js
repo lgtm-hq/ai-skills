@@ -144,16 +144,16 @@ export async function checkVendorDrift(vendors, dependencies = {}) {
  * package version; vendor entries drift when the baked registry re-pinned the
  * vendor to a different SHA. Entries for unknown vendors are left unmarked.
  *
- * @param {{skills: Record<string, import("./lockfile.js").LockEntry>}} lock - Scope lockfile.
+ * @param {{plugins: Record<string, import("./lockfile.js").PluginLockEntry>}} lock - Scope lockfile.
  * @param {{vendors: Array<{id: string, sha: string}>, packageVersion?: string}} catalog - Baked vendor registry and running version.
- * @returns {Set<string>} Names of installed skills with an update available.
+ * @returns {Set<string>} Names of installed plugins with an update available.
  */
 export function checkSkillDrift(lock, catalog) {
   const packageVersion = catalog.packageVersion ?? getPackageVersion();
   const pins = new Map(catalog.vendors.map((vendor) => [vendor.id, vendor.sha]));
   /** @type {Set<string>} */
   const drifted = new Set();
-  for (const [name, entry] of Object.entries(lock.skills)) {
+  for (const [name, entry] of Object.entries(lock.plugins ?? {})) {
     if (entry.vendor === "lgtm-hq") {
       if (entry.sha !== `v${packageVersion}`) {
         drifted.add(name);

@@ -1,5 +1,7 @@
 import * as clack from "@clack/prompts";
 
+import { pluginAgentNames, pluginSkillNames } from "./lockfile.js";
+
 /**
  * Agents the gateway surfaces in interactive install.
  *
@@ -21,20 +23,31 @@ export const VENDOR_DRIFT_SUFFIX =
   " (upstream has newer commits — installable after a gateway re-pin)";
 
 /**
- * One-line home-screen summary of the installed skills in the given lock state.
+ * One-line home-screen summary of the installed plugins in the given lock state.
  *
- * @param {{skills: Record<string, {agents: string[]}>}} lock - Lock state (single scope, or merged scopes when undetermined).
+ * @param {{plugins: Record<string, import("./lockfile.js").PluginLockEntry>}} lock - Lock state (single scope, or merged scopes when undetermined).
  * @returns {string | null} Summary such as `12 skills installed · 3 agents`, or null when empty.
  */
 export function formatInstalledSummary(lock) {
-  const entries = Object.values(lock.skills);
+  const entries = Object.values(lock.plugins ?? {});
   if (entries.length === 0) {
     return null;
   }
-  const agents = new Set(entries.flatMap((entry) => entry.agents));
-  const skillLabel = entries.length === 1 ? "skill" : "skills";
+  const agents = new Set(entries.flatMap((entry) => pluginAgentNames(entry)));
+  const skills = new Set(entries.flatMap((entry) => pluginSkillNames(entry)));
+  const skillLabel = skills.size === 1 ? "skill" : "skills";
   const agentLabel = agents.size === 1 ? "agent" : "agents";
-  return `${entries.length} ${skillLabel} installed · ${agents.size} ${agentLabel}`;
+  return `${skills.size} ${skillLabel} installed · ${agents.size} ${agentLabel}`;
+}
+
+/**
+ * One-line install result: new agents, already healthy, and repaired.
+ *
+ * @param {{alreadyPresent: number, installed: number, repaired: number}} counts - Install summary counts.
+ * @returns {string} Summary such as `1 installed · 0 already present · 1 repaired`.
+ */
+export function formatInstallCounts(counts) {
+  return `${counts.installed} installed · ${counts.alreadyPresent} already present · ${counts.repaired} repaired`;
 }
 
 /**
@@ -69,7 +82,7 @@ function stripControlCharacters(text) {
  * Status suffix for an installed skill row in a browse list.
  *
  * @param {object} args - Named arguments.
- * @param {{agents: string[]} | undefined} args.entry - Lockfile entry for the skill in this catalog, if installed.
+ * @param {import("./lockfile.js").PluginLockEntry | undefined} args.entry - Lockfile entry for the skill in this catalog, if installed.
  * @param {boolean} args.drifted - Whether the installed pin is behind the baked catalog.
  * @returns {string} Suffix such as ` ✔ installed (claude-code) · update available (run skill update)`, or empty.
  */
@@ -77,10 +90,9 @@ export function formatSkillStatusSuffix({ entry, drifted }) {
   if (!entry) {
     return "";
   }
+  const names = pluginAgentNames(entry);
   const agents =
-    entry.agents.length > 0
-      ? ` (${entry.agents.map((agent) => stripControlCharacters(agent)).join(", ")})`
-      : "";
+    names.length > 0 ? ` (${names.map((agent) => stripControlCharacters(agent)).join(", ")})` : "";
   const drift = drifted ? " · update available (run skill update)" : "";
   return ` ✔ installed${agents}${drift}`;
 }

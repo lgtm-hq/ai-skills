@@ -131,9 +131,11 @@ JSON as build output. Settled *why* lives in
   full trees at a **commit SHA** (Renovate bumps SHAs). Discovery uses baked
   indexes shipped inside the npm package — no GitHub API at install time.
 - **Licenses:** see root [`NOTICE.md`](./NOTICE.md) and `vendors.yaml`.
-- **Gateway lockfiles** (do not overwrite stock `skills-lock.json`):
+- **Gateway lockfiles** (schema v2; do not overwrite stock `skills-lock.json`):
   - Global: `~/.ai-skills/lock.json`
   - Project: `./ai-skills-lock.json`
+  - v1 locks are treated as empty — wipe and reinstall. `list` annotates
+    MISSING and MODIFIED installs instead of listing them as healthy.
 - **`update`** refreshes lock-managed installs to the current first-party tag
   / vendor SHAs and prunes entries missing on disk.
 - **`remove`** / **`list`** operate on the gateway lock after shelling out to

@@ -216,17 +216,23 @@ describe("checkSkillDrift", () => {
    * @returns {import("../lib/lockfile.js").LockEntry} Lock entry.
    */
   const entry = (vendor, sha) => ({
-    agents: ["claude-code"],
+    agents: {
+      "claude-code": {
+        files: { "x/SKILL.md": "hash" },
+        root: "/tmp/.claude/skills",
+      },
+    },
     installedAt: "2026-01-01T00:00:00.000Z",
+    projector: "explode",
     repo: "owner/repo",
     sha,
-    skillPath: "skills/x/SKILL.md",
     vendor,
+    version: sha,
   });
 
   test("flags first-party entries recorded against an older gateway tag", () => {
     const lock = {
-      skills: {
+      plugins: {
         stale: entry("lgtm-hq", "v0.13.0"),
         fresh: entry("lgtm-hq", "v0.17.0"),
       },
@@ -236,7 +242,7 @@ describe("checkSkillDrift", () => {
 
   test("flags vendor entries whose pin no longer matches the baked registry", () => {
     const lock = {
-      skills: {
+      plugins: {
         moved: entry("acme", PIN_A),
         pinned: entry("acme", PIN_B),
         orphan: entry("unknown-vendor", PIN_A),
@@ -246,6 +252,6 @@ describe("checkSkillDrift", () => {
   });
 
   test("returns an empty set for an empty lockfile", () => {
-    expect(checkSkillDrift({ skills: {} }, catalog)).toEqual(new Set());
+    expect(checkSkillDrift({ plugins: {} }, catalog)).toEqual(new Set());
   });
 });

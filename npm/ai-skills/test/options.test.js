@@ -106,4 +106,8 @@ describe("parseArguments", () => {
       validateUnattendedCommandOptions(parsed.options, { requireAgents: false }),
     ).not.toThrow();
   });
+
+  test("rejects an unknown agent id before install", () => {
+    expect(() => parseArguments(["-y", "--global", "-a", "notepad"])).toThrow("Unknown agent");
+  });
 });

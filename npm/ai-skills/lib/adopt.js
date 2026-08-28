@@ -5,18 +5,19 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 
 import { loadVendors } from "./catalog.js";
-import { mergeLockEntries, readLockfile, writeLockfile } from "./lockfile.js";
+import {
+  AGENT_SKILL_PATHS,
+  agentSkillsRoot,
+  hashFile,
+  mergeLockEntries,
+  pluginAgentNames,
+  pluginSkillNames,
+  PROJECTOR_EXPLODE,
+  readLockfile,
+  refreshPluginFileHashes,
+  writeLockfile,
+} from "./lockfile.js";
 import { resolveScope } from "./options.js";
-
-/**
- * Agent skill directory layouts known to the gateway.
- *
- * Keep this aligned with `lockfile.js` so adopt and prune agree on presence.
- */
-export const ADOPT_AGENT_SKILL_PATHS = {
-  "claude-code": ".claude/skills",
-  cursor: ".cursor/skills",
-};
 
 /**
  * Resolve the stock upstream skills lock path for a scope.
@@ -77,7 +78,7 @@ export async function scanInstalledSkills(scope, environment = {}) {
   /** @type {Record<string, Set<string>>} */
   const installed = {};
 
-  for (const [agent, relativePath] of Object.entries(ADOPT_AGENT_SKILL_PATHS)) {
+  for (const [agent, relativePath] of Object.entries(AGENT_SKILL_PATHS)) {
     const skillsRoot = join(root, relativePath);
     let entries = [];
     try {
@@ -110,14 +111,22 @@ export async function scanInstalledSkills(scope, environment = {}) {
 /**
  * Map a stock skills-lock entry into gateway lock provenance.
  *
- * @param {string} name - Skill name.
+ * @param {string} name - Skill name (also the explode plugin id).
  * @param {SkillsLockEntry} entry - Upstream lock entry.
  * @param {string[]} agents - Agents where the skill is installed.
  * @param {Array<{id: string, repo: string}>} vendors - Baked vendor registry.
  * @param {() => Date} now - Clock for installedAt.
- * @returns {{entry: import("./lockfile.js").LockEntry} | {ambiguous: string}} Mapped entry or ambiguity reason.
+ * @param {{cwd?: string, home?: string, scope?: "global" | "project"}} [environment] - Path environment for agent roots.
+ * @returns {{entry: import("./lockfile.js").PluginLockEntry} | {ambiguous: string}} Mapped entry or ambiguity reason.
  */
-export function mapSkillsLockEntry(name, entry, agents, vendors, now = () => new Date()) {
+export function mapSkillsLockEntry(
+  name,
+  entry,
+  agents,
+  vendors,
+  now = () => new Date(),
+  environment = {},
+) {
   const repo = normalizeRepo(entry.sourceUrl ?? entry.source ?? "");
   if (!repo) {
     return { ambiguous: `${name}: skills-lock entry has no usable source/repo` };
@@ -128,14 +137,15 @@ export function mapSkillsLockEntry(name, entry, agents, vendors, now = () => new
   }
   if (repo.toLowerCase() === "lgtm-hq/ai-skills") {
     return {
-      entry: {
-        agents: [...agents].sort(),
+      entry: explodePluginEntry({
+        agents,
+        environment,
         installedAt: now().toISOString(),
+        name,
         repo: "lgtm-hq/ai-skills",
         sha,
-        skillPath: normalizeSkillPath(name, entry.skillPath),
         vendor: "lgtm-hq",
-      },
+      }),
     };
   }
   const vendor = vendors.find((candidate) => candidate.repo.toLowerCase() === repo.toLowerCase());
@@ -145,28 +155,37 @@ export function mapSkillsLockEntry(name, entry, agents, vendors, now = () => new
     };
   }
   return {
-    entry: {
-      agents: [...agents].sort(),
+    entry: explodePluginEntry({
+      agents,
+      environment,
       installedAt: now().toISOString(),
+      name,
       repo: vendor.repo,
       sha,
-      skillPath: normalizeSkillPath(name, entry.skillPath),
       vendor: vendor.id,
-    },
+    }),
   };
 }
 
 /**
  * Build the adopt plan from disk installs and the stock skills lock.
  *
- * @param {{gatewayVersion: string, scope: "global" | "project", skills: Record<string, import("./lockfile.js").LockEntry>, version: number}} lock - Current gateway lock.
+ * @param {import("./lockfile.js").GatewayLock} lock - Current gateway lock.
  * @param {Record<string, string[]>} installed - Skill name to agents.
  * @param {Record<string, SkillsLockEntry>} skillsLock - Upstream lock skills map.
  * @param {Array<{id: string, repo: string}>} vendors - Baked vendors.
  * @param {() => Date} [now] - Clock.
+ * @param {{cwd?: string, home?: string}} [environment] - Path environment for agent roots.
  * @returns {AdoptPlan} Planned adopt/skip/ambiguous actions.
  */
-export function planAdopt(lock, installed, skillsLock, vendors, now = () => new Date()) {
+export function planAdopt(
+  lock,
+  installed,
+  skillsLock,
+  vendors,
+  now = () => new Date(),
+  environment = {},
+) {
   /** @type {AdoptPlan} */
   const plan = {
     adopt: {},
@@ -174,18 +193,19 @@ export function planAdopt(lock, installed, skillsLock, vendors, now = () => new 
     ambiguous: [],
     skippedMissingLock: [],
   };
+  const pathEnv = { ...environment, scope: lock.scope };
+  const plugins = { ...lock.plugins };
 
   for (const [name, agents] of Object.entries(installed)) {
-    const existing = lock.skills[name];
-    if (existing) {
-      const mergedAgents = [...new Set([...existing.agents, ...agents])].sort();
-      if (mergedAgents.join(",") !== existing.agents.join(",")) {
-        plan.adopt[name] = {
-          ...existing,
-          agents: mergedAgents,
-        };
-      } else {
+    const existingId = pluginIdTrackingSkill(plugins, name);
+    if (existingId) {
+      const existing = plugins[existingId];
+      const merged = mergeSkillIntoPlugin(existing, name, agents, lock.scope, pathEnv);
+      if (adoptEntryUnchanged(existing, merged)) {
         plan.alreadyTracked.push(name);
+      } else {
+        plan.adopt[existingId] = merged;
+        plugins[existingId] = merged;
       }
       continue;
     }
@@ -197,12 +217,25 @@ export function planAdopt(lock, installed, skillsLock, vendors, now = () => new 
       continue;
     }
 
-    const mapped = mapSkillsLockEntry(name, stock, agents, vendors, now);
+    const mapped = mapSkillsLockEntry(name, stock, agents, vendors, now, pathEnv);
     if ("ambiguous" in mapped) {
       plan.ambiguous.push(mapped.ambiguous);
       continue;
     }
-    plan.adopt[name] = mapped.entry;
+    const pluginId = pluginIdForMappedEntry(name, mapped.entry);
+    const existingPlugin = plugins[pluginId];
+    const conflict = existingPlugin
+      ? conflictingProvenanceReason(existingPlugin, mapped.entry, name, pluginId)
+      : null;
+    if (conflict) {
+      plan.ambiguous.push(conflict);
+      continue;
+    }
+    const next = existingPlugin
+      ? mergeSkillIntoPlugin(existingPlugin, name, agents, lock.scope, pathEnv)
+      : mapped.entry;
+    plan.adopt[pluginId] = next;
+    plugins[pluginId] = next;
   }
 
   return plan;
@@ -214,6 +247,8 @@ export function planAdopt(lock, installed, skillsLock, vendors, now = () => new 
  * @param {{agents: string[], global: boolean, project: boolean, yes: boolean}} options - Parsed adopt options.
  * @param {{
  *   confirm?: (summary: string) => Promise<boolean>,
+ *   pathEnvironment?: {cwd?: string, home?: string},
+ *   hash?: typeof hashFile,
  *   loadVendors?: typeof loadVendors,
  *   now?: () => Date,
  *   readLock?: typeof readLockfile,
@@ -229,10 +264,12 @@ export async function adoptSkills(options, dependencies = {}) {
     throw new Error("adopt requires an explicit --global or --project scope");
   }
   const scope = resolveScope(options);
-  const readLock = dependencies.readLock ?? readLockfile;
-  const writeLock = dependencies.writeLock ?? writeLockfile;
-  const readStock = dependencies.readSkillsLock ?? readSkillsLock;
-  const scanInstalled = dependencies.scanInstalled ?? scanInstalledSkills;
+  const pathEnv = dependencies.pathEnvironment ?? {};
+  const readLock = dependencies.readLock ?? ((target) => readLockfile(target, pathEnv));
+  const writeLock = dependencies.writeLock ?? ((next) => writeLockfile(next, pathEnv));
+  const readStock = dependencies.readSkillsLock ?? ((target) => readSkillsLock(target, pathEnv));
+  const scanInstalled =
+    dependencies.scanInstalled ?? ((target) => scanInstalledSkills(target, pathEnv));
   const loadVendorCatalog = dependencies.loadVendors ?? loadVendors;
   const now = dependencies.now ?? (() => new Date());
   const write = dependencies.write ?? ((line) => stdout.write(`${line}\n`));
@@ -256,7 +293,7 @@ export async function adoptSkills(options, dependencies = {}) {
   const installed = await scanInstalled(scope);
   const filteredInstalled = filterAgents(installed, options.agents);
   const { vendors } = await loadVendorCatalog();
-  const plan = planAdopt(lock, filteredInstalled, stock.skills, vendors, now);
+  const plan = planAdopt(lock, filteredInstalled, stock.skills, vendors, now, pathEnv);
   const summary = formatAdoptSummary(plan);
 
   if (Object.keys(plan.adopt).length === 0) {
@@ -286,7 +323,7 @@ export async function adoptSkills(options, dependencies = {}) {
     write(summary);
   }
 
-  const next = mergeLockEntries(lock, plan.adopt);
+  const next = mergeLockEntries(lock, await hashAdoptedEntries(plan.adopt, dependencies.hash));
   await writeLock(next);
   return {
     adopted: Object.keys(plan.adopt).sort(),
@@ -299,7 +336,7 @@ export async function adoptSkills(options, dependencies = {}) {
 
 /**
  * @typedef {{source?: string, sourceUrl?: string, sourceType?: string, ref?: string, skillPath?: string}} SkillsLockEntry
- * @typedef {{adopt: Record<string, import("./lockfile.js").LockEntry>, alreadyTracked: string[], ambiguous: string[], skippedMissingLock: string[]}} AdoptPlan
+ * @typedef {{adopt: Record<string, import("./lockfile.js").PluginLockEntry>, alreadyTracked: string[], ambiguous: string[], skippedMissingLock: string[]}} AdoptPlan
  * @typedef {{adopted: string[], alreadyTracked: string[], ambiguous: string[], skippedMissingLock: string[], wrote: boolean}} AdoptResult
  */
 
@@ -339,7 +376,7 @@ function formatAdoptSummary(plan) {
   for (const name of Object.keys(plan.adopt).sort()) {
     const entry = plan.adopt[name];
     lines.push(
-      `  + ${name} <- ${entry.vendor}:${entry.repo}@${entry.sha} [${entry.agents.join(",")}]`,
+      `  + ${name} <- ${entry.vendor}:${entry.repo}@${entry.sha} [${pluginAgentNames(entry).join(",")}]`,
     );
   }
   for (const name of plan.alreadyTracked) {
@@ -386,21 +423,162 @@ function normalizeSha(ref) {
 }
 
 /**
- * Normalize a skill path to `.../SKILL.md`.
+ * Build a v2 explode-projector plugin entry for a scanned skill directory.
  *
- * @param {string} name - Skill name.
- * @param {string | undefined} skillPath - Upstream path.
- * @returns {string} Gateway skillPath.
+ * @param {{
+ *   agents: string[],
+ *   environment: {cwd?: string, home?: string, scope?: "global" | "project"},
+ *   installedAt: string,
+ *   name: string,
+ *   repo: string,
+ *   sha: string,
+ *   vendor: string,
+ * }} options - Provenance and agent list.
+ * @returns {import("./lockfile.js").PluginLockEntry} Plugin lock entry.
  */
-function normalizeSkillPath(name, skillPath) {
-  if (!skillPath) {
-    return `skills/${name}/SKILL.md`;
+function explodePluginEntry(options) {
+  const scope = options.environment.scope ?? "project";
+  const agents = Object.fromEntries(
+    [...options.agents].sort().map((agent) => [
+      agent,
+      {
+        files: { [`${options.name}/SKILL.md`]: "" },
+        root: agentSkillsRoot(scope, agent, options.environment),
+      },
+    ]),
+  );
+  return {
+    agents,
+    installedAt: options.installedAt,
+    projector: PROJECTOR_EXPLODE,
+    repo: options.repo,
+    sha: options.sha,
+    vendor: options.vendor,
+    version: options.sha.replace(/^v/, ""),
+  };
+}
+
+/**
+ * Plugin id that already tracks this exploded skill directory, if any.
+ *
+ * @param {Record<string, import("./lockfile.js").PluginLockEntry>} plugins - Lock or planned plugins.
+ * @param {string} skillName - On-disk skill directory.
+ * @returns {string | null} Owning plugin id.
+ */
+function pluginIdTrackingSkill(plugins, skillName) {
+  if (plugins[skillName]) {
+    return skillName;
   }
-  const normalized = skillPath.replace(/\\/g, "/").replace(/\/+$/, "");
-  if (normalized.endsWith("SKILL.md")) {
-    return normalized;
+  for (const [pluginId, entry] of Object.entries(plugins)) {
+    if (pluginSkillNames(entry).includes(skillName)) {
+      return pluginId;
+    }
   }
-  return `${normalized}/SKILL.md`;
+  return null;
+}
+
+/**
+ * Lock key for a newly mapped explode skill.
+ *
+ * First-party skills stay keyed by directory name. Vendor skills share the vendor id.
+ *
+ * @param {string} skillName - On-disk skill directory.
+ * @param {import("./lockfile.js").PluginLockEntry} entry - Mapped provenance.
+ * @returns {string} Plugin id.
+ */
+function pluginIdForMappedEntry(skillName, entry) {
+  return entry.vendor === "lgtm-hq" ? skillName : entry.vendor;
+}
+
+/**
+ * Union a scanned skill directory onto an existing plugin entry.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} existing - Current lock entry.
+ * @param {string} name - Skill directory name.
+ * @param {string[]} agents - Newly scanned agents.
+ * @param {"global" | "project"} scope - Lock scope.
+ * @param {{cwd?: string, home?: string}} [environment] - Path environment for new agent roots.
+ * @returns {import("./lockfile.js").PluginLockEntry} Entry with additional agents and files.
+ */
+function mergeSkillIntoPlugin(existing, name, agents, scope, environment = {}) {
+  const relative = `${name}/SKILL.md`;
+  const nextAgents = { ...existing.agents };
+  for (const agent of agents) {
+    const previous = nextAgents[agent];
+    const root = agentSkillsRoot(scope, agent, environment);
+    if (!previous) {
+      nextAgents[agent] = {
+        files: { [relative]: "" },
+        root,
+      };
+      continue;
+    }
+    nextAgents[agent] = {
+      ...previous,
+      files: previous.files[relative] ? previous.files : { ...previous.files, [relative]: "" },
+      root,
+    };
+  }
+  return {
+    ...existing,
+    agents: nextAgents,
+  };
+}
+
+/**
+ * Whether a merge left plugin ownership and tracked files unchanged.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} existing - Entry before merge.
+ * @param {import("./lockfile.js").PluginLockEntry} merged - Entry after merge.
+ * @returns {boolean} True when agents and skill names are identical.
+ */
+function adoptEntryUnchanged(existing, merged) {
+  const agents = pluginAgentNames(existing);
+  if (
+    agents.join(",") !== pluginAgentNames(merged).join(",") ||
+    pluginSkillNames(existing).join(",") !== pluginSkillNames(merged).join(",")
+  ) {
+    return false;
+  }
+  return agents.every((agent) => existing.agents[agent].root === merged.agents[agent].root);
+}
+
+/**
+ * Reason a mapped skill cannot share an existing vendor plugin.
+ *
+ * @param {import("./lockfile.js").PluginLockEntry} existing - Plugin already in the lock.
+ * @param {import("./lockfile.js").PluginLockEntry} mapped - Newly mapped skills-lock entry.
+ * @param {string} skillName - On-disk skill directory.
+ * @param {string} pluginId - Vendor plugin id.
+ * @returns {string | null} Ambiguity reason, or null when provenance matches.
+ */
+function conflictingProvenanceReason(existing, mapped, skillName, pluginId) {
+  if (
+    existing.projector === mapped.projector &&
+    existing.repo === mapped.repo &&
+    existing.sha === mapped.sha
+  ) {
+    return null;
+  }
+  return (
+    `${skillName}: vendor ${pluginId} provenance ${existing.repo}@${existing.sha}` +
+    ` (${existing.projector}) conflicts with ${mapped.repo}@${mapped.sha} (${mapped.projector})`
+  );
+}
+
+/**
+ * Fill empty adopt digests from disk before writing the gateway lock.
+ *
+ * @param {Record<string, import("./lockfile.js").PluginLockEntry>} entries - Planned adopt entries.
+ * @param {typeof hashFile} [hash] - Injectable hasher.
+ * @returns {Promise<Record<string, import("./lockfile.js").PluginLockEntry>>} Entries with refreshed hashes.
+ */
+async function hashAdoptedEntries(entries, hash = hashFile) {
+  const hashed = {};
+  for (const [pluginId, entry] of Object.entries(entries)) {
+    hashed[pluginId] = await refreshPluginFileHashes(entry, hash);
+  }
+  return hashed;
 }
 
 /**

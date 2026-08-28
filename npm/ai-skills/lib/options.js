@@ -1,3 +1,5 @@
+import { AGENT_SKILL_PATHS } from "./lockfile.js";
+
 /**
  * Minimum supported version of the upstream skills CLI (npm package `skills`).
  *
@@ -69,6 +71,10 @@ export function parseArguments(argv) {
     }
   }
 
+  const unknownAgent = options.agents.find((agent) => !AGENT_SKILL_PATHS[agent]);
+  if (unknownAgent) {
+    throw new Error(`Unknown agent: ${unknownAgent}`);
+  }
   if (options.global && options.project) {
     throw new Error("Choose only one scope: --global or --project");
   }

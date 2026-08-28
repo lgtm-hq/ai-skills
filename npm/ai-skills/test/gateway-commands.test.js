@@ -2,28 +2,41 @@ import { describe, expect, test } from "bun:test";
 
 import { listSkills, removeSkills, updateSkills } from "../lib/gateway-commands.js";
 
-const lock = {
-  gatewayVersion: "0.0.0-dev",
-  scope: "project",
-  skills: {
-    lint: {
-      agents: ["cursor"],
-      installedAt: "2026-07-10T16:00:00.000Z",
-      repo: "lgtm-hq/ai-skills",
-      sha: "v0.0.0-dev",
-      skillPath: "skills/lint/SKILL.md",
-      vendor: "lgtm-hq",
-    },
-    pdf: {
-      agents: ["cursor"],
-      installedAt: "2026-07-10T16:00:00.000Z",
-      repo: "anthropics/skills",
-      sha: "outdated",
-      skillPath: "skills/pdf/SKILL.md",
-      vendor: "anthropics",
+const pluginEntry = (overrides) => ({
+  agents: {
+    cursor: {
+      files: { "pdf/SKILL.md": "abc" },
+      root: "/tmp/project/.cursor/skills",
     },
   },
-  version: 1,
+  installedAt: "2026-07-10T16:00:00.000Z",
+  projector: "explode",
+  repo: "anthropics/skills",
+  sha: "outdated",
+  vendor: "anthropics",
+  version: "outdated",
+  ...overrides,
+});
+
+const lock = {
+  gatewayVersion: "0.0.0-dev",
+  plugins: {
+    lint: pluginEntry({
+      agents: {
+        cursor: {
+          files: { "lint/SKILL.md": "abc" },
+          root: "/tmp/project/.cursor/skills",
+        },
+      },
+      repo: "lgtm-hq/ai-skills",
+      sha: "v0.0.0-dev",
+      vendor: "lgtm-hq",
+      version: "0.0.0-dev",
+    }),
+    pdf: pluginEntry({}),
+  },
+  scope: "project",
+  version: 2,
 };
 
 const options = {
@@ -39,6 +52,7 @@ describe("gateway maintenance commands", () => {
     const calls = [];
     let written;
     const result = await updateSkills(options, {
+      hash: async () => "refreshed",
       isInstalled: async (name) => name === "pdf",
       now: () => new Date("2026-07-10T17:00:00.000Z"),
       readLock: async () => lock,
@@ -66,11 +80,134 @@ describe("gateway maintenance commands", () => {
         "-y",
       ],
     ]);
-    expect(written.skills.pdf).toMatchObject({
+    expect(written.plugins.pdf).toMatchObject({
       installedAt: "2026-07-10T17:00:00.000Z",
       sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
     });
-    expect(written.skills.lint).toBeUndefined();
+    expect(written.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toBe("refreshed");
+    expect(written.plugins.lint).toBeUndefined();
+    expect(written.skills).toBeUndefined();
+  });
+
+  test("updates every tracked agent on a plugin even when -a is a subset", async () => {
+    const calls = [];
+    let written;
+    const multiAgentLock = {
+      ...lock,
+      plugins: {
+        pdf: pluginEntry({
+          agents: {
+            "claude-code": {
+              files: { "pdf/SKILL.md": "abc" },
+              root: "/tmp/project/.claude/skills",
+            },
+            cursor: {
+              files: { "pdf/SKILL.md": "abc" },
+              root: "/tmp/project/.cursor/skills",
+            },
+          },
+        }),
+      },
+    };
+
+    await updateSkills(
+      { ...options, agents: ["cursor"] },
+      {
+        hash: async () => "refreshed",
+        isInstalled: async () => true,
+        now: () => new Date("2026-07-10T17:00:00.000Z"),
+        readLock: async () => multiAgentLock,
+        run: async (args) => {
+          calls.push(args);
+        },
+        writeLock: async (next) => {
+          written = next;
+        },
+      },
+    );
+
+    expect(calls).toEqual([
+      [
+        "skills@^1.5.0",
+        "add",
+        "anthropics/skills@9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+        "-a",
+        "claude-code",
+        "cursor",
+        "--skill",
+        "pdf",
+        "-y",
+      ],
+    ]);
+    expect(written.plugins.pdf.agents["claude-code"].files["pdf/SKILL.md"]).toBe("refreshed");
+    expect(written.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toBe("refreshed");
+  });
+
+  test("updates same-source plugins against only their own tracked agents", async () => {
+    const calls = [];
+    const mixed = {
+      ...lock,
+      plugins: {
+        lint: pluginEntry({
+          agents: {
+            cursor: {
+              files: { "lint/SKILL.md": "abc" },
+              root: "/tmp/project/.cursor/skills",
+            },
+          },
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.0.0-dev",
+          vendor: "lgtm-hq",
+          version: "0.0.0-dev",
+        }),
+        test: pluginEntry({
+          agents: {
+            "claude-code": {
+              files: { "test/SKILL.md": "abc" },
+              root: "/tmp/project/.claude/skills",
+            },
+          },
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.0.0-dev",
+          vendor: "lgtm-hq",
+          version: "0.0.0-dev",
+        }),
+      },
+    };
+
+    await updateSkills(options, {
+      hash: async () => "refreshed",
+      isInstalled: async () => true,
+      now: () => new Date("2026-07-10T17:00:00.000Z"),
+      readLock: async () => mixed,
+      run: async (args) => {
+        calls.push(args);
+      },
+      writeLock: async () => {},
+    });
+
+    expect(calls).toEqual([
+      [
+        "skills@^1.5.0",
+        "add",
+        `lgtm-hq/ai-skills@v0.0.0-dev`,
+        "-a",
+        "cursor",
+        "--skill",
+        "lint",
+        "-y",
+      ],
+      [
+        "skills@^1.5.0",
+        "add",
+        `lgtm-hq/ai-skills@v0.0.0-dev`,
+        "-a",
+        "claude-code",
+        "--skill",
+        "test",
+        "-y",
+      ],
+    ]);
   });
 
   test("removes only lock-managed selections after mocked CLI success", async () => {
@@ -94,16 +231,38 @@ describe("gateway maintenance commands", () => {
 
     expect(removed).toEqual(["pdf"]);
     expect(calls).toEqual([["skills@^1.5.0", "remove", "pdf", "-a", "cursor", "-y"]]);
-    expect(written.skills).toEqual({
-      lint: lock.skills.lint,
+    expect(written.plugins).toEqual({
+      lint: lock.plugins.lint,
     });
   });
 
   test("lists lock-managed installs in name order", async () => {
-    const skills = await listSkills(options, {
+    const plugins = await listSkills(options, {
+      lockEnvironment: {
+        exists: async () => true,
+        hash: async () => "abc",
+      },
       readLock: async () => lock,
     });
 
-    expect(skills.map((skill) => skill.name)).toEqual(["lint", "pdf"]);
+    expect(plugins.map((plugin) => plugin.name)).toEqual(["lint", "pdf"]);
+    expect(plugins.every((plugin) => plugin.status === "")).toBe(true);
+  });
+
+  test("annotates missing and modified plugins instead of listing them as healthy", async () => {
+    const plugins = await listSkills(options, {
+      lockEnvironment: {
+        exists: async (path) => String(path).endsWith("lint/SKILL.md"),
+        hash: async () => "zzz",
+      },
+      readLock: async () => lock,
+    });
+
+    expect(plugins).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "lint", status: "MODIFIED" }),
+        expect.objectContaining({ name: "pdf", status: "MISSING" }),
+      ]),
+    );
   });
 });
