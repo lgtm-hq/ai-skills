@@ -11,10 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **gateway**: native projectors for Cursor (local plugin tree), Claude Code,
-  and GitHub Copilot (host CLI). `--projector native|explode` overrides the
-  per-host default until `sk doctor` lands. Vendor installs stay exploded.
-
 ### Changed
 
 ### Deprecated
@@ -24,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.24.0] - 2026-08-28
+
+### Added
+
+- **gateway**: native projectors for Cursor, Claude, and Copilot (#400) (c6e9ee2)
+- **gateway**: native projectors for Cursor (local plugin tree), Claude Code,
+  and GitHub Copilot (host CLI). `--projector native|explode` overrides the
+  per-host default until `sk doctor` lands. Vendor installs stay exploded.
 
 ## [0.23.0] - 2026-08-28
 
@@ -827,7 +832,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.21.0...v0.22.0
