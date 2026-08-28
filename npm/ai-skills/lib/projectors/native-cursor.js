@@ -7,6 +7,44 @@ import { fileURLToPath } from "node:url";
 import { isSafePluginId } from "../lockfile.js";
 
 /**
+ * Whether a Cursor plugin destination has any regular files.
+ *
+ * Empty leftover directories (clean remove, crash leftovers) must not count as
+ * an unowned tree, or the next install refuses a dest the user already cleared.
+ *
+ * @param {string} pluginDir - Absolute plugin destination.
+ * @returns {Promise<boolean>} True when at least one regular file exists.
+ */
+export async function cursorDestHasFiles(pluginDir) {
+  return pathHasRegularFiles(pluginDir);
+}
+
+/**
+ * @param {string} dir - Directory to walk.
+ * @returns {Promise<boolean>} True when a regular file exists under `dir`.
+ */
+async function pathHasRegularFiles(dir) {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+  for (const entry of entries) {
+    if (entry.isFile()) {
+      return true;
+    }
+    if (entry.isDirectory() && (await pathHasRegularFiles(join(dir, entry.name)))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Directory that holds locally dropped Cursor plugins.
  *
  * @param {{cwd?: string, home?: string, scope: "global" | "project"}} environment - Scope and path roots.
@@ -100,10 +138,14 @@ export async function installCursorPlugin(args) {
   const remove = args.remove ?? rm;
   const move = args.move ?? rename;
   const paths = cursorPluginPaths(args.destRoot, args.pluginId);
-  const existed = existsSync(paths.pluginDir);
-  if (existed && !args.replace) {
+  const occupied = await cursorDestHasFiles(paths.pluginDir);
+  if (occupied && !args.replace) {
     throw new Error(`Refusing to overwrite unowned Cursor plugin at ${paths.pluginDir}`);
   }
+  if (existsSync(paths.pluginDir) && !occupied) {
+    await remove(paths.pluginDir, { force: true, recursive: true });
+  }
+  const existed = occupied;
 
   await remove(paths.staging, { force: true, recursive: true });
   let swapped = false;

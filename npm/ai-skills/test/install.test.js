@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { loadVendorIndex } from "../lib/catalog.js";
 import { batchesFromCliOptions, install } from "../lib/install.js";
 import { removeSkills } from "../lib/gateway-commands.js";
+import { readLockfile, writeLockfile } from "../lib/lockfile.js";
 import { MINIMUM_SKILLS_VERSION } from "../lib/options.js";
 import { buildSkillsArguments } from "../lib/skills-runner.js";
 
@@ -1011,6 +1012,60 @@ describe("native projectors", () => {
       expect(lock.plugins.review.agents.cursor.files["skills/lint/SKILL.md"]).toMatch(
         /^[a-f0-9]{64}$/,
       );
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("reinstalls a Cursor plugin after a clean native remove", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cursor-reinstall-"));
+    try {
+      const sourceRoot = join(cwd, "catalog");
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      const nativeOptions = {
+        ...unattendedOptions,
+        global: false,
+        projector: "native",
+        project: true,
+      };
+      await install(
+        nativeOptions,
+        async () => {
+          throw new Error("explode runner must not run");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      const pluginDir = join(cwd, ".cursor/plugins/local/review");
+      await removeSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: [],
+          yes: true,
+        },
+        {
+          lockEnvironment: { cwd },
+          readLock: (scope) => readLockfile(scope, { cwd }),
+          writeLock: (lock) => writeLockfile(lock, { cwd }),
+        },
+      );
+      await expect(access(pluginDir)).rejects.toMatchObject({ code: "ENOENT" });
+      await install(
+        nativeOptions,
+        async () => {
+          throw new Error("explode runner must not run");
+        },
+        () => new Date("2026-07-10T17:00:00.000Z"),
+        { cwd },
+        { sourceRoot },
+      );
+      expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

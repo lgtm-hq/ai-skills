@@ -23,6 +23,7 @@ import { getPackageVersion } from "./package-version.js";
 import { assertProjectorSupported, resolveProjector } from "./projectors/defaults.js";
 import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
 import {
+  cursorDestHasFiles,
   cursorPluginsRoot,
   discardCursorPluginBackup,
   findCatalogSourceRoot,
@@ -760,8 +761,8 @@ export async function install(
     scope,
   });
   const cursorPluginDir = join(destRoot, pluginId);
-  const exists = lockEnvironment.exists ?? pathExists;
-  const cursorExisted = lanes.cursorNative.length > 0 ? await exists(cursorPluginDir) : false;
+  const cursorExisted =
+    lanes.cursorNative.length > 0 ? await cursorDestHasFiles(cursorPluginDir) : false;
   // Set only after installCursorPlugin returns: dest existence is not a swap.
   let cursorSwapped = false;
   let lockCommitted = false;

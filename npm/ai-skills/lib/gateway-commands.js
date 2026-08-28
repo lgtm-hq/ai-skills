@@ -249,6 +249,17 @@ export async function removeSkills(options, dependencies = {}) {
       );
     }
     await deleteVerifiedFiles(classified.verified, { removeDir, removeFile });
+    for (const agent of lanes.cursorNative) {
+      const pluginDir = entry.agents[agent]?.root;
+      if (!pluginDir) {
+        continue;
+      }
+      try {
+        await removeDir(pluginDir);
+      } catch {
+        // Untracked files remain; keep the folder.
+      }
+    }
     for (const agent of lanes.cliNative) {
       if (
         await siblingLockHasCliNative(
