@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **gateway**: `sk doctor` — cached per-host capability probe, lock↔disk
+  report, `--repair` for missing installs, and explicit `--migrate <host>`
+  for projector cutover. Install consults `~/.ai-skills/doctor.json` instead
+  of probing on every run. Ambiguous hosts ask once and persist; `-y` fails
+  closed. Manual host ritual: `docs/smoke-test.md`.
+
 ### Changed
 
 ### Deprecated

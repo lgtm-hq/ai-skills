@@ -12,11 +12,11 @@ export const MINIMUM_SKILLS_VERSION = "1.5.0";
  * Parse wrapper command-line arguments.
  *
  * @param {string[]} argv - Arguments after the executable name.
- * @returns {{command: string, options: {agents: string[], bundle: string | null, copy: boolean, global: boolean, project: boolean, projector: "native" | "explode" | null, yes: boolean, onConflict: string | null, skills: string[], vendor: string | null}}} Parsed command and options.
+ * @returns {{command: string, options: {agents: string[], bundle: string | null, copy: boolean, global: boolean, migrate: string | null, project: boolean, projector: "native" | "explode" | null, repair: boolean, yes: boolean, onConflict: string | null, skills: string[], vendor: string | null}}} Parsed command and options.
  * @throws {Error} When an option is malformed or unsupported.
  */
 export function parseArguments(argv) {
-  const commands = new Set(["adopt", "install", "list", "remove", "update", "vendors"]);
+  const commands = new Set(["adopt", "doctor", "install", "list", "remove", "update", "vendors"]);
   const command = commands.has(argv[0]) ? argv[0] : "install";
   const args = commands.has(argv[0]) ? argv.slice(1) : argv;
   const options = {
@@ -24,8 +24,10 @@ export function parseArguments(argv) {
     bundle: null,
     copy: false,
     global: false,
+    migrate: null,
     project: false,
     projector: null,
+    repair: false,
     yes: false,
     onConflict: null,
     skills: [],
@@ -73,6 +75,14 @@ export function parseArguments(argv) {
       }
       options.onConflict = value;
       index += 1;
+    } else if (argument === "--repair") {
+      options.repair = true;
+    } else if (argument === "--migrate") {
+      if (!value) {
+        throw new Error("--migrate requires an agent name");
+      }
+      options.migrate = value;
+      index += 1;
     } else {
       throw new Error(`Unknown option: ${argument}`);
     }
@@ -97,13 +107,22 @@ export function parseArguments(argv) {
     );
   }
   if (
-    ["adopt", "list", "remove", "update"].includes(command) &&
+    ["adopt", "doctor", "list", "remove", "update"].includes(command) &&
     (options.bundle || options.copy || options.onConflict || options.vendor || options.projector)
   ) {
     throw new Error(`${command} does not accept install source options`);
   }
   if (command === "adopt" && options.skills.length > 0) {
     throw new Error("adopt does not accept --skill; it imports installed skills");
+  }
+  if (command !== "doctor" && (options.repair || options.migrate)) {
+    throw new Error("--repair and --migrate are doctor-only");
+  }
+  if (command === "doctor" && options.skills.length > 0) {
+    throw new Error("doctor does not accept --skill");
+  }
+  if (options.migrate && !AGENT_SKILL_PATHS[options.migrate]) {
+    throw new Error(`Unknown agent: ${options.migrate}`);
   }
   return { command, options };
 }

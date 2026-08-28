@@ -22,6 +22,7 @@ import {
 } from "./lockfile.js";
 import { resolveScope } from "./options.js";
 import { getPackageVersion } from "./package-version.js";
+import { resolveDoctorCapabilities } from "./doctor.js";
 import { assertProjectorSupported, resolveProjector } from "./projectors/defaults.js";
 import {
   defaultStoreRoot,
@@ -639,7 +640,7 @@ async function cancelable(ui, valuePromise) {
  * @param {(args: string[]) => Promise<void>} [run] - Injectable skills process runner.
  * @param {() => Date} [now] - Injectable clock.
  * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable lockfile environment.
- * @param {{exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>, explode?: typeof explodePlugin, failAfter?: "stage" | "commit", move?: typeof import("node:fs/promises").rename, remove?: typeof rm, sourceRoot?: string | null, sourceSkills?: Record<string, string>, storeRoot?: string, warn?: (message: string) => void}} [extras] - Projector dependencies.
+ * @param {{exec?: (command: string, args: string[]) => Promise<{status: number, stderr: string, stdout: string}>, explode?: typeof explodePlugin, failAfter?: "stage" | "commit", hostCapabilities?: Record<string, "native" | "explode">, move?: typeof import("node:fs/promises").rename, prompt?: (agent: string) => Promise<"native" | "explode">, remove?: typeof rm, sourceRoot?: string | null, sourceSkills?: Record<string, string>, storeRoot?: string, warn?: (message: string) => void}} [extras] - Projector dependencies.
  * @returns {Promise<{alreadyPresent: number, installed: number, repaired: number}>} Install summary counts.
  */
 export async function install(
@@ -713,6 +714,7 @@ export async function install(
     scopedOptions.agents,
     scopedOptions.skills,
     lockEnvironment,
+    scopedOptions.projector,
   );
   const alreadyPresent = detectAgents ? 0 : scopedOptions.agents.length - agentsToInstall.length;
   const repaired = detectAgents
@@ -731,11 +733,24 @@ export async function install(
     return { alreadyPresent, installed, repaired };
   }
   const agentsForRun = detectAgents ? [] : agentsToInstall;
+  const doctorCapabilities =
+    detectAgents || vendor || scopedOptions.projector
+      ? {}
+      : await resolveDoctorCapabilities(agentsForRun, existing, {
+          cwd: lockEnvironment.cwd,
+          exec: extras.exec,
+          home: lockEnvironment.home,
+          hostCapabilities: extras.hostCapabilities,
+          prompt: extras.prompt,
+          scope,
+          yes: scopedOptions.yes,
+        });
   const lanes = partitionProjectorLanes(
     agentsForRun,
     scopedOptions.projector,
     Boolean(vendor),
     existing,
+    doctorCapabilities,
   );
   if (detectAgents && scopedOptions.projector === PROJECTOR_NATIVE) {
     throw new Error(
@@ -1166,9 +1181,16 @@ function resolvePluginId(options, vendor) {
  * @param {string[]} requestedAgents - Agents requested for this install.
  * @param {string[]} requestedSkills - Skills requested for this install.
  * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Injectable fs.
+ * @param {"native" | "explode" | null} [projectorOverride] - CLI ``--projector``.
  * @returns {Promise<string[]>} Agents that must be materialized.
  */
-async function agentsNeedingInstall(existing, requestedAgents, requestedSkills, lockEnvironment) {
+async function agentsNeedingInstall(
+  existing,
+  requestedAgents,
+  requestedSkills,
+  lockEnvironment,
+  projectorOverride,
+) {
   if (!existing) {
     return requestedAgents;
   }
@@ -1185,10 +1207,18 @@ async function agentsNeedingInstall(existing, requestedAgents, requestedSkills, 
     reconciliation.present.filter((item) => item.pluginId === "plugin").map((item) => item.agent),
   );
   return requestedAgents.filter((agent) => {
+    const locked = existing.agents[agent];
+    if (
+      locked &&
+      (projectorOverride === PROJECTOR_NATIVE || projectorOverride === PROJECTOR_EXPLODE) &&
+      agentProjector(existing, agent) !== projectorOverride
+    ) {
+      return true;
+    }
     if (!healthy.has(agent)) {
       return true;
     }
-    return !agentCoversSkills(existing.agents[agent], requestedSkills);
+    return !agentCoversSkills(locked, requestedSkills);
   });
 }
 
@@ -1221,14 +1251,15 @@ function agentCoversSkills(install, requestedSkills) {
  * @param {"native" | "explode" | null | undefined} override - CLI `--projector`.
  * @param {boolean} vendor - Whether this is a vendor install.
  * @param {import("./lockfile.js").PluginLockEntry} [existing] - Previously locked plugin, if any.
+ * @param {Record<string, "native" | "explode">} [doctorCapabilities] - Cached host projectors.
  * @returns {{cliNative: string[], cursorNative: string[], explode: string[]}} Lanes.
  */
-function partitionProjectorLanes(agents, override, vendor, existing) {
+function partitionProjectorLanes(agents, override, vendor, existing, doctorCapabilities = {}) {
   const explode = [];
   const cursorNative = [];
   const cliNative = [];
   for (const agent of agents) {
-    const projector = projectorForAgent(agent, override, vendor, existing);
+    const projector = projectorForAgent(agent, override, vendor, existing, doctorCapabilities);
     if (projector === PROJECTOR_EXPLODE) {
       explode.push(agent);
     } else if (agent === "cursor") {
@@ -1241,16 +1272,17 @@ function partitionProjectorLanes(agents, override, vendor, existing) {
 }
 
 /**
- * Projector for one agent: explicit `--projector` wins, else the locked
- * per-agent value, else the host default.
+ * Projector for one agent: explicit ``--projector`` wins, else the locked
+ * per-agent value, else the doctor cache, else the host default.
  *
  * @param {string} agent - Host identifier.
  * @param {"native" | "explode" | null | undefined} override - CLI `--projector`.
  * @param {boolean} vendor - Whether this is a vendor install.
  * @param {import("./lockfile.js").PluginLockEntry} [existing] - Previously locked plugin, if any.
+ * @param {Record<string, "native" | "explode">} [doctorCapabilities] - Cached host projectors.
  * @returns {"native" | "explode"} Effective projector.
  */
-function projectorForAgent(agent, override, vendor, existing) {
+function projectorForAgent(agent, override, vendor, existing, doctorCapabilities = {}) {
   if (vendor || override === PROJECTOR_NATIVE || override === PROJECTOR_EXPLODE) {
     const projector = resolveProjector(agent, override, { vendor });
     assertProjectorSupported(agent, projector);
@@ -1260,6 +1292,13 @@ function projectorForAgent(agent, override, vendor, existing) {
     const projector = agentProjector(existing, agent);
     assertProjectorSupported(agent, projector);
     return projector;
+  }
+  if (
+    doctorCapabilities[agent] === PROJECTOR_NATIVE ||
+    doctorCapabilities[agent] === PROJECTOR_EXPLODE
+  ) {
+    assertProjectorSupported(agent, doctorCapabilities[agent]);
+    return doctorCapabilities[agent];
   }
   const projector = resolveProjector(agent, override, { vendor });
   assertProjectorSupported(agent, projector);

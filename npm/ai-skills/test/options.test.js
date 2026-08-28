@@ -15,9 +15,11 @@ describe("parseArguments", () => {
         bundle: "review",
         copy: false,
         global: true,
+        migrate: null,
         onConflict: null,
         project: false,
         projector: null,
+        repair: false,
         skills: [],
         vendor: null,
         yes: false,
@@ -157,5 +159,20 @@ describe("parseArguments", () => {
 
   test("accepts copilot as a known agent", () => {
     expect(parseArguments(["-a", "copilot"]).options.agents).toEqual(["copilot"]);
+  });
+
+  test("accepts doctor with --repair or --migrate", () => {
+    expect(parseArguments(["doctor", "--repair", "-y", "--global"]).options.repair).toBe(true);
+    expect(
+      parseArguments(["doctor", "--migrate", "cursor", "-y", "--project"]).options.migrate,
+    ).toBe("cursor");
+  });
+
+  test("rejects --repair on install", () => {
+    expect(() => parseArguments(["install", "--repair"])).toThrow("doctor-only");
+  });
+
+  test("rejects --migrate on an unknown host", () => {
+    expect(() => parseArguments(["doctor", "--migrate", "notepad"])).toThrow("Unknown agent");
   });
 });

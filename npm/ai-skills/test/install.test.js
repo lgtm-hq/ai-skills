@@ -1287,8 +1287,8 @@ describe("native projectors", () => {
           received.push(args);
         },
         () => new Date("2026-07-10T16:00:00.000Z"),
-        { cwd },
-        { sourceRoot },
+        { cwd, home: cwd },
+        { hostCapabilities: { cursor: "native", codex: "explode" }, sourceRoot },
       );
       expect(received).toEqual([]);
       expect(await readFile(join(cwd, ".codex/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
@@ -1296,6 +1296,32 @@ describe("native projectors", () => {
       expect(lock.plugins.review.agents.cursor.projector).toBe("native");
       expect(lock.plugins.review.agents.codex.projector).toBe("explode");
       expect(lock.plugins.review.projector).toBe("explode");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("consults doctor hostCapabilities when --projector is omitted", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-install-"));
+    try {
+      let received = [];
+      await install(
+        {
+          ...unattendedOptions,
+          global: false,
+          projector: null,
+          project: true,
+        },
+        async (args) => {
+          received = args;
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd, home: cwd },
+        { hostCapabilities: { cursor: "explode" }, sourceRoot: null },
+      );
+      expect(received).toContain("cursor");
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.review.agents.cursor.projector).toBe("explode");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -1316,8 +1342,8 @@ describe("native projectors", () => {
           received = args;
         },
         () => new Date("2026-07-10T16:00:00.000Z"),
-        { cwd },
-        { sourceRoot: null },
+        { cwd, home: cwd },
+        { hostCapabilities: { cursor: "native" }, sourceRoot: null },
       );
       expect(received).toContain("cursor");
       expect(received).toContain("add");

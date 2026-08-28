@@ -27,8 +27,9 @@ later, other components). Contents stay visible; native hosts install the
 plugin as a whole. The gateway (`sk`) installs plugins atomically — the
 TUI is a plugin checklist, `--skill` / `--bundle` name a plugin, and
 `--vendor` installs that vendor plugin whole. Native projectors are the
-default for Cursor, Claude Code, and GitHub Copilot (`--projector explode`
-falls back to skill directories). Codex stays exploded. If you previously
+default for Cursor, Claude Code, and GitHub Copilot when `sk doctor` has
+cached native capability (`--projector explode` still writes skill
+directories). Codex stays exploded. If you previously
 used the skills CLI or a per-skill gateway cart, wipe and reinstall, or
 switch to a host plugin marketplace command below.
 
@@ -87,15 +88,15 @@ bunx --package=@lgtm-hq/ai-skills@0.25.0 sk install -y --global \
 Unattended installs need an explicit scope and agent. `--bundle` and
 `--skill` take a plugin id from the table below (`git-pr`, `review`,
 `standards`, …). `--vendor <id>` installs that vendor plugin whole.
-`--projector native|explode` selects delivery; the default is native for
-Cursor, Claude Code, and Copilot, and explode for Codex. Cursor native
-assembles `~/.cursor/plugins/local/<plugin-id>` from a catalog checkout
-(`skills/` + `.claude-plugin/`). Published npm / `bunx` installs do not
-ship that catalog, so Cursor falls back to explode. Explicit
-`--projector native` without a catalog checkout fails closed. Claude Code
-and Copilot shell out to their plugin CLIs (user-scoped by the host). Use
-`--projector explode` to keep writing `~/.cursor/skills` (and the other
-host skill directories).
+`--projector native|explode` overrides delivery. Without it, install consults
+`sk doctor`'s host cache (`~/.ai-skills/doctor.json`): probe Claude Code /
+Copilot for a working `plugin` subcommand, and Cursor for
+`~/.cursor/plugins/local/`. Codex stays exploded. Vendor installs stay
+exploded. Cursor native still needs a catalog checkout (`skills/` +
+`.claude-plugin/`); published npm / `bunx` installs fall back to explode.
+`sk doctor` prints capability, lock↔disk drift, and orphans;
+`--repair` restores missing files; `--migrate <host>` is the only projector
+cutover. See [docs/smoke-test.md](docs/smoke-test.md).
 
 > [!WARNING]
 > Pin the gateway to a release. Plugins are instructions your agents

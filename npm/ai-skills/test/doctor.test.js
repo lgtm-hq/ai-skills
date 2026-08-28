@@ -1,0 +1,946 @@
+import { describe, expect, test } from "bun:test";
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import {
+  doctorCachePath,
+  ensureHostCapability,
+  probeHost,
+  readDoctorCache,
+  runDoctor,
+  writeDoctorCache,
+} from "../lib/doctor.js";
+import { writeLockfile } from "../lib/lockfile.js";
+
+describe("probeHost", () => {
+  test("treats a missing Claude CLI as explode", async () => {
+    const result = await probeHost("claude-code", {
+      exec: async () => {
+        const error = new Error("not found");
+        error.code = "ENOENT";
+        throw error;
+      },
+    });
+    expect(result.capability).toBe("explode");
+  });
+
+  test("treats a responding Copilot plugin CLI as native", async () => {
+    const result = await probeHost("copilot", {
+      exec: async (_command, args) => {
+        if (args[0] === "--version") {
+          return { status: 0, stderr: "", stdout: "1.2.3\n" };
+        }
+        return { status: 0, stderr: "", stdout: "Usage: copilot plugin\n" };
+      },
+    });
+    expect(result).toEqual({ capability: "native", version: "1.2.3" });
+  });
+
+  test("treats Cursor plugins/local as native", async () => {
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-doctor-cursor-"));
+    try {
+      await mkdir(join(home, ".cursor/plugins/local"), { recursive: true });
+      const result = await probeHost("cursor", {
+        exec: async () => {
+          const error = new Error("not found");
+          error.code = "ENOENT";
+          throw error;
+        },
+        home,
+      });
+      expect(result.capability).toBe("native");
+      expect(result.version).toBe("global:present:nocli");
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
+  });
+
+  test("keeps Codex exploded", async () => {
+    expect(await probeHost("codex")).toEqual({ capability: "explode", version: "n/a" });
+  });
+
+  test("treats an unrecognized plugin subcommand as explode", async () => {
+    const result = await probeHost("claude-code", {
+      exec: async (_command, args) => {
+        if (args[0] === "--version") {
+          return { status: 0, stderr: "", stdout: "1.0.0\n" };
+        }
+        return { status: 1, stderr: "error: unrecognized subcommand plugin\n", stdout: "" };
+      },
+    });
+    expect(result.capability).toBe("explode");
+  });
+
+  test("treats unknown subcommand and unrecognized argument as explode", async () => {
+    const unknown = await probeHost("copilot", {
+      exec: async (_command, args) => {
+        if (args[0] === "--version") {
+          return { status: 0, stderr: "", stdout: "1.0.0\n" };
+        }
+        return { status: 1, stderr: "unknown subcommand plugin\n", stdout: "" };
+      },
+    });
+    expect(unknown.capability).toBe("explode");
+    const argument = await probeHost("copilot", {
+      exec: async (_command, args) => {
+        if (args[0] === "--version") {
+          return { status: 0, stderr: "", stdout: "1.0.0\n" };
+        }
+        return { status: 1, stderr: "unrecognized argument plugin\n", stdout: "" };
+      },
+    });
+    expect(argument.capability).toBe("explode");
+  });
+});
+
+describe("ensureHostCapability", () => {
+  test("caches a probe and skips the plugin subcommand on the same version", async () => {
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-doctor-cache-"));
+    const calls = [];
+    const exec = async (command, args) => {
+      calls.push([command, ...args]);
+      if (args[0] === "--version") {
+        return { status: 0, stderr: "", stdout: "9.9.9\n" };
+      }
+      return { status: 0, stderr: "", stdout: "plugin help\n" };
+    };
+    try {
+      const first = await ensureHostCapability("claude-code", { exec, home, yes: true });
+      expect(first).toEqual({ capability: "native", source: "probe", version: "9.9.9" });
+      const cached = JSON.parse(await readFile(doctorCachePath(home), "utf8"));
+      expect(cached.hosts["claude-code"].capability).toBe("native");
+      calls.length = 0;
+      const second = await ensureHostCapability("claude-code", { exec, home, yes: true });
+      expect(second.capability).toBe("native");
+      expect(calls).toEqual([["claude", "--version"]]);
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
+  });
+
+  test("invalidates the cache when the host version changes", async () => {
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-doctor-invalidate-"));
+    try {
+      await writeDoctorCache(
+        {
+          hosts: {
+            copilot: { capability: "explode", source: "probe", version: "1.0.0" },
+          },
+          schemaVersion: 1,
+        },
+        { home },
+      );
+      const result = await ensureHostCapability("copilot", {
+        exec: async (_command, args) => {
+          if (args[0] === "--version") {
+            return { status: 0, stderr: "", stdout: "2.0.0\n" };
+          }
+          return { status: 0, stderr: "", stdout: "plugin\n" };
+        },
+        home,
+        yes: true,
+      });
+      expect(result).toEqual({ capability: "native", source: "probe", version: "2.0.0" });
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
+  });
+
+  test("persists one prompted answer for an ambiguous probe", async () => {
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-doctor-prompt-"));
+    try {
+      const result = await ensureHostCapability("claude-code", {
+        exec: async (_command, args) => {
+          if (args[0] === "--version") {
+            return { status: 0, stderr: "", stdout: "0.1\n" };
+          }
+          return { status: 1, stderr: "segfault", stdout: "" };
+        },
+        home,
+        prompt: async () => "explode",
+      });
+      expect(result).toEqual({ capability: "explode", source: "prompt", version: "0.1" });
+      const cache = await readDoctorCache({ home });
+      expect(cache.hosts["claude-code"].source).toBe("prompt");
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
+  });
+
+  test("hard-errors an ambiguous probe under -y", async () => {
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-doctor-yes-"));
+    try {
+      await expect(
+        ensureHostCapability("claude-code", {
+          exec: async (_command, args) => {
+            if (args[0] === "--version") {
+              return { status: 0, stderr: "", stdout: "0.1\n" };
+            }
+            return { status: 1, stderr: "segfault", stdout: "" };
+          },
+          home,
+          yes: true,
+        }),
+      ).rejects.toThrow("ambiguous");
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
+  });
+
+  test("does not reuse a Cursor cache entry from a different scope", async () => {
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-doctor-scope-"));
+    try {
+      await writeDoctorCache(
+        {
+          hosts: {
+            cursor: { capability: "native", source: "probe", version: "global:present" },
+          },
+          schemaVersion: 1,
+        },
+        { home },
+      );
+      const result = await ensureHostCapability("cursor", {
+        exec: async () => {
+          const error = new Error("not found");
+          error.code = "ENOENT";
+          throw error;
+        },
+        home,
+        scope: "project",
+        yes: true,
+      });
+      expect(result).toEqual({
+        capability: "explode",
+        source: "probe",
+        version: "project:absent:nocli",
+      });
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("runDoctor", () => {
+  test("reports host capability and lock drift", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-report-"));
+    const lines = [];
+    try {
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            review: {
+              agents: {
+                cursor: {
+                  files: { "lint/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      await mkdir(join(cwd, ".cursor/skills/orphan-skill"), { recursive: true });
+      await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: null,
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          access: async () => false,
+          exec: async () => ({ status: 1, stderr: "", stdout: "" }),
+          home: cwd,
+          lockEnvironment: { cwd, exists: async () => false, home: cwd },
+          log: (line) => lines.push(line),
+        },
+      );
+      expect(lines.some((line) => line.startsWith("host\tcursor\texplode"))).toBe(true);
+      expect(lines).toContain("plugin\treview\tcursor\texplode\tMISSING");
+      expect(
+        lines.some((line) => line.startsWith("orphan\tcursor\t") && line.endsWith("orphan-skill")),
+      ).toBe(true);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("repair re-materializes only missing plugins", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-repair-"));
+    const installs = [];
+    try {
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            review: {
+              agents: {
+                cursor: {
+                  files: { "lint/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      const result = await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: null,
+          project: true,
+          repair: true,
+          yes: true,
+        },
+        {
+          access: async () => false,
+          exec: async () => ({ status: 1, stderr: "", stdout: "" }),
+          home: cwd,
+          installExtras: {
+            explode: async () => {
+              installs.push("explode");
+              return {
+                claimed: { cursor: { "lint/SKILL.md": "abc" } },
+                skipped: [],
+                swappedDests: [],
+              };
+            },
+            sourceRoot: cwd,
+          },
+          lockEnvironment: {
+            cwd,
+            exists: async () => false,
+            hash: async () => "abc",
+            home: cwd,
+          },
+          log: () => {},
+        },
+      );
+      expect(result.repaired).toEqual(["review"]);
+      expect(installs).toEqual(["explode"]);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("report without --repair or --migrate does not rematerialize", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-report-only-"));
+    try {
+      const result = await runDoctor(
+        {
+          agents: ["codex"],
+          global: false,
+          migrate: null,
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          home: cwd,
+          lockEnvironment: { cwd, home: cwd },
+          log: () => {},
+        },
+      );
+      expect(result).toEqual({ migrated: [], repaired: [] });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("migrate requires confirmation unless -y", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-migrate-"));
+    try {
+      await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            review: {
+              agents: {
+                cursor: {
+                  files: { "lint/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      await expect(
+        runDoctor(
+          {
+            agents: ["cursor"],
+            global: false,
+            migrate: "cursor",
+            project: true,
+            repair: false,
+            yes: false,
+          },
+          {
+            confirm: async () => false,
+            exec: async () => ({ status: 1, stderr: "not found", stdout: "" }),
+            home: cwd,
+            lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+            log: () => {},
+          },
+        ),
+      ).rejects.toThrow("Migrate cancelled");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("does not leak a sibling MISSING status onto a healthy agent", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-status-"));
+    const lines = [];
+    try {
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            review: {
+              agents: {
+                "claude-code": {
+                  files: { "lint/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".claude/skills"),
+                },
+                cursor: {
+                  files: { "lint/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      await mkdir(join(cwd, ".cursor/skills/lint"), { recursive: true });
+      await writeFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "abc");
+      await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: null,
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          access: async () => false,
+          exec: async () => ({ status: 1, stderr: "not found", stdout: "" }),
+          home: cwd,
+          lockEnvironment: {
+            cwd,
+            exists: async (path) => path.includes(`${join(".cursor", "skills")}`),
+            hash: async () => "abc",
+            home: cwd,
+          },
+          log: (line) => lines.push(line),
+        },
+      );
+      expect(lines).toContain("plugin\treview\tcursor\texplode\t");
+      expect(lines).not.toContain("plugin\treview\tcursor\texplode\tMISSING");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("repair skips a missing agent that also has modified files", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-mixed-repair-"));
+    const warnings = [];
+    try {
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            review: {
+              agents: {
+                cursor: {
+                  files: { "lint/SKILL.md": "abc", "test/SKILL.md": "def" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      const result = await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: null,
+          project: true,
+          repair: true,
+          yes: true,
+        },
+        {
+          access: async () => false,
+          exec: async () => ({ status: 1, stderr: "not found", stdout: "" }),
+          home: cwd,
+          lockEnvironment: {
+            cwd,
+            exists: async (path) => path.endsWith("lint/SKILL.md"),
+            hash: async () => "zzz",
+            home: cwd,
+          },
+          log: () => {},
+          warn: (message) => warnings.push(message),
+        },
+      );
+      expect(result.repaired).toEqual([]);
+      expect(warnings.some((message) => message.includes("modified"))).toBe(true);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("reports symlink orphans and does not treat native Cursor dirs as explode orphans", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-orphans-"));
+    const lines = [];
+    try {
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            review: {
+              agents: {
+                cursor: {
+                  files: { ".claude-plugin/plugin.json": "abc" },
+                  projector: "native",
+                  root: join(cwd, ".cursor/plugins/local/review"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "native",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      await mkdir(join(cwd, ".cursor/skills"), { recursive: true });
+      await mkdir(join(cwd, ".cursor/plugins/local/review"), { recursive: true });
+      await symlink("/tmp/untracked-skill", join(cwd, ".cursor/skills/orphan-link"));
+      await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: null,
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          access: async () => true,
+          exec: async () => {
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          home: cwd,
+          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          log: (line) => lines.push(line),
+        },
+      );
+      expect(
+        lines.some((line) => line.startsWith("orphan\tcursor\t") && line.endsWith("orphan-link")),
+      ).toBe(true);
+      expect(lines.some((line) => line.endsWith("plugins/local/review"))).toBe(false);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("migrates an adopted first-party skill without dropping the lock on failure", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-migrate-fail-"));
+    const explodeFile = join(cwd, ".cursor/skills/jira/SKILL.md");
+    try {
+      await mkdir(join(cwd, ".cursor/skills/jira"), { recursive: true });
+      await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
+      await writeFile(explodeFile, "# jira\n");
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            jira: {
+              agents: {
+                cursor: {
+                  files: { "jira/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      const warnings = [];
+      const result = await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: "cursor",
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          exec: async () => {
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          home: cwd,
+          installExtras: { sourceRoot: null },
+          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          log: () => {},
+          warn: (message) => warnings.push(message),
+        },
+      );
+      expect(result.migrated).toEqual([]);
+      expect(warnings.some((message) => message.includes("catalog checkout"))).toBe(true);
+      expect(await readFile(explodeFile, "utf8")).toBe("# jira\n");
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.jira.agents.cursor.projector).toBe("explode");
+      expect(lock.plugins.jira.agents.cursor.root).toBe(join(cwd, ".cursor/skills"));
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("migrates explode Cursor dests to native and keeps adopted plugin ids", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-migrate-ok-"));
+    const explodeFile = join(cwd, ".cursor/skills/jira/SKILL.md");
+    const sourceRoot = join(cwd, "catalog");
+    try {
+      await mkdir(join(cwd, ".cursor/skills/jira"), { recursive: true });
+      await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
+      await writeFile(explodeFile, "# jira\n");
+      await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            jira: {
+              agents: {
+                cursor: {
+                  files: { "jira/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      const result = await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: "cursor",
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          exec: async () => {
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          home: cwd,
+          installExtras: { sourceRoot },
+          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          log: () => {},
+        },
+      );
+      expect(result.migrated).toEqual(["jira"]);
+      await expect(access(explodeFile)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(
+        await readFile(join(cwd, ".cursor/plugins/local/jira/skills/jira/SKILL.md"), "utf8"),
+      ).toBe("# jira\n");
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.jira.agents.cursor.projector).toBe("native");
+      expect(lock.plugins.jira.agents.cursor.root).toBe(join(cwd, ".cursor/plugins/local/jira"));
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("reports explode orphans from per-agent files not plugin-wide membership", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-orphan-files-"));
+    const lines = [];
+    try {
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            review: {
+              agents: {
+                cursor: {
+                  files: { "lint/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              skills: ["lint", "test"],
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      await mkdir(join(cwd, ".cursor/skills/lint"), { recursive: true });
+      await mkdir(join(cwd, ".cursor/skills/test"), { recursive: true });
+      await writeFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "abc");
+      await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: null,
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          access: async () => false,
+          exec: async () => ({ status: 1, stderr: "not found", stdout: "" }),
+          home: cwd,
+          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          log: (line) => lines.push(line),
+        },
+      );
+      expect(
+        lines.some((line) => line.startsWith("orphan\tcursor\t") && line.endsWith("/test")),
+      ).toBe(true);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("migrates an adopted raycast skill without expanding the raycast bundle", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-raycast-adopt-"));
+    const explodeFile = join(cwd, ".cursor/skills/raycast/SKILL.md");
+    const sourceRoot = join(cwd, "catalog");
+    try {
+      await mkdir(join(cwd, ".cursor/skills/raycast"), { recursive: true });
+      await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/raycast"), { recursive: true });
+      await writeFile(explodeFile, "# raycast\n");
+      await writeFile(join(sourceRoot, "skills/raycast/SKILL.md"), "# raycast\n");
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            raycast: {
+              agents: {
+                cursor: {
+                  files: { "raycast/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              skills: ["raycast"],
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      const result = await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: "cursor",
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          exec: async () => {
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          home: cwd,
+          installExtras: { sourceRoot },
+          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          log: () => {},
+        },
+      );
+      expect(result.migrated).toEqual(["raycast"]);
+      expect(
+        await readFile(join(cwd, ".cursor/plugins/local/raycast/skills/raycast/SKILL.md"), "utf8"),
+      ).toBe("# raycast\n");
+      await expect(
+        access(join(cwd, ".cursor/plugins/local/raycast/skills/pr-raycast")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("keeps a successful migrate when old dest uninstall fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-uninstall-fail-"));
+    const explodeFile = join(cwd, ".cursor/skills/jira/SKILL.md");
+    const sourceRoot = join(cwd, "catalog");
+    const warnings = [];
+    try {
+      await mkdir(join(cwd, ".cursor/skills/jira"), { recursive: true });
+      await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
+      await writeFile(explodeFile, "# jira\n");
+      await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            jira: {
+              agents: {
+                cursor: {
+                  files: { "jira/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      const result = await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: "cursor",
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          exec: async () => {
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          hash: async () => {
+            throw new Error("hash boom");
+          },
+          home: cwd,
+          installExtras: { sourceRoot },
+          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          log: () => {},
+          warn: (message) => warnings.push(message),
+        },
+      );
+      expect(result.migrated).toEqual(["jira"]);
+      expect(warnings.some((message) => message.includes("could not remove"))).toBe(true);
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.jira.agents.cursor.projector).toBe("native");
+      expect(await readFile(explodeFile, "utf8")).toBe("# jira\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+});
