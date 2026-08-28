@@ -888,6 +888,90 @@ describe("gateway maintenance commands", () => {
     expect(execCalls).toEqual([["claude", "plugin", "uninstall", "review@ai-skills"]]);
   });
 
+  test("restores the lock when CLI uninstall fails after lock write", async () => {
+    const execCalls = [];
+    const writes = [];
+    const nativeLock = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            "claude-code": {
+              files: { "lint/SKILL.md": "" },
+              projector: "native",
+              root: "cli:claude-code",
+            },
+          },
+          projector: "native",
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.0.0-dev",
+          vendor: "lgtm-hq",
+          version: "0.0.0-dev",
+        }),
+      },
+    };
+    await expect(
+      removeSkills(options, {
+        exec: async (command, args) => {
+          execCalls.push([command, ...args]);
+          return { status: 1, stderr: "permission denied", stdout: "" };
+        },
+        readLock: async () => nativeLock,
+        run: async () => {},
+        writeLock: async (next) => {
+          writes.push(next);
+        },
+      }),
+    ).rejects.toThrow("claude plugin uninstall failed: permission denied");
+    expect(execCalls).toEqual([["claude", "plugin", "uninstall", "review@ai-skills"]]);
+    expect(writes).toHaveLength(2);
+    expect(writes[0].plugins.review).toBeUndefined();
+    expect(writes[1].plugins.review).toEqual(nativeLock.plugins.review);
+  });
+
+  test("keeps the uninstall error when lock restore fails", async () => {
+    const warnings = [];
+    const nativeLock = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            "claude-code": {
+              files: { "lint/SKILL.md": "" },
+              projector: "native",
+              root: "cli:claude-code",
+            },
+          },
+          projector: "native",
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.0.0-dev",
+          vendor: "lgtm-hq",
+          version: "0.0.0-dev",
+        }),
+      },
+    };
+    let writes = 0;
+    await expect(
+      removeSkills(options, {
+        exec: async () => ({ status: 1, stderr: "permission denied", stdout: "" }),
+        readLock: async () => nativeLock,
+        run: async () => {},
+        warn: (message) => {
+          warnings.push(message);
+        },
+        writeLock: async () => {
+          writes += 1;
+          if (writes > 1) {
+            throw new Error("EACCES");
+          }
+        },
+      }),
+    ).rejects.toThrow("claude plugin uninstall failed: permission denied");
+    expect(warnings).toEqual([
+      "Warning: could not restore lock after CLI uninstall failure (EACCES)",
+    ]);
+  });
+
   test("does not uninstall a CLI plugin when lock write fails", async () => {
     const execCalls = [];
     const nativeLock = {

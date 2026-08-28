@@ -270,12 +270,33 @@ export async function removeSkills(options, dependencies = {}) {
     ...lock,
     plugins,
   });
+  const remainingByPlugin = new Map();
   for (const item of pendingCliUninstall) {
-    await uninstallCliPlugin({
-      agent: item.agent,
-      exec: dependencies.exec,
-      pluginId: item.pluginId,
+    remainingByPlugin.set(item.pluginId, (remainingByPlugin.get(item.pluginId) ?? 0) + 1);
+  }
+  try {
+    for (const item of pendingCliUninstall) {
+      await uninstallCliPlugin({
+        agent: item.agent,
+        exec: dependencies.exec,
+        pluginId: item.pluginId,
+      });
+      const left = (remainingByPlugin.get(item.pluginId) ?? 1) - 1;
+      if (left === 0) {
+        remainingByPlugin.delete(item.pluginId);
+      } else {
+        remainingByPlugin.set(item.pluginId, left);
+      }
+    }
+  } catch (error) {
+    await restoreLockAfterCliUninstallFailure({
+      lock,
+      plugins,
+      remainingByPlugin,
+      warn,
+      writeLock,
     });
+    throw error;
   }
   return selected;
 }
@@ -754,6 +775,40 @@ async function siblingLockHasCliNative(pluginId, agent, scope, readLock, lockEnv
     return false;
   }
   return partitionLockedLanes(entry).cliNative.includes(agent);
+}
+
+/**
+ * Put plugins back in the lock when host CLI uninstall fails after the write.
+ *
+ * Lock removal is persisted before uninstall so a write failure cannot drop a
+ * still-tracked host plugin. If uninstall then fails, restore entries that did
+ * not finish so later update/remove can still see them.
+ *
+ * @param {object} args - Named arguments.
+ * @param {import("./lockfile.js").GatewayLock} args.lock - Lock snapshot from before this remove.
+ * @param {import("./lockfile.js").GatewayLock["plugins"]} args.plugins - Lock plugins after this remove.
+ * @param {Map<string, number>} args.remainingByPlugin - Plugin ids whose CLI uninstalls are unfinished.
+ * @param {(message: string) => void} args.warn - Warning sink.
+ * @param {typeof writeLockfile} args.writeLock - Lock writer.
+ * @returns {Promise<void>} Resolves after restore or a failed restore warning.
+ */
+async function restoreLockAfterCliUninstallFailure(args) {
+  if (args.remainingByPlugin.size === 0) {
+    return;
+  }
+  const restoredPlugins = { ...args.plugins };
+  for (const pluginId of args.remainingByPlugin.keys()) {
+    restoredPlugins[pluginId] = args.lock.plugins[pluginId];
+  }
+  try {
+    await args.writeLock({
+      ...args.lock,
+      plugins: restoredPlugins,
+    });
+  } catch (restoreError) {
+    const detail = restoreError instanceof Error ? restoreError.message : String(restoreError);
+    args.warn(`Warning: could not restore lock after CLI uninstall failure (${detail})`);
+  }
 }
 
 /**
