@@ -1184,6 +1184,11 @@ describe("native projectors", () => {
       );
       expect(received).toContain("cursor");
       expect(received).toContain("add");
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.review.projector).toBe("explode");
+      expect(lock.plugins.review.agents.cursor.projector).toBe("explode");
+      expect(lock.plugins.review.agents.cursor.root).toBe(join(cwd, ".cursor/skills"));
+      expect(lock.plugins.review.agents.cursor.root).not.toContain("plugins/local");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

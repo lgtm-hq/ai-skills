@@ -826,6 +826,7 @@ export async function install(
       pluginId,
       detectAgents,
       existing,
+      new Set(lanes.explode),
     );
     if (Object.keys(entries).length === 0) {
       return { alreadyPresent: 0, installed: 0, repaired: 0 };
@@ -889,6 +890,8 @@ export async function install(
  * @param {string} pluginId - Plugin id to record.
  * @param {boolean} [onlyExistingFiles] - When true, omit missing SKILL.md paths instead of empty digests.
  * @param {import("./lockfile.js").PluginLockEntry} [existing] - Previously locked plugin, if any.
+ * @param {Set<string>} [explodeLockAgents] - Agents delivered via explode this run
+ *   (including implicit Cursor native → explode when the catalog is absent).
  * @returns {Promise<Record<string, import("./lockfile.js").PluginLockEntry>>} Entries keyed by plugin id.
  */
 async function createLockEntries(
@@ -899,6 +902,7 @@ async function createLockEntries(
   pluginId,
   onlyExistingFiles = false,
   existing,
+  explodeLockAgents = new Set(),
 ) {
   lockEnvironment = lockEnvironment ?? {};
   const installedAt = now().toISOString();
@@ -914,7 +918,9 @@ async function createLockEntries(
   const agents = {};
   const projectors = {};
   for (const agent of options.agents) {
-    const projector = projectorForAgent(agent, options.projector, Boolean(vendor), existing);
+    const projector = explodeLockAgents.has(agent)
+      ? PROJECTOR_EXPLODE
+      : projectorForAgent(agent, options.projector, Boolean(vendor), existing);
     projectors[agent] = projector;
     if (projector === PROJECTOR_NATIVE && agent === "cursor") {
       const root = join(destRoot, pluginId);
