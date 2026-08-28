@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from vendor_registry.vendor_plugin import VendorPlugin
+
 
 @dataclass(frozen=True)
 class Vendor:
@@ -15,3 +17,4 @@ class Vendor:
     skill_roots: tuple[str, ...]
     license: str
     homepage: str
+    plugins: tuple[VendorPlugin, ...] = ()

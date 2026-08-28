@@ -91,6 +91,55 @@ uv run python scripts/manage_vendors.py check
 **`README.md`** and record the change under the Unreleased section of
 **`CHANGELOG.md`**. The script prints this reminder and never edits those files.
 
+### Vendor plugin slices
+
+Each vendor may declare `plugins:` — reviewed bake slices, not runtime
+improvisation ([ADR-0005](docs/adr/0005-collision-doctrine.md),
+[ADR-0006](docs/adr/0006-vendor-bake-safety.md)). Omit the field or use
+`plugins: []` until a slice is declared; `plugins: null` is rejected.
+Filling the five registered vendors is a separate issue; this schema is
+validated whenever `vendors.yaml` loads.
+
+Per plugin:
+
+- `id` — kebab-case plugin id, unique across vendors and first-party
+  `bundles.yaml` group ids (skipped only when a sibling `bundles.yaml`
+  is absent, as in isolated tests)
+- `description` — non-empty single-line string
+- `skillsRoot` — canonical relative POSIX path or glob (no whitespace,
+  backslashes, `.` / `..` / empty components, not absolute)
+- `skills` — `"*"` (every skill under `skillsRoot`) or a non-empty list of
+  canonical paths relative to `skillsRoot` (no glob metacharacters; the
+  list must not contain `"*"`)
+- `extraSkills` — optional repo-relative canonical paths to ingest in
+  addition (no globs; omit the key rather than `null`)
+- `renameSkills` — optional `{old: new}` kebab-case map; targets are unique
+  across **all** vendors. Collisions against first-party skill directory
+  names are reported at bake/CI (issue #378), not at schema load. Every
+  collision rename is a reviewed registry edit, never a bake/install
+  guess. Duplicate YAML keys are rejected.
+- `agents` — optional non-empty list of kebab-case agent markdown
+  component names (the stem of `agents/*.md` files to ingest). Omit the
+  key rather than `null`. This is not a host-id allowlist.
+
+```yaml
+    plugins:
+      - id: example-plugin
+        description: Example vendor plugin.
+        skillsRoot: skills
+        skills: "*"
+        extraSkills:
+          - extras/bonus
+        renameSkills:
+          teach: teach-example
+        agents:
+          - comment-sicko
+          - code-reviewer
+```
+
+`scripts/manage_vendors.py` round-trips `plugins` when refreshing SHAs. Do
+not hand-edit baked indexes to encode a slice.
+
 ## Pull requests
 
 - Use **[Conventional Commits](https://www.conventionalcommits.org/)** in PR titles;

@@ -53,8 +53,18 @@ _FIELD_ORDER = (
     "sha",
     "displayRef",
     "skillRoots",
+    "plugins",
     "license",
     "homepage",
+)
+_PLUGIN_FIELD_ORDER = (
+    "id",
+    "description",
+    "skillsRoot",
+    "skills",
+    "extraSkills",
+    "renameSkills",
+    "agents",
 )
 _DEFAULT_DISPLAY_REF = "latest"
 
@@ -142,7 +152,7 @@ def _needs_quote(*, value: str) -> bool:
     Returns:
         Whether the value would be misparsed as plain YAML.
     """
-    if not value or value != value.strip():
+    if not value or value != value.strip() or "\n" in value or "\r" in value:
         return True
     if value[0] in "!&*?|>%@`\"'#,[]{}:-":
         return True
@@ -166,7 +176,12 @@ def _scalar(*, value: str, quote: bool = False) -> str:
         The serialized scalar text.
     """
     if quote or _needs_quote(value=value):
-        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        escaped = (
+            value.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+        )
         return f'"{escaped}"'
     return value
 
@@ -200,11 +215,104 @@ def _dump_registry(*, vendors: list[dict[str, Any]]) -> str:
                     for root in vendor["skillRoots"]
                 )
                 continue
+            if field == "plugins":
+                lines.extend(
+                    _dump_plugins(plugins=vendor["plugins"], prefix=prefix),
+                )
+                continue
             lines.append(
                 f"{prefix}{field}: "
                 f"{_scalar(value=str(vendor[field]), quote=field == 'sha')}",
             )
     return "\n".join(lines) + "\n"
+
+
+def _dump_plugins(*, plugins: object, prefix: str) -> list[str]:
+    """Serialize a vendor's plugin slices.
+
+    Args:
+        plugins: Plugin mappings in source order.
+        prefix: Indent prefix matching the current vendor field.
+
+    Returns:
+        YAML lines for the ``plugins`` field.
+
+    Raises:
+        TypeError: If ``plugins`` is not a list of mappings.
+        ValueError: If a plugin mapping contains unknown fields.
+    """
+    if not isinstance(plugins, list):
+        msg = "plugins must be a list"
+        raise TypeError(msg)
+    if not plugins:
+        return [f"{prefix}plugins: []"]
+    lines = [f"{prefix}plugins:"]
+    for plugin in plugins:
+        if not isinstance(plugin, dict):
+            msg = "plugins entries must be mappings"
+            raise TypeError(msg)
+        lines.extend(_dump_plugin(plugin=plugin))
+    return lines
+
+
+def _dump_plugin(*, plugin: dict[str, Any]) -> list[str]:
+    """Serialize one plugin mapping.
+
+    Args:
+        plugin: CamelCase plugin fields from ``vendors.yaml``.
+
+    Returns:
+        YAML lines for one plugin list item.
+
+    Raises:
+        ValueError: If the mapping contains keys outside ``_PLUGIN_FIELD_ORDER``.
+    """
+    lines: list[str] = []
+    extra = set(plugin) - set(_PLUGIN_FIELD_ORDER)
+    if extra:
+        msg = (
+            "plugin contains unknown fields: "
+            f"{', '.join(sorted(str(key) for key in extra))}"
+        )
+        raise ValueError(msg)
+    emitted = False
+    for field in _PLUGIN_FIELD_ORDER:
+        if field not in plugin:
+            continue
+        prefix = "      - " if not emitted else "        "
+        emitted = True
+        value = plugin[field]
+        if field == "skills":
+            if value == "*":
+                lines.append(f'{prefix}skills: "*"')
+            elif isinstance(value, list):
+                lines.append(f"{prefix}skills:")
+                lines.extend(
+                    f"          - {_scalar(value=str(path))}" for path in value
+                )
+            else:
+                msg = 'skills must be "*" or a list'
+                raise TypeError(msg)
+            continue
+        if field in {"extraSkills", "agents"} and isinstance(value, list):
+            if not value:
+                lines.append(f"{prefix}{field}: []")
+                continue
+            lines.append(f"{prefix}{field}:")
+            lines.extend(f"          - {_scalar(value=str(item))}" for item in value)
+            continue
+        if field == "renameSkills" and isinstance(value, dict):
+            if not value:
+                lines.append(f"{prefix}renameSkills: {{}}")
+                continue
+            lines.append(f"{prefix}renameSkills:")
+            for old, new in value.items():
+                lines.append(
+                    f"          {_scalar(value=str(old))}: {_scalar(value=str(new))}",
+                )
+            continue
+        lines.append(f"{prefix}{field}: {_scalar(value=str(value))}")
+    return lines
 
 
 def _read_raw_registry(*, registry_path: Path) -> list[dict[str, Any]]:
