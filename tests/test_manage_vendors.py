@@ -426,5 +426,15 @@ def test_update_preserves_plugin_slices(repo_root: Path) -> None:
     assert_that(plugin.rename_skills).is_equal_to((("teach", "teach-existing"),))
     assert_that(plugin.agents).is_equal_to(("comment-sicko",))
     dumped = registry_path.read_text(encoding="utf-8")
-    assert_that(dumped).contains("existing-plugin")
-    assert_that(dumped).contains("teach: teach-existing")
+    assert_that(dumped).contains(
+        "    plugins:\n"
+        "      - id: existing-plugin\n"
+        "        description: Existing vendor plugin.\n"
+        "        skillsRoot: skills\n"
+        '        skills: "*"\n'
+        "        renameSkills:\n"
+        "          teach: teach-existing\n"
+        "        agents:\n"
+        "          - comment-sicko\n"
+        "    license: MIT\n",
+    )
