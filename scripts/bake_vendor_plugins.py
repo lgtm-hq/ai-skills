@@ -19,6 +19,7 @@ from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from urllib.parse import urlparse
 
+from skill_frontmatter import read_frontmatter_name
 from vendor_registry.plugin_bake import bake_vendor_plugins
 from vendor_registry.plugin_bake_result import PluginBakeResult
 from vendor_registry.plugin_manifest import render_marketplace
@@ -32,10 +33,11 @@ from vendor_registry.plugin_version import plugin_version
 from vendor_registry.registry import load_registry
 from vendor_registry.safe_tree import (
     find_skill_markdown,
-    replace_directory_contents,
+    install_directory,
     validate_tree,
 )
 from vendor_registry.vendor import Vendor
+from vendor_registry.vendor_plugin import VendorPlugin
 
 PLUGINS_BAKED_DIRNAME = "plugins-baked"
 COVERAGE_FILENAME = "COVERAGE.md"
@@ -122,7 +124,7 @@ def bake(
             explode_name_count=explode_name_count,
         )
         marketplace = render_marketplace(
-            plugins=_marketplace_entries(vendors=vendors, results=results),
+            plugins=_marketplace_entries(vendors=vendors),
         )
         marketplace_path = output_root / MARKETPLACE_RELATIVE
         marketplace_path.parent.mkdir(parents=True, exist_ok=True)
@@ -137,7 +139,7 @@ def bake(
                 ),
             )
         validate_tree(root=output_root)
-        replace_directory_contents(
+        install_directory(
             source=output_root,
             destination=repo_root / PLUGINS_BAKED_DIRNAME,
         )
@@ -382,18 +384,17 @@ def _rewrite_tarball_member(*, member: tarfile.TarInfo) -> tarfile.TarInfo | Non
 def _marketplace_entries(
     *,
     vendors: tuple[Vendor, ...],
-    results: tuple[PluginBakeResult, ...],
 ) -> list[dict[str, str]]:
     """Build marketplace plugin entries in registry order.
 
+    Versions are pin-derived from the registry, never from on-disk manifests.
+
     Args:
         vendors: Registry vendors.
-        results: Baked plugin results.
 
     Returns:
         Marketplace plugin objects.
     """
-    versions = {result.plugin_id: result.version for result in results}
     entries: list[dict[str, str]] = []
     for vendor in vendors:
         for plugin in vendor.plugins:
@@ -401,9 +402,9 @@ def _marketplace_entries(
                 {
                     "name": plugin.id,
                     "description": plugin.description,
-                    "version": versions.get(
-                        plugin.id,
-                        plugin_version(sha=vendor.sha, display_ref=vendor.display_ref),
+                    "version": plugin_version(
+                        sha=vendor.sha,
+                        display_ref=vendor.display_ref,
                     ),
                     "source": f"./{plugin.id}",
                 },
@@ -431,6 +432,19 @@ def _check_baked_output(*, repo_root: Path) -> None:
     if not coverage_path.is_file():
         msg = f"Missing generated file: {coverage_path}"
         raise ValueError(msg)
+    if not any(vendor.plugins for vendor in vendors):
+        expected_coverage = render_coverage_report(
+            vendors=vendors,
+            skipped_by_vendor={},
+            ingested_counts={},
+            fetched_vendors=frozenset(),
+            collisions=(),
+            agent_collisions=(),
+            explode_name_count=0,
+        )
+        if coverage_path.read_text(encoding="utf-8") != expected_coverage:
+            msg = f"Generated file is stale: {coverage_path}"
+            raise ValueError(msg)
     expected_ids = [plugin.id for vendor in vendors for plugin in vendor.plugins]
     actual_ids = sorted(
         path.name
@@ -443,7 +457,7 @@ def _check_baked_output(*, repo_root: Path) -> None:
             f"expected {expected_ids}, found {actual_ids}"
         )
         raise ValueError(msg)
-    results = _results_from_disk(baked_root=baked_root, expected_ids=expected_ids)
+    results = _results_from_disk(baked_root=baked_root, vendors=vendors)
     skill_collisions = collect_skill_collisions(
         results=results,
         first_party_names=first_party_skill_names(repo_root=repo_root),
@@ -458,7 +472,7 @@ def _check_baked_output(*, repo_root: Path) -> None:
         )
     marketplace_path = baked_root / MARKETPLACE_RELATIVE
     expected_marketplace = render_marketplace(
-        plugins=_marketplace_entries(vendors=vendors, results=results),
+        plugins=_marketplace_entries(vendors=vendors),
     )
     if not marketplace_path.is_file():
         msg = f"Missing generated file: {marketplace_path}"
@@ -472,55 +486,185 @@ def _check_baked_output(*, repo_root: Path) -> None:
 def _results_from_disk(
     *,
     baked_root: Path,
-    expected_ids: list[str],
+    vendors: tuple[Vendor, ...],
 ) -> tuple[PluginBakeResult, ...]:
     """Rebuild bake results from committed plugin trees for ``--check``.
 
+    Registry fields (pin-derived version, ``renameSkills``, ``agents``,
+    and explicit skill selectors) are the source of truth. Disk is only
+    accepted when it matches those declarations.
+
     Args:
         baked_root: ``plugins-baked`` directory.
-        expected_ids: Plugin ids in registry order.
+        vendors: Registry vendors (pin-derived versions and plugin ids).
 
     Returns:
-        Synthetic results used for collision and marketplace checks.
+        Synthetic results used for collision checks.
 
     Raises:
-        ValueError: If a baked skill is missing ``SKILL.md``.
+        ValueError: If a baked skill is missing ``SKILL.md``, frontmatter
+            ``name`` does not match the directory, the stamped version
+            is not pin-derived, or registry-declared skills/agents/renames
+            are missing from the committed tree.
         json.JSONDecodeError: If ``plugin.json`` is invalid.
     """
     results: list[PluginBakeResult] = []
-    for plugin_id in expected_ids:
-        plugin_dir = baked_root / plugin_id
-        manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
-        version = str(manifest["version"])
-        skills_root = plugin_dir / "skills"
-        explode_names: list[str] = []
-        if skills_root.is_dir():
-            for skill_dir in sorted(skills_root.iterdir(), key=lambda path: path.name):
-                if skill_dir.is_symlink() or not skill_dir.is_dir():
-                    continue
-                skill_markdown = skill_dir / "SKILL.md"
-                if not skill_markdown.is_file() or skill_markdown.is_symlink():
-                    msg = f"baked skill missing SKILL.md: {skill_dir}"
-                    raise ValueError(msg)
-                explode_names.append(skill_dir.name)
-        agents_dir = plugin_dir / "agents"
-        agent_stems: list[str] = []
-        if agents_dir.is_dir():
-            for agent in sorted(agents_dir.iterdir(), key=lambda path: path.name):
-                if agent.is_symlink() or not agent.is_file() or agent.suffix != ".md":
-                    continue
-                agent_stems.append(agent.stem)
-        results.append(
-            PluginBakeResult(
-                plugin_id=plugin_id,
-                version=version,
-                ingested_skill_md=(),
-                explode_names=tuple(explode_names),
-                agent_stems=tuple(agent_stems),
-                renamed=(),
-            ),
-        )
+    for vendor in vendors:
+        for plugin in vendor.plugins:
+            plugin_dir = baked_root / plugin.id
+            manifest = json.loads(
+                (plugin_dir / "plugin.json").read_text(encoding="utf-8"),
+            )
+            expected_version = plugin_version(
+                sha=vendor.sha,
+                display_ref=vendor.display_ref,
+            )
+            version = str(manifest["version"])
+            if version != expected_version:
+                msg = (
+                    f"baked plugin {plugin.id} version {version!r} does not "
+                    f"match pin-derived {expected_version!r}"
+                )
+                raise ValueError(msg)
+            explode_names = _baked_explode_names(plugin_dir=plugin_dir)
+            disk_agents = _baked_agent_stems(plugin_dir=plugin_dir)
+            _assert_plugin_matches_registry(
+                plugin=plugin,
+                explode_names=explode_names,
+                disk_agents=disk_agents,
+            )
+            results.append(
+                PluginBakeResult(
+                    plugin_id=plugin.id,
+                    version=version,
+                    ingested_skill_md=(),
+                    explode_names=explode_names,
+                    agent_stems=plugin.agents,
+                    renamed=plugin.rename_skills,
+                ),
+            )
     return tuple(results)
+
+
+def _baked_explode_names(*, plugin_dir: Path) -> tuple[str, ...]:
+    """Return frontmatter-validated skill directory names under a plugin.
+
+    Args:
+        plugin_dir: Baked plugin directory.
+
+    Returns:
+        Skill explode names in directory order.
+
+    Raises:
+        ValueError: If a skill directory is missing ``SKILL.md`` or its
+            frontmatter ``name`` does not match the directory.
+    """
+    skills_root = plugin_dir / "skills"
+    if not skills_root.is_dir() or skills_root.is_symlink():
+        return ()
+    names: list[str] = []
+    for skill_dir in sorted(skills_root.iterdir(), key=lambda path: path.name):
+        if skill_dir.is_symlink() or not skill_dir.is_dir():
+            continue
+        skill_markdown = skill_dir / "SKILL.md"
+        if not skill_markdown.is_file() or skill_markdown.is_symlink():
+            msg = f"baked skill missing SKILL.md: {skill_dir}"
+            raise ValueError(msg)
+        baked_name = read_frontmatter_name(
+            text=skill_markdown.read_text(encoding="utf-8"),
+        )
+        if baked_name != skill_dir.name:
+            msg = (
+                f"SKILL.md frontmatter name {baked_name!r} does "
+                f"not match directory {skill_dir.name!r}"
+            )
+            raise ValueError(msg)
+        names.append(baked_name)
+    return tuple(names)
+
+
+def _baked_agent_stems(*, plugin_dir: Path) -> tuple[str, ...]:
+    """Return ``agents/*.md`` stems from a baked plugin directory.
+
+    Args:
+        plugin_dir: Baked plugin directory.
+
+    Returns:
+        Agent stems in filename order.
+    """
+    agents_dir = plugin_dir / "agents"
+    if not agents_dir.is_dir() or agents_dir.is_symlink():
+        return ()
+    return tuple(
+        agent.stem
+        for agent in sorted(agents_dir.iterdir(), key=lambda path: path.name)
+        if agent.is_file() and not agent.is_symlink() and agent.suffix == ".md"
+    )
+
+
+def _assert_plugin_matches_registry(
+    *,
+    plugin: VendorPlugin,
+    explode_names: tuple[str, ...],
+    disk_agents: tuple[str, ...],
+) -> None:
+    """Fail closed when committed plugin contents lag ``vendors.yaml``.
+
+    Args:
+        plugin: Registry plugin declaration.
+        explode_names: Skill directory names present on disk.
+        disk_agents: Agent stems present on disk.
+
+    Raises:
+        ValueError: If rename targets, declared skills, extras, or agents
+            do not match the committed tree.
+    """
+    disk_skills = frozenset(explode_names)
+    rename_map = dict(plugin.rename_skills)
+    for old, new in plugin.rename_skills:
+        if old in disk_skills:
+            msg = (
+                f"baked plugin {plugin.id} still has pre-rename skill "
+                f"{old!r}; expected {new!r}"
+            )
+            raise ValueError(msg)
+        if new not in disk_skills:
+            msg = f"baked plugin {plugin.id} missing renamed skill {new!r}"
+            raise ValueError(msg)
+    expected_names: list[str] = []
+    if plugin.skills != "*":
+        expected_names.extend(
+            _renamed_basename(selector=selector, rename_map=rename_map)
+            for selector in plugin.skills
+        )
+    expected_names.extend(
+        _renamed_basename(selector=extra, rename_map=rename_map)
+        for extra in plugin.extra_skills
+    )
+    missing = [name for name in expected_names if name not in disk_skills]
+    if missing:
+        msg = f"baked plugin {plugin.id} missing declared skill {missing[0]!r}"
+        raise ValueError(msg)
+    if frozenset(disk_agents) != frozenset(plugin.agents):
+        msg = (
+            f"baked plugin {plugin.id} agents {tuple(disk_agents)!r} do not "
+            f"match registry {plugin.agents!r}"
+        )
+        raise ValueError(msg)
+
+
+def _renamed_basename(*, selector: str, rename_map: dict[str, str]) -> str:
+    """Return the post-rename skill directory name for a selector path.
+
+    Args:
+        selector: POSIX skill path relative to ``skillsRoot`` or repo root.
+        rename_map: Old basename → new explode name.
+
+    Returns:
+        Directory name hosts will explode.
+    """
+    original = PurePosixPath(selector).name
+    return rename_map.get(original, original)
 
 
 def main(argv: list[str] | None = None) -> int:

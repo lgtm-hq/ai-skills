@@ -80,3 +80,33 @@ def rewrite_frontmatter_name(*, text: str, name: str) -> str:
         raise ValueError(msg)
     updated = _NAME_LINE.sub(repl=f"name: {name}", string=frontmatter, count=1)
     return f"---\n{updated}\n---\n{body}"
+
+
+def read_frontmatter_name(*, text: str) -> str:
+    """Return the YAML frontmatter ``name`` value.
+
+    Args:
+        text: Full SKILL.md document content.
+
+    Returns:
+        The unquoted ``name`` field.
+
+    Raises:
+        ValueError: If frontmatter or ``name`` is missing or empty.
+    """
+    frontmatter, _body = split_frontmatter(text)
+    if frontmatter is None:
+        msg = "SKILL.md is missing YAML frontmatter"
+        raise ValueError(msg)
+    match = _NAME_LINE.search(frontmatter)
+    if match is None:
+        msg = "SKILL.md frontmatter is missing name"
+        raise ValueError(msg)
+    _key, _sep, remainder = match.group(0).partition(":")
+    value = remainder.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        value = value[1:-1]
+    if not value:
+        msg = "SKILL.md frontmatter name must not be empty"
+        raise ValueError(msg)
+    return value

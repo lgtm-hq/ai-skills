@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 from assertpy import assert_that
-from skill_frontmatter import rewrite_frontmatter_name, split_frontmatter
+from skill_frontmatter import (
+    read_frontmatter_name,
+    rewrite_frontmatter_name,
+    split_frontmatter,
+)
 
 
 @pytest.mark.parametrize(
@@ -106,3 +110,10 @@ def test_rewrite_frontmatter_name_rejects_missing_name_field() -> None:
             text="---\ndescription: No name.\n---\n",
             name="renamed",
         )
+
+
+def test_read_frontmatter_name_strips_quotes() -> None:
+    """Quoted YAML name values are returned unquoted."""
+    assert_that(
+        read_frontmatter_name(text='---\nname: "branch"\n---\n'),
+    ).is_equal_to("branch")

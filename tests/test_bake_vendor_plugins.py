@@ -13,7 +13,7 @@ from assertpy import assert_that
 from vendor_registry.plugin_version import plugin_version
 from vendor_registry.safe_tree import (
     copy_tree,
-    replace_directory_contents,
+    install_directory,
     validate_tree,
 )
 
@@ -400,6 +400,271 @@ def test_check_rejects_stale_marketplace(
     assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
 
 
+def test_check_rejects_forged_coverage_report(
+    tmp_path: Path,
+) -> None:
+    """--check fails when COVERAGE.md is not the renderer output."""
+    _write_registry(repo_root=tmp_path, plugins_yaml="")
+    bake_vendor_plugins.bake(repo_root=tmp_path)
+    (tmp_path / "plugins-baked" / "COVERAGE.md").write_text(
+        "# forged\n",
+        encoding="utf-8",
+    )
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_stale_display_ref(
+    tmp_path: Path,
+) -> None:
+    """--check fails when displayRef changes without a re-bake."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    registry = tmp_path / "vendors.yaml"
+    registry.write_text(
+        registry.read_text(encoding="utf-8").replace(
+            "displayRef: latest",
+            "displayRef: v9.9.9",
+        ),
+        encoding="utf-8",
+    )
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_stale_rename_skills(
+    tmp_path: Path,
+) -> None:
+    """--check fails when renameSkills is added without a re-bake."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "teach", name="teach")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+            "        renameSkills:\n"
+            "          teach: teach-renamed\n"
+        ),
+    )
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_stale_agents(
+    tmp_path: Path,
+) -> None:
+    """--check fails when agents are declared without a re-bake."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    (vendor_root / "agents").mkdir()
+    (vendor_root / "agents" / "code-reviewer.md").write_text(
+        "# code-reviewer\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+            "        agents:\n"
+            "          - code-reviewer\n"
+        ),
+    )
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_check_rejects_tampered_plugin_version(
+    tmp_path: Path,
+) -> None:
+    """--check uses pin-derived versions, not the committed plugin.json."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    manifest_path = tmp_path / "plugins-baked" / "example-plugin" / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["version"] = "9.9.9"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_bake_rejects_frontmatter_name_mismatch(
+    tmp_path: Path,
+) -> None:
+    """Hosts index frontmatter name; a mismatch with the directory fails."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="branch")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    with pytest.raises(ValueError, match="does not match directory 'alpha'"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
+def test_check_rejects_frontmatter_directory_mismatch(
+    tmp_path: Path,
+) -> None:
+    """--check fails when a baked SKILL.md name disagrees with its directory."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+    skill_markdown = (
+        tmp_path / "plugins-baked" / "example-plugin" / "skills" / "alpha" / "SKILL.md"
+    )
+    skill_markdown.write_text(
+        "---\nname: branch\ndescription: alpha skill.\n---\n",
+        encoding="utf-8",
+    )
+
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
+def test_bake_lists_uningested_skill_under_node_modules(
+    tmp_path: Path,
+) -> None:
+    """SKILL.md under node_modules is listed as SKIPPED, not dropped."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_skill(
+        directory=vendor_root / "node_modules" / "hidden",
+        name="hidden",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    coverage = (tmp_path / "plugins-baked" / "COVERAGE.md").read_text(
+        encoding="utf-8",
+    )
+    assert_that(coverage).contains("SKIPPED `node_modules/hidden/SKILL.md`")
+
+
+def test_bake_rejects_symlink_under_node_modules(
+    tmp_path: Path,
+) -> None:
+    """node_modules is not a coverage/validation hole."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    nested = vendor_root / "node_modules" / "pkg"
+    nested.mkdir(parents=True)
+    (nested / "link").symlink_to("/tmp")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    with pytest.raises(ValueError, match="symlink rejected"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
 def test_check_rejects_symlink_in_baked_output(
     tmp_path: Path,
 ) -> None:
@@ -411,23 +676,64 @@ def test_check_rejects_symlink_in_baked_output(
     assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
 
 
-def test_replace_keeps_destination_inode(
+def test_install_directory_replaces_previous_tree(
     tmp_path: Path,
 ) -> None:
-    """Swapping children leaves the plugins-baked directory inode in place."""
+    """A successful install publishes the staged tree and drops stale files."""
     dest = tmp_path / "plugins-baked"
     dest.mkdir()
     marker = dest / "stale.txt"
     marker.write_text("old\n", encoding="utf-8")
-    inode = dest.stat().st_ino
     source = tmp_path / "next"
     source.mkdir()
     (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
-    replace_directory_contents(source=source, destination=dest)
+    install_directory(source=source, destination=dest)
 
-    assert_that(dest.stat().st_ino).is_equal_to(inode)
-    assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to("new\n")
+    assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to(
+        "new\n",
+    )
     assert_that(marker.exists()).is_false()
+
+
+def test_install_directory_restores_previous_tree_on_rename_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed install rename must not leave plugins-baked empty."""
+    dest = tmp_path / "plugins-baked"
+    dest.mkdir()
+    (dest / "COVERAGE.md").write_text("old\n", encoding="utf-8")
+    source = tmp_path / "next"
+    source.mkdir()
+    (source / "COVERAGE.md").write_text("new\n", encoding="utf-8")
+    original_rename = Path.rename
+
+    def _flaky_rename(self: Path, target: Path | str) -> Path:
+        """Fail only the install rename of the staged tree.
+
+        Args:
+            self: Path being renamed.
+            target: Rename destination.
+
+        Returns:
+            The destination path from the original rename.
+
+        Raises:
+            OSError: When renaming the staged tree into place.
+        """
+        if self == source:
+            msg = "injected rename failure"
+            raise OSError(msg)
+        return original_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", _flaky_rename)
+
+    with pytest.raises(OSError, match="injected rename failure"):
+        install_directory(source=source, destination=dest)
+
+    assert_that((dest / "COVERAGE.md").read_text(encoding="utf-8")).is_equal_to(
+        "old\n",
+    )
 
 
 def test_extract_tarball_strips_root_and_rejects_escape(

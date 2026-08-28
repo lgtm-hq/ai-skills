@@ -149,15 +149,20 @@ plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-sa
 - Ingest exactly the registry slice (`skillsRoot` + `"*"` or paths,
   `extraSkills`, `agents` from `{repo}/agents/<stem>.md`).
 - Apply `renameSkills` to the skill directory **and** the SKILL.md
-  frontmatter `name:`.
-- Reject symlinks, path escapes, and missing `SKILL.md`. Never execute
+  frontmatter `name:`. After copy (and any rename), frontmatter `name`
+  must equal the skill directory name — that name is the explode
+  identity used for collision checks.
+- Reject symlinks, path escapes, and missing `SKILL.md`. Walk the
+  entire vendor tree (including `node_modules` and `.git`) so hidden
+  skills and symlinks cannot skip coverage or validation. Never execute
   vendor content.
 - Write coverage (`plugins-baked/COVERAGE.md`: every un-ingested
   `SKILL.md` listed as `SKIPPED`) and fail CI on unresolved explode-name
   or agent-stem collisions against other baked plugins or first-party
   `skills/` names.
-- Stage the complete tree in a temp directory and swap children into
-  `plugins-baked/` so a partial tree is never published.
+- Stage the complete tree in a temp directory and rename it into
+  `plugins-baked/`, restoring the previous tree if the install rename
+  fails so a partial tree is never published.
 - Stamp plugin versions from `displayRef` when it is a tag; floating
   pins such as `latest` use the short SHA.
 
@@ -168,7 +173,10 @@ uv run python scripts/bake_vendor_plugins.py --check
 
 Production `vendors.yaml` stays index-only until plugin slices are
 filled; bake still emits an empty marketplace + coverage file so
-`--check` has a drift gate.
+`--check` has a drift gate. ``--check`` also compares pin-derived
+versions, ``renameSkills`` targets, declared skill selectors, and
+``agents`` against the committed plugin trees so a registry edit
+without a re-bake fails closed.
 
 ## Pull requests
 

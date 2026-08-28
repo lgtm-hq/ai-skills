@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
 
-from skill_frontmatter import rewrite_frontmatter_name
+from skill_frontmatter import read_frontmatter_name, rewrite_frontmatter_name
 
 from vendor_registry.plugin_bake_result import PluginBakeResult
 from vendor_registry.plugin_manifest import write_plugin_manifests
@@ -275,13 +275,23 @@ def _ingest_skill(
         destination=skill_destination,
         source_root=vendor_root,
     )
+    dest_markdown = skill_destination / "SKILL.md"
     if out_name != original_name:
         rewritten = rewrite_frontmatter_name(
-            text=(skill_destination / "SKILL.md").read_text(encoding="utf-8"),
+            text=dest_markdown.read_text(encoding="utf-8"),
             name=out_name,
         )
-        (skill_destination / "SKILL.md").write_text(rewritten, encoding="utf-8")
+        dest_markdown.write_text(rewritten, encoding="utf-8")
         renamed.append((original_name, out_name))
+    baked_name = read_frontmatter_name(
+        text=dest_markdown.read_text(encoding="utf-8"),
+    )
+    if baked_name != out_name:
+        msg = (
+            f"SKILL.md frontmatter name {baked_name!r} does not match "
+            f"directory {out_name!r}"
+        )
+        raise ValueError(msg)
     ingested.extend(
         file_path.relative_to(vendor_root).as_posix()
         for file_path in walk_files(root=source)
@@ -332,4 +342,4 @@ def _copy_agents(
         contained_path(path=source, root=vendor_root)
         target = agents_destination / f"{stem}.md"
         target.write_bytes(source.read_bytes())
-    return plugin.agents
+    return tuple(plugin.agents)

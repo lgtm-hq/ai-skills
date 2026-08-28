@@ -6,8 +6,6 @@ import shutil
 from collections.abc import Iterator
 from pathlib import Path
 
-_SKIP_DIRECTORY_NAMES = frozenset({".git", "node_modules"})
-
 
 def iter_directory_entries(*, directory: Path) -> Iterator[Path]:
     """Yield direct children of ``directory`` in name order.
@@ -50,8 +48,6 @@ def walk_files(*, root: Path) -> Iterator[Path]:
                 msg = f"symlink rejected: {child}"
                 raise ValueError(msg)
             if child.is_dir():
-                if child.name in _SKIP_DIRECTORY_NAMES:
-                    continue
                 stack.append(child)
                 continue
             if not child.is_file():
@@ -143,29 +139,41 @@ def find_skill_markdown(*, root: Path) -> tuple[str, ...]:
     return tuple(sorted(found))
 
 
-def replace_directory_contents(*, source: Path, destination: Path) -> None:
-    """Move ``source`` children into ``destination``, keeping its inode.
+def install_directory(*, source: Path, destination: Path) -> None:
+    """Rename a completed ``source`` tree onto ``destination``.
 
-    Replacing children instead of the directory itself avoids invalidating a
-    shell whose cwd is ``destination`` (ADR-0006 / lab bake finding).
+    Existing output is moved aside first. If the install rename fails, the
+    previous tree is restored so callers never observe an empty destination.
+    Backup is removed only after the new tree is in place.
 
     Args:
-        source: Completed tree to install.
-        destination: Stable output directory.
+        source: Completed tree on the same filesystem as ``destination``.
+        destination: Final output path.
+
+    Raises:
+        ValueError: If ``source`` or ``destination`` is a symlink.
+        OSError: If the install rename fails after restore is attempted.
     """
+    if source.is_symlink():
+        msg = f"symlink rejected: {source}"
+        raise ValueError(msg)
     if destination.exists() and destination.is_symlink():
         msg = f"symlink rejected: {destination}"
         raise ValueError(msg)
-    destination.mkdir(parents=True, exist_ok=True)
-    incoming = {child.name: child for child in source.iterdir()}
-    for child in list(destination.iterdir()):
-        if child.name not in incoming:
-            _remove_path(path=child)
-    for name, child in incoming.items():
-        target = destination / name
-        if target.exists():
-            _remove_path(path=target)
-        child.rename(target)
+    backup: Path | None = None
+    if destination.exists():
+        backup = destination.with_name(f".{destination.name}.bak")
+        if backup.exists():
+            _remove_path(path=backup)
+        destination.rename(target=backup)
+    try:
+        source.rename(target=destination)
+    except OSError:
+        if backup is not None and not destination.exists():
+            backup.rename(target=destination)
+        raise
+    if backup is not None:
+        _remove_path(path=backup)
 
 
 def _remove_path(*, path: Path) -> None:
