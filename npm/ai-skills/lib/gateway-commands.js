@@ -23,8 +23,10 @@ import { getPackageVersion } from "./package-version.js";
 import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.js";
 import {
   cursorPluginsRoot,
+  discardCursorPluginBackup,
   findCatalogSourceRoot,
   installCursorPlugin,
+  restoreCursorPluginInstall,
 } from "./projectors/native-cursor.js";
 import { buildSkillsArguments, buildSkillsRemoveArguments, runSkills } from "./skills-runner.js";
 
@@ -79,78 +81,108 @@ export async function updateSkills(options, dependencies = {}) {
   const removeFile = dependencies.unlink ?? unlink;
   const removeDir = dependencies.rmdir ?? rmdir;
   const warn = dependencies.warn ?? ((message) => console.warn(message));
-  for (const pluginId of updated) {
-    const entry = selected[pluginId];
-    const skills = await currentPluginSkills(pluginId, entry);
-    catalogSkills[pluginId] = skills;
-    const source =
-      entry.vendor === "lgtm-hq"
-        ? `lgtm-hq/ai-skills@v${getPackageVersion()}`
-        : resolveVendorSource(entry, vendors);
-    const lanes = partitionLockedLanes(entry);
-    if (lanes.explode.length > 0) {
-      await run(
-        buildSkillsArguments(
-          {
-            ...scopedOptions,
-            agents: lanes.explode,
-            copy: false,
-            onConflict: "overwrite",
-            skills,
-          },
+  const cursorBackups = [];
+  try {
+    for (const pluginId of updated) {
+      const entry = selected[pluginId];
+      const skills = await currentPluginSkills(pluginId, entry);
+      catalogSkills[pluginId] = skills;
+      const source =
+        entry.vendor === "lgtm-hq"
+          ? `lgtm-hq/ai-skills@v${getPackageVersion()}`
+          : resolveVendorSource(entry, vendors);
+      const lanes = partitionLockedLanes(entry);
+      if (lanes.explode.length > 0) {
+        await run(
+          buildSkillsArguments(
+            {
+              ...scopedOptions,
+              agents: lanes.explode,
+              copy: false,
+              onConflict: "overwrite",
+              skills,
+            },
+            source,
+          ),
+        );
+      }
+      if (lanes.cursorNative.length > 0) {
+        const destRoot = await rematerializeCursorPlugin(
+          pluginId,
+          entry,
+          skills,
+          dependencies,
+          prunedLock.scope,
+        );
+        cursorBackups.push({ destRoot, pluginId });
+      }
+      for (const agent of lanes.cliNative) {
+        await installCliPlugin({
+          agent,
+          exec: dependencies.exec,
+          pluginId,
           source,
-        ),
-      );
-    }
-    if (lanes.cursorNative.length > 0) {
-      await rematerializeCursorPlugin(pluginId, entry, skills, dependencies, prunedLock.scope);
-    }
-    for (const agent of lanes.cliNative) {
-      await installCliPlugin({
-        agent,
-        exec: dependencies.exec,
-        pluginId,
-        source,
+        });
+      }
+      await removeStalePluginSkills(pluginId, entry, skills, {
+        hash,
+        removeDir,
+        removeFile,
+        run,
+        scopedOptions: { ...scopedOptions, agents: lanes.explode },
+        warn,
       });
     }
-    await removeStalePluginSkills(pluginId, entry, skills, {
-      hash,
-      removeDir,
-      removeFile,
-      run,
-      scopedOptions: { ...scopedOptions, agents: lanes.explode },
-      warn,
-    });
-  }
-  const installedAt = now().toISOString();
-  const plugins = {};
-  for (const [pluginId, entry] of Object.entries(prunedLock.plugins)) {
-    if (!updated.includes(pluginId)) {
-      plugins[pluginId] = entry;
-      continue;
+    const installedAt = now().toISOString();
+    const plugins = {};
+    for (const [pluginId, entry] of Object.entries(prunedLock.plugins)) {
+      if (!updated.includes(pluginId)) {
+        plugins[pluginId] = entry;
+        continue;
+      }
+      const hashed = await rematerializePluginFiles(
+        entry,
+        catalogSkills[pluginId] ?? pluginSkillNames(entry),
+        hash,
+      );
+      plugins[pluginId] = {
+        ...hashed,
+        installedAt,
+        skills: catalogSkills[pluginId] ?? pluginSkillNames(entry),
+        sha: sourceSha(entry.vendor, entry.sha, vendors),
+        version:
+          entry.vendor === "lgtm-hq"
+            ? getPackageVersion()
+            : sourceSha(entry.vendor, entry.sha, vendors),
+      };
     }
-    const hashed = await rematerializePluginFiles(
-      entry,
-      catalogSkills[pluginId] ?? pluginSkillNames(entry),
-      hash,
-    );
-    plugins[pluginId] = {
-      ...hashed,
-      installedAt,
-      skills: catalogSkills[pluginId] ?? pluginSkillNames(entry),
-      sha: sourceSha(entry.vendor, entry.sha, vendors),
-      version:
-        entry.vendor === "lgtm-hq"
-          ? getPackageVersion()
-          : sourceSha(entry.vendor, entry.sha, vendors),
-    };
+    await writeLock({
+      ...prunedLock,
+      gatewayVersion: getPackageVersion(),
+      plugins,
+    });
+    for (const item of cursorBackups) {
+      await discardCursorPluginBackup(item);
+    }
+    return { pruned, updated };
+  } catch (error) {
+    const restoreErrors = [];
+    for (const item of cursorBackups) {
+      try {
+        await restoreCursorPluginInstall({ ...item, created: false });
+      } catch (restoreError) {
+        restoreErrors.push(restoreError);
+      }
+    }
+    if (restoreErrors.length > 0) {
+      const original = error instanceof Error ? error.message : String(error);
+      const restore = restoreErrors
+        .map((item) => (item instanceof Error ? item.message : String(item)))
+        .join("; ");
+      throw new Error(`${original} (Cursor restore also failed: ${restore})`);
+    }
+    throw error;
   }
-  await writeLock({
-    ...prunedLock,
-    gatewayVersion: getPackageVersion(),
-    plugins,
-  });
-  return { pruned, updated };
 }
 
 /**
@@ -206,6 +238,17 @@ export async function removeSkills(options, dependencies = {}) {
     }
     await deleteVerifiedFiles(classified.verified, { removeDir, removeFile });
     for (const agent of lanes.cliNative) {
+      if (
+        await siblingLockHasCliNative(
+          pluginId,
+          agent,
+          scope,
+          readLock,
+          dependencies.lockEnvironment,
+        )
+      ) {
+        continue;
+      }
       await uninstallCliPlugin({
         agent,
         exec: dependencies.exec,
@@ -669,6 +712,33 @@ function partitionLockedLanes(entry) {
 }
 
 /**
+ * Whether the other gateway scope still records this plugin as CLI-native.
+ *
+ * Host CLIs are user-scoped; uninstalling while a sibling lock still owns the
+ * plugin would strand that scope. Injected `readLock` helpers that ignore the
+ * scope argument (and return the current lock) are treated as having no sibling.
+ *
+ * @param {string} pluginId - Plugin id being removed.
+ * @param {string} agent - CLI-native agent name.
+ * @param {"global" | "project"} scope - Scope of the removal.
+ * @param {typeof readLockfile} readLock - Lock reader.
+ * @param {Parameters<typeof readLockfile>[1]} [lockEnvironment] - Path environment.
+ * @returns {Promise<boolean>} True when uninstall must be skipped.
+ */
+async function siblingLockHasCliNative(pluginId, agent, scope, readLock, lockEnvironment) {
+  const siblingScope = scope === "global" ? "project" : "global";
+  const sibling = await readLock(siblingScope, lockEnvironment);
+  if (sibling.scope !== siblingScope) {
+    return false;
+  }
+  const entry = sibling.plugins[pluginId];
+  if (!entry) {
+    return false;
+  }
+  return partitionLockedLanes(entry).cliNative.includes(agent);
+}
+
+/**
  * Re-assemble a Cursor-local plugin tree from the current catalog membership.
  *
  * @param {string} pluginId - Plugin id.
@@ -679,7 +749,7 @@ function partitionLockedLanes(entry) {
  *   sourceRoot?: string | null,
  * }} dependencies - Injectable catalog root and paths.
  * @param {"global" | "project"} scope - Installation scope.
- * @returns {Promise<void>} Resolves when the tree is rewritten.
+ * @returns {Promise<string>} Destination `plugins/local` directory.
  */
 async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, scope) {
   if (entry.vendor !== "lgtm-hq") {
@@ -703,6 +773,7 @@ async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, 
   });
   const bundles = await loadBundles();
   await installCursorPlugin({
+    commit: false,
     description: bundles.groups[pluginId]?.description ?? pluginId,
     destRoot,
     pluginId,
@@ -711,6 +782,7 @@ async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, 
     sourceRoot,
     version: getPackageVersion(),
   });
+  return destRoot;
 }
 
 /**

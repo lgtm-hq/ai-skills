@@ -1089,7 +1089,7 @@ describe("native projectors", () => {
     ).rejects.toThrow('Native projector is not supported for agent "codex"');
   });
 
-  test("rolls back a failed Claude Code CLI install", async () => {
+  test("does not uninstall when Claude Code plugin install fails", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cli-rollback-"));
     try {
       const calls = [];
@@ -1121,8 +1121,8 @@ describe("native projectors", () => {
       expect(calls).toEqual([
         ["claude", "plugin", "marketplace", "add", "lgtm-hq/ai-skills@v0.0.0-dev"],
         ["claude", "plugin", "install", "review@ai-skills"],
-        ["claude", "plugin", "uninstall", "review@ai-skills"],
       ]);
+      expect(calls.some((argv) => argv.includes("uninstall"))).toBe(false);
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -1239,6 +1239,47 @@ describe("native projectors", () => {
     }
   });
 
+  test("uninstalls a Claude plugin this run created when lock write fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cli-created-rollback-"));
+    try {
+      const calls = [];
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            agents: ["claude-code"],
+            global: false,
+            projector: "native",
+            project: true,
+          },
+          async () => {
+            throw new Error("explode runner must not run");
+          },
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          {
+            cwd,
+            write: async () => {
+              throw new Error("EACCES");
+            },
+          },
+          {
+            exec: async (command, args) => {
+              calls.push([command, ...args]);
+              return { status: 0, stderr: "", stdout: "ok" };
+            },
+          },
+        ),
+      ).rejects.toThrow("rolled back");
+      expect(calls).toEqual([
+        ["claude", "plugin", "marketplace", "add", "lgtm-hq/ai-skills@v0.0.0-dev"],
+        ["claude", "plugin", "install", "review@ai-skills"],
+        ["claude", "plugin", "uninstall", "review@ai-skills"],
+      ]);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("does not uninstall a pre-existing Claude plugin when lock write fails", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cli-already-"));
     try {
@@ -1270,6 +1311,41 @@ describe("native projectors", () => {
           },
         ),
       ).rejects.toThrow("rolled back");
+      expect(calls.some((argv) => argv.includes("uninstall"))).toBe(false);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("does not uninstall a pre-existing Claude plugin when marketplace add fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cli-marketplace-fail-"));
+    try {
+      const calls = [];
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            agents: ["claude-code"],
+            global: false,
+            projector: "native",
+            project: true,
+          },
+          async () => {
+            throw new Error("explode runner must not run");
+          },
+          () => new Date("2026-07-10T16:00:00.000Z"),
+          { cwd },
+          {
+            exec: async (command, args) => {
+              calls.push([command, ...args]);
+              if (args.includes("marketplace")) {
+                return { status: 1, stderr: "network error", stdout: "" };
+              }
+              return { status: 0, stderr: "", stdout: "" };
+            },
+          },
+        ),
+      ).rejects.toThrow("marketplace add failed");
       expect(calls.some((argv) => argv.includes("uninstall"))).toBe(false);
     } finally {
       await rm(cwd, { force: true, recursive: true });

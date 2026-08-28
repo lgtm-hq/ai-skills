@@ -790,19 +790,14 @@ export async function install(
       });
     }
     for (const agent of lanes.cliNative) {
-      try {
-        const cliResult = await installCliPlugin({
-          agent,
-          exec: extras.exec,
-          pluginId,
-          source,
-        });
-        if (!cliResult.alreadyPresent) {
-          cliCreated.push(agent);
-        }
-      } catch (error) {
+      const cliResult = await installCliPlugin({
+        agent,
+        exec: extras.exec,
+        pluginId,
+        source,
+      });
+      if (!cliResult.alreadyPresent) {
         cliCreated.push(agent);
-        throw error;
       }
     }
     const agentsForLock = detectAgents
