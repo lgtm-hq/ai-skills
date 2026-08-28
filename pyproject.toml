@@ -32,7 +32,5 @@ dev = [
 skips = []
 
 [tool.ruff]
-extend-exclude = [
-  "plugins-baked",
-  "npm/ai-skills/data/plugins-baked",
-]
+extend-exclude = ["plugins-baked", "npm/ai-skills/data/plugins-baked"]
+force-exclude = true
