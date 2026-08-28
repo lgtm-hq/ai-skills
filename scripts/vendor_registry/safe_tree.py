@@ -19,7 +19,7 @@ _MARKDOWN_LINK_TARGET = re.compile(
     r"\[[^\]\n]*\]\(\s*<?([^>\s)]+)[^)]*>?\)",
 )
 _MARKDOWN_REF_DEF = re.compile(
-    r"^[ \t]*\[([^\]]+)\]:[ \t]*<?([^\s>]+)",
+    r"^[ \t]{0,3}\[([^\]]+)\]:[ \t]*(?:\n[ \t]*)?<?([^\s>]+)",
     re.MULTILINE,
 )
 _REMOTE_LINK_PREFIXES = ("http://", "https://", "mailto:", "data:")

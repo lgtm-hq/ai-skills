@@ -692,6 +692,36 @@ def test_bake_rejects_reference_style_markdown_link(
         )
 
 
+def test_bake_rejects_multiline_reference_style_markdown_link(
+    tmp_path: Path,
+) -> None:
+    """CommonMark allows one line ending between the colon and destination."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    skill = vendor_root / "skills" / "alpha" / "SKILL.md"
+    skill.write_text(
+        skill.read_text(encoding="utf-8")
+        + "See [shared][doc].\n\n[doc]:\n ../../shared.md\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    with pytest.raises(ValueError, match="internal reference missing"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
 def test_check_rejects_extra_bake_lock_keys(
     tmp_path: Path,
 ) -> None:
