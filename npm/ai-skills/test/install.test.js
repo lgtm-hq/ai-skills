@@ -191,6 +191,79 @@ describe("install", () => {
     }
   });
 
+  test("does not rematerialize a baked plugin whose pin and short version match", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-baked-update-"));
+    try {
+      await install(
+        {
+          ...unattendedOptions,
+          bundle: "hookify",
+          global: false,
+          project: true,
+          skills: [],
+          vendor: "anthropics-claude-code",
+        },
+        async () => {
+          throw new Error("skills CLI must not run for baked plugins");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+      );
+      const lockPath = join(cwd, "ai-skills-lock.json");
+      const before = JSON.parse(await readFile(lockPath, "utf8"));
+      let exploded = false;
+      const result = await updateSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: [],
+          yes: true,
+        },
+        {
+          explode: async () => {
+            exploded = true;
+            return { claimed: {}, skipped: [], swappedDests: [] };
+          },
+          isInstalled: async () => true,
+          lockEnvironment: { cwd },
+          now: () => new Date("2026-07-10T17:00:00.000Z"),
+          readLock: (scope) => readLockfile(scope, { cwd }),
+          run: async () => {
+            throw new Error("skills CLI must not run for baked plugins");
+          },
+          writeLock: (next) => writeLockfile(next, { cwd }),
+        },
+      );
+      const after = JSON.parse(await readFile(lockPath, "utf8"));
+      expect(exploded).toBe(false);
+      expect(result).toEqual({ pruned: [], updated: [] });
+      expect(after.plugins.hookify.installedAt).toBe(before.plugins.hookify.installedAt);
+      expect(after.plugins.hookify.version).toBe("15a21e1");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("rejects detect-agent installs for baked vendor plugins", async () => {
+    let ran = false;
+    await expect(
+      install(
+        {
+          ...unattendedOptions,
+          agents: [],
+          bundle: "hookify",
+          skills: [],
+          vendor: "anthropics-claude-code",
+        },
+        async () => {
+          ran = true;
+        },
+      ),
+    ).rejects.toThrow("Vendor plugin installs require -a/--agent");
+    expect(ran).toBe(false);
+  });
+
   test("installs a renamed claude-code skill from the baked plugin tree", async () => {
     let ran = false;
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-install-"));

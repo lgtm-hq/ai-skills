@@ -123,6 +123,56 @@ describe("gateway maintenance commands", () => {
     expect(result).toEqual({ pruned: [], updated: [] });
   });
 
+  test("skips update when a baked plugin pin and short version match", async () => {
+    const calls = [];
+    let exploded = false;
+    const current = {
+      ...lock,
+      plugins: {
+        "document-skills": {
+          agents: {
+            cursor: {
+              files: {
+                "docx/SKILL.md": "abc",
+                "pdf/SKILL.md": "abc",
+                "pptx/SKILL.md": "abc",
+                "xlsx/SKILL.md": "abc",
+              },
+              root: "/tmp/project/.cursor/skills",
+            },
+          },
+          installedAt: "2026-07-10T16:00:00.000Z",
+          projector: "explode",
+          repo: "anthropics/skills",
+          sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+          skills: ["docx", "pdf", "pptx", "xlsx"],
+          vendor: "anthropics",
+          version: "9d2f1ae",
+        },
+      },
+    };
+    const result = await updateSkills(options, {
+      explode: async () => {
+        exploded = true;
+        return { claimed: {}, skipped: [], swappedDests: [] };
+      },
+      isInstalled: async () => true,
+      lockEnvironment: {
+        exists: async () => true,
+        hash: async () => "abc",
+      },
+      readLock: async () => current,
+      run: async (args) => {
+        calls.push(args);
+      },
+      writeLock: async () => {},
+    });
+
+    expect(calls).toEqual([]);
+    expect(exploded).toBe(false);
+    expect(result).toEqual({ pruned: [], updated: [] });
+  });
+
   test("updates every tracked agent on a plugin even when -a is a subset", async () => {
     const calls = [];
     let written;

@@ -838,6 +838,12 @@ export async function install(
       "Native projector requires -a/--agent; omit --projector to detect exploded hosts",
     );
   }
+  if (detectAgents && bakedPlugin) {
+    throw new Error(
+      "Vendor plugin installs require -a/--agent; baked plugins explode from " +
+        "plugins-baked/ and cannot detect hosts via the skills CLI",
+    );
+  }
   let cursorSourceRoot;
   if (lanes.cursorNative.length > 0) {
     cursorSourceRoot =
@@ -883,19 +889,20 @@ export async function install(
   let explodeProgress = null;
   try {
     if (detectAgents || lanes.explode.length > 0) {
-      const explodeSources = detectAgents
-        ? null
-        : resolveExplodeSourceSkills(
-            scopedOptions.skills,
-            extras,
-            bakedPlugin
-              ? bakedPlugin.pluginRoot
-              : vendor
-                ? null
-                : extras.sourceRoot !== undefined
-                  ? extras.sourceRoot
-                  : findCatalogSourceRoot(lockEnvironment.cwd ?? process.cwd()),
-          );
+      const explodeSources =
+        detectAgents && !bakedPlugin
+          ? null
+          : resolveExplodeSourceSkills(
+              scopedOptions.skills,
+              extras,
+              bakedPlugin
+                ? bakedPlugin.pluginRoot
+                : vendor
+                  ? null
+                  : extras.sourceRoot !== undefined
+                    ? extras.sourceRoot
+                    : findCatalogSourceRoot(lockEnvironment.cwd ?? process.cwd()),
+            );
       if (explodeSources && lanes.explode.length > 0) {
         const explode = extras.explode ?? explodePlugin;
         const exploded = await explode({
@@ -935,6 +942,9 @@ export async function install(
       } else {
         // First-party installs without a catalog checkout still shell out to
         // the skills CLI. Baked vendor plugins explode from plugins-baked/.
+        if (bakedPlugin) {
+          throw new Error(`Baked plugin "${bakedPlugin.id}" cannot install via the skills CLI`);
+        }
         await run(
           buildSkillsArguments(
             {

@@ -169,6 +169,9 @@ export async function updateSkills(options, dependencies = {}) {
         } else {
           // Non-checkout first-party and legacy whole-vendor locks still use
           // the skills CLI. Baked vendor plugins explode from plugins-baked/.
+          if (baked) {
+            throw new Error(`Baked plugin "${pluginId}" cannot update via the skills CLI`);
+          }
           const copyAgents = [];
           const symlinkAgents = [];
           for (const agent of lanes.explode) {
@@ -518,7 +521,9 @@ export async function listSkills(options, dependencies = {}) {
  */
 async function pluginNeedsRefresh(pluginId, entry, scope, vendors, dependencies) {
   const expectedSha = sourceSha(entry.vendor, entry.sha, vendors);
-  const expectedVersion = entry.vendor === "lgtm-hq" ? getPackageVersion() : expectedSha;
+  const baked = entry.vendor === "lgtm-hq" ? null : await loadBakedPlugin(pluginId);
+  const expectedVersion =
+    entry.vendor === "lgtm-hq" ? getPackageVersion() : (baked?.version ?? expectedSha);
   if (entry.sha !== expectedSha || entry.version !== expectedVersion) {
     return true;
   }
