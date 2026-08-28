@@ -1304,7 +1304,13 @@ describe("native projectors", () => {
 
   test("consults doctor hostCapabilities when --projector is omitted", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-install-"));
+    const sourceRoot = join(cwd, "catalog");
     try {
+      await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
       let received = [];
       await install(
         {
@@ -1318,11 +1324,15 @@ describe("native projectors", () => {
         },
         () => new Date("2026-07-10T16:00:00.000Z"),
         { cwd, home: cwd },
-        { hostCapabilities: { cursor: "explode" }, sourceRoot: null },
+        { hostCapabilities: { cursor: "explode" }, sourceRoot },
       );
-      expect(received).toContain("cursor");
+      expect(received).toEqual([]);
+      expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
       expect(lock.plugins.review.agents.cursor.projector).toBe("explode");
+      await expect(access(join(cwd, ".cursor/plugins/local/review"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -1330,8 +1340,13 @@ describe("native projectors", () => {
 
   test("reads doctor.json when hostCapabilities is omitted", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-json-"));
+    const sourceRoot = join(cwd, "catalog");
     try {
       await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
       await writeDoctorCache(
         {
           hosts: {
@@ -1364,12 +1379,16 @@ describe("native projectors", () => {
             error.code = "ENOENT";
             throw error;
           },
-          sourceRoot: null,
+          sourceRoot,
         },
       );
-      expect(received).toContain("cursor");
+      expect(received).toEqual([]);
+      expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
       expect(lock.plugins.review.agents.cursor.projector).toBe("explode");
+      await expect(access(join(cwd, ".cursor/plugins/local/review"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

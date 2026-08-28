@@ -233,7 +233,7 @@ describe("ensureHostCapability", () => {
       await writeDoctorCache(
         {
           hosts: {
-            cursor: { capability: "native", source: "probe", version: "global:present" },
+            cursor: { capability: "native", source: "probe", version: "global:present:nocli" },
           },
           schemaVersion: 1,
         },
@@ -1283,6 +1283,162 @@ describe("runDoctor", () => {
       expect(await readFile(explodeFile, "utf8")).toBe("# jira\n");
     } finally {
       await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("skips vendor plugins when migrating to native", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-vendor-skip-"));
+    const explodeFile = join(cwd, ".cursor/skills/foo/SKILL.md");
+    const warnings = [];
+    try {
+      await mkdir(join(cwd, ".cursor/skills/foo"), { recursive: true });
+      await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
+      await writeFile(explodeFile, "# foo\n");
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            "acme-tools": {
+              agents: {
+                cursor: {
+                  files: { "foo/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "acme/tools",
+              sha: "abc123",
+              vendor: "acme",
+              version: "1.0.0",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      const result = await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: "cursor",
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          exec: async () => {
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          home: cwd,
+          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          log: () => {},
+          warn: (message) => warnings.push(message),
+        },
+      );
+      expect(result.migrated).toEqual([]);
+      expect(warnings.some((message) => message.includes("acme-tools"))).toBe(true);
+      expect(await readFile(explodeFile, "utf8")).toBe("# foo\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("migrate skips CLI uninstall when the sibling lock still owns the plugin", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-sibling-"));
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-doctor-sibling-home-"));
+    const execCalls = [];
+    const warnings = [];
+    try {
+      const entry = {
+        agents: {
+          "claude-code": {
+            files: { "lint/SKILL.md": "abc" },
+            projector: "native",
+            root: "cli:claude-code",
+          },
+        },
+        installedAt: "2026-08-28T00:00:00.000Z",
+        projector: "native",
+        repo: "lgtm-hq/ai-skills",
+        sha: "v0.0.0-dev",
+        vendor: "lgtm-hq",
+        version: "0.0.0-dev",
+      };
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: { review: entry },
+          scope: "project",
+          version: 2,
+        },
+        { cwd, home },
+      );
+      await mkdir(join(home, ".ai-skills"), { recursive: true });
+      await writeFile(
+        join(home, ".ai-skills/lock.json"),
+        `${JSON.stringify(
+          {
+            gatewayVersion: "0.0.0-dev",
+            plugins: { review: entry },
+            scope: "global",
+            version: 2,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const result = await runDoctor(
+        {
+          agents: ["claude-code"],
+          global: false,
+          migrate: "claude-code",
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          exec: async (command, args) => {
+            execCalls.push([command, ...args]);
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          home,
+          installExtras: {
+            explode: async () => ({
+              claimed: { "claude-code": { "lint/SKILL.md": "abc" } },
+              skipped: [],
+              swappedDests: [],
+            }),
+            exec: async (command, args) => {
+              execCalls.push([command, ...args]);
+              const error = new Error("not found");
+              error.code = "ENOENT";
+              throw error;
+            },
+            sourceRoot: cwd,
+          },
+          lockEnvironment: {
+            cwd,
+            exists: async () => true,
+            hash: async () => "abc",
+            home,
+          },
+          log: () => {},
+          warn: (message) => warnings.push(message),
+        },
+      );
+      expect(result.migrated).toEqual(["review"]);
+      expect(execCalls.some((call) => call.includes("uninstall"))).toBe(false);
+      expect(warnings.some((message) => message.includes("sibling"))).toBe(true);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+      await rm(home, { force: true, recursive: true });
     }
   });
 });

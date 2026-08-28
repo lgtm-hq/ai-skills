@@ -27,8 +27,9 @@ later, other components). Contents stay visible; native hosts install the
 plugin as a whole. The gateway (`sk`) installs plugins atomically — the
 TUI is a plugin checklist, `--skill` / `--bundle` name a plugin, and
 `--vendor` installs that vendor plugin whole. Native projectors are the
-default for Cursor, Claude Code, and GitHub Copilot when `sk doctor` has
-cached native capability (`--projector explode` still writes skill
+default for Cursor, Claude Code, and GitHub Copilot when the doctor cache
+(`~/.ai-skills/doctor.json`) says native — install probes and writes that
+cache on a miss (`--projector explode` still writes skill
 directories). Codex stays exploded. If you previously
 used the skills CLI or a per-skill gateway cart, wipe and reinstall, or
 switch to a host plugin marketplace command below.
@@ -93,7 +94,9 @@ Unattended installs need an explicit scope and agent. `--bundle` and
 Copilot for a working `plugin` subcommand, and Cursor for
 `~/.cursor/plugins/local/`. Codex stays exploded. Vendor installs stay
 exploded. Cursor native still needs a catalog checkout (`skills/` +
-`.claude-plugin/`); published npm / `bunx` installs fall back to explode.
+`.claude-plugin/`). Published npm / `bunx` installs fall back to explode
+only when native is implicit; `--projector native` without a checkout
+fails closed.
 `sk doctor` prints capability, lock↔disk drift, and orphans;
 `--repair` restores missing files; `--migrate <host>` cutovers every locked
 plugin on that host. `sk install --projector` cutovers one plugin.
