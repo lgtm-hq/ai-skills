@@ -147,8 +147,8 @@ function fakeFetch(routes, calls = []) {
 }
 
 describe("ui signal formatting", () => {
-  test("summarizes installed skills and agents, omitting when empty", () => {
-    expect(formatInstalledSummary(lockFixture())).toBe("3 skills installed · 2 agents");
+  test("summarizes installed plugins and agents, omitting when empty", () => {
+    expect(formatInstalledSummary(lockFixture())).toBe("3 plugins installed · 2 agents");
     expect(
       formatInstalledSummary({
         plugins: {
@@ -163,7 +163,7 @@ describe("ui signal formatting", () => {
           },
         },
       }),
-    ).toBe("1 skill installed · 1 agent");
+    ).toBe("1 plugin installed · 1 agent");
     expect(
       formatInstalledSummary({
         plugins: {
@@ -178,7 +178,7 @@ describe("ui signal formatting", () => {
           },
         },
       }),
-    ).toBe("2 skills installed · 1 agent");
+    ).toBe("1 plugin installed · 1 agent");
     expect(formatInstalledSummary({ plugins: {} })).toBeNull();
   });
 
@@ -246,7 +246,7 @@ describe("completeInteractively signals", () => {
     expect(updateNote?.message).toContain("→ v9999.0.0");
     expect(updateNote?.message).toContain("bun update -g @lgtm-hq/ai-skills");
     const installedNote = captured.notes.find((note) => note.title === "Installed");
-    expect(installedNote?.message).toBe("3 skills installed · 2 agents");
+    expect(installedNote?.message).toBe("3 plugins installed · 2 agents");
 
     const pluginLabels = captured.multiSelects[0].map((option) => option.label);
     expect(
@@ -329,7 +329,7 @@ describe("completeInteractively signals", () => {
 
     // Union of both scopes: 3 global plugins + 1 project-only plugin.
     const installedNote = captured.notes.find((note) => note.title === "Installed");
-    expect(installedNote?.message).toBe("4 skills installed · 3 agents");
+    expect(installedNote?.message).toBe("4 plugins installed · 3 agents");
 
     const pluginLabels = captured.multiSelects[0].map((option) => option.label);
     expect(

@@ -1,6 +1,6 @@
 import * as clack from "@clack/prompts";
 
-import { pluginAgentNames, pluginSkillNames } from "./lockfile.js";
+import { pluginAgentNames } from "./lockfile.js";
 
 /**
  * Agents the gateway surfaces in interactive install.
@@ -26,7 +26,7 @@ export const VENDOR_DRIFT_SUFFIX =
  * One-line home-screen summary of the installed plugins in the given lock state.
  *
  * @param {{plugins: Record<string, import("./lockfile.js").PluginLockEntry>}} lock - Lock state (single scope, or merged scopes when undetermined).
- * @returns {string | null} Summary such as `12 skills installed · 3 agents`, or null when empty.
+ * @returns {string | null} Summary such as `12 plugins installed · 3 agents`, or null when empty.
  */
 export function formatInstalledSummary(lock) {
   const entries = Object.values(lock.plugins ?? {});
@@ -34,10 +34,9 @@ export function formatInstalledSummary(lock) {
     return null;
   }
   const agents = new Set(entries.flatMap((entry) => pluginAgentNames(entry)));
-  const skills = new Set(entries.flatMap((entry) => pluginSkillNames(entry)));
-  const skillLabel = skills.size === 1 ? "skill" : "skills";
+  const pluginLabel = entries.length === 1 ? "plugin" : "plugins";
   const agentLabel = agents.size === 1 ? "agent" : "agents";
-  return `${skills.size} ${skillLabel} installed · ${agents.size} ${agentLabel}`;
+  return `${entries.length} ${pluginLabel} installed · ${agents.size} ${agentLabel}`;
 }
 
 /**
