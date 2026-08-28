@@ -310,6 +310,19 @@ describe("gateway lockfile", () => {
     expect(result.missing).toEqual([]);
   });
 
+  test("does not treat an empty Cursor native file map as CLI-owned", () => {
+    expect(
+      isCliOwnedNativeInstall(
+        {
+          files: {},
+          projector: "native",
+          root: "/tmp/.cursor/plugins/local/review",
+        },
+        "native",
+      ),
+    ).toBe(false);
+  });
+
   test("hashes every regular file in a plugin tree", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-hash-tree-"));
     try {

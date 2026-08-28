@@ -815,7 +815,11 @@ export async function install(
       await assertCompletePluginInstall(scopedOptions, lanes.explode, lockEnvironment);
     }
     const entries = await createLockEntries(
-      { ...scopedOptions, agents: agentsForLock },
+      {
+        ...scopedOptions,
+        agents: agentsForLock,
+        ...(detectAgents ? { projector: PROJECTOR_EXPLODE } : {}),
+      },
       vendor,
       now,
       lockEnvironment,

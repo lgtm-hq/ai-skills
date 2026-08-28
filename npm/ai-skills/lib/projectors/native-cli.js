@@ -10,6 +10,8 @@ export const CLI_BY_AGENT = {
 
 /**
  * Marketplace source name first-party plugins install from.
+ *
+ * Keep in sync with `.claude-plugin/marketplace.json` `name`.
  */
 export const FIRST_PARTY_MARKETPLACE = "ai-skills";
 
@@ -108,6 +110,8 @@ function cliForAgent(agent) {
  * @returns {boolean} Whether add/install was already satisfied.
  */
 function isAlreadyPresent(result) {
+  // Substring match is fail-open for phrases like "already exists". Exact host
+  // outcomes wait on doctor (#376).
   const text = `${result.stdout} ${result.stderr}`.toLowerCase();
   return text.includes("already") || text.includes("exists");
 }

@@ -15,6 +15,7 @@ import {
   pruneMissingLockEntries,
   readLockfile,
   reconcileLock,
+  skillNamesFromFiles,
   writeLockfile,
 } from "./lockfile.js";
 import { resolveScope } from "./options.js";
@@ -344,6 +345,7 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
   }
   const stale = {
     ...entry,
+    skills: staleNames,
     agents: Object.fromEntries(
       Object.entries(entry.agents).map(([agent, install]) => [
         agent,
@@ -351,7 +353,7 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
           ...install,
           files: Object.fromEntries(
             Object.entries(install.files).filter(([relative]) =>
-              staleNames.includes(relative.split("/")[0]),
+              skillNamesBelongTo(relative, staleNames),
             ),
           ),
         },
@@ -360,15 +362,7 @@ async function removeStalePluginSkills(pluginId, entry, currentSkills, io) {
   };
   const classified = await classifyPluginFiles(pluginId, stale, { hash: io.hash, warn: io.warn });
   if (classified.removableSkills.length > 0 && io.scopedOptions.agents.length > 0) {
-    await io.run(
-      buildSkillsRemoveArguments(
-        {
-          ...io.scopedOptions,
-          agents: pluginAgentNames(entry),
-        },
-        classified.removableSkills,
-      ),
-    );
+    await io.run(buildSkillsRemoveArguments(io.scopedOptions, classified.removableSkills));
   }
   await deleteVerifiedFiles(classified.verified, {
     removeDir: io.removeDir,
@@ -689,6 +683,9 @@ function partitionLockedLanes(entry) {
  * @returns {Promise<void>} Resolves when the tree is rewritten.
  */
 async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, scope) {
+  if (entry.vendor !== "lgtm-hq") {
+    throw new Error("Native Cursor projector is first-party only");
+  }
   const sourceRoot =
     dependencies.sourceRoot !== undefined
       ? dependencies.sourceRoot
@@ -713,6 +710,23 @@ async function rematerializeCursorPlugin(pluginId, entry, skills, dependencies, 
     replace: true,
     skills,
     sourceRoot,
-    version: entry.vendor === "lgtm-hq" ? getPackageVersion() : entry.version,
+    version: getPackageVersion(),
   });
+}
+
+/**
+ * Whether a tracked relative path belongs to one of the named skills.
+ *
+ * @param {string} relative - Path relative to the agent root.
+ * @param {string[]} names - Skill directory names.
+ * @returns {boolean} True when the path is inside one of those skills.
+ */
+function skillNamesBelongTo(relative, names) {
+  const wanted = new Set(names);
+  for (const name of skillNamesFromFiles({ [relative]: "" })) {
+    if (wanted.has(name)) {
+      return true;
+    }
+  }
+  return false;
 }

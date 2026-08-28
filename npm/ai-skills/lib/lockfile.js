@@ -353,10 +353,11 @@ export function agentProjector(entry, agent) {
 }
 
 /**
- * Whether a native install is CLI-owned (no hashed plugin tree).
+ * Whether a native install is CLI-owned (host plugin, no hashed tree).
  *
- * Claude Code and Copilot native installs record empty digests; Cursor native
- * trees hash ``plugin.json`` and copied skill files.
+ * Claude Code and Copilot native installs record ``root: "cli:<agent>"``.
+ * Cursor native trees hash ``plugin.json`` and copied skill files under a
+ * filesystem root; an empty file map there is missing, not CLI-owned.
  *
  * @param {AgentInstall} install - Per-agent lock record.
  * @param {"native" | "explode"} [pluginProjector] - Plugin-level projector.
@@ -366,7 +367,7 @@ export function isCliOwnedNativeInstall(install, pluginProjector = PROJECTOR_EXP
   if (projectorOf(install, pluginProjector) !== PROJECTOR_NATIVE) {
     return false;
   }
-  return Object.values(install.files).every((digest) => digest === "");
+  return typeof install.root === "string" && install.root.startsWith("cli:");
 }
 
 /**

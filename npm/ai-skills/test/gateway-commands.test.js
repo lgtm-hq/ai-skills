@@ -618,6 +618,60 @@ describe("gateway maintenance commands", () => {
     );
   });
 
+  test("drops only catalog-removed skills when the lock lists a v2 skills array", async () => {
+    const calls = [];
+    const unlinked = [];
+    const stale = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            cursor: {
+              files: {
+                "lint/SKILL.md": "abc",
+                "retired/SKILL.md": "abc",
+              },
+              projector: "explode",
+              root: "/tmp/project/.cursor/skills",
+            },
+            "claude-code": {
+              files: { "lint/SKILL.md": "", "retired/SKILL.md": "" },
+              projector: "native",
+              root: "cli:claude-code",
+            },
+          },
+          projector: "explode",
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.21.0",
+          skills: ["lint", "test", "greptile", "coderabbit", "retired"],
+          vendor: "lgtm-hq",
+          version: "0.21.0",
+        }),
+      },
+    };
+
+    await updateSkills(options, {
+      exec: async () => ({ status: 0, stderr: "", stdout: "" }),
+      hash: async () => "abc",
+      isInstalled: async () => true,
+      now: () => new Date("2026-07-10T17:00:00.000Z"),
+      readLock: async () => stale,
+      run: async (args) => {
+        calls.push(args);
+      },
+      unlink: async (path) => {
+        unlinked.push(path);
+      },
+      writeLock: async () => {},
+    });
+
+    const removeCall = calls.find((args) => args.includes("remove"));
+    expect(removeCall).toEqual(["skills@^1.5.0", "remove", "retired", "-a", "cursor", "-y"]);
+    expect(removeCall).not.toContain("claude-code");
+    expect(removeCall).not.toContain("lint");
+    expect(unlinked).toEqual(["/tmp/project/.cursor/skills/retired/SKILL.md"]);
+  });
+
   test("skips first-party update when the package pin is current and files match", async () => {
     const version = getPackageVersion();
     const calls = [];

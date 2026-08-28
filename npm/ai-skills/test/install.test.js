@@ -504,6 +504,47 @@ describe("install", () => {
     }
   });
 
+  test("detect mode records exploded projectors even when native is the host default", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-detect-explode-"));
+    const cursorSkill = join(cwd, ".cursor/skills/lint/SKILL.md");
+    const claudeSkill = join(cwd, ".claude/skills/lint/SKILL.md");
+    try {
+      await install(
+        {
+          ...unattendedOptions,
+          agents: [],
+          bundle: null,
+          global: false,
+          projector: null,
+          project: true,
+          skills: ["lint"],
+        },
+        async () => {},
+        () => new Date("2026-07-10T17:00:00.000Z"),
+        {
+          cwd,
+          exists: async (path) => path === cursorSkill || path === claudeSkill,
+          hash: async () => "abc",
+        },
+      );
+
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.lint.agents.cursor).toMatchObject({
+        files: { "lint/SKILL.md": "abc" },
+        projector: "explode",
+        root: join(cwd, ".cursor/skills"),
+      });
+      expect(lock.plugins.lint.agents["claude-code"]).toMatchObject({
+        files: { "lint/SKILL.md": "abc" },
+        projector: "explode",
+        root: join(cwd, ".claude/skills"),
+      });
+      expect(lock.plugins.lint.agents["claude-code"].root).not.toBe("cli:claude-code");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("detect mode records only skills that exist on a discovered agent", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-detect-partial-"));
     const cursorLint = join(cwd, ".cursor/skills/lint/SKILL.md");
