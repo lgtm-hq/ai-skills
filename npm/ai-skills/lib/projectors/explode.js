@@ -124,6 +124,8 @@ export async function destUsesCopyMaterialization(destRoot, skillNames) {
  * @param {Record<string, string>} args.sourceSkills - Skill name to source dir.
  * @param {boolean} [args.copy=false] - Copy dest trees instead of store symlinks.
  * @param {string} [args.storeRoot] - Managed store for symlink mode.
+ * @param {Set<string>} [args.retainStoreSkills] - Skill names other lock plugins still own.
+ * @param {string[]} [args.destRoots] - Agent skill dirs to scan for store consumers.
  * @param {boolean} [args.keepBackups=false] - Leave dest/store ``.bak`` for the caller.
  * @param {"stage" | "commit"} [args.failAfter] - Injected failure checkpoint.
  * @param {(path: string) => Promise<string>} [args.hash] - Injectable hasher.
@@ -188,7 +190,9 @@ export async function explodePlugin(args) {
     const plans = await planExplodeCommits({
       agents: args.agents,
       copy,
+      destRoots: args.destRoots ?? [],
       hash,
+      retainStoreSkills: args.retainStoreSkills ?? new Set(),
       stagedHashes,
       stagedSkills,
       storeRoot,
@@ -692,7 +696,9 @@ async function checkpoint(failAfter, name) {
  * @param {object} args - Plan inputs.
  * @param {ExplodeAgent[]} args.agents - Destinations.
  * @param {boolean} args.copy - Copy vs symlink.
+ * @param {string[]} args.destRoots - Agent skill dirs that may still link the store.
  * @param {(path: string) => Promise<string>} args.hash - Hasher.
+ * @param {Set<string>} args.retainStoreSkills - Skills owned by other lock plugins.
  * @param {Record<string, Record<string, string>>} args.stagedHashes - Staged trees.
  * @param {Record<string, string>} args.stagedSkills - Staged dirs.
  * @param {string | undefined} args.storeRoot - Store root for symlink mode.
@@ -768,10 +774,21 @@ async function planExplodeCommits(args) {
       if (!copy && args.storeRoot && !owned.has(skill) && (await pathExists(storeDir))) {
         const storeHashes = await hashExistingTree(storeDir, args.hash);
         const storeEmpty = Object.keys(storeHashes).length === 0;
-        if (storeEmpty || !sameHashes(storeHashes, args.stagedHashes[skill])) {
-          // Dest is absent or empty here. An unowned leftover store is
-          // replaceable so remove-then-reinstall cannot poison; identical
-          // stores are reused without claiming exclusive ownership.
+        if (storeEmpty) {
+          replace = true;
+        } else if (!sameHashes(storeHashes, args.stagedHashes[skill])) {
+          if (args.retainStoreSkills.has(skill)) {
+            throw new Error(
+              `Explode collision at ${storeDir}: existing store content differs from incoming ${skill}`,
+            );
+          }
+          const consumers = await destsSymlinkedToStore(storeDir, skill, args.destRoots, dest);
+          if (consumers.length > 0) {
+            throw new Error(
+              `Explode collision at ${storeDir}: existing store content differs from incoming ` +
+                `${skill} (also linked from ${consumers.join(", ")})`,
+            );
+          }
           replace = true;
         }
       }
@@ -791,6 +808,52 @@ async function planExplodeCommits(args) {
     }
   }
   return { claimed, skipped, toWrite };
+}
+
+/**
+ * Dest skill symlinks (other than ``skipDest``) that resolve to ``storeDir``.
+ *
+ * @param {string} storeDir - Managed store skill directory.
+ * @param {string} skill - Skill directory name.
+ * @param {string[]} destRoots - Agent skills roots to scan.
+ * @param {string} skipDest - Incoming dest that is allowed to reuse the store.
+ * @returns {Promise<string[]>} Absolute dest paths that still consume the store.
+ */
+async function destsSymlinkedToStore(storeDir, skill, destRoots, skipDest) {
+  let resolvedStore;
+  try {
+    resolvedStore = await realpath(storeDir);
+  } catch (error) {
+    if (isAbsentFsError(error)) {
+      return [];
+    }
+    throw error;
+  }
+  const resolvedSkip = resolve(skipDest);
+  /** @type {string[]} */
+  const hits = [];
+  for (const root of destRoots) {
+    const candidate = join(root, skill);
+    if (resolve(candidate) === resolvedSkip) {
+      continue;
+    }
+    try {
+      const info = await lstat(candidate);
+      if (!info.isSymbolicLink()) {
+        continue;
+      }
+      const target = await realpath(candidate);
+      if (target === resolvedStore) {
+        hits.push(candidate);
+      }
+    } catch (error) {
+      if (isAbsentFsError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  return hits;
 }
 
 /**

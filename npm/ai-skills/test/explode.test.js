@@ -440,6 +440,51 @@ describe("explodePlugin", () => {
     }
   });
 
+  test("hard-errors when a leftover store is still linked from another dest", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-store-live-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      const other = join(root, ".codex/skills");
+      await mkdir(join(store, "lint"), { recursive: true });
+      await writeFile(join(store, "lint/SKILL.md"), "# leftover\n");
+      await mkdir(other, { recursive: true });
+      await symlink(join(store, "lint"), join(other, "lint"));
+      await expect(
+        explodePlugin({
+          agents: [{ id: "cursor", root: dest }],
+          destRoots: [dest, other],
+          skills: ["lint"],
+          sourceSkills: { lint: join(source, "lint") },
+          storeRoot: store,
+        }),
+      ).rejects.toThrow("also linked from");
+      expect(await readFile(join(other, "lint/SKILL.md"), "utf8")).toBe("# leftover\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("hard-errors when another lock plugin still owns the leftover store skill", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-store-owned-"));
+    try {
+      const { dest, source, store } = await layout(root);
+      await mkdir(join(store, "lint"), { recursive: true });
+      await writeFile(join(store, "lint/SKILL.md"), "# leftover\n");
+      await expect(
+        explodePlugin({
+          agents: [{ id: "cursor", root: dest }],
+          retainStoreSkills: new Set(["lint"]),
+          skills: ["lint"],
+          sourceSkills: { lint: join(source, "lint") },
+          storeRoot: store,
+        }),
+      ).rejects.toThrow("existing store content differs");
+      expect(await readFile(join(store, "lint/SKILL.md"), "utf8")).toBe("# leftover\n");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   test("in-tree source symlink is part of the collision hash", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-explode-alias-"));
     try {

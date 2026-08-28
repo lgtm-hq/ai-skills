@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { access, mkdir, readdir, readFile, readlink, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { getPackageVersion } from "./package-version.js";
 
@@ -253,6 +253,64 @@ export function agentSkillsRoot(scope, agent, environment = {}) {
   const root =
     scope === "global" ? (environment.home ?? homedir()) : (environment.cwd ?? process.cwd());
   return join(root, relative);
+}
+
+/**
+ * Explode-owned skill names tracked by lock plugins other than ``pluginId``.
+ *
+ * Native installs namespace per plugin and do not consume the explode store.
+ *
+ * @param {GatewayLock | {plugins?: Record<string, PluginLockEntry>}} lock - Current lock.
+ * @param {string} pluginId - Plugin whose names are excluded.
+ * @returns {Set<string>} Skill names retained by other explode plugins.
+ */
+export function otherPluginSkillNames(lock, pluginId) {
+  const names = new Set();
+  for (const [id, entry] of Object.entries(lock.plugins ?? {})) {
+    if (id === pluginId) {
+      continue;
+    }
+    for (const [agent, install] of Object.entries(entry.agents ?? {})) {
+      if (agentProjector(entry, agent) !== PROJECTOR_EXPLODE) {
+        continue;
+      }
+      for (const name of skillNamesFromFiles(install.files)) {
+        names.add(name);
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * Exploded dest roots for known agent layouts, plus any lock-recorded dests.
+ *
+ * @param {"global" | "project"} scope - Installation scope.
+ * @param {{cwd?: string, home?: string}} [environment] - Injectable path environment.
+ * @param {GatewayLock | {plugins?: Record<string, PluginLockEntry>}} [lock] - Current lock.
+ * @returns {string[]} Absolute agent skills directories.
+ */
+export function allAgentSkillRoots(scope, environment = {}, lock) {
+  const roots = Object.keys(AGENT_SKILL_PATHS).map((agent) =>
+    agentSkillsRoot(scope, agent, environment),
+  );
+  if (!lock?.plugins) {
+    return roots;
+  }
+  const seen = new Set(roots.map((root) => resolve(root)));
+  for (const entry of Object.values(lock.plugins)) {
+    for (const install of Object.values(entry.agents ?? {})) {
+      if (typeof install.root !== "string" || install.root.startsWith("cli:")) {
+        continue;
+      }
+      const resolved = resolve(install.root);
+      if (!seen.has(resolved)) {
+        seen.add(resolved);
+        roots.push(install.root);
+      }
+    }
+  }
+  return roots;
 }
 
 /**

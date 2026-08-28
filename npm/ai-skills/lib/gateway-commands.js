@@ -4,11 +4,13 @@ import { dirname, join } from "node:path";
 import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
 import {
   agentProjector,
+  allAgentSkillRoots,
   hashFile,
   hashTree,
   isCliOwnedNativeInstall,
   ownedCursorTreeFiles,
   LOCKFILE_VERSION,
+  otherPluginSkillNames,
   pluginAgentNames,
   pluginSkillNames,
   PROJECTOR_EXPLODE,
@@ -148,6 +150,8 @@ export async function updateSkills(options, dependencies = {}) {
             keepBackups: true,
             skills,
             sourceSkills: explodeSources,
+            destRoots: allAgentSkillRoots(scope, dependencies.lockEnvironment, prunedLock),
+            retainStoreSkills: otherPluginSkillNames(prunedLock, pluginId),
             storeRoot:
               dependencies.storeRoot ?? defaultStoreRoot(scope, dependencies.lockEnvironment),
           });

@@ -5,12 +5,14 @@ import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
 import {
   agentProjector,
   agentSkillsRoot,
+  allAgentSkillRoots,
   hashFile,
   hashTree,
   isCliOwnedNativeInstall,
   ownedCursorTreeFiles,
   LOCKFILE_VERSION,
   mergeLockEntries,
+  otherPluginSkillNames,
   PROJECTOR_EXPLODE,
   PROJECTOR_NATIVE,
   readLockfile,
@@ -810,6 +812,8 @@ export async function install(
           keepBackups: true,
           skills: scopedOptions.skills,
           sourceSkills: explodeSources,
+          destRoots: allAgentSkillRoots(scope, lockEnvironment, lock),
+          retainStoreSkills: otherPluginSkillNames(lock, pluginId),
           storeRoot: extras.storeRoot ?? defaultStoreRoot(scope, lockEnvironment),
         });
         explodeClaims = exploded.claimed;

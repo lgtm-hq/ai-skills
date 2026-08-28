@@ -6,10 +6,12 @@ import { join } from "node:path";
 import {
   LOCKFILE_VERSION,
   agentProjector,
+  allAgentSkillRoots,
   hashTree,
   isCliOwnedNativeInstall,
   isPluginInstalled,
   mergeLockEntries,
+  otherPluginSkillNames,
   ownedCursorTreeFiles,
   pluginSkillNames,
   pruneMissingLockEntries,
@@ -317,6 +319,49 @@ describe("gateway lockfile", () => {
       "lint",
       "test",
     ]);
+  });
+
+  test("otherPluginSkillNames keeps explode skills and ignores native ones", () => {
+    expect([...otherPluginSkillNames(lock, "review")].sort()).toEqual(["pdf"]);
+    expect([...otherPluginSkillNames(lock, "pdf")].sort()).toEqual(["lint"]);
+    const mixed = {
+      ...lock,
+      plugins: {
+        ...lock.plugins,
+        local: {
+          ...explodeEntry,
+          projector: "native",
+          agents: {
+            cursor: {
+              files: { "skills/lint/SKILL.md": "abc" },
+              projector: "native",
+              root: "/tmp/.cursor/plugins/local/local",
+            },
+          },
+        },
+      },
+    };
+    expect([...otherPluginSkillNames(mixed, "pdf")].sort()).toEqual(["lint"]);
+  });
+
+  test("allAgentSkillRoots includes known layouts and extra lock dests", () => {
+    const env = { cwd: "/tmp/project" };
+    const roots = allAgentSkillRoots("project", env, {
+      plugins: {
+        review: {
+          ...explodeEntry,
+          agents: {
+            cursor: {
+              files: { "lint/SKILL.md": "abc" },
+              root: "/custom/explode/skills",
+            },
+          },
+        },
+      },
+    });
+    expect(roots).toContain("/tmp/project/.cursor/skills");
+    expect(roots).toContain("/tmp/project/.codex/skills");
+    expect(roots).toContain("/custom/explode/skills");
   });
 
   test("treats CLI-owned native installs as present without hashing", async () => {
