@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { loadVendorIndex } from "../lib/catalog.js";
+import { writeDoctorCache, runDoctor } from "../lib/doctor.js";
 import { batchesFromCliOptions, install } from "../lib/install.js";
 import { removeSkills, updateSkills } from "../lib/gateway-commands.js";
 import { readLockfile, writeLockfile } from "../lib/lockfile.js";
@@ -1287,8 +1288,8 @@ describe("native projectors", () => {
           received.push(args);
         },
         () => new Date("2026-07-10T16:00:00.000Z"),
-        { cwd },
-        { sourceRoot },
+        { cwd, home: cwd },
+        { hostCapabilities: { cursor: "native", codex: "explode" }, sourceRoot },
       );
       expect(received).toEqual([]);
       expect(await readFile(join(cwd, ".codex/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
@@ -1296,6 +1297,98 @@ describe("native projectors", () => {
       expect(lock.plugins.review.agents.cursor.projector).toBe("native");
       expect(lock.plugins.review.agents.codex.projector).toBe("explode");
       expect(lock.plugins.review.projector).toBe("explode");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("consults doctor hostCapabilities when --projector is omitted", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-install-"));
+    const sourceRoot = join(cwd, "catalog");
+    try {
+      await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      let received = [];
+      await install(
+        {
+          ...unattendedOptions,
+          global: false,
+          projector: null,
+          project: true,
+        },
+        async (args) => {
+          received = args;
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd, home: cwd },
+        { hostCapabilities: { cursor: "explode" }, sourceRoot },
+      );
+      expect(received).toEqual([]);
+      expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.review.agents.cursor.projector).toBe("explode");
+      await expect(access(join(cwd, ".cursor/plugins/local/review"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("reads doctor.json when hostCapabilities is omitted", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-json-"));
+    const sourceRoot = join(cwd, "catalog");
+    try {
+      await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
+      await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
+      await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test\n");
+      await writeDoctorCache(
+        {
+          hosts: {
+            cursor: {
+              capability: "explode",
+              source: "probe",
+              version: "project:present:nocli",
+            },
+          },
+          schemaVersion: 1,
+        },
+        { home: cwd },
+      );
+      let received = [];
+      await install(
+        {
+          ...unattendedOptions,
+          global: false,
+          projector: null,
+          project: true,
+        },
+        async (args) => {
+          received = args;
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd, home: cwd },
+        {
+          exec: async () => {
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          sourceRoot,
+        },
+      );
+      expect(received).toEqual([]);
+      expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.review.agents.cursor.projector).toBe("explode");
+      await expect(access(join(cwd, ".cursor/plugins/local/review"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -1316,8 +1409,8 @@ describe("native projectors", () => {
           received = args;
         },
         () => new Date("2026-07-10T16:00:00.000Z"),
-        { cwd },
-        { sourceRoot: null },
+        { cwd, home: cwd },
+        { hostCapabilities: { cursor: "native" }, sourceRoot: null },
       );
       expect(received).toContain("cursor");
       expect(received).toContain("add");
@@ -1326,6 +1419,160 @@ describe("native projectors", () => {
       expect(lock.plugins.review.agents.cursor.projector).toBe("explode");
       expect(lock.plugins.review.agents.cursor.root).toBe(join(cwd, ".cursor/skills"));
       expect(lock.plugins.review.agents.cursor.root).not.toContain("plugins/local");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("removes explode dests when --projector native rematerializes a locked agent", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-projector-override-cleanup-"));
+    const explodeFile = join(cwd, ".cursor/skills/jira/SKILL.md");
+    const sourceRoot = join(cwd, "catalog");
+    try {
+      await mkdir(join(cwd, ".cursor/skills/jira"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
+      await writeFile(explodeFile, "# jira\n");
+      await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            jira: {
+              agents: {
+                cursor: {
+                  files: { "jira/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-07-10T16:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      const counts = await install(
+        {
+          ...unattendedOptions,
+          agents: ["cursor"],
+          bundle: null,
+          global: false,
+          projector: "native",
+          project: true,
+          skills: ["jira"],
+        },
+        async () => {
+          throw new Error("explode runner must not run");
+        },
+        () => new Date("2026-07-10T17:00:00.000Z"),
+        { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+        { sourceRoot },
+      );
+      expect(counts).toEqual({ alreadyPresent: 0, installed: 1, repaired: 0 });
+      await expect(access(explodeFile)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(
+        await readFile(join(cwd, ".cursor/plugins/local/jira/skills/jira/SKILL.md"), "utf8"),
+      ).toBe("# jira\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("commits native lock when --projector dest cleanup fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-projector-override-rmfail-"));
+    const explodeFile = join(cwd, ".cursor/skills/jira/SKILL.md");
+    const sourceRoot = join(cwd, "catalog");
+    const warnings = [];
+    try {
+      await mkdir(join(cwd, ".cursor/skills/jira"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
+      await writeFile(explodeFile, "# jira\n");
+      await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            jira: {
+              agents: {
+                cursor: {
+                  files: { "jira/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-07-10T16:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      await expect(
+        install(
+          {
+            ...unattendedOptions,
+            agents: ["cursor"],
+            bundle: null,
+            global: false,
+            projector: "native",
+            project: true,
+            skills: ["jira"],
+          },
+          async () => {
+            throw new Error("explode runner must not run");
+          },
+          () => new Date("2026-07-10T17:00:00.000Z"),
+          { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          {
+            remove: async () => {
+              throw new Error("rm boom");
+            },
+            sourceRoot,
+            warn: (message) => warnings.push(message),
+          },
+        ),
+      ).rejects.toThrow("rm boom");
+      expect(warnings.some((message) => message.includes("could not remove"))).toBe(true);
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.jira.agents.cursor.projector).toBe("native");
+      expect(await readFile(explodeFile, "utf8")).toBe("# jira\n");
+      const lines = [];
+      await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: null,
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          exec: async () => {
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          home: cwd,
+          lockEnvironment: { cwd, home: cwd },
+          log: (line) => lines.push(line),
+        },
+      );
+      expect(
+        lines.some((line) => line.startsWith("orphan\tcursor\t") && line.endsWith("/jira")),
+      ).toBe(true);
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

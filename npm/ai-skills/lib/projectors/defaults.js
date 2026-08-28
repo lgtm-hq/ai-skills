@@ -6,10 +6,11 @@ import { PROJECTOR_EXPLODE, PROJECTOR_NATIVE } from "../lockfile.js";
 export const NATIVE_PROJECTOR_AGENTS = new Set(["claude-code", "copilot", "cursor"]);
 
 /**
- * Default projector when `--projector` is omitted (until doctor, issue #376).
+ * Default projector when doctor has no cache yet (issue #376).
  *
  * Cursor drops a local plugin tree. Claude Code and Copilot install through
  * their plugin CLIs. Codex has no native plugin host, so it stays exploded.
+ * Install consults ``sk doctor``'s host cache before this default.
  */
 export const DEFAULT_PROJECTOR_BY_AGENT = {
   "claude-code": PROJECTOR_NATIVE,

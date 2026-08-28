@@ -1,5 +1,6 @@
 import { adoptSkills } from "./adopt.js";
 import { loadVendors } from "./catalog.js";
+import { runDoctor } from "./doctor.js";
 import { listSkills, removeSkills, updateSkills } from "./gateway-commands.js";
 import { batchesFromCliOptions, install, installInteractively } from "./install.js";
 import {
@@ -74,6 +75,17 @@ export async function runCli(argv) {
   if (command === "adopt") {
     validateUnattendedCommandOptions(options, { requireAgents: false });
     await adoptSkills(options);
+    return;
+  }
+  if (command === "doctor") {
+    validateUnattendedCommandOptions(options, { requireAgents: false });
+    const result = await runDoctor(options);
+    if (result.repaired.length > 0) {
+      console.log(`repaired\t${result.repaired.join(",")}`);
+    }
+    if (result.migrated.length > 0) {
+      console.log(`migrated\t${result.migrated.join(",")}`);
+    }
     return;
   }
   validateUnattendedOptions(options);

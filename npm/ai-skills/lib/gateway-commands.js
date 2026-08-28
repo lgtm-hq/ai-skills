@@ -486,7 +486,7 @@ export async function removeSkills(options, dependencies = {}) {
  */
 export async function listSkills(options, dependencies = {}) {
   const readLock = dependencies.readLock ?? readLockfile;
-  const lock = await readLock(resolveScope(options));
+  const lock = await readLock(resolveScope(options), dependencies.lockEnvironment);
   const reconciliation = await reconcileLock(lock, dependencies.lockEnvironment);
   const statusByPlugin = pluginReconcileStatus(reconciliation);
   return Object.entries(lock.plugins)

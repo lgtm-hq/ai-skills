@@ -15,9 +15,11 @@ describe("parseArguments", () => {
         bundle: "review",
         copy: false,
         global: true,
+        migrate: null,
         onConflict: null,
         project: false,
         projector: null,
+        repair: false,
         skills: [],
         vendor: null,
         yes: false,
@@ -157,5 +159,51 @@ describe("parseArguments", () => {
 
   test("accepts copilot as a known agent", () => {
     expect(parseArguments(["-a", "copilot"]).options.agents).toEqual(["copilot"]);
+  });
+
+  test("accepts doctor with --repair or --migrate", () => {
+    expect(parseArguments(["doctor", "--repair", "-y", "--global"]).options.repair).toBe(true);
+    expect(
+      parseArguments(["doctor", "--migrate", "cursor", "-y", "--project"]).options.migrate,
+    ).toBe("cursor");
+  });
+
+  test("rejects --repair on install", () => {
+    expect(() => parseArguments(["install", "--repair"])).toThrow("doctor-only");
+  });
+
+  test("rejects --migrate on install", () => {
+    expect(() => parseArguments(["install", "--migrate", "cursor"])).toThrow("doctor-only");
+    expect(() => parseArguments(["--migrate", "cursor"])).toThrow("doctor-only");
+  });
+
+  test("allows unattended doctor without agents", () => {
+    const parsed = parseArguments(["doctor", "-y", "--global", "--repair"]);
+    expect(() =>
+      validateUnattendedCommandOptions(parsed.options, { requireAgents: false }),
+    ).not.toThrow();
+  });
+
+  test("rejects --migrate on an unknown host", () => {
+    expect(() => parseArguments(["doctor", "--migrate", "notepad"])).toThrow("Unknown agent");
+  });
+
+  test("rejects inherited names as --migrate hosts", () => {
+    expect(() => parseArguments(["doctor", "--migrate", "constructor"])).toThrow("Unknown agent");
+  });
+
+  test("rejects install source options and skills on doctor", () => {
+    expect(() => parseArguments(["doctor", "--vendor", "vercel-labs"])).toThrow(
+      "does not accept install source options",
+    );
+    expect(() => parseArguments(["doctor", "--skill", "review"])).toThrow(
+      "doctor does not accept --skill",
+    );
+  });
+
+  test("rejects --migrate without an agent", () => {
+    expect(() => parseArguments(["doctor", "--migrate"])).toThrow(
+      "--migrate requires an agent name",
+    );
   });
 });
