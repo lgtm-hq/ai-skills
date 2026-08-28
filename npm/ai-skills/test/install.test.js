@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { loadVendorIndex } from "../lib/catalog.js";
+import { writeDoctorCache } from "../lib/doctor.js";
 import { batchesFromCliOptions, install } from "../lib/install.js";
 import { removeSkills, updateSkills } from "../lib/gateway-commands.js";
 import { readLockfile, writeLockfile } from "../lib/lockfile.js";
@@ -1318,6 +1319,53 @@ describe("native projectors", () => {
         () => new Date("2026-07-10T16:00:00.000Z"),
         { cwd, home: cwd },
         { hostCapabilities: { cursor: "explode" }, sourceRoot: null },
+      );
+      expect(received).toContain("cursor");
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins.review.agents.cursor.projector).toBe("explode");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("reads doctor.json when hostCapabilities is omitted", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-json-"));
+    try {
+      await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
+      await writeDoctorCache(
+        {
+          hosts: {
+            cursor: {
+              capability: "explode",
+              source: "probe",
+              version: "project:present:nocli",
+            },
+          },
+          schemaVersion: 1,
+        },
+        { home: cwd },
+      );
+      let received = [];
+      await install(
+        {
+          ...unattendedOptions,
+          global: false,
+          projector: null,
+          project: true,
+        },
+        async (args) => {
+          received = args;
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd, home: cwd },
+        {
+          exec: async () => {
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          sourceRoot: null,
+        },
       );
       expect(received).toContain("cursor");
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));

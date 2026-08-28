@@ -92,6 +92,45 @@ describe("probeHost", () => {
     });
     expect(argument.capability).toBe("explode");
   });
+
+  test("classifies command not found as explode and other not-found as ambiguous", async () => {
+    const command = await probeHost("copilot", {
+      exec: async (_command, args) => {
+        if (args[0] === "--version") {
+          return { status: 0, stderr: "", stdout: "1.0.0\n" };
+        }
+        return { status: 127, stderr: "command not found: copilot\n", stdout: "" };
+      },
+    });
+    expect(command.capability).toBe("explode");
+    const file = await probeHost("copilot", {
+      exec: async (_command, args) => {
+        if (args[0] === "--version") {
+          return { status: 0, stderr: "", stdout: "1.0.0\n" };
+        }
+        return { status: 1, stderr: "file not found\n", stdout: "" };
+      },
+    });
+    expect(file.capability).toBe("explode");
+    const config = await probeHost("copilot", {
+      exec: async (_command, args) => {
+        if (args[0] === "--version") {
+          return { status: 0, stderr: "", stdout: "1.0.0\n" };
+        }
+        return { status: 1, stderr: "config not found\n", stdout: "" };
+      },
+    });
+    expect(config.capability).toBe("ambiguous");
+    const bare = await probeHost("copilot", {
+      exec: async (_command, args) => {
+        if (args[0] === "--version") {
+          return { status: 0, stderr: "", stdout: "1.0.0\n" };
+        }
+        return { status: 1, stderr: "plugin not found\n", stdout: "" };
+      },
+    });
+    expect(bare.capability).toBe("ambiguous");
+  });
 });
 
 describe("ensureHostCapability", () => {
@@ -377,6 +416,72 @@ describe("runDoctor", () => {
       );
       expect(result.repaired).toEqual(["review"]);
       expect(installs).toEqual(["explode"]);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("repair failures reject after warning", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-repair-fail-"));
+    const warnings = [];
+    try {
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            review: {
+              agents: {
+                cursor: {
+                  files: { "lint/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      await expect(
+        runDoctor(
+          {
+            agents: ["cursor"],
+            global: false,
+            migrate: null,
+            project: true,
+            repair: true,
+            yes: true,
+          },
+          {
+            access: async () => false,
+            exec: async () => ({ status: 1, stderr: "", stdout: "" }),
+            home: cwd,
+            installExtras: {
+              explode: async () => {
+                throw new Error("catalog boom");
+              },
+              sourceRoot: cwd,
+            },
+            lockEnvironment: {
+              cwd,
+              exists: async () => false,
+              hash: async () => "abc",
+              home: cwd,
+            },
+            log: () => {},
+            warn: (message) => warnings.push(message),
+          },
+        ),
+      ).rejects.toThrow("Repair failed for review:cursor");
+      expect(warnings.some((message) => message.includes("catalog boom"))).toBe(true);
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -678,29 +783,30 @@ describe("runDoctor", () => {
         { cwd },
       );
       const warnings = [];
-      const result = await runDoctor(
-        {
-          agents: ["cursor"],
-          global: false,
-          migrate: "cursor",
-          project: true,
-          repair: false,
-          yes: true,
-        },
-        {
-          exec: async () => {
-            const error = new Error("not found");
-            error.code = "ENOENT";
-            throw error;
+      await expect(
+        runDoctor(
+          {
+            agents: ["cursor"],
+            global: false,
+            migrate: "cursor",
+            project: true,
+            repair: false,
+            yes: true,
           },
-          home: cwd,
-          installExtras: { sourceRoot: null },
-          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
-          log: () => {},
-          warn: (message) => warnings.push(message),
-        },
-      );
-      expect(result.migrated).toEqual([]);
+          {
+            exec: async () => {
+              const error = new Error("not found");
+              error.code = "ENOENT";
+              throw error;
+            },
+            home: cwd,
+            installExtras: { sourceRoot: null },
+            lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+            log: () => {},
+            warn: (message) => warnings.push(message),
+          },
+        ),
+      ).rejects.toThrow("Migrate failed for jira");
       expect(warnings.some((message) => message.includes("catalog checkout"))).toBe(true);
       expect(await readFile(explodeFile, "utf8")).toBe("# jira\n");
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
@@ -775,6 +881,118 @@ describe("runDoctor", () => {
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
       expect(lock.plugins.jira.agents.cursor.projector).toBe("native");
       expect(lock.plugins.jira.agents.cursor.root).toBe(join(cwd, ".cursor/plugins/local/jira"));
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("migrate without --agent still migrates when an unrelated host is ambiguous", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-migrate-unrelated-"));
+    const explodeFile = join(cwd, ".cursor/skills/jira/SKILL.md");
+    const sourceRoot = join(cwd, "catalog");
+    const lines = [];
+    try {
+      await mkdir(join(cwd, ".cursor/skills/jira"), { recursive: true });
+      await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
+      await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
+      await writeFile(explodeFile, "# jira\n");
+      await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            jira: {
+              agents: {
+                cursor: {
+                  files: { "jira/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      const result = await runDoctor(
+        {
+          agents: [],
+          global: false,
+          migrate: "cursor",
+          project: true,
+          repair: false,
+          yes: true,
+        },
+        {
+          exec: async (command, args) => {
+            if (command === "claude") {
+              if (args[0] === "--version") {
+                return { status: 0, stderr: "", stdout: "0.1\n" };
+              }
+              return { status: 1, stderr: "segfault", stdout: "" };
+            }
+            const error = new Error("not found");
+            error.code = "ENOENT";
+            throw error;
+          },
+          home: cwd,
+          installExtras: { sourceRoot },
+          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          log: (line) => lines.push(line),
+        },
+      );
+      expect(result.migrated).toEqual(["jira"]);
+      expect(lines.some((line) => line.startsWith("host\tclaude-code\tambiguous\terror"))).toBe(
+        true,
+      );
+      await expect(access(explodeFile)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(
+        await readFile(join(cwd, ".cursor/plugins/local/jira/skills/jira/SKILL.md"), "utf8"),
+      ).toBe("# jira\n");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("migrate of an ambiguous host still fail-closes", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-migrate-ambiguous-"));
+    try {
+      await expect(
+        runDoctor(
+          {
+            agents: [],
+            global: false,
+            migrate: "claude-code",
+            project: true,
+            repair: false,
+            yes: true,
+          },
+          {
+            exec: async (command, args) => {
+              if (command === "claude") {
+                if (args[0] === "--version") {
+                  return { status: 0, stderr: "", stdout: "0.1\n" };
+                }
+                return { status: 1, stderr: "segfault", stdout: "" };
+              }
+              const error = new Error("not found");
+              error.code = "ENOENT";
+              throw error;
+            },
+            home: cwd,
+            lockEnvironment: { cwd, exists: async () => false, home: cwd },
+            log: () => {},
+          },
+        ),
+      ).rejects.toThrow("ambiguous");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

@@ -244,8 +244,16 @@ export async function runDoctor(options, dependencies = {}) {
   };
   const hosts = doctorHosts(options.agents);
   for (const agent of hosts) {
-    const capability = await ensureHostCapability(agent, environment);
-    log(["host", agent, capability.capability, capability.source, capability.version].join("\t"));
+    try {
+      const capability = await ensureHostCapability(agent, environment);
+      log(["host", agent, capability.capability, capability.source, capability.version].join("\t"));
+    } catch (error) {
+      if (options.migrate !== agent && isAmbiguousCapabilityError(error)) {
+        log(["host", agent, "ambiguous", "error", ""].join("\t"));
+        continue;
+      }
+      throw error;
+    }
   }
   const plugins = await listSkills(options, {
     lockEnvironment: dependencies.lockEnvironment,
@@ -391,7 +399,7 @@ function classifyCliPluginProbe(result) {
   if (
     /\bunknown (?:sub)?command\b/.test(text) ||
     /\bunrecognized (?:subcommand|command|argument)s?\b/.test(text) ||
-    /\b(?:command |file )?not found\b/.test(text)
+    /\b(?:command|file) not found\b/.test(text)
   ) {
     return PROJECTOR_EXPLODE;
   }
@@ -404,6 +412,14 @@ function classifyCliPluginProbe(result) {
  */
 function isMissingExecutable(error) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
+}
+
+/**
+ * @param {unknown} error - Probe failure.
+ * @returns {boolean} True when ``-y`` fail-closed on an ambiguous host.
+ */
+function isAmbiguousCapabilityError(error) {
+  return error instanceof Error && error.message.includes("ambiguous");
 }
 
 /**
@@ -503,6 +519,8 @@ async function repairMissing(options, plugins, dependencies = {}) {
   const warn = dependencies.warn ?? ((message) => console.warn(message));
   /** @type {string[]} */
   const repaired = [];
+  /** @type {string[]} */
+  const failed = [];
   for (const plugin of plugins) {
     const missingAgents = plugin.agentNames.filter((agent) => {
       if (options.agents.length > 0 && !options.agents.includes(agent)) {
@@ -544,11 +562,15 @@ async function repairMissing(options, plugins, dependencies = {}) {
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         warn(`repair failed for ${plugin.name} on ${agent}: ${detail}`);
+        failed.push(`${plugin.name}:${agent}`);
       }
     }
     if (didRepair) {
       repaired.push(plugin.name);
     }
+  }
+  if (failed.length > 0) {
+    throw new Error(`Repair failed for ${failed.join(", ")}`);
   }
   return repaired;
 }
@@ -592,6 +614,8 @@ async function migrateHost(host, options, environment, dependencies = {}) {
   const { install } = await import("./install.js");
   /** @type {string[]} */
   const migrated = [];
+  /** @type {string[]} */
+  const failed = [];
   for (const [pluginId, entry] of toMigrate) {
     if (entry.vendor && entry.vendor !== "lgtm-hq" && target.capability === PROJECTOR_NATIVE) {
       warn(`skipping vendor plugin ${pluginId}: native migrate is first-party only`);
@@ -621,6 +645,7 @@ async function migrateHost(host, options, environment, dependencies = {}) {
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       warn(`migrate failed for ${pluginId} on ${host}: ${detail}`);
+      failed.push(pluginId);
       continue;
     }
     try {
@@ -641,6 +666,9 @@ async function migrateHost(host, options, environment, dependencies = {}) {
       );
     }
     migrated.push(pluginId);
+  }
+  if (failed.length > 0) {
+    throw new Error(`Migrate failed for ${failed.join(", ")}`);
   }
   return migrated;
 }
