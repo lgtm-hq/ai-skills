@@ -11,12 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **gateway**: `sk doctor` — cached per-host capability probe, lock↔disk
-  report, `--repair` for missing installs, and explicit `--migrate <host>`
-  for projector cutover. Install consults `~/.ai-skills/doctor.json` instead
-  of probing on every run. Ambiguous hosts ask once and persist; `-y` fails
-  closed. Manual host ritual: `docs/smoke-test.md`.
-
 ### Changed
 
 ### Deprecated
@@ -26,6 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.26.0] - 2026-08-28
+
+### Added
+
+- **gateway**: add sk doctor with cached probe, repair, and migrate (#405) (00ba8ee)
+- **gateway**: `sk doctor` — cached per-host capability probe, lock↔disk
+  report, `--repair` for missing installs, and explicit `--migrate <host>`
+  for projector cutover. Install consults `~/.ai-skills/doctor.json` instead
+  of probing on every run. Ambiguous hosts ask once and persist; `-y` fails
+  closed. Manual host ritual: `docs/smoke-test.md`.
+
+### Changed
+
+- **deps**: update lintro (#404) (bd07c4f)
 
 ## [0.25.0] - 2026-08-28
 
@@ -871,7 +880,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.22.1...v0.23.0
