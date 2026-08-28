@@ -296,6 +296,49 @@ describe("gateway maintenance commands", () => {
     expect(warnings).toEqual(["left modified pdf file pdf/SKILL.md"]);
   });
 
+  test("keeps the lock when a verified unlink fails", async () => {
+    let written;
+    const denied = Object.assign(new Error("EPERM"), { code: "EPERM" });
+    await expect(
+      removeSkills(
+        { ...options, skills: ["pdf"] },
+        {
+          hash: async () => "abc",
+          readLock: async () => lock,
+          run: async () => {},
+          unlink: async () => {
+            throw denied;
+          },
+          writeLock: async (next) => {
+            written = next;
+          },
+        },
+      ),
+    ).rejects.toThrow("EPERM");
+    expect(written).toBeUndefined();
+  });
+
+  test("keeps the lock when a tracked file cannot be hashed", async () => {
+    let written;
+    const denied = Object.assign(new Error("EACCES"), { code: "EACCES" });
+    await expect(
+      removeSkills(
+        { ...options, skills: ["pdf"] },
+        {
+          hash: async () => {
+            throw denied;
+          },
+          readLock: async () => lock,
+          run: async () => {},
+          writeLock: async (next) => {
+            written = next;
+          },
+        },
+      ),
+    ).rejects.toThrow("EACCES");
+    expect(written).toBeUndefined();
+  });
+
   test("refuses to delete lock paths that escape the agent root", async () => {
     const evil = {
       ...lock,

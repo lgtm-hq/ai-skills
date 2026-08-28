@@ -440,8 +440,11 @@ async function classifyPluginFiles(pluginId, entry, io) {
           continue;
         }
         verified.push({ absolute, root: install.root });
-      } catch {
-        // Already absent — skip.
+      } catch (error) {
+        if (isAbsentFsError(error)) {
+          continue;
+        }
+        throw error;
       }
     }
   }
@@ -466,10 +469,23 @@ async function deleteVerifiedFiles(verified, io) {
     try {
       await io.removeFile(file.absolute);
       await pruneEmptyAncestors(dirname(file.absolute), file.root, io.removeDir);
-    } catch {
-      // Already absent after the skills CLI, or unreadable — skip.
+    } catch (error) {
+      if (isAbsentFsError(error)) {
+        continue;
+      }
+      throw error;
     }
   }
+}
+
+/**
+ * Whether an fs failure means the path is already gone.
+ *
+ * @param {unknown} error - Caught rejection.
+ * @returns {boolean} True when the code is ENOENT.
+ */
+function isAbsentFsError(error) {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
 }
 
 /**
