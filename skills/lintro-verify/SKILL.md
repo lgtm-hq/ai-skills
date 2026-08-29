@@ -62,7 +62,8 @@ info <tool>`)
   - `lintro/_tool_versions.py` version
   - `package.json` version (for npm tools)
   - Plugin `min_version` in tool definition
-  - `lintro/tools/manifest.json` version
+  - `lintro/tools/manifest.src.json` entry present (no `version` key; the
+    generator renders the version into the gitignored `manifest.json`)
 - [ ] Renovate custom manager exists in `renovate.json` for `_tool_versions.py`
 - [ ] `package.json` uses caret (^) prefix matching `_tool_versions.py` (e.g., ^0.27.0)
 - [ ] Plugin `min_version` equals or is less than `_tool_versions.py` version
@@ -245,7 +246,7 @@ uv run pytest tests/ -v
 ```bash
 # Check all version sources are aligned (replace <tool> with actual name)
 echo "=== _tool_versions.py ===" && grep "<tool>" lintro/_tool_versions.py
-echo "=== manifest.json ===" && grep -A3 '"<tool>"' lintro/tools/manifest.json
+echo "=== manifest.src.json ===" && grep -A3 '"<tool>"' lintro/tools/manifest.src.json
 echo "=== package.json ===" && grep "<tool>" package.json
 echo "=== Plugin min_version ===" && grep "min_version" lintro/tools/definitions/<tool>.py
 echo "=== Renovate manager ===" && grep -A5 '"<tool>"' renovate.json | head -10
