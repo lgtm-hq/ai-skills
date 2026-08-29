@@ -50,7 +50,9 @@ items below.
 
 ### Version Management
 
-- [ ] Version added to `lintro/_tool_versions.py` (for external tools)
+- [ ] Version added to the tool's source: `lintro/_tool_versions.py`
+      (binary/cargo/rustup), `package.json` (npm), or `pyproject.toml` (bundled
+      Python)
 - [ ] Install hint added to `lintro/tools/core/version_checking.py`
       `get_install_hints()` templates
 - [ ] Version is reasonably current (check latest: `npm view <tool> version` or `brew
@@ -59,14 +61,17 @@ info <tool>`)
 ### Version Consistency (CRITICAL)
 
 - [ ] **All version sources are aligned:**
-  - `lintro/_tool_versions.py` version
+  - The install-type version source (`_tool_versions.py` / `package.json` /
+    `pyproject.toml`)
   - `package.json` version (for npm tools)
   - Plugin `min_version` in tool definition
   - `lintro/tools/manifest.src.json` entry present (no `version` key; the
     generator renders the version into the gitignored `manifest.json`)
 - [ ] Renovate custom manager exists in `renovate.json` for `_tool_versions.py`
-- [ ] `package.json` uses caret (^) prefix matching `_tool_versions.py` (e.g., ^0.27.0)
-- [ ] Plugin `min_version` equals or is less than `_tool_versions.py` version
+      (binary tools only)
+- [ ] `package.json` uses caret (^) prefix with an exact pin (e.g., ^0.27.0) —
+      it is the version source for npm tools
+- [ ] Plugin `min_version` equals or is less than the version source's value
 
 ### Doctor Health Check
 
@@ -290,7 +295,7 @@ uv run lintro check . --tools <tool> --tool-options "<tool>:option_name=value"
 - [ ] **Version is current** - check if pinned version is significantly outdated
 - [ ] **Config-file-only options** are not exposed as `--tool-options` (will cause
       runtime errors)
-- [ ] **Version consistency** - `_tool_versions.py`, `package.json`, and plugin
+- [ ] **Version consistency** - the install-type version source and plugin
       `min_version` are aligned
 - [ ] **Renovate manager** - custom regex manager exists in `renovate.json` for external
       tools

@@ -53,11 +53,11 @@ tests/unit/tools/<tool>/test_<tool>_plugin.py
 lintro/enums/tool_name.py              # Add to ToolName enum (alphabetical)
 lintro/tools/core/version_parsing.py   # Add to TOOLS_WITH_SIMPLE_VERSION_PATTERN
 lintro/tools/core/version_checking.py  # Add install hints in get_install_hints()
-lintro/_tool_versions.py               # Add version (external tools only)
+lintro/_tool_versions.py               # Add version (binary/cargo/rustup tools only)
 lintro/tools/manifest.src.json         # Add tool entry (NO version key; generator renders manifest.json)
 lintro/cli_utils/commands/doctor.py    # Add to TOOL_COMMANDS for health check
-package.json                           # Add version for npm tools (must match _tool_versions.py)
-renovate.json                          # Add a custom manager for _tool_versions.py (external tools)
+package.json                           # Pin the npm package (the version source for npm tools)
+renovate.json                          # Add a custom manager for _tool_versions.py (binary tools only)
 pyproject.toml                         # Add parser package + [tool.lintro.versions] entry
 Dockerfile                             # Add to verification steps (root AND non-root blocks)
 Dockerfile.tools                       # Add to verification step (tool --version)
@@ -151,11 +151,11 @@ Can be combined: `ToolType.LINTER | ToolType.FORMATTER`
 - [ ] Plugin unit tests pass: `pytest tests/unit/tools/<tool>/ -v`
 - [ ] Coverage >80% on new code
 - [ ] No linting errors: `uv run lintro fmt && uv run lintro chk`
-- [ ] Manifest generator passes in `--check` mode (no version drift)
+- [ ] `just generate` runs cleanly (derived artifacts are gitignored, not committed)
 - [ ] Tool added to `Dockerfile` (root and non-root blocks) and `Dockerfile.tools`
 - [ ] Tool added to `install-tools.sh` (external tools only)
 - [ ] Tool added to `lintro/tools/manifest.src.json` (no `version` key)
-- [ ] Renovate manager added for `_tool_versions.py` (external tools)
+- [ ] Renovate manager added for `_tool_versions.py` (binary tools only)
 - [ ] Homebrew template updated with `depends_on` + caveats (if Homebrew-installable)
 - [ ] Docker image builds: `docker build -t py-lintro:test .`
 
