@@ -53,11 +53,11 @@ tests/unit/tools/<tool>/test_<tool>_plugin.py
 lintro/enums/tool_name.py              # Add to ToolName enum (alphabetical)
 lintro/tools/core/version_parsing.py   # Add to TOOLS_WITH_SIMPLE_VERSION_PATTERN
 lintro/tools/core/version_checking.py  # Add install hints in get_install_hints()
-lintro/_tool_versions.py               # Add version (external tools only)
-lintro/tools/manifest.json             # Add tool entry (version MUST match _tool_versions.py)
+lintro/_tool_versions.py               # Add version (binary/cargo/rustup tools only)
+lintro/tools/manifest.src.json         # Add tool entry (NO version key; generator renders manifest.json)
 lintro/cli_utils/commands/doctor.py    # Add to TOOL_COMMANDS for health check
-package.json                           # Add version for npm tools (must match _tool_versions.py)
-renovate.json                          # Add custom managers for BOTH _tool_versions.py AND manifest.json
+package.json                           # Pin the npm package (the version source for npm tools)
+renovate.json                          # Add a custom manager for _tool_versions.py (binary tools only)
 pyproject.toml                         # Add parser package + [tool.lintro.versions] entry
 Dockerfile                             # Add to verification steps (root AND non-root blocks)
 Dockerfile.tools                       # Add to verification step (tool --version)
@@ -72,20 +72,22 @@ tool the same way (alphabetical order where the file is ordered).
 
 For external tools (not bundled Python packages), versions must be consistent across:
 
-1. **`lintro/_tool_versions.py`** — source of truth for install-tools.sh
-2. **`lintro/tools/manifest.json`** — must match `_tool_versions.py` for
-   binary/cargo/rustup tools
-3. **`package.json`** — for npm tools, must match `_tool_versions.py`
-4. **Plugin `min_version`** — in the tool definition, should match or be <=
-   `_tool_versions.py`
-5. **`renovate.json`** — must have custom regex managers updating BOTH
-   `_tool_versions.py` AND `manifest.json` (copy an existing tool's pair of
-   entries and adjust the package name and datasource)
+1. **`lintro/_tool_versions.py`** — source of truth for binary/cargo/rustup
+   tools (npm tools read `package.json`, bundled Python tools read
+   `pyproject.toml`)
+2. **`lintro/tools/manifest.src.json`** — the hand-authored entry carries
+   install metadata only, **never a `version` key**; the build-time generator
+   renders `lintro/tools/manifest.json` (gitignored, not committed) with the
+   version injected from the source above
+3. **Plugin `min_version`** — in the tool definition, should match or be <=
+   the version source
+4. **`renovate.json`** — a custom regex manager updating `_tool_versions.py`
+   (binary tools only; the rendered manifest follows via the generator)
 
-CI enforces manifest/version sync with the manifest generator run in `--check`
-mode (the generate-with---check pattern from `stand-ci` — no separate verify
-script). **PRs fail if versions drift between these files.** Run the generator
-with `--check` locally before pushing.
+There is no committed generated copy to drift (py-lintro #2176): the derived
+artifacts are generated at package build time. Run `just generate` in the
+py-lintro checkout after editing a version source to refresh the gitignored
+working-tree copies.
 
 ### Homebrew Formula (for Homebrew-installable tools)
 
@@ -149,11 +151,11 @@ Can be combined: `ToolType.LINTER | ToolType.FORMATTER`
 - [ ] Plugin unit tests pass: `pytest tests/unit/tools/<tool>/ -v`
 - [ ] Coverage >80% on new code
 - [ ] No linting errors: `uv run lintro fmt && uv run lintro chk`
-- [ ] Manifest generator passes in `--check` mode (no version drift)
+- [ ] `just generate` runs cleanly (derived artifacts are gitignored, not committed)
 - [ ] Tool added to `Dockerfile` (root and non-root blocks) and `Dockerfile.tools`
 - [ ] Tool added to `install-tools.sh` (external tools only)
-- [ ] Tool added to `lintro/tools/manifest.json` (version matches `_tool_versions.py`)
-- [ ] Renovate managers added for BOTH `_tool_versions.py` and `manifest.json`
+- [ ] Tool added to `lintro/tools/manifest.src.json` (no `version` key)
+- [ ] Renovate manager added for `_tool_versions.py` (binary tools only)
 - [ ] Homebrew template updated with `depends_on` + caveats (if Homebrew-installable)
 - [ ] Docker image builds: `docker build -t py-lintro:test .`
 
