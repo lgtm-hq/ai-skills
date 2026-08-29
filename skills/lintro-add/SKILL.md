@@ -82,7 +82,7 @@ For external tools (not bundled Python packages), versions must be consistent ac
 3. **Plugin `min_version`** — in the tool definition, should match or be <=
    the version source
 4. **`renovate.json`** — a custom regex manager updating `_tool_versions.py`
-   (external tools only; the rendered manifest follows via the generator)
+   (binary tools only; the rendered manifest follows via the generator)
 
 There is no committed generated copy to drift (py-lintro #2176): the derived
 artifacts are generated at package build time. Run `just generate` in the
