@@ -26,7 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   committing bake output. Collision failures stay reviewable; PRs never
   auto-merge. Existing re-pin PRs summarize against main's full
   `vendors.yaml` (`--baseline-ref`), not a SHA-only reset of the PR
-  branch.
+  branch. Existing branches also push a merge from main when catalogs
+  are unchanged, so the remote PR does not stay behind while the body
+  updates.
 - **docs**: ADR-0007 — vendor bake output is a publish-time artifact, not
   repo content.
 

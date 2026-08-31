@@ -790,6 +790,9 @@ def test_vendor_repin_workflow_is_sha_pinned_weekly_and_never_auto_merges() -> N
     assert_that(script).contains(
         'changed="$(git status --porcelain -- "${paths[@]}")"',
     )
+    assert_that(script).contains(
+        '[[ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/${branch}")" ]]',
+    )
     assert_that(script).contains('gh pr edit "$existing" --body-file "$summary"')
     assert_that(script).contains("No pin change")
     assert_that(script).does_not_contain("pr merge")

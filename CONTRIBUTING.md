@@ -230,7 +230,10 @@ re-run the workflow for any remaining vendors.
 Updating an existing re-pin PR passes `--baseline-ref` with main's SHA
 so the summary is main-to-new even when the branch already has a newer
 pin or extra `renameSkills`. Do not reset only the SHA on the PR
-branch — that bakes main's pin against branch-only slice edits.
+branch — that bakes main's pin against branch-only slice edits. Jobs
+merge main onto `chore/vendor-repin-*` and push that merge even when
+catalog paths are unchanged, so the remote PR stays based on latest
+main.
 
 ## Pull requests
 

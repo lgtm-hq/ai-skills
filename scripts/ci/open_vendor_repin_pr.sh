@@ -65,14 +65,28 @@ changed="$(git status --porcelain -- "${paths[@]}")"
 if [[ -n "$changed" ]]; then
   git add -- "${paths[@]}"
   git commit -m "chore(vendors): re-pin ${vendor}"
+elif [[ "$status" -ne 0 ]]; then
+  exit "$status"
+fi
 
+# Push catalog commits and merge-from-main even when catalogs are
+# unchanged. Skipping that leaves the remote PR behind main while the
+# body describes the new baseline.
+needs_push=false
+if [[ -n "$changed" ]]; then
+  needs_push=true
+elif git rev-parse --verify "origin/${branch}" >/dev/null 2>&1; then
+  if [[ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/${branch}")" ]]; then
+    needs_push=true
+  fi
+fi
+
+if [[ "$needs_push" == true ]]; then
   if git rev-parse --verify "origin/${branch}" >/dev/null 2>&1; then
     git push --force-with-lease -u origin "$branch"
   else
     git push -u origin "$branch"
   fi
-elif [[ "$status" -ne 0 ]]; then
-  exit "$status"
 fi
 
 existing="$(
