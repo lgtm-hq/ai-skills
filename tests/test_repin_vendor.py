@@ -15,7 +15,11 @@ import yaml
 from assertpy import assert_that
 from vendor_registry.registry import load_registry
 from vendor_registry.vendor import Vendor
-from vendor_registry.vendor_repin_diff import diff_snapshots, render_json
+from vendor_registry.vendor_repin_diff import (
+    diff_snapshots,
+    render_json,
+    render_markdown,
+)
 from vendor_registry.vendor_repin_snapshot import VendorRepinSnapshot
 
 _EXISTING_SHA = "0123456789abcdef0123456789abcdef01234567"
@@ -295,6 +299,58 @@ def test_diff_reports_added_removed_and_renamed() -> None:
     assert_that(diff.ingested_after).is_equal_to(3)
 
 
+def test_diff_same_sha_with_bake_delta_is_not_unchanged() -> None:
+    """Equal pins still report skill deltas from slice or rename edits."""
+    before = _snapshot(
+        sha=_EXISTING_SHA,
+        names=frozenset({"alpha", "delta"}),
+        skipped=(),
+        ingested=2,
+        digests=(("alpha", "aaa"), ("delta", "ddd")),
+    )
+    after = _snapshot(
+        sha=_EXISTING_SHA,
+        names=frozenset({"alpha", "renamed-delta"}),
+        skipped=(),
+        ingested=2,
+        digests=(("alpha", "aaa"), ("renamed-delta", "ddd")),
+    )
+
+    diff = diff_snapshots(before=before, after=after)
+    markdown = render_markdown(diff=diff, display_ref="latest")
+
+    assert_that(diff.unchanged).is_false()
+    assert_that(diff.renamed_skills).is_equal_to((("delta", "renamed-delta"),))
+    assert_that(markdown).does_not_contain("No bake delta")
+    assert_that(markdown).contains("renamed-delta")
+    assert_that(markdown).does_not_contain(f"{_EXISTING_SHA}` →")
+
+
+def test_diff_identical_snapshots_are_unchanged() -> None:
+    """Matching SHA and bake fields remain a no-op summary."""
+    before = _snapshot(
+        sha=_EXISTING_SHA,
+        names=frozenset({"alpha"}),
+        skipped=(),
+        ingested=1,
+        digests=(("alpha", "aaa"),),
+    )
+    after = _snapshot(
+        sha=_EXISTING_SHA,
+        names=frozenset({"alpha"}),
+        skipped=(),
+        ingested=1,
+        digests=(("alpha", "aaa"),),
+    )
+
+    diff = diff_snapshots(before=before, after=after)
+
+    assert_that(diff.unchanged).is_true()
+    assert_that(render_markdown(diff=diff, display_ref="latest")).contains(
+        "No bake delta",
+    )
+
+
 def test_diff_rename_matching_is_one_to_one() -> None:
     """Duplicate SKILL.md bodies claim each old explode name at most once."""
     before = _snapshot(
@@ -413,6 +469,42 @@ def test_repin_summary_baselines_from_main_registry_not_sha_only(
         (("delta", "renamed-delta"),),
     )
     assert_that(diff.added_skills).contains("renamed-delta")
+
+
+def test_repin_same_pin_summarizes_rename_skills_vs_baseline(
+    repo_root: Path,
+    tree_kind: dict[str, str],
+) -> None:
+    """A slice rename on an already-current pin still appears in the summary."""
+    registry = repo_root / "vendors.yaml"
+    original = registry.read_text(encoding="utf-8")
+    bake_vendor_plugins.bake(repo_root=repo_root)
+    at_new = original.replace(_EXISTING_SHA, _NEW_SHA)
+    registry.write_text(
+        at_new.replace(
+            '        skills: "*"',
+            (
+                '        skills: "*"\n'
+                "        renameSkills:\n"
+                "          delta: renamed-delta"
+            ),
+        ),
+        encoding="utf-8",
+    )
+    tree_kind["kind"] = "after"
+
+    diff = repin_vendor.repin_vendor(
+        repo_root=repo_root,
+        vendor_id="example-vendor",
+        resolve_sha=_fixed_new_sha,
+        baseline_registry_text=at_new,
+    )
+    names = set(diff.added_skills) | {new for _old, new in diff.renamed_skills}
+
+    assert_that(diff.old_sha).is_equal_to(_NEW_SHA)
+    assert_that(diff.new_sha).is_equal_to(_NEW_SHA)
+    assert_that(diff.unchanged).is_false()
+    assert_that(names).contains("renamed-delta")
 
 
 def test_repin_rejects_both_baseline_inputs(repo_root: Path) -> None:

@@ -44,7 +44,8 @@ def diff_snapshots(
         after: Snapshot at the candidate pin.
 
     Returns:
-        Structured delta. ``unchanged`` is true when the SHA is identical.
+        Structured delta. ``unchanged`` is true when the pin SHA and
+        bake-derived fields are identical.
 
     Raises:
         ValueError: If the snapshots are for different vendor ids.
@@ -52,7 +53,14 @@ def diff_snapshots(
     if before.vendor_id != after.vendor_id:
         msg = f"cannot diff snapshots for {before.vendor_id!r} and {after.vendor_id!r}"
         raise ValueError(msg)
-    unchanged = before.sha == after.sha
+    unchanged = (
+        before.sha == after.sha
+        and before.explode_names == after.explode_names
+        and before.skipped == after.skipped
+        and before.ingested_count == after.ingested_count
+        and before.collisions == after.collisions
+        and before.skill_digests == after.skill_digests
+    )
     added = after.explode_names - before.explode_names
     removed = before.explode_names - after.explode_names
     before_by_digest = {digest: name for name, digest in before.skill_digests}
@@ -117,9 +125,13 @@ def render_markdown(*, diff: VendorRepinDiff, display_ref: str | None) -> str:
             ],
         )
         return "\n".join(lines)
+    if diff.old_sha == diff.new_sha:
+        pin_line = f"- Pin: `{diff.new_sha}` (`displayRef: {ref}`)"
+    else:
+        pin_line = f"- Pin: `{diff.old_sha}` → `{diff.new_sha}` (`displayRef: {ref}`)"
     lines.extend(
         [
-            f"- Pin: `{diff.old_sha}` → `{diff.new_sha}` (`displayRef: {ref}`)",
+            pin_line,
             f"- Ingested skills: {diff.ingested_before} → {diff.ingested_after}",
             "",
         ],
