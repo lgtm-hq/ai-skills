@@ -212,6 +212,7 @@ def repin_vendor(
     vendor_id: str,
     vendor_trees: Mapping[str, Path] | None = None,
     resolve_sha: ResolveSha | None = None,
+    from_sha: str | None = None,
 ) -> VendorRepinDiff:
     """Bump one vendor pin, refresh derived artifacts, and diff bakes.
 
@@ -219,32 +220,43 @@ def repin_vendor(
     re-pin PR can add ``renameSkills``, and the returned diff includes
     the collision lines.
 
+    ``from_sha`` is the summary baseline (main's pin when updating an
+    existing re-pin PR). The working tree may already be at a later pin
+    from that PR; the Markdown body must still describe main-to-new.
+
     Args:
         repo_root: Repository root containing ``vendors.yaml``.
         vendor_id: Vendor slug to re-pin.
         vendor_trees: Optional local trees keyed by vendor id.
         resolve_sha: Optional SHA resolver (tests inject a stub).
+        from_sha: Pin to snapshot as ``before``. Defaults to the current
+            registry pin.
 
     Returns:
         Snapshot delta. ``unchanged`` is true when the pin already
         matches upstream.
 
     Raises:
-        ValueError: If the vendor id is unknown.
+        ValueError: If the vendor id is unknown or ``from_sha`` is not
+            a 40-character lowercase hex SHA.
         RuntimeError: If GitHub cannot resolve the upstream ref.
         TypeError: If a GitHub payload is the wrong type.
     """
     vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
-    before = _snapshot_vendor(
-        repo_root=repo_root,
-        vendor=vendor,
-        vendor_trees=vendor_trees,
-    )
+    if from_sha is not None and _SHA_PATTERN.fullmatch(from_sha) is None:
+        msg = f"invalid from-sha {from_sha!r}"
+        raise ValueError(msg)
+    baseline_sha = from_sha if from_sha is not None else vendor.sha
     if resolve_sha is not None:
         new_sha = resolve_sha(vendor)
     else:
         new_sha = resolve_upstream_sha(vendor=vendor)
-    if new_sha == vendor.sha:
+    if new_sha == vendor.sha and baseline_sha == vendor.sha:
+        before = _snapshot_vendor(
+            repo_root=repo_root,
+            vendor=vendor,
+            vendor_trees=vendor_trees,
+        )
         after = VendorRepinSnapshot(
             vendor_id=before.vendor_id,
             sha=before.sha,
@@ -259,13 +271,26 @@ def repin_vendor(
     original = registry_path.read_text(encoding="utf-8")
     artifact_paths = manage_vendors._generated_artifact_paths(repo_root=repo_root)
     snapshot, directories = manage_vendors._snapshot_artifacts(paths=artifact_paths)
-    manage_vendors.set_sha(
-        repo_root=repo_root,
-        vendor_id=vendor_id,
-        sha=new_sha,
-    )
     completed = False
     try:
+        if vendor.sha != baseline_sha:
+            manage_vendors.set_sha(
+                repo_root=repo_root,
+                vendor_id=vendor_id,
+                sha=baseline_sha,
+            )
+            vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
+        before = _snapshot_vendor(
+            repo_root=repo_root,
+            vendor=vendor,
+            vendor_trees=vendor_trees,
+        )
+        if new_sha != vendor.sha:
+            manage_vendors.set_sha(
+                repo_root=repo_root,
+                vendor_id=vendor_id,
+                sha=new_sha,
+            )
         bake_vendor_indexes.bake(repo_root=repo_root)
         after_vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
         after = _snapshot_vendor(
@@ -345,6 +370,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Write the Markdown summary to this path (PR body)",
     )
     parser.add_argument(
+        "--from-sha",
+        dest="from_sha",
+        default=None,
+        help="Baseline pin for the summary (main's SHA on an existing PR)",
+    )
+    parser.add_argument(
+        "--print-sha",
+        action="store_true",
+        help="Print the current pin for --id and exit",
+    )
+    parser.add_argument(
         "--list-json",
         action="store_true",
         help="Print vendor ids as a JSON array and exit",
@@ -360,6 +396,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("one of --id, --all, or --list-json is required")
     if args.all and (args.json or args.summary_path is not None):
         parser.error("--json and --summary-path require --id")
+    if args.all and (args.from_sha is not None or args.print_sha):
+        parser.error("--from-sha and --print-sha require --id")
+    if args.print_sha and args.vendor_id is None:
+        parser.error("--print-sha requires --id")
     repo_root = args.repo_root if args.repo_root is not None else _repo_root()
     try:
         vendor_ids = list_vendor_ids(repo_root=repo_root)
@@ -370,9 +410,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.list_json:
             print(json.dumps(list(selected), separators=(",", ":")))
             return 0
+        if args.print_sha:
+            vendor = _reload_vendor(repo_root=repo_root, vendor_id=args.vendor_id)
+            print(vendor.sha)
+            return 0
         failed = False
         for vendor_id in selected:
-            diff = repin_vendor(repo_root=repo_root, vendor_id=vendor_id)
+            diff = repin_vendor(
+                repo_root=repo_root,
+                vendor_id=vendor_id,
+                from_sha=args.from_sha,
+            )
             vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
             if diff.new_collisions and not diff.unchanged:
                 failed = True

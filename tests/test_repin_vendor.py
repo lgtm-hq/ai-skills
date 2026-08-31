@@ -20,6 +20,7 @@ from vendor_registry.vendor_repin_snapshot import VendorRepinSnapshot
 
 _EXISTING_SHA = "0123456789abcdef0123456789abcdef01234567"
 _NEW_SHA = "89abcdef0123456789abcdef0123456789abcdef"
+_BASELINE_SHA = "fedcba9876543210fedcba9876543210fedcba98"
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SHA_USES = re.compile(
     r"uses:\s+\S+@(?P<ref>[0-9a-f]{40})\s+#",
@@ -234,7 +235,7 @@ def repo_root(
 
     def fake_index_tree(*, vendor: object) -> list[str]:
         sha = getattr(vendor, "sha", "")
-        if sha == _EXISTING_SHA:
+        if sha in {_EXISTING_SHA, _BASELINE_SHA}:
             return [
                 "skills/alpha/SKILL.md",
                 "skills/beta/SKILL.md",
@@ -250,7 +251,7 @@ def repo_root(
 
     def fake_plugin_tree(*, vendor: object, dest: Path) -> None:
         sha = getattr(vendor, "sha", "")
-        if sha == _EXISTING_SHA:
+        if sha in {_EXISTING_SHA, _BASELINE_SHA}:
             _write_before_tree(dest=dest)
             return
         if tree_kind["kind"] == "collision":
@@ -371,6 +372,28 @@ def test_repin_updates_sha_and_summarizes_skill_delta(
     assert_that(package_vendors["vendors"][0]["sha"]).is_equal_to(_NEW_SHA)
 
 
+def test_repin_summary_baselines_from_sha_not_working_tree_pin(
+    repo_root: Path,
+    tree_kind: dict[str, str],
+) -> None:
+    """An existing re-pin PR must summarize main-to-new, not branch-to-new."""
+    bake_vendor_plugins.bake(repo_root=repo_root)
+    tree_kind["kind"] = "after"
+
+    diff = repin_vendor.repin_vendor(
+        repo_root=repo_root,
+        vendor_id="example-vendor",
+        resolve_sha=_fixed_new_sha,
+        from_sha=_BASELINE_SHA,
+    )
+
+    assert_that(diff.old_sha).is_equal_to(_BASELINE_SHA)
+    assert_that(diff.new_sha).is_equal_to(_NEW_SHA)
+    vendor = load_registry(registry_path=repo_root / "vendors.yaml")[0]
+    assert_that(vendor.sha).is_equal_to(_NEW_SHA)
+    assert_that(diff.added_skills).contains("delta")
+
+
 def test_repin_is_unchanged_when_upstream_matches_pin(
     repo_root: Path,
 ) -> None:
@@ -469,13 +492,20 @@ def test_main_list_json_and_summary_path(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """``--list-json`` prints ids; ``--summary-path`` writes Markdown."""
+    """``--list-json`` prints ids; ``--print-sha`` prints the pin; ``--summary-path`` writes Markdown."""
     listed = repin_vendor.main(
         ["--repo-root", str(repo_root), "--list-json"],
     )
     captured = capsys.readouterr()
     assert_that(listed).is_zero()
     assert_that(json.loads(captured.out)).is_equal_to(["example-vendor"])
+
+    printed = repin_vendor.main(
+        ["--repo-root", str(repo_root), "--id", "example-vendor", "--print-sha"],
+    )
+    captured = capsys.readouterr()
+    assert_that(printed).is_zero()
+    assert_that(captured.out.strip()).is_equal_to(_EXISTING_SHA)
 
     bake_vendor_plugins.bake(repo_root=repo_root)
     monkeypatch.setattr(
@@ -591,5 +621,7 @@ def test_vendor_repin_workflow_is_sha_pinned_weekly_and_never_auto_merges() -> N
     assert_that(workflow).contains("VENDOR_ID:")
     assert_that(workflow).contains('"$VENDOR_INPUT"')
     assert_that(workflow).contains('"$VENDOR_ID"')
+    assert_that(script).contains("--print-sha")
+    assert_that(script).contains("--from-sha")
     assert_that(script).does_not_contain("pr merge")
     assert_that(script).does_not_contain("--auto")
