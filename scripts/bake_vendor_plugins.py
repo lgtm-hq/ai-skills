@@ -1195,6 +1195,7 @@ def _assert_canonical_plugin_tree(*, plugin_dir: Path, plugin: VendorPlugin) -> 
         child.name
         for child in plugin_dir.iterdir()
         if child.name not in _PLUGIN_TOP_LEVEL
+        and child.name not in {PurePosixPath(path).name for path in plugin.extra_files}
     )
     if unexpected:
         msg = f"baked plugin {plugin.id} has unexpected path {unexpected[0]!r}"

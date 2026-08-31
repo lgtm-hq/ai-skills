@@ -24,7 +24,9 @@ _VENDOR_FIELDS = _VENDOR_REQUIRED_FIELDS | _VENDOR_OPTIONAL_FIELDS
 _PLUGIN_REQUIRED_FIELDS = frozenset(
     {"id", "description", "skillsRoot", "skills"},
 )
-_PLUGIN_OPTIONAL_FIELDS = frozenset({"extraSkills", "renameSkills", "agents"})
+_PLUGIN_OPTIONAL_FIELDS = frozenset(
+    {"extraSkills", "extraFiles", "renameSkills", "agents"},
+)
 _PLUGIN_FIELDS = _PLUGIN_REQUIRED_FIELDS | _PLUGIN_OPTIONAL_FIELDS
 GLOB_METACHARS = frozenset("*?[]{}")
 _DOT_PARTS = frozenset({"", ".", ".."})
@@ -501,6 +503,15 @@ def _parse_plugin(
         if "extraSkills" in raw_plugin
         else ()
     )
+    extra_files = (
+        _parse_extra_files(
+            value=raw_plugin["extraFiles"],
+            position=position,
+            plugin_id=plugin_id,
+        )
+        if "extraFiles" in raw_plugin
+        else ()
+    )
     rename_skills = (
         _parse_rename_skills(
             value=raw_plugin["renameSkills"],
@@ -525,6 +536,7 @@ def _parse_plugin(
         skills_root=skills_root,
         skills=skills,
         extra_skills=extra_skills,
+        extra_files=extra_files,
         rename_skills=rename_skills,
         agents=agents,
     )
@@ -611,6 +623,44 @@ def _parse_optional_path_list(
     )
     if len(paths) != len(set(paths)):
         msg = f"{where} {field} entries must be unique"
+        raise ValueError(msg)
+    return paths
+
+
+def _parse_extra_files(
+    *,
+    value: object,
+    position: int,
+    plugin_id: str,
+) -> tuple[str, ...]:
+    """Validate repo-relative files copied to the baked plugin root.
+
+    Args:
+        value: Raw YAML ``extraFiles`` list.
+        position: One-based vendor position.
+        plugin_id: Plugin id for error messages.
+
+    Returns:
+        Validated relative file paths.
+
+    Raises:
+        TypeError: If the value is not a list of strings.
+        ValueError: If the list is empty, a path is unsafe, or two paths
+            share a basename (they would collide at the plugin root).
+    """
+    where = _plugin_where(position=position, plugin_id=plugin_id)
+    paths = _parse_optional_path_list(
+        value=value,
+        field="extraFiles",
+        position=position,
+        plugin_id=plugin_id,
+    )
+    if not paths:
+        msg = f"{where} extraFiles must be a non-empty list"
+        raise ValueError(msg)
+    names = tuple(PurePosixPath(path).name for path in paths)
+    if len(names) != len(set(names)):
+        msg = f"{where} extraFiles basenames must be unique"
         raise ValueError(msg)
     return paths
 

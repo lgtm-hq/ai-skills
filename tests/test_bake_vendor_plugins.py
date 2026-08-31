@@ -1671,12 +1671,15 @@ def test_bake_rejects_duplicate_frontmatter_name_keys(
         )
 
 
-def test_bake_rejects_frontmatter_name_mismatch(
+def test_bake_rewrites_title_case_frontmatter_to_directory(
     tmp_path: Path,
 ) -> None:
-    """Hosts index frontmatter name; a mismatch with the directory fails."""
+    """Display-case SKILL.md names become the explode directory identity."""
     vendor_root = tmp_path / "vendor-src"
-    _write_skill(directory=vendor_root / "skills" / "alpha", name="branch")
+    _write_skill(
+        directory=vendor_root / "skills" / "writing-rules",
+        name="Writing Hookify Rules",
+    )
     _write_registry(
         repo_root=tmp_path,
         plugins_yaml=(
@@ -1688,11 +1691,86 @@ def test_bake_rejects_frontmatter_name_mismatch(
         ),
     )
 
-    with pytest.raises(ValueError, match="does not match directory 'alpha'"):
-        bake_vendor_plugins.bake(
-            repo_root=tmp_path,
-            vendor_trees={"example-vendor": vendor_root},
-        )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    skill_markdown = (
+        tmp_path / "plugins-baked" / "example-plugin" / "skills" / "writing-rules"
+    ).joinpath("SKILL.md")
+    assert_that(skill_markdown.read_text(encoding="utf-8")).contains(
+        "name: writing-rules",
+    )
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
+
+
+def test_bake_copies_extra_files_for_skill_doc_links(
+    tmp_path: Path,
+) -> None:
+    """Declared extraFiles land on the plugin root for in-skill doc links."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    (vendor_root / "README.md").write_text("# Vendor\n", encoding="utf-8")
+    (vendor_root / "skills" / "alpha" / "notes.md").write_text(
+        "[overview](../../README.md)\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+            "        extraFiles:\n"
+            "          - README.md\n"
+        ),
+    )
+
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    plugin = tmp_path / "plugins-baked" / "example-plugin"
+    assert_that((plugin / "README.md").read_text(encoding="utf-8")).is_equal_to(
+        "# Vendor\n",
+    )
+    assert_that((plugin / "skills" / "alpha" / "README.md").exists()).is_false()
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
+
+
+def test_bake_drops_vendor_skill_readmes(
+    tmp_path: Path,
+) -> None:
+    """Skill README.md files with repo-root links are not ingested."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    (vendor_root / "skills" / "alpha" / "README.md").write_text(
+        "[overview](../../README.md)\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    plugin = tmp_path / "plugins-baked" / "example-plugin"
+    assert_that((plugin / "skills" / "alpha" / "README.md").exists()).is_false()
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
 
 
 def test_check_rejects_frontmatter_directory_mismatch(

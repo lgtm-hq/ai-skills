@@ -145,85 +145,160 @@ describe("install", () => {
   test("rejects the retired pre-push bundle key", async () => {
     await expect(
       batchesFromCliOptions({ bundle: "pre-push", skills: [], vendor: null }),
-    ).rejects.toThrow("Unknown first-party plugin: pre-push");
+    ).rejects.toThrow("Unknown plugin: pre-push");
   });
 
   test("rejects the retired agents bundle key", async () => {
     await expect(
       batchesFromCliOptions({ bundle: "agents", skills: [], vendor: null }),
-    ).rejects.toThrow("Unknown first-party plugin: agents");
+    ).rejects.toThrow("Unknown plugin: agents");
   });
 
-  test("uses the pinned vendor source from baked data", async () => {
-    let received = [];
+  test("explodes a baked vendor plugin from plugins-baked", async () => {
+    let ran = false;
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-install-"));
     try {
       await install(
         {
           ...unattendedOptions,
-          bundle: null,
-          global: false,
-          project: true,
-          skills: [],
-          vendor: "anthropics",
-        },
-        async (args) => {
-          received = args;
-        },
-        undefined,
-        { cwd },
-      );
-
-      expect(received).toContain("anthropics/skills@9d2f1ae187231d8199c64b5b762e1bdf2244733d");
-      expect(received).toContain("pdf");
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.plugins.anthropics).toMatchObject({
-        projector: "explode",
-        repo: "anthropics/skills",
-        sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
-        vendor: "anthropics",
-      });
-      const files = Object.keys(lock.plugins.anthropics.agents.cursor.files);
-      expect(files).toContain("pdf/SKILL.md");
-      expect(files.length).toBeGreaterThan(1);
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
-  });
-
-  test("installs a plugin-buried claude-code skill from the baked index", async () => {
-    let received = [];
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-install-"));
-    try {
-      await install(
-        {
-          ...unattendedOptions,
-          bundle: null,
+          bundle: "hookify",
           global: false,
           project: true,
           skills: [],
           vendor: "anthropics-claude-code",
         },
-        async (args) => {
-          received = args;
+        async () => {
+          ran = true;
         },
-        undefined,
+        () => new Date("2026-07-10T16:00:00.000Z"),
         { cwd },
       );
 
-      expect(received).toContain("anthropics/claude-code@15a21e1b4e240e2da6a4953d5f148a806c9c9bb2");
-      expect(received).toContain("--skill");
-      expect(received).toContain("frontend-design");
+      expect(ran).toBe(false);
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.plugins["anthropics-claude-code"]).toMatchObject({
+      expect(lock.plugins.hookify).toMatchObject({
         projector: "explode",
         repo: "anthropics/claude-code",
         sha: "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2",
         vendor: "anthropics-claude-code",
+        version: "15a21e1",
+        skills: ["writing-rules"],
       });
-      expect(lock.plugins["anthropics-claude-code"].agents.cursor.files).toMatchObject({
-        "frontend-design/SKILL.md": "",
+      expect(lock.plugins.hookify.agents.cursor.files["writing-rules/SKILL.md"]).toBeTruthy();
+      await access(join(cwd, ".cursor/skills/writing-rules/SKILL.md"));
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("does not rematerialize a baked plugin whose pin and short version match", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-baked-update-"));
+    try {
+      await install(
+        {
+          ...unattendedOptions,
+          bundle: "hookify",
+          global: false,
+          project: true,
+          skills: [],
+          vendor: "anthropics-claude-code",
+        },
+        async () => {
+          throw new Error("skills CLI must not run for baked plugins");
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+      );
+      const lockPath = join(cwd, "ai-skills-lock.json");
+      const before = JSON.parse(await readFile(lockPath, "utf8"));
+      let exploded = false;
+      const result = await updateSkills(
+        {
+          agents: ["cursor"],
+          global: false,
+          project: true,
+          skills: [],
+          yes: true,
+        },
+        {
+          explode: async () => {
+            exploded = true;
+            return { claimed: {}, skipped: [], swappedDests: [] };
+          },
+          isInstalled: async () => true,
+          lockEnvironment: { cwd },
+          now: () => new Date("2026-07-10T17:00:00.000Z"),
+          readLock: (scope) => readLockfile(scope, { cwd }),
+          run: async () => {
+            throw new Error("skills CLI must not run for baked plugins");
+          },
+          writeLock: (next) => writeLockfile(next, { cwd }),
+        },
+      );
+      const after = JSON.parse(await readFile(lockPath, "utf8"));
+      expect(exploded).toBe(false);
+      expect(result).toEqual({ pruned: [], updated: [] });
+      expect(after.plugins.hookify.installedAt).toBe(before.plugins.hookify.installedAt);
+      expect(after.plugins.hookify.version).toBe("15a21e1");
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("rejects detect-agent installs for baked vendor plugins", async () => {
+    let ran = false;
+    await expect(
+      install(
+        {
+          ...unattendedOptions,
+          agents: [],
+          bundle: "hookify",
+          skills: [],
+          vendor: "anthropics-claude-code",
+        },
+        async () => {
+          ran = true;
+        },
+      ),
+    ).rejects.toThrow("Vendor plugin installs require -a/--agent");
+    expect(ran).toBe(false);
+  });
+
+  test("installs a renamed claude-code skill from the baked plugin tree", async () => {
+    let ran = false;
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-install-"));
+    try {
+      await install(
+        {
+          ...unattendedOptions,
+          bundle: "claude-code-frontend-design",
+          global: false,
+          project: true,
+          skills: [],
+          vendor: "anthropics-claude-code",
+        },
+        async () => {
+          ran = true;
+        },
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd },
+      );
+
+      expect(ran).toBe(false);
+      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(lock.plugins["claude-code-frontend-design"]).toMatchObject({
+        projector: "explode",
+        repo: "anthropics/claude-code",
+        sha: "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2",
+        vendor: "anthropics-claude-code",
+        version: "15a21e1",
       });
+      expect(
+        lock.plugins["claude-code-frontend-design"].agents.cursor.files[
+          "frontend-design-claude-code/SKILL.md"
+        ],
+      ).toBeTruthy();
+      await access(join(cwd, ".cursor/skills/frontend-design-claude-code/SKILL.md"));
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -234,7 +309,7 @@ describe("install", () => {
       install(
         {
           ...unattendedOptions,
-          bundle: null,
+          bundle: "document-skills",
           skills: ["typo"],
           vendor: "anthropics",
         },
@@ -248,7 +323,7 @@ describe("install", () => {
       install(
         {
           ...unattendedOptions,
-          bundle: null,
+          bundle: "document-skills",
           skills: ["pdf"],
           vendor: "anthropics",
         },
@@ -677,7 +752,7 @@ describe("install", () => {
 
   test("completes remaining vendor membership on a full reinstall", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-add-skill-"));
-    let received = [];
+    let ran = false;
     try {
       await Bun.write(
         join(cwd, "ai-skills-lock.json"),
@@ -685,7 +760,7 @@ describe("install", () => {
           {
             gatewayVersion: "0.0.0-dev",
             plugins: {
-              anthropics: {
+              "document-skills": {
                 agents: {
                   cursor: {
                     files: { "pdf/SKILL.md": "abc" },
@@ -697,7 +772,7 @@ describe("install", () => {
                 repo: "anthropics/skills",
                 sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
                 vendor: "anthropics",
-                version: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+                version: "9d2f1ae",
               },
             },
             scope: "project",
@@ -710,31 +785,26 @@ describe("install", () => {
       const result = await install(
         {
           ...unattendedOptions,
-          bundle: null,
+          bundle: "document-skills",
           global: false,
           project: true,
           skills: [],
           vendor: "anthropics",
         },
-        async (args) => {
-          received = args;
+        async () => {
+          ran = true;
         },
         undefined,
-        {
-          cwd,
-          exists: async () => true,
-          hash: async () => "abc",
-        },
+        { cwd },
       );
 
-      expect(received).toContain("xlsx");
+      expect(ran).toBe(false);
       expect(result).toEqual({ alreadyPresent: 0, installed: 1, repaired: 0 });
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.plugins.anthropics.agents.cursor.files).toMatchObject({
-        "pdf/SKILL.md": "abc",
-        "xlsx/SKILL.md": "abc",
-      });
-      expect(Object.keys(lock.plugins.anthropics.agents.cursor.files).length).toBeGreaterThan(2);
+      const files = Object.keys(lock.plugins["document-skills"].agents.cursor.files);
+      expect(files).toContain("pdf/SKILL.md");
+      expect(files).toContain("xlsx/SKILL.md");
+      expect(files.length).toBeGreaterThan(2);
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -742,38 +812,35 @@ describe("install", () => {
 
   test("keeps a stable vendor plugin id across full installs", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-vendor-id-"));
-    const env = {
-      cwd,
-      exists: async () => true,
-      hash: async () => "abc",
-    };
+    const env = { cwd };
     try {
       await install(
         {
           ...unattendedOptions,
-          bundle: null,
+          bundle: "hookify",
           global: false,
           project: true,
           skills: [],
-          vendor: "anthropics",
+          vendor: "anthropics-claude-code",
         },
-        async () => {},
+        async () => {
+          throw new Error("baked install should not shell out to skills");
+        },
         () => new Date("2026-07-10T16:00:00.000Z"),
         env,
       );
       const first = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(first.plugins.pdf).toBeUndefined();
-      expect(first.plugins.anthropics.agents.cursor.files["pdf/SKILL.md"]).toBe("abc");
-      expect(Object.keys(first.plugins.anthropics.agents.cursor.files).length).toBeGreaterThan(1);
+      expect(first.plugins["writing-rules"]).toBeUndefined();
+      expect(first.plugins.hookify.agents.cursor.files["writing-rules/SKILL.md"]).toBeTruthy();
 
       await install(
         {
           ...unattendedOptions,
-          bundle: null,
+          bundle: "hookify",
           global: false,
           project: true,
           skills: [],
-          vendor: "anthropics",
+          vendor: "anthropics-claude-code",
         },
         async () => {
           throw new Error("second install should no-op");
@@ -783,10 +850,7 @@ describe("install", () => {
       );
 
       const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.plugins.anthropics.agents.cursor.files).toMatchObject({
-        "pdf/SKILL.md": "abc",
-        "xlsx/SKILL.md": "abc",
-      });
+      expect(lock.plugins.hookify.agents.cursor.files["writing-rules/SKILL.md"]).toBeTruthy();
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }

@@ -211,6 +211,12 @@ def _bake_plugin(
         msg = f"plugin {plugin.id} unused renameSkills {unused[0]!r}"
         raise ValueError(msg)
 
+    _copy_extra_files(
+        vendor=vendor,
+        plugin=plugin,
+        vendor_root=vendor_root,
+        destination=destination,
+    )
     agent_stems = _copy_agents(
         vendor=vendor,
         plugin=plugin,
@@ -251,6 +257,10 @@ def _ingest_skill(
 ) -> None:
     """Copy one skill directory and apply a registry rename if declared.
 
+    Frontmatter ``name`` is always rewritten to the explode directory so
+    display-case vendor titles become the kebab-case identity used for
+    collisions (ADR-0005).
+
     Args:
         source: Skill directory in the vendor tree.
         vendor_root: Vendor tree root.
@@ -285,12 +295,15 @@ def _ingest_skill(
         source_root=vendor_root,
     )
     dest_markdown = skill_destination / "SKILL.md"
-    if out_name != original_name:
-        rewritten = rewrite_frontmatter_name(
+    _drop_repo_layout_readmes(skill_destination=skill_destination)
+    dest_markdown.write_text(
+        rewrite_frontmatter_name(
             text=dest_markdown.read_text(encoding="utf-8"),
             name=out_name,
-        )
-        dest_markdown.write_text(rewritten, encoding="utf-8")
+        ),
+        encoding="utf-8",
+    )
+    if out_name != original_name:
         renamed.append((original_name, out_name))
     baked_name = read_frontmatter_name(
         text=dest_markdown.read_text(encoding="utf-8"),
@@ -307,6 +320,25 @@ def _ingest_skill(
         if file_path.name == "SKILL.md"
     )
     explode_names.append(out_name)
+
+
+def _drop_repo_layout_readmes(*, skill_destination: Path) -> None:
+    """Remove the skill-root README.md used for upstream repo navigation.
+
+    Those files typically link to ``../../README.md`` and other repo-root
+    paths that cannot exist inside a sliced plugin. Nested READMEs that
+    other skill files link to are kept. ``SKILL.md`` remains the ingested
+    contract.
+
+    Args:
+        skill_destination: Copied skill directory under ``skills/``.
+    """
+    readme = skill_destination / "README.md"
+    if readme.is_symlink():
+        msg = f"symlink rejected: {readme}"
+        raise ValueError(msg)
+    if readme.is_file():
+        readme.unlink()
 
 
 def _copy_agents(
@@ -352,3 +384,40 @@ def _copy_agents(
         target = agents_destination / f"{stem}.md"
         _copy_file_nofollow(source=source, destination=target)
     return tuple(plugin.agents)
+
+
+def _copy_extra_files(
+    *,
+    vendor: Vendor,
+    plugin: VendorPlugin,
+    vendor_root: Path,
+    destination: Path,
+) -> None:
+    """Copy declared extra files onto the baked plugin root.
+
+    Args:
+        vendor: Parent vendor (for error context).
+        plugin: Slice listing extra files.
+        vendor_root: Unpacked vendor tree.
+        destination: Baked plugin directory.
+
+    Raises:
+        ValueError: If a declared extra file is missing, a symlink, or a
+            directory.
+    """
+    for relative in plugin.extra_files:
+        source = vendor_root / relative
+        if source.is_symlink():
+            msg = f"symlink rejected: {source}"
+            raise ValueError(msg)
+        if not source.is_file():
+            msg = (
+                f"vendor {vendor.id} plugin {plugin.id} extra file missing: "
+                f"{relative}"
+            )
+            raise ValueError(msg)
+        contained_path(path=source, root=vendor_root)
+        _copy_file_nofollow(
+            source=source,
+            destination=destination / source.name,
+        )

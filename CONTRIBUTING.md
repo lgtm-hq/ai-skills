@@ -100,8 +100,8 @@ Each vendor may declare `plugins:` — reviewed bake slices, not runtime
 improvisation ([ADR-0005](docs/adr/0005-collision-doctrine.md),
 [ADR-0006](docs/adr/0006-vendor-bake-safety.md)). Omit the field or use
 `plugins: []` until a slice is declared; `plugins: null` is rejected.
-Filling the five registered vendors is a separate issue; this schema is
-validated whenever `vendors.yaml` loads.
+The five registered vendors declare collision-resolved slices here; this
+schema is validated whenever `vendors.yaml` loads.
 
 Per plugin:
 
@@ -116,6 +116,8 @@ Per plugin:
   list must not contain `"*"`)
 - `extraSkills` — optional repo-relative canonical paths to ingest in
   addition (no globs; omit the key rather than `null`)
+- `extraFiles` — optional repo-relative files copied onto the baked plugin
+  root (basename-unique; for in-skill links to a vendor README)
 - `renameSkills` — optional `{old: new}` kebab-case map; targets are unique
   across **all** vendors. Collisions against first-party skill directory
   names are reported at bake/CI, not at schema load. Every
@@ -133,6 +135,8 @@ Per plugin:
         skills: "*"
         extraSkills:
           - extras/bonus
+        extraFiles:
+          - README.md
         renameSkills:
           teach: teach-example
         agents:
@@ -152,7 +156,10 @@ gitignored: CI and `publish-npm.yml` bake it; the pin SHA in `vendors.yaml`
 is the review point.
 
 - Ingest exactly the registry slice (`skillsRoot` + `"*"` or paths,
-  `extraSkills`, `agents` from `{repo}/agents/<stem>.md`).
+  `extraSkills`, `extraFiles`, `agents` from `{repo}/agents/<stem>.md`).
+  Rewrite SKILL.md frontmatter `name:` to the explode directory on every
+  ingest so display-case vendor titles become kebab-case identities.
+  Drop skill-root `README.md` files that typically link outside the slice.
 - Apply `renameSkills` to the skill directory **and** the SKILL.md
   frontmatter `name:`. After copy (and any rename), frontmatter `name`
   must equal the skill directory name — that name is the explode
@@ -178,7 +185,7 @@ is the review point.
   lock keys, re-derives ingested counts / explode names / collisions,
   re-renders `COVERAGE.md`, compares the lock to `vendors.yaml` and the
   local tree, and requires all four host manifests to match the
-  pin-derived version. Relative markdown links in baked plugin files
+  pin-derived version. Relative Markdown links in baked plugin files
   must resolve to a file inside the plugin.
 - Stamp plugin versions from `displayRef` when it is a `major.minor.patch`
   tag (optional `v` prefix and prerelease suffix); floating pins such as

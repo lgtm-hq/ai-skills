@@ -1,7 +1,7 @@
 import { readdir, rmdir, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
+import { loadBakedPlugin, loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
 import {
   agentProjector,
   allAgentSkillRoots,
@@ -124,14 +124,17 @@ export async function updateSkills(options, dependencies = {}) {
           : resolveVendorSource(entry, vendors);
       const lanes = partitionLockedLanes(entry);
       if (lanes.explode.length > 0) {
+        const baked = await loadBakedPlugin(pluginId);
         const explodeSources = resolveExplodeSourceSkills(
           skills,
           dependencies,
-          entry.vendor === "lgtm-hq"
-            ? dependencies.sourceRoot !== undefined
-              ? dependencies.sourceRoot
-              : findCatalogSourceRoot(dependencies.lockEnvironment?.cwd ?? process.cwd())
-            : null,
+          baked
+            ? baked.pluginRoot
+            : entry.vendor === "lgtm-hq"
+              ? dependencies.sourceRoot !== undefined
+                ? dependencies.sourceRoot
+                : findCatalogSourceRoot(dependencies.lockEnvironment?.cwd ?? process.cwd())
+              : null,
         );
         if (explodeSources) {
           const explode = dependencies.explode ?? explodePlugin;
@@ -256,7 +259,8 @@ export async function updateSkills(options, dependencies = {}) {
         version:
           entry.vendor === "lgtm-hq"
             ? getPackageVersion()
-            : sourceSha(entry.vendor, entry.sha, vendors),
+            : ((await loadBakedPlugin(pluginId))?.version ??
+              sourceSha(entry.vendor, entry.sha, vendors)),
       };
     }
     for (const pluginId of updated) {
@@ -513,7 +517,9 @@ export async function listSkills(options, dependencies = {}) {
  */
 async function pluginNeedsRefresh(pluginId, entry, scope, vendors, dependencies) {
   const expectedSha = sourceSha(entry.vendor, entry.sha, vendors);
-  const expectedVersion = entry.vendor === "lgtm-hq" ? getPackageVersion() : expectedSha;
+  const baked = entry.vendor === "lgtm-hq" ? null : await loadBakedPlugin(pluginId);
+  const expectedVersion =
+    entry.vendor === "lgtm-hq" ? getPackageVersion() : (baked?.version ?? expectedSha);
   if (entry.sha !== expectedSha || entry.version !== expectedVersion) {
     return true;
   }
@@ -664,7 +670,12 @@ async function currentPluginSkills(pluginId, entry) {
     if (bundle) {
       return [...bundle.skills];
     }
-  } else if (pluginId === entry.vendor) {
+  }
+  const baked = await loadBakedPlugin(pluginId);
+  if (baked && baked.vendor === entry.vendor) {
+    return [...baked.skills];
+  }
+  if (pluginId === entry.vendor) {
     const index = await loadVendorIndex(entry.vendor);
     return index.skills.map((skill) => skill.name);
   }

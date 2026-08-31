@@ -473,6 +473,8 @@ _PLUGIN_SLICE = """
         skills: "*"
         extraSkills:
           - extras/bonus
+        extraFiles:
+          - README.md
         renameSkills:
           teach: teach-example
         agents:
@@ -516,15 +518,49 @@ def test_load_registry_accepts_plugin_slice(valid_registry_path: Path) -> None:
     assert_that(plugin.skills_root).is_equal_to("skills")
     assert_that(plugin.skills).is_equal_to("*")
     assert_that(plugin.extra_skills).is_equal_to(("extras/bonus",))
+    assert_that(plugin.extra_files).is_equal_to(("README.md",))
     assert_that(plugin.rename_skills).is_equal_to((("teach", "teach-example"),))
     assert_that(plugin.agents).is_equal_to(("comment-sicko", "code-reviewer"))
 
 
 def test_load_registry_accepts_omitted_plugins(valid_registry_path: Path) -> None:
-    """Keep current vendors.yaml valid before bake-the-vendors fills slices."""
+    """Keep omitted plugins valid as a schema-only declaration."""
     vendors = load_registry(registry_path=valid_registry_path)
 
     assert_that(vendors[0].plugins).is_equal_to(())
+
+
+def test_committed_registry_declares_five_vendor_plugin_slices() -> None:
+    """The five registered vendors declare collision-resolved plugin slices."""
+    vendors = load_registry(
+        registry_path=Path(__file__).resolve().parents[1] / "vendors.yaml",
+    )
+    plugins = [plugin.id for vendor in vendors for plugin in vendor.plugins]
+    assert_that(plugins).is_equal_to(
+        [
+            "mattpocock-skills",
+            "document-skills",
+            "example-skills",
+            "claude-api",
+            "claude-opus-4-5-migration",
+            "claude-code-frontend-design",
+            "hookify",
+            "plugin-dev",
+            "caveman",
+            "davidondrej-skills",
+        ],
+    )
+    rename_targets = {
+        new
+        for vendor in vendors
+        for plugin in vendor.plugins
+        for _old, new in plugin.rename_skills
+    }
+    assert_that(rename_targets).contains(
+        "frontend-design-claude-code",
+        "teach-davidondrej",
+        "handoff-davidondrej",
+    )
 
 
 def test_load_registry_accepts_empty_plugins_list(valid_registry_path: Path) -> None:
@@ -603,6 +639,24 @@ def test_load_registry_accepts_skill_path_list(valid_registry_path: Path) -> Non
             "extraSkills:\n          - /extras/bonus",
             "extraSkills entries must be relative",
             id="absolute-extra-skill",
+        ),
+        pytest.param(
+            "extraFiles:\n          - README.md",
+            "extraFiles:\n          - /README.md",
+            "extraFiles entries must be relative",
+            id="absolute-extra-file",
+        ),
+        pytest.param(
+            "extraFiles:\n          - README.md",
+            "extraFiles: []",
+            "extraFiles must be a non-empty list",
+            id="empty-extra-files",
+        ),
+        pytest.param(
+            "extraFiles:\n          - README.md",
+            "extraFiles:\n          - docs/README.md\n          - other/README.md",
+            "extraFiles basenames must be unique",
+            id="duplicate-extra-file-basename",
         ),
         pytest.param(
             "teach: teach-example",

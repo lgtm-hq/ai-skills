@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **vendors**: define and bake the five registered vendors as plugins —
+  mattpocock, anthropics (`document-skills`, `example-skills`,
+  `claude-api`), anthropics-claude-code, caveman, and davidondrej —
+  with collision renames (`teach-davidondrej`, `handoff-davidondrej`,
+  `frontend-design-claude-code`). Gateway catalog merges baked plugins
+  for `--skill` / `--vendor` install; versions are pin-derived.
 - **docs**: ADR-0007 — vendor bake output is a publish-time artifact, not
   repo content.
 

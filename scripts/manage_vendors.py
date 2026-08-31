@@ -64,6 +64,7 @@ _PLUGIN_FIELD_ORDER = (
     "skillsRoot",
     "skills",
     "extraSkills",
+    "extraFiles",
     "renameSkills",
     "agents",
 )
@@ -295,7 +296,7 @@ def _dump_plugin(*, plugin: dict[str, Any]) -> list[str]:
                 msg = 'skills must be "*" or a list'
                 raise TypeError(msg)
             continue
-        if field in {"extraSkills", "agents"} and isinstance(value, list):
+        if field in {"extraSkills", "extraFiles", "agents"} and isinstance(value, list):
             if not value:
                 lines.append(f"{prefix}{field}: []")
                 continue
