@@ -412,8 +412,7 @@ def _copy_extra_files(
             raise ValueError(msg)
         if not source.is_file():
             msg = (
-                f"vendor {vendor.id} plugin {plugin.id} extra file missing: "
-                f"{relative}"
+                f"vendor {vendor.id} plugin {plugin.id} extra file missing: {relative}"
             )
             raise ValueError(msg)
         contained_path(path=source, root=vendor_root)
