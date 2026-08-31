@@ -8,6 +8,7 @@ import {
   cartPluginCount,
   completeInteractively,
   formatVendorGroupHeading,
+  installInteractively,
   partitionPluginSelection,
   vendorDisplayLabel,
   vendorSkillGroupKey,
@@ -59,7 +60,11 @@ const missingLockRead = async () => {
 
 const offlineDependencies = {
   env: { AI_SKILLS_NO_UPDATE_CHECK: "1" },
-  lockEnvironment: { cwd: "/nonexistent", home: "/nonexistent", read: missingLockRead },
+  lockEnvironment: {
+    cwd: "/nonexistent",
+    home: "/nonexistent",
+    read: missingLockRead,
+  },
 };
 
 const blankOptions = {
@@ -244,7 +249,11 @@ describe("cart helpers", () => {
 
   test("expands a vendor plugin from CLI options", async () => {
     await expect(
-      batchesFromCliOptions({ vendor: "anthropics", skills: ["pdf"], bundle: null }),
+      batchesFromCliOptions({
+        vendor: "anthropics",
+        skills: ["pdf"],
+        bundle: null,
+      }),
     ).rejects.toThrow(/plugin-atomic/);
     const batches = await batchesFromCliOptions({
       vendor: "anthropics",
@@ -261,6 +270,37 @@ describe("cart helpers", () => {
       vendor: "anthropics",
     });
     expect(batches[0]?.skills).toEqual(["docx", "pdf", "pptx", "xlsx"]);
+  });
+
+  test("installInteractively passes baked plugin id as bundle for vendor batches", async () => {
+    const calls = [];
+    await installInteractively(
+      {
+        ...blankOptions,
+        agents: ["cursor"],
+        copy: true,
+        global: true,
+        vendor: "anthropics",
+      },
+      scriptedUi([]),
+      {
+        ...offlineDependencies,
+        install: async (options) => {
+          calls.push({
+            bundle: options.bundle,
+            vendor: options.vendor,
+            skills: options.skills,
+          });
+          return { alreadyPresent: 0, installed: 1, repaired: 0 };
+        },
+      },
+    );
+    expect(calls.map((call) => call.bundle)).toEqual([
+      "document-skills",
+      "example-skills",
+      "claude-api",
+    ]);
+    expect(calls.every((call) => call.vendor === "anthropics")).toBe(true);
   });
 
   test("expands a baked plugin id from --skill", async () => {

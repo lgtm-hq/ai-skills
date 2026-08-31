@@ -215,6 +215,7 @@ export async function resolveDoctorCapabilities(agents, existing, environment = 
  * @param {{
  *   confirm?: (message: string) => Promise<boolean>,
  *   hash?: typeof hashFile,
+ *   install?: typeof import("./install.js").install,
  *   installExtras?: object,
  *   log?: (line: string) => void,
  *   lockEnvironment?: Parameters<typeof readLockfile>[1],
@@ -517,7 +518,8 @@ async function orphanEntries(agent, root, known) {
  * @returns {Promise<string[]>} Repaired plugin ids.
  */
 async function repairMissing(options, plugins, dependencies = {}) {
-  const { install } = await import("./install.js");
+  const { install: defaultInstall } = await import("./install.js");
+  const install = dependencies.install ?? defaultInstall;
   const warn = dependencies.warn ?? ((message) => console.warn(message));
   /** @type {string[]} */
   const repaired = [];
@@ -684,7 +686,7 @@ async function migrateHost(host, options, environment, dependencies = {}) {
  */
 async function installIdentity(pluginId, entry) {
   if (entry.vendor && entry.vendor !== "lgtm-hq") {
-    return { bundle: null, skills: [], vendor: entry.vendor };
+    return { bundle: pluginId, skills: [], vendor: entry.vendor };
   }
   const bundles = await loadBundles();
   const bundle = bundles.groups[pluginId];

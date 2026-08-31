@@ -1650,17 +1650,20 @@ async function pathExists(path) {
  * picks complete in a single interactive session.
  *
  * @param {{agents: string[], bundle: string | null, copy: boolean, global: boolean, onConflict: string | null, project: boolean, skills: string[], vendor: string | null, yes: boolean}} options - Install options.
+ * @param {ReturnType<typeof createClackUi>} [ui] - Interactive UI.
+ * @param {WizardDependencies & {install?: typeof install}} [dependencies] - Wizard I/O and optional install stub.
  * @returns {Promise<void>} Resolves when installation completes.
  */
-export async function installInteractively(options) {
-  const completed = await completeInteractively(options);
+export async function installInteractively(options, ui = createClackUi(), dependencies = {}) {
+  const completed = await completeInteractively(options, ui, dependencies);
+  const installFn = dependencies.install ?? install;
   const finished = [];
   const totals = { alreadyPresent: 0, installed: 0, repaired: 0 };
   for (const batch of completed.installBatches) {
     try {
-      const counts = await install({
+      const counts = await installFn({
         ...completed,
-        bundle: batch.vendor ? null : batch.pluginId,
+        bundle: batch.pluginId,
         vendor: batch.vendor,
         skills: batch.skills,
       });
