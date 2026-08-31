@@ -30,7 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are unchanged, so the remote PR does not stay behind while the body
   updates. Collision summaries still refresh an existing PR when
   catalogs are already current; only a hard CLI failure with an empty
-  summary aborts before `gh pr edit`.
+  summary aborts before `gh pr edit`. Re-pin jobs disable persisted
+  checkout credentials and authenticate `git fetch` / `git push` from
+  `GH_TOKEN` via `gh auth setup-git`.
 - **docs**: ADR-0007 — vendor bake output is a publish-time artifact, not
   repo content.
 

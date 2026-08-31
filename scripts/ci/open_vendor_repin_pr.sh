@@ -8,6 +8,14 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../.." && pwd)"
 cd "$repo_root"
 
+# Checkout uses persist-credentials: false so uv sync cannot reuse the
+# write token. Authenticate git from GH_TOKEN via gh (token stays out of
+# .git/config / artifacts).
+if [[ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]]; then
+  export GH_TOKEN="${GH_TOKEN:-$GITHUB_TOKEN}"
+  gh auth setup-git
+fi
+
 summary="$(mktemp)"
 trap 'rm -f "$summary"' EXIT
 
