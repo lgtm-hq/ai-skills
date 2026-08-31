@@ -13,7 +13,7 @@ import argparse
 import json
 import os
 import re
-import subprocess
+import subprocess  # nosec B404 - fixed git argv list, no shell
 import sys
 import tempfile
 from collections.abc import Callable, Mapping
@@ -251,10 +251,12 @@ def _registry_text_at_ref(*, repo_root: Path, git_ref: str) -> str:
         msg = f"invalid baseline-ref {git_ref!r}"
         raise ValueError(msg)
     try:
-        return subprocess.check_output(  # nosec B603 - fixed git argv; ref validated
-            ["git", "show", f"{git_ref}:vendors.yaml"],
-            cwd=repo_root,
-            text=True,
+        return (
+            subprocess.check_output(  # nosec B603 B607 - fixed git argv; ref validated
+                ["git", "show", f"{git_ref}:vendors.yaml"],
+                cwd=repo_root,
+                text=True,
+            )
         )
     except (OSError, subprocess.CalledProcessError) as error:
         msg = f"could not read vendors.yaml at {git_ref}: {error}"
