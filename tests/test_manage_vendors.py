@@ -774,6 +774,44 @@ def test_set_sha_preserves_comments_and_field_order(tmp_path: Path) -> None:
     assert_that(loaded[0].sha).is_equal_to(_NEW_SHA)
 
 
+def test_set_sha_preserves_inline_comments_on_id_and_sha(tmp_path: Path) -> None:
+    """Trailing comments on ``id`` and ``sha`` do not break the patch."""
+    registry = tmp_path / "vendors.yaml"
+    registry.write_text(
+        (
+            "---\n"
+            "vendors:\n"
+            "  - id: existing # vendor\n"
+            "    repo: owner/existing\n"
+            f'    sha: "{_EXISTING_SHA}" # pin\n'
+            "    displayRef: latest\n"
+            "    skillRoots:\n"
+            "      - skills\n"
+            "    license: MIT\n"
+            "    homepage: https://github.com/owner/existing\n"
+            "    plugins:\n"
+            "      - id: existing-skills\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    manage_vendors.set_sha(
+        repo_root=tmp_path,
+        vendor_id="existing",
+        sha=_NEW_SHA,
+    )
+
+    text = registry.read_text(encoding="utf-8")
+    assert_that(text).contains("  - id: existing # vendor")
+    assert_that(text).contains(f'    sha: "{_NEW_SHA}" # pin')
+    assert_that(text).does_not_contain(_EXISTING_SHA)
+    loaded = load_registry(registry_path=registry)
+    assert_that(loaded[0].sha).is_equal_to(_NEW_SHA)
+
+
 def test_set_sha_rejects_unknown_vendor(tmp_path: Path) -> None:
     """Unknown vendor ids leave vendors.yaml unchanged."""
     registry = tmp_path / "vendors.yaml"

@@ -611,6 +611,32 @@ def _print_summary(*, action: str, vendor_id: str) -> None:
     print("  - Record the change under the Unreleased section of CHANGELOG.md.")
 
 
+def _split_yaml_value_and_comment(*, raw: str) -> tuple[str, str]:
+    """Split a YAML mapping value into unquoted scalar and comment suffix.
+
+    Args:
+        raw: Text after the first ``:`` on a mapping line, without newline.
+
+    Returns:
+        Unquoted scalar and a suffix that is either empty or `` # comment``.
+    """
+    stripped = raw.strip()
+    if stripped.startswith(('"', "'")):
+        quote = stripped[0]
+        end = stripped.find(quote, 1)
+        if end == -1:
+            return stripped.strip("\"'"), ""
+        value = stripped[1:end]
+        rest = stripped[end + 1 :].lstrip()
+        if rest.startswith("#"):
+            return value, f" {rest}"
+        return value, ""
+    if " #" in stripped:
+        value, comment = stripped.split(" #", 1)
+        return value.strip().strip("\"'"), f" #{comment}"
+    return stripped.strip("\"'"), ""
+
+
 def _patch_vendor_sha_text(*, text: str, vendor_id: str, sha: str) -> str:
     """Replace one vendor's ``sha`` line, leaving the rest of the file intact.
 
@@ -632,10 +658,15 @@ def _patch_vendor_sha_text(*, text: str, vendor_id: str, sha: str) -> str:
     for line in lines:
         body = line.split("\n", 1)[0].rstrip("\r")
         if body.startswith("  - id:"):
-            found_id = body.split(":", 1)[1].strip().strip("\"'")
+            found_id, _comment = _split_yaml_value_and_comment(
+                raw=body.split(":", 1)[1],
+            )
             in_target = found_id == vendor_id and not replaced
         if in_target and body.startswith("    sha:"):
-            patched.append(f'    sha: "{sha}"{line[len(body) :]}')
+            _, comment = _split_yaml_value_and_comment(
+                raw=body.split(":", 1)[1],
+            )
+            patched.append(f'    sha: "{sha}"{comment}{line[len(body) :]}')
             replaced = True
             in_target = False
             continue
