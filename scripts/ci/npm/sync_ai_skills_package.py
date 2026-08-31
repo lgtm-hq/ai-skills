@@ -186,9 +186,7 @@ def check_baked_plugins() -> bool:
     only_expected = sorted(set(expected) - set(actual))
     only_actual = sorted(set(actual) - set(expected))
     changed = sorted(
-        path
-        for path in set(expected) & set(actual)
-        if expected[path] != actual[path]
+        path for path in set(expected) & set(actual) if expected[path] != actual[path]
     )
     relative = dest.relative_to(PROJECT_ROOT)
     for path in only_expected:

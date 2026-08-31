@@ -215,9 +215,7 @@ def check(*, repo_root: Path) -> int:
     baked_root = repo_root / PLUGINS_BAKED_DIRNAME
     try:
         _reject_leftover_backup(destination=baked_root)
-        if baked_root.is_symlink() or (
-            baked_root.exists() and not baked_root.is_dir()
-        ):
+        if baked_root.is_symlink() or (baked_root.exists() and not baked_root.is_dir()):
             msg = f"Missing generated directory: {baked_root}"
             raise ValueError(msg)
         if not baked_root.is_dir():

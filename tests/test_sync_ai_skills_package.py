@@ -31,9 +31,17 @@ def load_sync_module() -> ModuleType:
     return module
 
 
-def test_generated_package_is_current() -> None:
-    """Keep the committed npm data catalog synchronized with its root sources."""
+def test_generated_package_is_current(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep the committed npm data catalog synchronized with its root sources.
+
+    A local ``plugins-baked/`` leftover must not fail this first-party check;
+    bake output is a publish-time artifact (ADR-0007).
+    """
     module = load_sync_module()
+    monkeypatch.setattr(module, "baked_plugin_source", lambda: tmp_path / "absent")
 
     assert_that(module.check_rendered(module.rendered_files("0.0.0-dev"))).is_zero()
 
