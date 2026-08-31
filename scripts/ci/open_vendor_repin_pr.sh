@@ -18,18 +18,27 @@ base_sha="$(git rev-parse HEAD)"
 branch="chore/vendor-repin-${vendor}"
 
 # Preserve commits already on this vendor's re-pin PR (for example a
-# human ``renameSkills`` recovery) instead of discarding them with
-# ``checkout -B`` from main. Merge the job's base SHA onto the existing
+# human renameSkills recovery) instead of discarding them with
+# checkout -B from main. Merge the job's base SHA onto the existing
 # branch, then re-pin. Merge conflicts fail the job.
 #
-# Fetch here also seeds ``origin/${branch}`` for ``--force-with-lease``.
-# Do not fetch again immediately before the push: that would refresh the
+# ls-remote --exit-code: 0 = ref exists, 2 = ref missing. Any other
+# status is auth/network and must fail, not take the new-branch path.
+# Fetch then seeds origin/${branch} for --force-with-lease. Do not
+# fetch again immediately before the push: that would refresh the
 # lease to the current remote tip and skip the remote-has-moved check.
-if git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}"; then
+ls_status=0
+git ls-remote --exit-code origin "refs/heads/${branch}" >/dev/null ||
+  ls_status=$?
+if [[ "$ls_status" -eq 0 ]]; then
+  git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
   git checkout -B "$branch" "origin/$branch"
   git merge --no-edit "$base_sha"
-else
+elif [[ "$ls_status" -eq 2 ]]; then
   git checkout -B "$branch" "$base_sha"
+else
+  echo "error: failed to query origin for ${branch} (git exit ${ls_status})" >&2
+  exit "$ls_status"
 fi
 
 if [[ -n "$(git status --porcelain)" ]]; then

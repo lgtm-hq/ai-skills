@@ -558,6 +558,10 @@ def test_vendor_repin_workflow_is_sha_pinned_weekly_and_never_auto_merges() -> N
     assert_that(script).contains("new-vendor")
     assert_that(script).contains("automation")
     assert_that(script).contains(
+        'git ls-remote --exit-code origin "refs/heads/${branch}"',
+    )
+    assert_that(script).contains('[[ "$ls_status" -eq 2 ]]')
+    assert_that(script).contains(
         'git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}"',
     )
     assert_that(script).contains('git checkout -B "$branch" "origin/$branch"')
