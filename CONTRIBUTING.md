@@ -197,9 +197,9 @@ uv run python scripts/bake_vendor_plugins.py
 uv run python scripts/bake_vendor_plugins.py --check
 ```
 
-Production `vendors.yaml` stays index-only until plugin slices are
-filled; a bake still emits an empty marketplace, coverage file, and
-`BAKE.json` lock. CI runs the real bake (network fetch at pinned SHAs)
+The five registered vendors declare plugin slices in `vendors.yaml`. A
+bake emits marketplace, coverage, and `BAKE.json` under gitignored
+`plugins-baked/`. CI runs the real bake (network fetch at pinned SHAs)
 rather than treating bake output as a committed drift gate. Retaining
 an older vendor version long-term means promoting it to first-party
 `skills/`.
@@ -295,8 +295,9 @@ stay flat (`skills/<name>/`).
 ## CI and releases
 
 Pull requests and pushes to `main` run **lintro** (via the published **py-lintro**
-container image), the pytest suite, skill-structure validation, and
-`bash scripts/validate.sh`.
+container image), the pytest suite, skill-structure validation,
+`bash scripts/validate.sh`, and the vendor plugin bake
+(`scripts/ci/bake_vendor_plugins_gate.sh`).
 
 **Validate Lintro Version** compares `pyproject.toml`'s exact `lintro==`
 pin to the version inside the pinned `ghcr.io/lgtm-hq/py-lintro` digest on
