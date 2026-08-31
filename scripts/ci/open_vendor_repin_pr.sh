@@ -11,6 +11,32 @@ cd "$repo_root"
 summary="$(mktemp)"
 trap 'rm -f "$summary"' EXIT
 
+git config user.name "github-actions[bot]"
+git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+base_sha="$(git rev-parse HEAD)"
+branch="chore/vendor-repin-${vendor}"
+
+# Preserve commits already on this vendor's re-pin PR (for example a
+# human ``renameSkills`` recovery) instead of discarding them with
+# ``checkout -B`` from main. Merge the job's base SHA onto the existing
+# branch, then re-pin. Merge conflicts fail the job.
+#
+# Fetch here also seeds ``origin/${branch}`` for ``--force-with-lease``.
+# Do not fetch again immediately before the push: that would refresh the
+# lease to the current remote tip and skip the remote-has-moved check.
+if git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}"; then
+  git checkout -B "$branch" "origin/$branch"
+  git merge --no-edit "$base_sha"
+else
+  git checkout -B "$branch" "$base_sha"
+fi
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "error: working tree is dirty before vendor re-pin" >&2
+  exit 1
+fi
+
 status=0
 uv run python scripts/repin_vendor.py --id "$vendor" --summary-path "$summary" ||
   status=$?
@@ -31,17 +57,10 @@ if [[ -z "$(git status --porcelain -- "${paths[@]}")" ]]; then
   exit 0
 fi
 
-git config user.name "github-actions[bot]"
-git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-branch="chore/vendor-repin-${vendor}"
-git checkout -B "$branch"
 git add -- "${paths[@]}"
 git commit -m "chore(vendors): re-pin ${vendor}"
-# Fresh Actions checkouts have no remote-tracking ref for an existing
-# chore/vendor-repin-* branch, so implicit --force-with-lease is refused.
-# Fetch the current remote tip when the branch exists, then lease against it.
-if git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}"; then
+
+if git rev-parse --verify "origin/${branch}" >/dev/null 2>&1; then
   git push --force-with-lease -u origin "$branch"
 else
   git push -u origin "$branch"

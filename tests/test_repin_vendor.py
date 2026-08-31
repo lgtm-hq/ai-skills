@@ -557,8 +557,14 @@ def test_vendor_repin_workflow_is_sha_pinned_weekly_and_never_auto_merges() -> N
     )
     assert_that(script).contains("new-vendor")
     assert_that(script).contains("automation")
-    assert_that(script).contains("git fetch origin")
+    assert_that(script).contains(
+        'git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}"',
+    )
+    assert_that(script).contains('git checkout -B "$branch" "origin/$branch"')
+    assert_that(script).contains('git merge --no-edit "$base_sha"')
     assert_that(script).contains("--force-with-lease")
+    assert_that(script).does_not_contain("git push --force ")
+    assert_that(workflow).contains("fetch-depth: 0")
     assert_that(workflow).contains("VENDOR_INPUT:")
     assert_that(workflow).contains("VENDOR_ID:")
     assert_that(workflow).contains('"$VENDOR_INPUT"')

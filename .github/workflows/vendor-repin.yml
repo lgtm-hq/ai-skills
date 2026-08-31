@@ -107,6 +107,11 @@ jobs:
       - name: Checkout
         # yamllint disable-line rule:line-length
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Full history so an existing re-pin branch can merge this job's
+          # main SHA without an unrelated-histories / missing-merge-base
+          # failure on a depth-1 clone.
+          fetch-depth: 0
 
       - name: Set up Python
         # yamllint disable-line rule:line-length
