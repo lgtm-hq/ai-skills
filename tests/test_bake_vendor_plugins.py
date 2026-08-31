@@ -2769,6 +2769,20 @@ def test_check_rejects_leftover_backup(
     assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
 
 
+def test_check_succeeds_when_plugins_baked_is_absent(tmp_path: Path) -> None:
+    """Offline --check is a no-op when bake output has not been produced."""
+    _write_registry(repo_root=tmp_path, plugins_yaml="")
+    assert_that((tmp_path / "plugins-baked").exists()).is_false()
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
+
+
+def test_check_fails_on_hold_sidecar_without_baked_tree(tmp_path: Path) -> None:
+    """Leftover bake sidecars fail closed even when plugins-baked is absent."""
+    _write_registry(repo_root=tmp_path, plugins_yaml="")
+    (tmp_path / ".plugins-baked.hold").mkdir()
+    assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(1)
+
+
 def test_main_check_returns_zero_for_empty_bake(
     tmp_path: Path,
 ) -> None:

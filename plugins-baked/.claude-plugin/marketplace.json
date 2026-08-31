@@ -1,8 +1,0 @@
-{
-  "name": "ai-skills-vendors",
-  "owner": {
-    "name": "lgtm-hq"
-  },
-  "$generated": "do not edit — regenerate via scripts/bake_vendor_plugins.py",
-  "plugins": []
-}

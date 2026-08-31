@@ -64,9 +64,10 @@ bash scripts/validate.sh
 
 Third-party vendors live in root **`vendors.yaml`** (SHA-pinned). Use
 `scripts/manage_vendors.py` to mutate the registry and regenerate every derived
-artifact (baked `vendor-indexes/`, `plugins-baked/`, `NOTICE.md`, and the
-embedded npm package data) in one step — never hand-edit the baked indexes or
-plugin trees.
+artifact (baked `vendor-indexes/`, `NOTICE.md`, a local `plugins-baked/` tree,
+and the embedded npm package data) in one step — never hand-edit the baked
+indexes or plugin trees. `plugins-baked/` is a publish-time artifact
+([ADR-0007](docs/adr/0007-publish-time-vendor-bake.md)); do not commit it.
 
 ```bash
 # Add a vendor (all fields required; --display-ref defaults to latest)
@@ -84,7 +85,8 @@ uv run python scripts/manage_vendors.py update --id owner-skills \
 # (this is the Renovate path for automated vendor SHA bumps)
 uv run python scripts/manage_vendors.py refresh
 
-# Verify baked indexes, plugin trees, and npm data are current (exits non-zero on drift)
+# Verify baked indexes and npm data are current (exits non-zero on drift).
+# Plugin trees are checked when a local plugins-baked/ tree is present.
 uv run python scripts/manage_vendors.py check
 ```
 
@@ -139,12 +141,15 @@ Per plugin:
 ```
 
 `scripts/manage_vendors.py` round-trips `plugins` when refreshing SHAs. Do
-not hand-edit baked indexes or `plugins-baked/` to encode a slice.
+not hand-edit baked indexes or a local `plugins-baked/` tree to encode a slice.
 
 ### Vendor plugin bake
 
 `scripts/bake_vendor_plugins.py` turns declared slices into canonical
-plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-safety.md)):
+plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-safety.md),
+[ADR-0007](docs/adr/0007-publish-time-vendor-bake.md)). That directory is
+gitignored: CI and `publish-npm.yml` bake it; the pin SHA in `vendors.yaml`
+is the review point.
 
 - Ingest exactly the registry slice (`skillsRoot` + `"*"` or paths,
   `extraSkills`, `agents` from `{repo}/agents/<stem>.md`).
@@ -159,7 +164,8 @@ plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-sa
 - Write coverage (`plugins-baked/COVERAGE.md`: every un-ingested
   `SKILL.md` listed as `SKIPPED`) and fail CI on unresolved explode-name
   collisions against other baked plugins or first-party `skills/` names,
-  and on agent-stem collisions across baked plugins.
+  and on agent-stem collisions across baked plugins. Coverage and
+  collision reports are CI job output, not committed files.
 - Stage the complete tree in a temp directory and publish it with an
   atomic directory exchange so `plugins-baked/` is never absent or mixed,
   then mirror onto the original destination inode so resident shells keep
@@ -167,13 +173,13 @@ plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-sa
   sidecars fail closed, including in `--check`.
 - Write `plugins-baked/BAKE.json` (registry pin including repo + plugin
   slice + coverage renderer inputs + a path→digest inventory).
-  `--check` allowlists lock keys, re-derives ingested counts / explode
-  names / collisions from the baked tree, re-renders `COVERAGE.md`,
-  compares the lock to `vendors.yaml` and the committed tree, and
-  requires all four host manifests to match the pin-derived version.
-  Skipped vendor-tree paths cannot be reconstructed without a fetch.
-  Relative markdown links in baked plugin files must resolve to a file
-  inside the plugin.
+  `--check` validates a **local** tree: if `plugins-baked/` is absent it
+  succeeds (no committed vendor tree to diff); if present it allowlists
+  lock keys, re-derives ingested counts / explode names / collisions,
+  re-renders `COVERAGE.md`, compares the lock to `vendors.yaml` and the
+  local tree, and requires all four host manifests to match the
+  pin-derived version. Relative markdown links in baked plugin files
+  must resolve to a file inside the plugin.
 - Stamp plugin versions from `displayRef` when it is a `major.minor.patch`
   tag (optional `v` prefix and prerelease suffix); floating pins such as
   `latest` and non-tag prefixes such as `v1.2-not-a-version` use the
@@ -185,12 +191,11 @@ uv run python scripts/bake_vendor_plugins.py --check
 ```
 
 Production `vendors.yaml` stays index-only until plugin slices are
-filled; bake still emits an empty marketplace, coverage file, and
-`BAKE.json` lock so `--check` has a drift gate. ``--check`` compares
-that lock to `vendors.yaml` (SHA, displayRef, plugin slices) and
-cross-checks coverage inputs against the baked tree. A path→digest
-inventory in `BAKE.json` rejects extra, missing, or modified generated
-files. Extra lock keys and a non-mapping `BAKE.json` fail closed.
+filled; a bake still emits an empty marketplace, coverage file, and
+`BAKE.json` lock. CI runs the real bake (network fetch at pinned SHAs)
+rather than treating bake output as a committed drift gate. Retaining
+an older vendor version long-term means promoting it to first-party
+`skills/`.
 
 ## Pull requests
 
@@ -238,7 +243,7 @@ flowchart LR
   end
   subgraph bake [Bake / publish]
     DATA["npm data/: bundles.json, vendors.json, vendor-indexes/"]
-    BAKED["plugins-baked/"]
+    BAKED["plugins-baked/ (publish-time, gitignored)"]
     PKG["@lgtm-hq/ai-skills"]
   end
   subgraph gateway [Gateway CLI]
@@ -357,8 +362,11 @@ Before the first live publish:
    `dry_run: true` until the tarball looks right; then allow a real release
    publish.
 
-The publish job syncs embedded `vendors.yaml`, baked indexes, and `NOTICE.md`
-into the package before `npm publish`.
+The publish job bakes vendor plugin slices, then syncs embedded
+`vendors.yaml`, baked indexes, `NOTICE.md`, and the fresh
+`plugins-baked/` tree into the package before `npm publish`. Bake output
+is not committed; published tarballs are the immutable record
+([ADR-0007](docs/adr/0007-publish-time-vendor-bake.md)).
 
 ## Skill content policy
 

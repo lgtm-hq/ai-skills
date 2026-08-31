@@ -198,15 +198,28 @@ def bake(
 
 
 def check(*, repo_root: Path) -> int:
-    """Validate committed ``plugins-baked/`` without network access.
+    """Validate a local ``plugins-baked/`` tree without network access.
+
+    Bake output is a publish-time artifact, not committed repo content
+    (ADR-0007). When the tree is absent, ``--check`` succeeds after
+    confirming no leftover bake sidecars remain. When the tree is present,
+    the same offline lock, coverage, collision, and safety checks run as
+    before.
 
     Args:
-        repo_root: Repository root containing generated bake output.
+        repo_root: Repository root containing ``vendors.yaml``.
 
     Returns:
-        ``0`` when the tree is valid and current, otherwise ``1``.
+        ``0`` when the tree is valid (or absent), otherwise ``1``.
     """
+    baked_root = repo_root / PLUGINS_BAKED_DIRNAME
     try:
+        _reject_leftover_backup(destination=baked_root)
+        if baked_root.is_symlink() or (baked_root.exists() and not baked_root.is_dir()):
+            msg = f"Missing generated directory: {baked_root}"
+            raise ValueError(msg)
+        if not baked_root.is_dir():
+            return 0
         _check_baked_output(repo_root=repo_root)
     except _CLI_FAILURES as error:
         print(error, file=sys.stderr)
@@ -824,14 +837,14 @@ def _skipped_by_vendor_from_lock(
 
 
 def _check_baked_output(*, repo_root: Path) -> None:
-    """Fail closed if committed bake output is missing, stale, or unsafe.
+    """Fail closed if local bake output is missing, stale, or unsafe.
 
     Args:
         repo_root: Repository root.
 
     Raises:
         ValueError: If the tree does not match the registry or is unsafe.
-        json.JSONDecodeError: If a committed manifest is not JSON.
+        json.JSONDecodeError: If a local bake manifest is not JSON.
     """
     vendors = load_registry(registry_path=repo_root / "vendors.yaml")
     baked_root = repo_root / PLUGINS_BAKED_DIRNAME
@@ -1243,7 +1256,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Validate committed plugins-baked/ without GitHub access",
+        help="Validate local plugins-baked/ without GitHub access",
     )
     parser.add_argument(
         "--repo-root",

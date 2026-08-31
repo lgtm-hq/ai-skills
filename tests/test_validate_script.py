@@ -50,10 +50,6 @@ def _copy_validate_script(
         src=repo_root / "vendor-indexes",
         dst=tmp_path / "vendor-indexes",
     )
-    shutil.copytree(
-        src=repo_root / "plugins-baked",
-        dst=tmp_path / "plugins-baked",
-    )
     logger.debug("Copied validate.sh to {}", script_path)
     return script_path
 
@@ -291,8 +287,8 @@ def test_validate_rejects_agents_entry_with_path_like_skill_name(
     logger.info("[TEST] path-like skill name rejected: rc={}", result.returncode)
 
 
-def test_validate_rejects_stale_plugins_baked(tmp_path: Path) -> None:
-    """Fail when the copied plugins-baked tree no longer matches --check."""
+def test_validate_succeeds_without_plugins_baked(tmp_path: Path) -> None:
+    """Skill-structure validation does not require a local plugins-baked tree."""
     script_path = _copy_validate_script(repo_root=REPO_ROOT, tmp_path=tmp_path)
     skill_dir = tmp_path / "skills" / "example"
     skill_dir.mkdir(parents=True)
@@ -304,15 +300,10 @@ def test_validate_rejects_stale_plugins_baked(tmp_path: Path) -> None:
         "- `example` - Example skill.\n",
         encoding="utf-8",
     )
-    coverage = tmp_path / "plugins-baked" / "COVERAGE.md"
-    coverage.write_text(
-        coverage.read_text(encoding="utf-8") + "tamper\n",
-        encoding="utf-8",
-    )
 
     result = _run_validate(script_path=script_path, cwd=tmp_path)
 
-    assert_that(result.returncode).is_equal_to(1)
-    combined = result.stdout + result.stderr
-    assert_that(combined).contains("Validation failed")
-    logger.info("[TEST] stale plugins-baked: rc={}", result.returncode)
+    assert_that(result.returncode).is_equal_to(0)
+    assert_that(result.stdout).contains("Validation passed")
+    assert_that((tmp_path / "plugins-baked").exists()).is_false()
+    logger.info("[TEST] validate without plugins-baked: rc={}", result.returncode)

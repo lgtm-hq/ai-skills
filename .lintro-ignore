@@ -11,6 +11,9 @@ env
 .claude
 # Sparse lgtm-ci tooling checkout for reusable workflow scripts (not project source)
 .lgtm-ci-tooling
+# Publish-time vendor plugin bake (third-party trees; ADR-0007)
+plugins-baked/
+npm/ai-skills/data/plugins-baked/
 
 __pycache__
 .lintro/*

@@ -11,11 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **docs**: ADR-0007 — vendor bake output is a publish-time artifact, not
+  repo content.
+
 ### Changed
+
+- **vendors**: bake `plugins-baked/` at CI and npm publish time instead of
+  committing the tree. `--check` validates a local bake when present and
+  succeeds when the gitignored tree is absent. The package sync copies
+  bake output into the tarball only after a bake; first-party catalog
+  checks are unchanged.
 
 ### Deprecated
 
 ### Removed
+
+- **vendors**: committed `plugins-baked/` placeholders (empty marketplace,
+  coverage, `BAKE.json`) from the #378 bake pipeline.
 
 ### Fixed
 
