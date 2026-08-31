@@ -372,26 +372,105 @@ def test_repin_updates_sha_and_summarizes_skill_delta(
     assert_that(package_vendors["vendors"][0]["sha"]).is_equal_to(_NEW_SHA)
 
 
-def test_repin_summary_baselines_from_sha_not_working_tree_pin(
+def test_repin_summary_baselines_from_main_registry_not_sha_only(
     repo_root: Path,
     tree_kind: dict[str, str],
 ) -> None:
-    """An existing re-pin PR must summarize main-to-new, not branch-to-new."""
+    """Baseline bake uses main's vendor slice, not a SHA reset on the PR.
+
+    A human ``renameSkills`` on the open PR would be unused at main's pin
+    if the baseline snapshot only rewrote the SHA.
+    """
+    registry = repo_root / "vendors.yaml"
+    working = registry.read_text(encoding="utf-8")
+    baseline = working.replace(_EXISTING_SHA, _BASELINE_SHA)
     bake_vendor_plugins.bake(repo_root=repo_root)
+    registry.write_text(
+        working.replace(
+            '        skills: "*"',
+            (
+                '        skills: "*"\n'
+                "        renameSkills:\n"
+                "          delta: renamed-delta"
+            ),
+        ),
+        encoding="utf-8",
+    )
     tree_kind["kind"] = "after"
 
     diff = repin_vendor.repin_vendor(
         repo_root=repo_root,
         vendor_id="example-vendor",
         resolve_sha=_fixed_new_sha,
-        from_sha=_BASELINE_SHA,
+        baseline_registry_text=baseline,
     )
 
     assert_that(diff.old_sha).is_equal_to(_BASELINE_SHA)
     assert_that(diff.new_sha).is_equal_to(_NEW_SHA)
-    vendor = load_registry(registry_path=repo_root / "vendors.yaml")[0]
+    vendor = load_registry(registry_path=registry)[0]
     assert_that(vendor.sha).is_equal_to(_NEW_SHA)
-    assert_that(diff.added_skills).contains("delta")
+    assert_that(vendor.plugins[0].rename_skills).is_equal_to(
+        (("delta", "renamed-delta"),),
+    )
+    assert_that(diff.added_skills).contains("renamed-delta")
+
+
+def test_repin_rejects_both_baseline_inputs(repo_root: Path) -> None:
+    """``baseline_ref`` and injected registry text cannot both be set."""
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        repin_vendor.repin_vendor(
+            repo_root=repo_root,
+            vendor_id="example-vendor",
+            resolve_sha=_fixed_new_sha,
+            baseline_ref="HEAD",
+            baseline_registry_text="vendors: []\n",
+        )
+
+
+def test_registry_text_at_ref_rejects_option_like_refs(tmp_path: Path) -> None:
+    """Refs that look like options or pathspecs must not reach git show."""
+    with pytest.raises(ValueError, match="invalid baseline-ref"):
+        repin_vendor._registry_text_at_ref(repo_root=tmp_path, git_ref="")
+    with pytest.raises(ValueError, match="invalid baseline-ref"):
+        repin_vendor._registry_text_at_ref(repo_root=tmp_path, git_ref="-HEAD")
+    with pytest.raises(ValueError, match="invalid baseline-ref"):
+        repin_vendor._registry_text_at_ref(
+            repo_root=tmp_path,
+            git_ref="abc:vendors.yaml",
+        )
+
+
+def test_registry_text_at_ref_reads_git_show(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Baseline text is ``git show <ref>:vendors.yaml`` at the repo root."""
+
+    def fake_show(
+        argv: list[str],
+        *,
+        cwd: Path,
+        text: bool,
+    ) -> str:
+        del text
+        assert_that(argv).is_equal_to(
+            ["git", "show", "abc123:vendors.yaml"],
+        )
+        assert_that(cwd).is_equal_to(tmp_path)
+        return "vendors:\n"
+
+    monkeypatch.setattr(repin_vendor.subprocess, "check_output", fake_show)
+    text = repin_vendor._registry_text_at_ref(
+        repo_root=tmp_path,
+        git_ref="abc123",
+    )
+    assert_that(text).is_equal_to("vendors:\n")
+
+
+def test_main_baseline_ref_requires_id() -> None:
+    """``--baseline-ref`` is a single-vendor flag."""
+    with pytest.raises(SystemExit):
+        repin_vendor.main(["--all", "--baseline-ref", "abc123"])
 
 
 def test_repin_is_unchanged_when_upstream_matches_pin(
@@ -492,20 +571,13 @@ def test_main_list_json_and_summary_path(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """``--list-json`` prints ids; ``--print-sha`` prints the pin; ``--summary-path`` writes Markdown."""
+    """``--list-json`` prints ids; ``--summary-path`` writes Markdown."""
     listed = repin_vendor.main(
         ["--repo-root", str(repo_root), "--list-json"],
     )
     captured = capsys.readouterr()
     assert_that(listed).is_zero()
     assert_that(json.loads(captured.out)).is_equal_to(["example-vendor"])
-
-    printed = repin_vendor.main(
-        ["--repo-root", str(repo_root), "--id", "example-vendor", "--print-sha"],
-    )
-    captured = capsys.readouterr()
-    assert_that(printed).is_zero()
-    assert_that(captured.out.strip()).is_equal_to(_EXISTING_SHA)
 
     bake_vendor_plugins.bake(repo_root=repo_root)
     monkeypatch.setattr(
@@ -621,7 +693,7 @@ def test_vendor_repin_workflow_is_sha_pinned_weekly_and_never_auto_merges() -> N
     assert_that(workflow).contains("VENDOR_ID:")
     assert_that(workflow).contains('"$VENDOR_INPUT"')
     assert_that(workflow).contains('"$VENDOR_ID"')
-    assert_that(script).contains("--print-sha")
-    assert_that(script).contains("--from-sha")
+    assert_that(script).contains("--baseline-ref")
+    assert_that(script).does_not_contain("--from-sha")
     assert_that(script).does_not_contain("pr merge")
     assert_that(script).does_not_contain("--auto")

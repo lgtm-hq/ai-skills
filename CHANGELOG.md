@@ -24,7 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **vendors**: re-pin command and weekly per-vendor PRs that bump a pin,
   re-bake, and summarize skill/coverage/collision deltas without
   committing bake output. Collision failures stay reviewable; PRs never
-  auto-merge.
+  auto-merge. Existing re-pin PRs summarize against main's full
+  `vendors.yaml` (`--baseline-ref`), not a SHA-only reset of the PR
+  branch.
 - **docs**: ADR-0007 — vendor bake output is a publish-time artifact, not
   repo content.
 

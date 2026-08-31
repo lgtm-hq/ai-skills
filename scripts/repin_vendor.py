@@ -13,7 +13,9 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from urllib.parse import quote
@@ -206,13 +208,67 @@ def _reload_vendor(*, repo_root: Path, vendor_id: str) -> Vendor:
     return vendor
 
 
+def _vendor_from_registry_text(*, text: str, vendor_id: str) -> Vendor:
+    """Load one vendor from a ``vendors.yaml`` snapshot without touching disk.
+
+    Args:
+        text: Registry file contents.
+        vendor_id: Vendor slug.
+
+    Returns:
+        Matching vendor record.
+
+    Raises:
+        ValueError: If the vendor id is unknown.
+        TypeError: If the registry fails type validation.
+    """
+    with tempfile.TemporaryDirectory(prefix="vendor-repin-") as tmp:
+        path = Path(tmp) / "vendors.yaml"
+        path.write_text(text, encoding="utf-8")
+        vendors = load_registry(registry_path=path)
+    vendor = next((item for item in vendors if item.id == vendor_id), None)
+    if vendor is None:
+        msg = f"Unknown vendor id: {vendor_id}"
+        raise ValueError(msg)
+    return vendor
+
+
+def _registry_text_at_ref(*, repo_root: Path, git_ref: str) -> str:
+    """Return ``vendors.yaml`` from ``git_ref``.
+
+    Args:
+        repo_root: Repository root.
+        git_ref: Commit SHA or other git revision.
+
+    Returns:
+        File contents at that revision.
+
+    Raises:
+        ValueError: If ``git_ref`` is empty or looks like an option/path.
+        RuntimeError: If git cannot show the file.
+    """
+    if not git_ref or git_ref.startswith("-") or ":" in git_ref:
+        msg = f"invalid baseline-ref {git_ref!r}"
+        raise ValueError(msg)
+    try:
+        return subprocess.check_output(  # nosec B603 - fixed git argv; ref validated
+            ["git", "show", f"{git_ref}:vendors.yaml"],
+            cwd=repo_root,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        msg = f"could not read vendors.yaml at {git_ref}: {error}"
+        raise RuntimeError(msg) from error
+
+
 def repin_vendor(
     *,
     repo_root: Path,
     vendor_id: str,
     vendor_trees: Mapping[str, Path] | None = None,
     resolve_sha: ResolveSha | None = None,
-    from_sha: str | None = None,
+    baseline_ref: str | None = None,
+    baseline_registry_text: str | None = None,
 ) -> VendorRepinDiff:
     """Bump one vendor pin, refresh derived artifacts, and diff bakes.
 
@@ -220,38 +276,55 @@ def repin_vendor(
     re-pin PR can add ``renameSkills``, and the returned diff includes
     the collision lines.
 
-    ``from_sha`` is the summary baseline (main's pin when updating an
-    existing re-pin PR). The working tree may already be at a later pin
-    from that PR; the Markdown body must still describe main-to-new.
+    ``baseline_ref`` / ``baseline_registry_text`` select the *full*
+    registry used for the ``before`` snapshot (main's ``vendors.yaml``
+    when updating an existing re-pin PR). Resetting only the SHA would
+    bake main's pin against branch-only ``renameSkills`` and can raise
+    unused-rename errors or omit the real main-to-branch delta.
 
     Args:
         repo_root: Repository root containing ``vendors.yaml``.
         vendor_id: Vendor slug to re-pin.
         vendor_trees: Optional local trees keyed by vendor id.
         resolve_sha: Optional SHA resolver (tests inject a stub).
-        from_sha: Pin to snapshot as ``before``. Defaults to the current
-            registry pin.
+        baseline_ref: Git revision whose ``vendors.yaml`` is the summary
+            baseline. Mutually exclusive with ``baseline_registry_text``.
+        baseline_registry_text: Registry snapshot used as ``before``.
+            Tests inject this instead of a git ref.
 
     Returns:
         Snapshot delta. ``unchanged`` is true when the pin already
         matches upstream.
 
     Raises:
-        ValueError: If the vendor id is unknown or ``from_sha`` is not
-            a 40-character lowercase hex SHA.
-        RuntimeError: If GitHub cannot resolve the upstream ref.
+        ValueError: If the vendor id is unknown or both baseline inputs
+            are set.
+        RuntimeError: If GitHub cannot resolve the upstream ref or git
+            cannot read the baseline registry.
         TypeError: If a GitHub payload is the wrong type.
     """
-    vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
-    if from_sha is not None and _SHA_PATTERN.fullmatch(from_sha) is None:
-        msg = f"invalid from-sha {from_sha!r}"
+    if baseline_ref is not None and baseline_registry_text is not None:
+        msg = "baseline_ref and baseline_registry_text are mutually exclusive"
         raise ValueError(msg)
-    baseline_sha = from_sha if from_sha is not None else vendor.sha
+    vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
+    registry_path = repo_root / "vendors.yaml"
+    working_text = registry_path.read_text(encoding="utf-8")
+    if baseline_ref is not None:
+        baseline_text = _registry_text_at_ref(
+            repo_root=repo_root,
+            git_ref=baseline_ref,
+        )
+    elif baseline_registry_text is not None:
+        baseline_text = baseline_registry_text
+    else:
+        baseline_text = working_text
+    if baseline_text != working_text:
+        _vendor_from_registry_text(text=baseline_text, vendor_id=vendor_id)
     if resolve_sha is not None:
         new_sha = resolve_sha(vendor)
     else:
         new_sha = resolve_upstream_sha(vendor=vendor)
-    if new_sha == vendor.sha and baseline_sha == vendor.sha:
+    if new_sha == vendor.sha and baseline_text == working_text:
         before = _snapshot_vendor(
             repo_root=repo_root,
             vendor=vendor,
@@ -267,24 +340,19 @@ def repin_vendor(
             skill_digests=before.skill_digests,
         )
         return diff_snapshots(before=before, after=after)
-    registry_path = repo_root / "vendors.yaml"
-    original = registry_path.read_text(encoding="utf-8")
     artifact_paths = manage_vendors._generated_artifact_paths(repo_root=repo_root)
     snapshot, directories = manage_vendors._snapshot_artifacts(paths=artifact_paths)
     completed = False
     try:
-        if vendor.sha != baseline_sha:
-            manage_vendors.set_sha(
-                repo_root=repo_root,
-                vendor_id=vendor_id,
-                sha=baseline_sha,
-            )
-            vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
+        if baseline_text != working_text:
+            registry_path.write_text(baseline_text, encoding="utf-8")
+            load_registry(registry_path=registry_path)
         before = _snapshot_vendor(
             repo_root=repo_root,
-            vendor=vendor,
+            vendor=_reload_vendor(repo_root=repo_root, vendor_id=vendor_id),
             vendor_trees=vendor_trees,
         )
+        registry_path.write_text(working_text, encoding="utf-8")
         if new_sha != vendor.sha:
             manage_vendors.set_sha(
                 repo_root=repo_root,
@@ -303,7 +371,7 @@ def repin_vendor(
         return diff_snapshots(before=before, after=after)
     finally:
         if not completed:
-            registry_path.write_text(original, encoding="utf-8")
+            registry_path.write_text(working_text, encoding="utf-8")
             manage_vendors._restore_artifacts(
                 paths=artifact_paths,
                 snapshot=snapshot,
@@ -370,15 +438,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Write the Markdown summary to this path (PR body)",
     )
     parser.add_argument(
-        "--from-sha",
-        dest="from_sha",
+        "--baseline-ref",
+        dest="baseline_ref",
         default=None,
-        help="Baseline pin for the summary (main's SHA on an existing PR)",
-    )
-    parser.add_argument(
-        "--print-sha",
-        action="store_true",
-        help="Print the current pin for --id and exit",
+        help="Git revision whose vendors.yaml is the summary baseline",
     )
     parser.add_argument(
         "--list-json",
@@ -396,10 +459,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("one of --id, --all, or --list-json is required")
     if args.all and (args.json or args.summary_path is not None):
         parser.error("--json and --summary-path require --id")
-    if args.all and (args.from_sha is not None or args.print_sha):
-        parser.error("--from-sha and --print-sha require --id")
-    if args.print_sha and args.vendor_id is None:
-        parser.error("--print-sha requires --id")
+    if args.baseline_ref is not None and args.vendor_id is None:
+        parser.error("--baseline-ref requires --id")
     repo_root = args.repo_root if args.repo_root is not None else _repo_root()
     try:
         vendor_ids = list_vendor_ids(repo_root=repo_root)
@@ -410,16 +471,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.list_json:
             print(json.dumps(list(selected), separators=(",", ":")))
             return 0
-        if args.print_sha:
-            vendor = _reload_vendor(repo_root=repo_root, vendor_id=args.vendor_id)
-            print(vendor.sha)
-            return 0
         failed = False
         for vendor_id in selected:
             diff = repin_vendor(
                 repo_root=repo_root,
                 vendor_id=vendor_id,
-                from_sha=args.from_sha,
+                baseline_ref=args.baseline_ref,
             )
             vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
             if diff.new_collisions and not diff.unchanged:

@@ -16,9 +16,6 @@ git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
 base_sha="$(git rev-parse HEAD)"
 branch="chore/vendor-repin-${vendor}"
-from_sha="$(
-  uv run python scripts/repin_vendor.py --id "$vendor" --print-sha
-)"
 
 # Preserve commits already on this vendor's re-pin PR (for example a
 # human renameSkills recovery) instead of discarding them with
@@ -52,7 +49,7 @@ fi
 status=0
 uv run python scripts/repin_vendor.py \
   --id "$vendor" \
-  --from-sha "$from_sha" \
+  --baseline-ref "$base_sha" \
   --summary-path "$summary" ||
   status=$?
 
