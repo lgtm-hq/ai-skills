@@ -373,7 +373,7 @@ def main(argv: list[str] | None = None) -> int:
         for vendor_id in selected:
             diff = repin_vendor(repo_root=repo_root, vendor_id=vendor_id)
             vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
-            if diff.collisions and not diff.unchanged:
+            if diff.new_collisions and not diff.unchanged:
                 failed = True
             if args.json or args.summary_path is not None:
                 _emit(

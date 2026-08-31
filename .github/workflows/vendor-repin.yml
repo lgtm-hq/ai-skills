@@ -70,8 +70,9 @@ jobs:
 
       - name: Write vendor matrix
         id: matrix
-        # yamllint disable-line rule:line-length
-        run: bash scripts/ci/vendor_repin_matrix.sh "${{ github.event.inputs.vendor || 'all' }}"
+        env:
+          VENDOR_INPUT: ${{ github.event.inputs.vendor || 'all' }}
+        run: bash scripts/ci/vendor_repin_matrix.sh "$VENDOR_INPUT"
 
   repin:
     name: Re-pin ${{ matrix.vendor }}
@@ -124,4 +125,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
-        run: bash scripts/ci/open_vendor_repin_pr.sh "${{ matrix.vendor }}"
+          VENDOR_ID: ${{ matrix.vendor }}
+        run: bash scripts/ci/open_vendor_repin_pr.sh "$VENDOR_ID"

@@ -66,6 +66,8 @@ def diff_snapshots(
             and old_name != new_name
             and old_name in removed
             and new_name in added
+            and old_name not in claimed_removed
+            and new_name not in claimed_added
         ):
             renamed.append((old_name, new_name))
             claimed_added.add(new_name)

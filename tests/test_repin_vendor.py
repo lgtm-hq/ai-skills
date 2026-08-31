@@ -294,6 +294,30 @@ def test_diff_reports_added_removed_and_renamed() -> None:
     assert_that(diff.ingested_after).is_equal_to(3)
 
 
+def test_diff_rename_matching_is_one_to_one() -> None:
+    """Duplicate SKILL.md bodies claim each old explode name at most once."""
+    before = _snapshot(
+        sha=_EXISTING_SHA,
+        names=frozenset({"old-a", "old-b"}),
+        skipped=(),
+        ingested=2,
+        digests=(("old-a", "same"), ("old-b", "same")),
+    )
+    after = _snapshot(
+        sha=_NEW_SHA,
+        names=frozenset({"new-a", "new-b"}),
+        skipped=(),
+        ingested=2,
+        digests=(("new-a", "same"), ("new-b", "same")),
+    )
+
+    diff = diff_snapshots(before=before, after=after)
+
+    assert_that(diff.renamed_skills).is_equal_to((("old-b", "new-a"),))
+    assert_that(diff.added_skills).is_equal_to(("new-b",))
+    assert_that(diff.removed_skills).is_equal_to(("old-a",))
+
+
 def test_diff_surfaces_new_collisions() -> None:
     """Collisions present only after the bump are listed as new."""
     before = _snapshot(
@@ -535,5 +559,9 @@ def test_vendor_repin_workflow_is_sha_pinned_weekly_and_never_auto_merges() -> N
     assert_that(script).contains("automation")
     assert_that(script).contains("git fetch origin")
     assert_that(script).contains("--force-with-lease")
+    assert_that(workflow).contains("VENDOR_INPUT:")
+    assert_that(workflow).contains("VENDOR_ID:")
+    assert_that(workflow).contains('"$VENDOR_INPUT"')
+    assert_that(workflow).contains('"$VENDOR_ID"')
     assert_that(script).does_not_contain("pr merge")
     assert_that(script).does_not_contain("--auto")
