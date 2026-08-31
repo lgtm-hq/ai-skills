@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -7,8 +9,29 @@ import {
   loadBakedPlugins,
   loadBundles,
   loadVendorIndex,
+  loadVendors,
   resolveBakedPluginsRoot,
 } from "../lib/catalog.js";
+
+/**
+ * Run ``fn`` with ``AI_SKILLS_PLUGINS_BAKED`` pointed at ``root``.
+ *
+ * @param {string} root - Override directory.
+ * @param {() => Promise<void>} fn - Test body.
+ */
+async function withBakedRoot(root, fn) {
+  const previous = process.env.AI_SKILLS_PLUGINS_BAKED;
+  process.env.AI_SKILLS_PLUGINS_BAKED = root;
+  try {
+    await fn();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.AI_SKILLS_PLUGINS_BAKED;
+    } else {
+      process.env.AI_SKILLS_PLUGINS_BAKED = previous;
+    }
+  }
+}
 
 describe("baked plugin catalog", () => {
   test("rejects a vendor path traversal attempt", () => {
@@ -41,12 +64,18 @@ describe("baked plugin catalog", () => {
       "davidondrej-skills",
     ]);
 
+    const { vendors } = await loadVendors();
+    const anthropics = vendors.find((vendor) => vendor.id === "anthropics");
+    const claudeCode = vendors.find((vendor) => vendor.id === "anthropics-claude-code");
+    expect(anthropics?.sha).toBeTruthy();
+    expect(claudeCode?.sha).toBeTruthy();
+
     const documentSkills = plugins.find((plugin) => plugin.id === "document-skills");
     expect(documentSkills).toMatchObject({
       vendor: "anthropics",
       repo: "anthropics/skills",
-      sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
-      version: "9d2f1ae",
+      sha: anthropics?.sha,
+      version: (anthropics?.sha ?? "").slice(0, 7),
       skills: ["docx", "pdf", "pptx", "xlsx"],
     });
     expect(documentSkills?.description).toContain("[baked from vendor 'anthropics']");
@@ -54,7 +83,7 @@ describe("baked plugin catalog", () => {
     const renamed = await loadBakedPlugin("claude-code-frontend-design");
     expect(renamed?.skills).toEqual(["frontend-design-claude-code"]);
     expect(renamed?.vendor).toBe("anthropics-claude-code");
-    expect(renamed?.version).toBe("15a21e1");
+    expect(renamed?.version).toBe((claudeCode?.sha ?? "").slice(0, 7));
 
     const david = await loadBakedPlugin("davidondrej-skills");
     expect(david?.skills).toContain("teach-davidondrej");
@@ -68,6 +97,60 @@ describe("baked plugin catalog", () => {
     const { plugins } = await loadBakedPlugins();
     for (const plugin of plugins) {
       expect(bundles.groups[plugin.id]).toBeUndefined();
+    }
+  });
+
+  test("an AI_SKILLS_PLUGINS_BAKED override that is not a bake is absent", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-empty-bake-"));
+    try {
+      await withBakedRoot(root, async () => {
+        expect(resolveBakedPluginsRoot()).toBeNull();
+        const { plugins } = await loadBakedPlugins();
+        expect(plugins).toEqual([]);
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  test("fails closed when a marketplace plugin is missing skills/", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-missing-skills-"));
+    try {
+      await mkdir(join(root, ".claude-plugin"), { recursive: true });
+      await mkdir(join(root, "ghost-plugin"), { recursive: true });
+      await writeFile(
+        join(root, ".claude-plugin", "marketplace.json"),
+        JSON.stringify({
+          plugins: [
+            {
+              name: "ghost-plugin",
+              description: "Missing skills tree.",
+              version: "1.0.0",
+              source: "./ghost-plugin",
+            },
+          ],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(root, "BAKE.json"),
+        JSON.stringify({
+          vendors: [
+            {
+              id: "ghost",
+              repo: "owner/ghost",
+              sha: "0123456789abcdef0123456789abcdef01234567",
+              plugins: [{ id: "ghost-plugin" }],
+            },
+          ],
+        }),
+        "utf8",
+      );
+      await withBakedRoot(root, async () => {
+        await expect(loadBakedPlugins()).rejects.toThrow("missing skills directory");
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
     }
   });
 });

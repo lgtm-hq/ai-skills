@@ -67,22 +67,29 @@ export function loadVendorIndex(vendorId) {
 /**
  * Directory that holds bake output (marketplace + plugin trees).
  *
- * Prefers an explicit ``AI_SKILLS_PLUGINS_BAKED`` override (tests), then the
- * copy shipped inside the npm package, then the repository checkout when
- * running from a clone after a local bake.
+ * Prefers an explicit ``AI_SKILLS_PLUGINS_BAKED`` override (tests). When that
+ * env is set, a missing or incomplete tree is treated as absent (no
+ * fall-through to the packaged or checkout bake). Otherwise uses the copy
+ * shipped inside the npm package, then the repository checkout when running
+ * from a clone after a local bake.
  *
  * @returns {string | null} Absolute `plugins-baked` root, or null when absent.
  */
 export function resolveBakedPluginsRoot() {
   const override = process.env.AI_SKILLS_PLUGINS_BAKED;
+  if (typeof override === "string" && override.trim()) {
+    const root = override.trim();
+    if (
+      existsSync(join(root, ".claude-plugin", "marketplace.json")) &&
+      existsSync(join(root, "BAKE.json"))
+    ) {
+      return root;
+    }
+    return null;
+  }
   const packaged = fileURLToPath(new URL("plugins-baked/", DATA_ROOT));
   const checkout = fileURLToPath(new URL("../../../plugins-baked/", import.meta.url));
-  const roots = [];
-  if (typeof override === "string" && override.trim()) {
-    roots.push(override.trim());
-  }
-  roots.push(packaged, checkout);
-  for (const root of roots) {
+  for (const root of [packaged, checkout]) {
     if (
       existsSync(join(root, ".claude-plugin", "marketplace.json")) &&
       existsSync(join(root, "BAKE.json"))
@@ -133,6 +140,9 @@ export async function loadBakedPlugins() {
     if (!vendor) {
       throw new Error(`Baked plugin missing bake lock vendor: ${id}`);
     }
+    if (typeof vendor.repo !== "string" || typeof vendor.sha !== "string") {
+      throw new Error(`Baked plugin lock vendor is malformed: ${id}`);
+    }
     const pluginRoot = join(root, id);
     const skills = await listBakedSkillNames(pluginRoot);
     const description = await bakedPluginDescription(pluginRoot, entry, vendor.id);
@@ -179,7 +189,7 @@ async function listBakedSkillNames(pluginRoot) {
     entries = await readdir(join(pluginRoot, "skills"), { withFileTypes: true });
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-      return names;
+      throw new Error(`Baked plugin missing skills directory: ${pluginRoot}`);
     }
     throw error;
   }

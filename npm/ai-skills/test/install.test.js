@@ -154,6 +154,24 @@ describe("install", () => {
     ).rejects.toThrow("Unknown plugin: agents");
   });
 
+  test("fails closed when a registered vendor has no baked plugins", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ai-skills-no-bake-"));
+    const previous = process.env.AI_SKILLS_PLUGINS_BAKED;
+    process.env.AI_SKILLS_PLUGINS_BAKED = root;
+    try {
+      await expect(
+        batchesFromCliOptions({ bundle: null, skills: [], vendor: "mattpocock" }),
+      ).rejects.toThrow("Vendor mattpocock has no baked plugins");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.AI_SKILLS_PLUGINS_BAKED;
+      } else {
+        process.env.AI_SKILLS_PLUGINS_BAKED = previous;
+      }
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   test("explodes a baked vendor plugin from plugins-baked", async () => {
     let ran = false;
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-install-"));
