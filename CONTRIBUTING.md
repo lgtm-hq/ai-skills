@@ -204,6 +204,27 @@ rather than treating bake output as a committed drift gate. Retaining
 an older vendor version long-term means promoting it to first-party
 `skills/`.
 
+### Vendor re-pin
+
+`scripts/repin_vendor.py` resolves the upstream ref for a vendor
+(`displayRef: latest` / missing / `HEAD` → default-branch HEAD; any
+other `displayRef` is that git ref), updates the `sha` pin, re-bakes,
+and prints added / removed / renamed skills, coverage deltas, and new
+collisions. Unresolved collisions fail closed. Bake output stays
+gitignored; the reviewable diff is the pin plus generated indexes and
+npm catalog data.
+
+```bash
+uv run python scripts/repin_vendor.py --id mattpocock
+uv run python scripts/repin_vendor.py --all
+uv run python scripts/repin_vendor.py --id mattpocock --json
+```
+
+Weekly workflow [`.github/workflows/vendor-repin.yml`](.github/workflows/vendor-repin.yml)
+opens one PR per vendor whose pin moved, labeled `new-vendor` and
+`automation`, with the Markdown summary as the PR body. Those PRs
+**never auto-merge**.
+
 ## Pull requests
 
 - Use **[Conventional Commits](https://www.conventionalcommits.org/)** in PR titles;

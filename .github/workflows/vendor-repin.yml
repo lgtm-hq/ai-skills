@@ -1,0 +1,127 @@
+---
+name: Vendor re-pin
+
+# Weekly per-vendor pin bumps. Each job opens (or updates) one PR with the
+# re-pin summary as the body. Humans review and merge; this workflow does
+# not enqueue merges.
+
+"on":
+  schedule:
+    # Weekly, Mondays at 07:00 UTC — after Scorecard / link-check.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      vendor:
+        description: Vendor id to re-pin, or all
+        required: true
+        default: all
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: vendor-repin
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: List vendors
+    runs-on: ubuntu-24.04
+    outputs:
+      vendors: ${{ steps.matrix.outputs.vendors }}
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            raw.githubusercontent.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            astral.sh:443
+            releases.astral.sh:443
+            pipelines.actions.githubusercontent.com:443
+
+      - name: Checkout
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        # yamllint disable-line rule:line-length
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        # yamllint disable-line rule:line-length
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+
+      - name: Install Python dependencies
+        run: uv sync --locked
+
+      - name: Write vendor matrix
+        id: matrix
+        # yamllint disable-line rule:line-length
+        run: bash scripts/ci/vendor_repin_matrix.sh "${{ github.event.inputs.vendor || 'all' }}"
+
+  repin:
+    name: Re-pin ${{ matrix.vendor }}
+    needs: prepare
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        vendor: ${{ fromJSON(needs.prepare.outputs.vendors) }}
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Harden runner
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            raw.githubusercontent.com:443
+            uploads.github.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            astral.sh:443
+            releases.astral.sh:443
+            pipelines.actions.githubusercontent.com:443
+
+      - name: Checkout
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Python
+        # yamllint disable-line rule:line-length
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        # yamllint disable-line rule:line-length
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+
+      - name: Install Python dependencies
+        run: uv sync --locked
+
+      - name: Re-pin and open review PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/open_vendor_repin_pr.sh "${{ matrix.vendor }}"

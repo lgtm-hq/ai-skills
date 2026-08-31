@@ -611,6 +611,31 @@ def _print_summary(*, action: str, vendor_id: str) -> None:
     print("  - Record the change under the Unreleased section of CHANGELOG.md.")
 
 
+def set_sha(*, repo_root: Path, vendor_id: str, sha: str) -> None:
+    """Update one vendor pin SHA without rebaking derived artifacts.
+
+    Args:
+        repo_root: Repository root containing ``vendors.yaml``.
+        vendor_id: Slug of the vendor to update.
+        sha: New 40-character lowercase hex commit SHA.
+
+    Raises:
+        ValueError: If the vendor id is unknown or the SHA is invalid.
+        TypeError: If the rewritten registry fails type validation.
+    """
+    registry_path = repo_root / "vendors.yaml"
+    vendors = _read_raw_registry(registry_path=registry_path)
+    target = next(
+        (vendor for vendor in vendors if vendor.get("id") == vendor_id),
+        None,
+    )
+    if target is None:
+        msg = f"Unknown vendor id: {vendor_id}"
+        raise ValueError(msg)
+    target["sha"] = sha
+    _write_registry(registry_path=registry_path, vendors=vendors)
+
+
 def refresh(*, repo_root: Path) -> None:
     """Rebake every vendor index and plugin tree, then synchronize npm data.
 

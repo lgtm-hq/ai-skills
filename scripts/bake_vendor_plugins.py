@@ -130,6 +130,64 @@ def bake(
         RuntimeError: If a GitHub tarball cannot be fetched.
         ValueError: If bake validation or the collision report fails.
     """
+    (
+        _results,
+        _skipped,
+        _ingested,
+        _fetched,
+        skill_collisions,
+        agent_collisions,
+        _digests,
+    ) = collect_bake(
+        repo_root=repo_root,
+        vendor_trees=vendor_trees,
+        install=True,
+    )
+    if skill_collisions or agent_collisions:
+        raise ValueError(
+            collision_error_message(
+                skill_collisions=skill_collisions,
+                agent_collisions=agent_collisions,
+            ),
+        )
+
+
+def collect_bake(
+    *,
+    repo_root: Path,
+    vendor_trees: Mapping[str, Path] | None = None,
+    install: bool = True,
+) -> tuple[
+    tuple[PluginBakeResult, ...],
+    dict[str, tuple[str, ...]],
+    dict[str, int],
+    frozenset[str],
+    tuple[str, ...],
+    tuple[str, ...],
+    dict[str, dict[str, str]],
+]:
+    """Bake plugin slices and return coverage inputs without failing on collisions.
+
+    Writes marketplace, coverage, and ``BAKE.json`` into a staging tree.
+    Installs onto ``plugins-baked/`` only when ``install`` is true and the
+    collision report is clean. Collision lines are returned to the caller
+    so re-pin can summarize them instead of losing the staged snapshot.
+
+    Args:
+        repo_root: Repository root containing ``vendors.yaml``.
+        vendor_trees: Optional vendor-id → unpacked tree mapping for tests.
+        install: When true, publish a clean bake onto ``plugins-baked/``.
+
+    Returns:
+        Bake results, skipped paths, ingested counts, fetched vendor ids,
+        skill collision lines, agent collision lines, and per-plugin
+        explode-name → SKILL.md SHA-256 digest maps.
+
+    Raises:
+        RuntimeError: If a GitHub tarball cannot be fetched.
+        ValueError: If bake validation fails for a reason other than
+            unresolved catalog collisions.
+    """
     vendors = load_registry(registry_path=repo_root / "vendors.yaml")
     trees = dict(vendor_trees) if vendor_trees is not None else {}
     with TemporaryDirectory(dir=repo_root) as temporary_directory:
@@ -183,18 +241,74 @@ def bake(
             encoding="utf-8",
         )
         print(coverage, end="")
-        if skill_collisions or agent_collisions:
-            raise ValueError(
-                collision_error_message(
-                    skill_collisions=skill_collisions,
-                    agent_collisions=agent_collisions,
-                ),
-            )
-        validate_tree(root=output_root)
-        install_directory(
-            source=output_root,
-            destination=repo_root / PLUGINS_BAKED_DIRNAME,
+        skill_digests = _skill_digests_from_output(
+            output_root=output_root,
+            results=results,
         )
+        if not skill_collisions and not agent_collisions:
+            validate_tree(root=output_root)
+            if install:
+                install_directory(
+                    source=output_root,
+                    destination=repo_root / PLUGINS_BAKED_DIRNAME,
+                )
+        return (
+            results,
+            skipped_by_vendor,
+            ingested_counts,
+            fetched,
+            skill_collisions,
+            agent_collisions,
+            skill_digests,
+        )
+
+
+def _skill_body_digest(*, path: Path) -> str:
+    """Return a SHA-256 of the SKILL.md body, ignoring YAML frontmatter.
+
+    Bake rewrites frontmatter ``name:`` to the explode directory, so a
+    renamed skill's full-file digest always changes. The body is stable
+    across that rewrite and is what re-pin uses to detect renames.
+
+    Args:
+        path: Baked ``SKILL.md`` path.
+
+    Returns:
+        Hex digest of the body (or the whole file when frontmatter is
+        absent).
+    """
+    text = path.read_text(encoding="utf-8")
+    parts = text.split("---", 2)
+    body = parts[2] if len(parts) >= 3 else text
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _skill_digests_from_output(
+    *,
+    output_root: Path,
+    results: tuple[PluginBakeResult, ...],
+) -> dict[str, dict[str, str]]:
+    """Return SHA-256 body digests of baked ``SKILL.md`` files keyed by explode name.
+
+    Args:
+        output_root: Staged ``plugins-baked`` directory.
+        results: Bake results whose explode names are hashed.
+
+    Returns:
+        Plugin id → explode name → hex digest.
+    """
+    digests: dict[str, dict[str, str]] = {}
+    for result in results:
+        plugin_skills: dict[str, str] = {}
+        for name in result.explode_names:
+            skill_markdown = (
+                output_root / result.plugin_id / "skills" / name / "SKILL.md"
+            )
+            if skill_markdown.is_symlink() or not skill_markdown.is_file():
+                continue
+            plugin_skills[name] = _skill_body_digest(path=skill_markdown)
+        digests[result.plugin_id] = plugin_skills
+    return digests
 
 
 def check(*, repo_root: Path) -> int:
