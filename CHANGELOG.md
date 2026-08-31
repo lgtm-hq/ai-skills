@@ -28,7 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `vendors.yaml` (`--baseline-ref`), not a SHA-only reset of the PR
   branch. Existing branches also push a merge from main when catalogs
   are unchanged, so the remote PR does not stay behind while the body
-  updates.
+  updates. Collision summaries still refresh an existing PR when
+  catalogs are already current; only a hard CLI failure with an empty
+  summary aborts before `gh pr edit`.
 - **docs**: ADR-0007 — vendor bake output is a publish-time artifact, not
   repo content.
 

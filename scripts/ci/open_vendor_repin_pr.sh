@@ -65,7 +65,9 @@ changed="$(git status --porcelain -- "${paths[@]}")"
 if [[ -n "$changed" ]]; then
   git add -- "${paths[@]}"
   git commit -m "chore(vendors): re-pin ${vendor}"
-elif [[ "$status" -ne 0 ]]; then
+elif [[ "$status" -ne 0 && ! -s "$summary" ]]; then
+  # Hard CLI failure (no summary). Collision writes a summary and must
+  # still open or refresh the review PR.
   exit "$status"
 fi
 

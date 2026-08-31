@@ -233,7 +233,9 @@ pin or extra `renameSkills`. Do not reset only the SHA on the PR
 branch — that bakes main's pin against branch-only slice edits. Jobs
 merge main onto `chore/vendor-repin-*` and push that merge even when
 catalog paths are unchanged, so the remote PR stays based on latest
-main.
+main. Collision failures still refresh the PR body when the CLI wrote a
+summary; only a hard failure with an empty summary aborts before
+`gh pr edit`.
 
 ## Pull requests
 
