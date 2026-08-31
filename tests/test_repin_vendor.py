@@ -787,5 +787,10 @@ def test_vendor_repin_workflow_is_sha_pinned_weekly_and_never_auto_merges() -> N
     assert_that(workflow).contains('"$VENDOR_ID"')
     assert_that(script).contains("--baseline-ref")
     assert_that(script).does_not_contain("--from-sha")
+    assert_that(script).contains(
+        'changed="$(git status --porcelain -- "${paths[@]}")"',
+    )
+    assert_that(script).contains('gh pr edit "$existing" --body-file "$summary"')
+    assert_that(script).contains("No pin change")
     assert_that(script).does_not_contain("pr merge")
     assert_that(script).does_not_contain("--auto")

@@ -61,21 +61,18 @@ paths=(
   npm/ai-skills/NOTICE.md
 )
 
-if [[ -z "$(git status --porcelain -- "${paths[@]}")" ]]; then
-  if [[ "$status" -ne 0 ]]; then
-    exit "$status"
+changed="$(git status --porcelain -- "${paths[@]}")"
+if [[ -n "$changed" ]]; then
+  git add -- "${paths[@]}"
+  git commit -m "chore(vendors): re-pin ${vendor}"
+
+  if git rev-parse --verify "origin/${branch}" >/dev/null 2>&1; then
+    git push --force-with-lease -u origin "$branch"
+  else
+    git push -u origin "$branch"
   fi
-  echo "No pin change for ${vendor}."
-  exit 0
-fi
-
-git add -- "${paths[@]}"
-git commit -m "chore(vendors): re-pin ${vendor}"
-
-if git rev-parse --verify "origin/${branch}" >/dev/null 2>&1; then
-  git push --force-with-lease -u origin "$branch"
-else
-  git push -u origin "$branch"
+elif [[ "$status" -ne 0 ]]; then
+  exit "$status"
 fi
 
 existing="$(
@@ -83,12 +80,14 @@ existing="$(
 )"
 if [[ -n "$existing" ]]; then
   gh pr edit "$existing" --body-file "$summary"
-else
+elif [[ -n "$changed" ]]; then
   gh pr create \
     --title "chore(vendors): re-pin ${vendor}" \
     --body-file "$summary" \
     --label "new-vendor" \
     --label "automation"
+else
+  echo "No pin change for ${vendor}."
 fi
 
 # Collisions fail the re-pin command but still land as a human-review PR.
