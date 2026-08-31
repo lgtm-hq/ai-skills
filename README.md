@@ -26,7 +26,7 @@ The unit of install is a **plugin**. A plugin is a named group of skills (and,
 later, other components). Contents stay visible; native hosts install the
 plugin as a whole. The gateway (`sk`) installs plugins atomically — the
 TUI is a plugin checklist, `--skill` / `--bundle` name a plugin, and
-`--vendor` installs that vendor plugin whole. Native projectors are the
+`--vendor` installs every baked slice for that vendor. Native projectors are the
 default for Cursor, Claude Code, and GitHub Copilot when the doctor cache
 (`~/.ai-skills/doctor.json`) says native — install probes and writes that
 cache on a miss. Ambiguous Claude Code / Copilot probes ask once; `-y`
@@ -89,7 +89,9 @@ bunx --package=@lgtm-hq/ai-skills@0.28.0 sk install -y --global \
 
 Unattended installs need an explicit scope and agent. `--bundle` and
 `--skill` take a plugin id from the table below (`git-pr`, `review`,
-`standards`, …). `--vendor <id>` installs that vendor plugin whole.
+`standards`, …) or a baked vendor plugin id (`document-skills`,
+`hookify`, …). `--vendor <id>` installs every baked slice for that
+vendor.
 `--projector native|explode` overrides delivery. Without it, install consults
 `sk doctor`'s host cache (`~/.ai-skills/doctor.json`) for hosts that are not
 already locked: probe Claude Code / Copilot for a working `plugin`

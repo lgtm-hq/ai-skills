@@ -57,7 +57,10 @@ describe("probeHost", () => {
   });
 
   test("keeps Codex exploded", async () => {
-    expect(await probeHost("codex")).toEqual({ capability: "explode", version: "n/a" });
+    expect(await probeHost("codex")).toEqual({
+      capability: "explode",
+      version: "n/a",
+    });
   });
 
   test("treats an unrecognized plugin subcommand as explode", async () => {
@@ -66,7 +69,11 @@ describe("probeHost", () => {
         if (args[0] === "--version") {
           return { status: 0, stderr: "", stdout: "1.0.0\n" };
         }
-        return { status: 1, stderr: "error: unrecognized subcommand plugin\n", stdout: "" };
+        return {
+          status: 1,
+          stderr: "error: unrecognized subcommand plugin\n",
+          stdout: "",
+        };
       },
     });
     expect(result.capability).toBe("explode");
@@ -87,7 +94,11 @@ describe("probeHost", () => {
         if (args[0] === "--version") {
           return { status: 0, stderr: "", stdout: "1.0.0\n" };
         }
-        return { status: 1, stderr: "unrecognized argument plugin\n", stdout: "" };
+        return {
+          status: 1,
+          stderr: "unrecognized argument plugin\n",
+          stdout: "",
+        };
       },
     });
     expect(argument.capability).toBe("explode");
@@ -99,7 +110,11 @@ describe("probeHost", () => {
         if (args[0] === "--version") {
           return { status: 0, stderr: "", stdout: "1.0.0\n" };
         }
-        return { status: 127, stderr: "command not found: copilot\n", stdout: "" };
+        return {
+          status: 127,
+          stderr: "command not found: copilot\n",
+          stdout: "",
+        };
       },
     });
     expect(command.capability).toBe("explode");
@@ -145,12 +160,24 @@ describe("ensureHostCapability", () => {
       return { status: 0, stderr: "", stdout: "plugin help\n" };
     };
     try {
-      const first = await ensureHostCapability("claude-code", { exec, home, yes: true });
-      expect(first).toEqual({ capability: "native", source: "probe", version: "9.9.9" });
+      const first = await ensureHostCapability("claude-code", {
+        exec,
+        home,
+        yes: true,
+      });
+      expect(first).toEqual({
+        capability: "native",
+        source: "probe",
+        version: "9.9.9",
+      });
       const cached = JSON.parse(await readFile(doctorCachePath(home), "utf8"));
       expect(cached.hosts["claude-code"].capability).toBe("native");
       calls.length = 0;
-      const second = await ensureHostCapability("claude-code", { exec, home, yes: true });
+      const second = await ensureHostCapability("claude-code", {
+        exec,
+        home,
+        yes: true,
+      });
       expect(second.capability).toBe("native");
       expect(calls).toEqual([["claude", "--version"]]);
     } finally {
@@ -164,7 +191,11 @@ describe("ensureHostCapability", () => {
       await writeDoctorCache(
         {
           hosts: {
-            copilot: { capability: "explode", source: "probe", version: "1.0.0" },
+            copilot: {
+              capability: "explode",
+              source: "probe",
+              version: "1.0.0",
+            },
           },
           schemaVersion: 1,
         },
@@ -180,7 +211,11 @@ describe("ensureHostCapability", () => {
         home,
         yes: true,
       });
-      expect(result).toEqual({ capability: "native", source: "probe", version: "2.0.0" });
+      expect(result).toEqual({
+        capability: "native",
+        source: "probe",
+        version: "2.0.0",
+      });
     } finally {
       await rm(home, { force: true, recursive: true });
     }
@@ -199,7 +234,11 @@ describe("ensureHostCapability", () => {
         home,
         prompt: async () => "explode",
       });
-      expect(result).toEqual({ capability: "explode", source: "prompt", version: "0.1" });
+      expect(result).toEqual({
+        capability: "explode",
+        source: "prompt",
+        version: "0.1",
+      });
       const cache = await readDoctorCache({ home });
       expect(cache.hosts["claude-code"].source).toBe("prompt");
     } finally {
@@ -234,7 +273,11 @@ describe("ensureHostCapability", () => {
       await writeDoctorCache(
         {
           hosts: {
-            cursor: { capability: "native", source: "probe", version: "global:present:nocli" },
+            cursor: {
+              capability: "native",
+              source: "probe",
+              version: "global:present:nocli",
+            },
           },
           schemaVersion: 1,
         },
@@ -292,7 +335,9 @@ describe("ensureHostCapability", () => {
     const homeAbsent = await mkdtemp(join(tmpdir(), "ai-skills-doctor-or-home2-"));
     const cwdPresent = await mkdtemp(join(tmpdir(), "ai-skills-doctor-or-cwd2-"));
     try {
-      await mkdir(join(cwdPresent, ".cursor/plugins/local"), { recursive: true });
+      await mkdir(join(cwdPresent, ".cursor/plugins/local"), {
+        recursive: true,
+      });
       const fromCwd = await ensureHostCapability("cursor", {
         cwd: cwdPresent,
         exec,
@@ -397,7 +442,9 @@ describe("runDoctor", () => {
         },
         { cwd },
       );
-      await mkdir(join(cwd, ".cursor/skills/orphan-skill"), { recursive: true });
+      await mkdir(join(cwd, ".cursor/skills/orphan-skill"), {
+        recursive: true,
+      });
       await runDoctor(
         {
           agents: ["cursor"],
@@ -673,7 +720,12 @@ describe("runDoctor", () => {
             confirm: async () => false,
             exec: async () => ({ status: 1, stderr: "not found", stdout: "" }),
             home: cwd,
-            lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+            lockEnvironment: {
+              cwd,
+              exists: async () => true,
+              hash: async () => "abc",
+              home: cwd,
+            },
             log: () => {},
           },
         ),
@@ -837,7 +889,9 @@ describe("runDoctor", () => {
         { cwd },
       );
       await mkdir(join(cwd, ".cursor/skills"), { recursive: true });
-      await mkdir(join(cwd, ".cursor/plugins/local/review"), { recursive: true });
+      await mkdir(join(cwd, ".cursor/plugins/local/review"), {
+        recursive: true,
+      });
       await symlink("/tmp/untracked-skill", join(cwd, ".cursor/skills/orphan-link"));
       await runDoctor(
         {
@@ -856,7 +910,12 @@ describe("runDoctor", () => {
             throw error;
           },
           home: cwd,
-          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          lockEnvironment: {
+            cwd,
+            exists: async () => true,
+            hash: async () => "abc",
+            home: cwd,
+          },
           log: (line) => lines.push(line),
         },
       );
@@ -920,7 +979,12 @@ describe("runDoctor", () => {
             },
             home: cwd,
             installExtras: { sourceRoot: null },
-            lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+            lockEnvironment: {
+              cwd,
+              exists: async () => true,
+              hash: async () => "abc",
+              home: cwd,
+            },
             log: () => {},
             warn: (message) => warnings.push(message),
           },
@@ -988,12 +1052,19 @@ describe("runDoctor", () => {
           },
           home: cwd,
           installExtras: { sourceRoot },
-          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          lockEnvironment: {
+            cwd,
+            exists: async () => true,
+            hash: async () => "abc",
+            home: cwd,
+          },
           log: () => {},
         },
       );
       expect(result.migrated).toEqual(["jira"]);
-      await expect(access(explodeFile)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(access(explodeFile)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
       expect(
         await readFile(join(cwd, ".cursor/plugins/local/jira/skills/jira/SKILL.md"), "utf8"),
       ).toBe("# jira\n");
@@ -1064,7 +1135,12 @@ describe("runDoctor", () => {
           },
           home: cwd,
           installExtras: { sourceRoot },
-          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          lockEnvironment: {
+            cwd,
+            exists: async () => true,
+            hash: async () => "abc",
+            home: cwd,
+          },
           log: (line) => lines.push(line),
         },
       );
@@ -1072,7 +1148,9 @@ describe("runDoctor", () => {
       expect(lines.some((line) => line.startsWith("host\tclaude-code\tambiguous\terror"))).toBe(
         true,
       );
-      await expect(access(explodeFile)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(access(explodeFile)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
       expect(
         await readFile(join(cwd, ".cursor/plugins/local/jira/skills/jira/SKILL.md"), "utf8"),
       ).toBe("# jira\n");
@@ -1174,7 +1252,9 @@ describe("runDoctor", () => {
         },
       );
       expect(result.migrated).toEqual(["jira"]);
-      await expect(access(explodeFile)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(access(explodeFile)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -1226,7 +1306,12 @@ describe("runDoctor", () => {
           access: async () => false,
           exec: async () => ({ status: 1, stderr: "not found", stdout: "" }),
           home: cwd,
-          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          lockEnvironment: {
+            cwd,
+            exists: async () => true,
+            hash: async () => "abc",
+            home: cwd,
+          },
           log: (line) => lines.push(line),
         },
       );
@@ -1291,7 +1376,12 @@ describe("runDoctor", () => {
           },
           home: cwd,
           installExtras: { sourceRoot },
-          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          lockEnvironment: {
+            cwd,
+            exists: async () => true,
+            hash: async () => "abc",
+            home: cwd,
+          },
           log: () => {},
         },
       );
@@ -1433,7 +1523,12 @@ describe("runDoctor", () => {
               },
               sourceRoot,
             },
-            lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+            lockEnvironment: {
+              cwd,
+              exists: async () => true,
+              hash: async () => "abc",
+              home: cwd,
+            },
             log: () => {},
             remove: async () => {
               throw new Error("rm boom");
@@ -1470,6 +1565,127 @@ describe("runDoctor", () => {
       expect(
         lines.some((line) => line.startsWith("orphan\tcursor\t") && line.endsWith("/jira")),
       ).toBe(true);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("repair rematerializes a baked vendor plugin by slice id", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-vendor-repair-"));
+    /** @type {Array<{bundle: string | null, vendor: string | null, skills: string[]}>} */
+    const installCalls = [];
+    try {
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            "document-skills": {
+              agents: {
+                cursor: {
+                  files: { "pdf/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "anthropics/skills",
+              sha: "abc123",
+              vendor: "anthropics",
+              version: "abc1234",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      const result = await runDoctor(
+        {
+          agents: ["cursor"],
+          global: false,
+          migrate: null,
+          project: true,
+          repair: true,
+          yes: true,
+        },
+        {
+          exec: async () => ({ status: 1, stderr: "", stdout: "" }),
+          home: cwd,
+          install: async (options) => {
+            installCalls.push({
+              bundle: options.bundle,
+              vendor: options.vendor,
+              skills: options.skills,
+            });
+            return { alreadyPresent: 0, installed: 0, repaired: 1 };
+          },
+          lockEnvironment: { cwd, hash: async () => "abc", home: cwd },
+          log: () => {},
+        },
+      );
+      expect(result.repaired).toEqual(["document-skills"]);
+      expect(installCalls).toEqual([
+        {
+          bundle: "document-skills",
+          vendor: "anthropics",
+          skills: [],
+        },
+      ]);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("repair of a legacy vendor-id lock cannot rematerialize", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-legacy-vendor-"));
+    const warnings = [];
+    try {
+      await writeLockfile(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            anthropics: {
+              agents: {
+                cursor: {
+                  files: { "pdf/SKILL.md": "abc" },
+                  projector: "explode",
+                  root: join(cwd, ".cursor/skills"),
+                },
+              },
+              installedAt: "2026-08-28T00:00:00.000Z",
+              projector: "explode",
+              repo: "anthropics/skills",
+              sha: "abc123",
+              vendor: "anthropics",
+              version: "abc1234",
+            },
+          },
+          scope: "project",
+          version: 2,
+        },
+        { cwd },
+      );
+      await expect(
+        runDoctor(
+          {
+            agents: ["cursor"],
+            global: false,
+            migrate: null,
+            project: true,
+            repair: true,
+            yes: true,
+          },
+          {
+            exec: async () => ({ status: 1, stderr: "", stdout: "" }),
+            home: cwd,
+            lockEnvironment: { cwd, hash: async () => "abc", home: cwd },
+            log: () => {},
+            warn: (message) => warnings.push(message),
+          },
+        ),
+      ).rejects.toThrow(/Repair failed for anthropics:cursor/);
+      expect(warnings.join("\n")).toMatch(/Unknown plugin for vendor anthropics: anthropics/);
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -1524,7 +1740,12 @@ describe("runDoctor", () => {
             throw error;
           },
           home: cwd,
-          lockEnvironment: { cwd, exists: async () => true, hash: async () => "abc", home: cwd },
+          lockEnvironment: {
+            cwd,
+            exists: async () => true,
+            hash: async () => "abc",
+            home: cwd,
+          },
           log: () => {},
           warn: (message) => warnings.push(message),
         },

@@ -1,7 +1,7 @@
 import { access, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { loadBundles, loadVendorIndex, loadVendors } from "./catalog.js";
+import { loadBakedPlugin, loadBakedPlugins, loadBundles, loadVendors } from "./catalog.js";
 import {
   agentProjector,
   agentSkillsRoot,
@@ -56,7 +56,7 @@ import { checkGatewayUpdate, checkSkillDrift, checkVendorDrift } from "./update-
 
 /**
  * @typedef {{firstParty: string[], vendors: string[]}} InstallCart
- * Interactive plugin cart. Values are plugin ids (first-party bundle ids or vendor ids).
+ * plus optional ``vendor:<id>`` shortcuts that expand to every baked slice.
  */
 
 /**
@@ -279,6 +279,7 @@ async function readWizardLock(options, lockEnvironment) {
 export async function buildPluginChecklist(bundles, vendors, signals = {}) {
   const driftedVendors = signals.driftedVendors ?? new Set();
   const markers = buildPluginMarkers(signals);
+  const vendorById = new Map(vendors.vendors.map((vendor) => [vendor.id, vendor]));
   /** @type {{value: string, label: string}[]} */
   const options = Object.entries(bundles.groups).map(([pluginId, group]) => {
     const count = group.skills.length;
@@ -288,14 +289,18 @@ export async function buildPluginChecklist(bundles, vendors, signals = {}) {
       label: `${group.name} (${pluginId}) — ${group.description} (${count} ${skillLabel})${markers.get(pluginId) ?? ""}`,
     };
   });
-  for (const vendor of vendors.vendors) {
-    const index = await loadVendorIndex(vendor.id);
-    const count = index.skills.length;
+  const baked = await loadBakedPlugins();
+  for (const plugin of baked.plugins) {
+    const count = plugin.skills.length;
     const skillLabel = count === 1 ? "skill" : "skills";
-    const drift = driftedVendors.has(vendor.id) ? VENDOR_DRIFT_SUFFIX : "";
+    const drift = driftedVendors.has(plugin.vendor) ? VENDOR_DRIFT_SUFFIX : "";
+    const vendor = vendorById.get(plugin.vendor);
+    const pin = vendor ? vendorDisplayLabel(vendor) : plugin.vendor;
     options.push({
-      value: `vendor:${vendor.id}`,
-      label: `${vendor.id} — ${vendorDisplayLabel(vendor)} — ${count} ${skillLabel}${drift}${markers.get(vendor.id) ?? ""}`,
+      value: plugin.id,
+      label:
+        `${plugin.id} — ${plugin.description} (${count} ${skillLabel}) ` +
+        `[${pin}]${drift}${markers.get(plugin.id) ?? ""}`,
     });
   }
   return options;
@@ -370,23 +375,14 @@ export function cartPluginCount(cart) {
  * @returns {Promise<InstallBatch[]>} One batch per selected plugin.
  */
 export async function batchesFromCart(cart) {
-  const bundles = await loadBundles();
+  const catalog = await loadInstallCatalog();
   /** @type {InstallBatch[]} */
   const batches = [];
   for (const pluginId of cart.firstParty) {
-    const bundle = bundles.groups[pluginId];
-    if (!bundle) {
-      throw new Error(`Unknown first-party plugin: ${pluginId}`);
-    }
-    batches.push({ pluginId, vendor: null, skills: [...bundle.skills] });
+    batches.push(batchFromPluginId(pluginId, catalog));
   }
   for (const vendorId of cart.vendors) {
-    const index = await loadVendorIndex(vendorId);
-    batches.push({
-      pluginId: vendorId,
-      vendor: vendorId,
-      skills: index.skills.map((skill) => skill.name),
-    });
+    batches.push(...batchesForVendor(vendorId, catalog));
   }
   return batches;
 }
@@ -394,8 +390,8 @@ export async function batchesFromCart(cart) {
 /**
  * Build install batches from CLI plugin flags.
  *
- * `--skill` names first-party plugins. `--bundle` is an alias for one
- * first-party plugin. `--vendor` installs that vendor plugin atomically.
+ * `--skill` and `--bundle` name first-party or baked plugin ids. `--vendor`
+ * installs every baked slice for that vendor as separate plugin-atomic batches.
  *
  * @param {{bundle: string | null, skills: string[], vendor: string | null}} options - Parsed install options.
  * @returns {Promise<InstallBatch[]>} One batch per selected plugin.
@@ -404,15 +400,9 @@ export async function batchesFromCliOptions(options) {
   if (options.vendor && (options.bundle || options.skills.length > 0)) {
     throw new Error("Vendor installs are plugin-atomic; omit --skill and --bundle");
   }
+  const catalog = await loadInstallCatalog();
   if (options.vendor) {
-    const index = await loadVendorIndex(options.vendor);
-    return [
-      {
-        pluginId: options.vendor,
-        vendor: options.vendor,
-        skills: index.skills.map((skill) => skill.name),
-      },
-    ];
+    return batchesForVendor(options.vendor, catalog);
   }
   if (options.bundle && options.skills.length > 0) {
     throw new Error("Choose plugins via --skill or --bundle, not both");
@@ -421,14 +411,82 @@ export async function batchesFromCliOptions(options) {
   if (pluginIds.length === 0) {
     throw new Error("Select at least one plugin via --skill or --bundle");
   }
-  const bundles = await loadBundles();
-  return pluginIds.map((pluginId) => {
-    const bundle = bundles.groups[pluginId];
-    if (!bundle) {
-      throw new Error(`Unknown first-party plugin: ${pluginId}`);
-    }
+  return pluginIds.map((pluginId) => batchFromPluginId(pluginId, catalog));
+}
+
+/**
+ * Shared first-party + baked-plugin lookup used by cart and CLI expansion.
+ *
+ * @returns {Promise<{
+ *   bundles: {groups: Record<string, {skills: string[]}>},
+ *   bakedById: Map<string, import("./catalog.js").BakedPlugin>,
+ *   bakedByVendor: Map<string, import("./catalog.js").BakedPlugin[]>,
+ *   vendorIds: Set<string>,
+ * }>} Catalog indexes.
+ */
+async function loadInstallCatalog() {
+  const [bundles, baked, vendors] = await Promise.all([
+    loadBundles(),
+    loadBakedPlugins(),
+    loadVendors(),
+  ]);
+  /** @type {Map<string, import("./catalog.js").BakedPlugin>} */
+  const bakedById = new Map();
+  /** @type {Map<string, import("./catalog.js").BakedPlugin[]>} */
+  const bakedByVendor = new Map();
+  for (const plugin of baked.plugins) {
+    bakedById.set(plugin.id, plugin);
+    const existing = bakedByVendor.get(plugin.vendor) ?? [];
+    existing.push(plugin);
+    bakedByVendor.set(plugin.vendor, existing);
+  }
+  return {
+    bundles,
+    bakedById,
+    bakedByVendor,
+    vendorIds: new Set(vendors.vendors.map((vendor) => vendor.id)),
+  };
+}
+
+/**
+ * Resolve one catalog plugin id to an install batch.
+ *
+ * @param {string} pluginId - First-party or baked plugin id.
+ * @param {Awaited<ReturnType<typeof loadInstallCatalog>>} catalog - Shared indexes.
+ * @returns {InstallBatch} Plugin-atomic batch.
+ */
+function batchFromPluginId(pluginId, catalog) {
+  const bundle = catalog.bundles.groups[pluginId];
+  if (bundle) {
     return { pluginId, vendor: null, skills: [...bundle.skills] };
-  });
+  }
+  const baked = catalog.bakedById.get(pluginId);
+  if (baked) {
+    return { pluginId, vendor: baked.vendor, skills: [...baked.skills] };
+  }
+  throw new Error(`Unknown plugin: ${pluginId}`);
+}
+
+/**
+ * Expand ``--vendor`` into one batch per baked plugin slice.
+ *
+ * @param {string} vendorId - Registry vendor identifier.
+ * @param {Awaited<ReturnType<typeof loadInstallCatalog>>} catalog - Shared indexes.
+ * @returns {InstallBatch[]} Plugin-atomic batches in marketplace order.
+ */
+function batchesForVendor(vendorId, catalog) {
+  if (!catalog.vendorIds.has(vendorId)) {
+    throw new Error(`Unknown vendor: ${vendorId}`);
+  }
+  const plugins = catalog.bakedByVendor.get(vendorId) ?? [];
+  if (plugins.length === 0) {
+    throw new Error(`Vendor ${vendorId} has no baked plugins`);
+  }
+  return plugins.map((plugin) => ({
+    pluginId: plugin.id,
+    vendor: plugin.vendor,
+    skills: [...plugin.skills],
+  }));
 }
 
 /**
@@ -660,14 +718,25 @@ export async function install(
   let source;
   let selectedOptions = options;
   let vendor;
+  /** @type {import("./catalog.js").BakedPlugin | null} */
+  let bakedPlugin = null;
   if (options.vendor) {
     const vendors = await loadVendors();
     vendor = vendors.vendors.find((item) => item.id === options.vendor);
     if (!vendor) {
       throw new Error(`Unknown vendor: ${options.vendor}`);
     }
-    const index = await loadVendorIndex(vendor.id);
-    const catalogSkills = index.skills.map((skill) => skill.name);
+    const pluginIdHint = options.bundle;
+    if (!pluginIdHint) {
+      throw new Error(
+        `Vendor ${vendor.id} installs require a baked plugin id; use --skill or --vendor`,
+      );
+    }
+    bakedPlugin = await loadBakedPlugin(pluginIdHint);
+    if (!bakedPlugin || bakedPlugin.vendor !== vendor.id) {
+      throw new Error(`Unknown plugin for vendor ${vendor.id}: ${pluginIdHint}`);
+    }
+    const catalogSkills = bakedPlugin.skills;
     if (options.skills.length === 0) {
       selectedOptions = { ...options, skills: catalogSkills };
     } else {
@@ -686,18 +755,32 @@ export async function install(
     source = `${vendor.repo}@${vendor.sha}`;
   } else {
     if (options.bundle && options.skills.length === 0) {
-      const bundles = await loadBundles();
-      const bundle = bundles.groups[options.bundle];
-      if (!bundle) {
-        throw new Error(`Unknown first-party bundle: ${options.bundle}`);
+      bakedPlugin = await loadBakedPlugin(options.bundle);
+      if (bakedPlugin) {
+        const vendors = await loadVendors();
+        vendor = vendors.vendors.find((item) => item.id === bakedPlugin.vendor);
+        if (!vendor) {
+          throw new Error(`Unknown vendor: ${bakedPlugin.vendor}`);
+        }
+        selectedOptions = { ...options, skills: bakedPlugin.skills };
+        source = `${vendor.repo}@${vendor.sha}`;
+      } else {
+        const bundles = await loadBundles();
+        const bundle = bundles.groups[options.bundle];
+        if (!bundle) {
+          throw new Error(`Unknown plugin: ${options.bundle}`);
+        }
+        selectedOptions = {
+          ...options,
+          skills: bundle.skills,
+        };
+        const packageVersion = getPackageVersion();
+        source = `lgtm-hq/ai-skills@v${packageVersion}`;
       }
-      selectedOptions = {
-        ...options,
-        skills: bundle.skills,
-      };
+    } else {
+      const packageVersion = getPackageVersion();
+      source = `lgtm-hq/ai-skills@v${packageVersion}`;
     }
-    const packageVersion = getPackageVersion();
-    source = `lgtm-hq/ai-skills@v${packageVersion}`;
   }
   const scope = resolveScope(selectedOptions);
   const scopedOptions = {
@@ -753,6 +836,12 @@ export async function install(
       "Native projector requires -a/--agent; omit --projector to detect exploded hosts",
     );
   }
+  if (detectAgents && bakedPlugin) {
+    throw new Error(
+      "Vendor plugin installs require -a/--agent; baked plugins explode from " +
+        "plugins-baked/ and cannot detect hosts via the skills CLI",
+    );
+  }
   let cursorSourceRoot;
   if (lanes.cursorNative.length > 0) {
     cursorSourceRoot =
@@ -798,17 +887,20 @@ export async function install(
   let explodeProgress = null;
   try {
     if (detectAgents || lanes.explode.length > 0) {
-      const explodeSources = detectAgents
-        ? null
-        : resolveExplodeSourceSkills(
-            scopedOptions.skills,
-            extras,
-            vendor
-              ? null
-              : extras.sourceRoot !== undefined
-                ? extras.sourceRoot
-                : findCatalogSourceRoot(lockEnvironment.cwd ?? process.cwd()),
-          );
+      const explodeSources =
+        detectAgents && !bakedPlugin
+          ? null
+          : resolveExplodeSourceSkills(
+              scopedOptions.skills,
+              extras,
+              bakedPlugin
+                ? bakedPlugin.pluginRoot
+                : vendor
+                  ? null
+                  : extras.sourceRoot !== undefined
+                    ? extras.sourceRoot
+                    : findCatalogSourceRoot(lockEnvironment.cwd ?? process.cwd()),
+            );
       if (explodeSources && lanes.explode.length > 0) {
         const explode = extras.explode ?? explodePlugin;
         const exploded = await explode({
@@ -846,9 +938,11 @@ export async function install(
         explodeProgress = exploded;
         warnSkippedExplodeDests(exploded.skipped, extras.warn);
       } else {
-        // Vendor installs and first-party installs without a catalog checkout
-        // still shell out to the skills CLI. That path is not transactional and
-        // does not enforce ADR-0005 until bake (#378) ships vendor trees.
+        // First-party installs without a catalog checkout still shell out to
+        // the skills CLI. Baked vendor plugins explode from plugins-baked/.
+        if (bakedPlugin) {
+          throw new Error(`Baked plugin "${bakedPlugin.id}" cannot install via the skills CLI`);
+        }
         await run(
           buildSkillsArguments(
             {
@@ -866,7 +960,7 @@ export async function install(
       );
       await installCursorPlugin({
         commit: false,
-        description: await pluginDescription(pluginId, vendor),
+        description: await pluginDescription(pluginId, vendor, bakedPlugin),
         destRoot,
         move: extras.move,
         pluginId,
@@ -874,7 +968,7 @@ export async function install(
         replace,
         skills: scopedOptions.skills,
         sourceRoot: cursorSourceRoot,
-        version: vendor?.sha ?? getPackageVersion(),
+        version: bakedPlugin?.version ?? vendor?.sha ?? getPackageVersion(),
       });
     }
     for (const agent of lanes.cliNative) {
@@ -917,6 +1011,7 @@ export async function install(
       existing,
       new Set(lanes.explode),
       explodeClaims,
+      bakedPlugin,
     );
     if (Object.keys(entries).length === 0) {
       if (explodeProgress) {
@@ -1037,6 +1132,7 @@ export async function install(
  *   (including implicit Cursor native → explode when the catalog is absent).
  * @param {Record<string, Record<string, string>> | null} [explodeClaims] - Owned explode
  *   files (skipped identical dests are omitted). ``null`` means explode did not run.
+ * @param {import("./catalog.js").BakedPlugin | null} [bakedPlugin] - Baked vendor plugin, if any.
  * @returns {Promise<Record<string, import("./lockfile.js").PluginLockEntry>>} Entries keyed by plugin id.
  */
 async function createLockEntries(
@@ -1049,6 +1145,7 @@ async function createLockEntries(
   existing,
   explodeLockAgents = new Set(),
   explodeClaims = null,
+  bakedPlugin = null,
 ) {
   lockEnvironment = lockEnvironment ?? {};
   const installedAt = now().toISOString();
@@ -1143,7 +1240,7 @@ async function createLockEntries(
     sha: vendor?.sha ?? `v${packageVersion}`,
     skills: [...options.skills],
     vendor: vendor?.id ?? "lgtm-hq",
-    version: vendor?.sha ?? packageVersion,
+    version: bakedPlugin?.version ?? vendor?.sha ?? packageVersion,
   };
   return { [pluginId]: entry };
 }
@@ -1403,15 +1500,19 @@ function projectorForAgent(agent, override, vendor, existing, doctorCapabilities
 }
 
 /**
- * plugin.json description for a first-party bundle, or the plugin id.
+ * plugin.json description for a first-party bundle or baked vendor plugin.
  *
  * @param {string} pluginId - Plugin id.
  * @param {{id: string} | undefined} vendor - Selected vendor, if any.
+ * @param {import("./catalog.js").BakedPlugin | null} [bakedPlugin] - Baked plugin metadata.
  * @returns {Promise<string>} Manifest description.
  */
-async function pluginDescription(pluginId, vendor) {
+async function pluginDescription(pluginId, vendor, bakedPlugin = null) {
+  if (bakedPlugin?.description) {
+    return bakedPlugin.description;
+  }
   if (vendor) {
-    return pluginId;
+    return `${pluginId} [baked from vendor '${vendor.id}']`;
   }
   const bundles = await loadBundles();
   return bundles.groups[pluginId]?.description ?? pluginId;
@@ -1549,17 +1650,20 @@ async function pathExists(path) {
  * picks complete in a single interactive session.
  *
  * @param {{agents: string[], bundle: string | null, copy: boolean, global: boolean, onConflict: string | null, project: boolean, skills: string[], vendor: string | null, yes: boolean}} options - Install options.
+ * @param {ReturnType<typeof createClackUi>} [ui] - Interactive UI.
+ * @param {WizardDependencies & {install?: typeof install}} [dependencies] - Wizard I/O and optional install stub.
  * @returns {Promise<void>} Resolves when installation completes.
  */
-export async function installInteractively(options) {
-  const completed = await completeInteractively(options);
+export async function installInteractively(options, ui = createClackUi(), dependencies = {}) {
+  const completed = await completeInteractively(options, ui, dependencies);
+  const installFn = dependencies.install ?? install;
   const finished = [];
   const totals = { alreadyPresent: 0, installed: 0, repaired: 0 };
   for (const batch of completed.installBatches) {
     try {
-      const counts = await install({
+      const counts = await installFn({
         ...completed,
-        bundle: batch.vendor ? null : batch.pluginId,
+        bundle: batch.pluginId,
         vendor: batch.vendor,
         skills: batch.skills,
       });
