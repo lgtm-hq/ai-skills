@@ -4,6 +4,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Top-level names the baker always owns. extraFiles may not use these
+# basenames — they would replace skills/, agents/, or generated manifests.
+PLUGIN_ROOT_RESERVED_NAMES = frozenset(
+    {
+        "plugin.json",
+        "skills",
+        "agents",
+        ".claude-plugin",
+        ".codex-plugin",
+        ".cursor-plugin",
+    },
+)
+
 
 @dataclass(frozen=True)
 class VendorPlugin:

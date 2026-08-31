@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import yaml
 
 from vendor_registry.vendor import Vendor
-from vendor_registry.vendor_plugin import VendorPlugin
+from vendor_registry.vendor_plugin import PLUGIN_ROOT_RESERVED_NAMES, VendorPlugin
 
 _ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _REPO_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -645,8 +645,9 @@ def _parse_extra_files(
 
     Raises:
         TypeError: If the value is not a list of strings.
-        ValueError: If the list is empty, a path is unsafe, or two paths
-            share a basename (they would collide at the plugin root).
+        ValueError: If the list is empty, a path is unsafe, two paths
+            share a basename, or a basename is reserved for generated
+            plugin paths.
     """
     where = _plugin_where(position=position, plugin_id=plugin_id)
     paths = _parse_optional_path_list(
@@ -661,6 +662,10 @@ def _parse_extra_files(
     names = tuple(PurePosixPath(path).name for path in paths)
     if len(names) != len(set(names)):
         msg = f"{where} extraFiles basenames must be unique"
+        raise ValueError(msg)
+    reserved = sorted(set(names) & PLUGIN_ROOT_RESERVED_NAMES)
+    if reserved:
+        msg = f"{where} extraFiles basename {reserved[0]!r} is reserved"
         raise ValueError(msg)
     return paths
 

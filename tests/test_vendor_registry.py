@@ -659,6 +659,12 @@ def test_load_registry_accepts_skill_path_list(valid_registry_path: Path) -> Non
             id="duplicate-extra-file-basename",
         ),
         pytest.param(
+            "extraFiles:\n          - README.md",
+            "extraFiles:\n          - vendor/skills",
+            "extraFiles basename 'skills' is reserved",
+            id="reserved-extra-file-basename",
+        ),
+        pytest.param(
             "teach: teach-example",
             "teach: teach",
             "renameSkills must change the skill name",

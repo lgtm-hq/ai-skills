@@ -47,7 +47,7 @@ from vendor_registry.safe_tree import (
     walk_files,
 )
 from vendor_registry.vendor import Vendor
-from vendor_registry.vendor_plugin import VendorPlugin
+from vendor_registry.vendor_plugin import PLUGIN_ROOT_RESERVED_NAMES, VendorPlugin
 
 PLUGINS_BAKED_DIRNAME = "plugins-baked"
 COVERAGE_FILENAME = "COVERAGE.md"
@@ -1162,16 +1162,7 @@ def _assert_host_manifests(
             raise ValueError(msg)
 
 
-_PLUGIN_TOP_LEVEL = frozenset(
-    {
-        "plugin.json",
-        "skills",
-        "agents",
-        ".claude-plugin",
-        ".codex-plugin",
-        ".cursor-plugin",
-    },
-)
+_PLUGIN_TOP_LEVEL = PLUGIN_ROOT_RESERVED_NAMES
 _ADAPTER_DIRECTORIES = (
     ".claude-plugin",
     ".codex-plugin",
