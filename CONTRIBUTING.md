@@ -204,6 +204,39 @@ rather than treating bake output as a committed drift gate. Retaining
 an older vendor version long-term means promoting it to first-party
 `skills/`.
 
+### Vendor re-pin
+
+`scripts/repin_vendor.py` resolves the upstream ref for a vendor
+(`displayRef: latest` / missing / `HEAD` → default-branch HEAD; any
+other `displayRef` is that git ref), updates the `sha` pin, re-bakes,
+and prints added / removed / renamed skills, coverage deltas, and new
+collisions. Unresolved collisions fail closed. Bake output stays
+gitignored; the reviewable diff is the pin plus generated indexes and
+npm catalog data.
+
+```bash
+uv run python scripts/repin_vendor.py --id mattpocock
+uv run python scripts/repin_vendor.py --all
+uv run python scripts/repin_vendor.py --id mattpocock --json
+```
+
+Weekly workflow [`.github/workflows/vendor-repin.yml`](.github/workflows/vendor-repin.yml)
+opens one PR per vendor whose pin moved, labeled `new-vendor` and
+`automation`, with the Markdown summary as the PR body. Those PRs
+**never auto-merge**. Each job rewrites shared `vendor-indexes/` and
+npm catalog files, so merge sibling re-pin PRs one at a time and
+re-run the workflow for any remaining vendors.
+
+Updating an existing re-pin PR passes `--baseline-ref` with main's SHA
+so the summary is main-to-new even when the branch already has a newer
+pin or extra `renameSkills`. Do not reset only the SHA on the PR
+branch — that bakes main's pin against branch-only slice edits. Jobs
+merge main onto `chore/vendor-repin-*` and push that merge even when
+catalog paths are unchanged, so the remote PR stays based on latest
+main. Collision failures still refresh the PR body when the CLI wrote a
+summary; only a hard failure with an empty summary aborts before
+`gh pr edit`.
+
 ## Pull requests
 
 - Use **[Conventional Commits](https://www.conventionalcommits.org/)** in PR titles;

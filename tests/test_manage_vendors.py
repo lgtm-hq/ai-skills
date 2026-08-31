@@ -730,3 +730,98 @@ def test_restore_artifacts_keeps_empty_snapshotted_directories(
     assert_that(skills.is_dir()).is_true()
     assert_that(beta.exists()).is_false()
     assert_that(any(skills.iterdir())).is_false()
+
+
+_PRODUCTION_LAYOUT = (
+    "---\n"
+    "vendors:\n"
+    "  - id: existing\n"
+    "    repo: owner/existing\n"
+    f'    sha: "{_EXISTING_SHA}"\n'
+    "    displayRef: latest\n"
+    "    skillRoots:\n"
+    "      - skills\n"
+    "    license: MIT\n"
+    "    homepage: https://github.com/owner/existing\n"
+    "    plugins:\n"
+    "      - id: existing-skills\n"
+    "        # yamllint disable-line rule:line-length\n"
+    "        description: Example vendor plugin.\n"
+    "        skillsRoot: skills\n"
+    '        skills: "*"\n'
+)
+
+
+def test_set_sha_preserves_comments_and_field_order(tmp_path: Path) -> None:
+    """A pin bump edits only the target vendor ``sha`` line."""
+    registry = tmp_path / "vendors.yaml"
+    registry.write_text(_PRODUCTION_LAYOUT, encoding="utf-8")
+
+    manage_vendors.set_sha(
+        repo_root=tmp_path,
+        vendor_id="existing",
+        sha=_NEW_SHA,
+    )
+
+    text = registry.read_text(encoding="utf-8")
+    assert_that(text).contains(f'sha: "{_NEW_SHA}"')
+    assert_that(text).does_not_contain(_EXISTING_SHA)
+    assert_that(text).contains("# yamllint disable-line rule:line-length")
+    license_at = text.index("    license: MIT")
+    plugins_at = text.index("    plugins:")
+    assert_that(license_at).is_less_than(plugins_at)
+    loaded = load_registry(registry_path=registry)
+    assert_that(loaded[0].sha).is_equal_to(_NEW_SHA)
+
+
+def test_set_sha_preserves_inline_comments_on_id_and_sha(tmp_path: Path) -> None:
+    """Trailing comments on ``id`` and ``sha`` do not break the patch."""
+    registry = tmp_path / "vendors.yaml"
+    registry.write_text(
+        (
+            "---\n"
+            "vendors:\n"
+            "  - id: existing # vendor\n"
+            "    repo: owner/existing\n"
+            f'    sha: "{_EXISTING_SHA}" # pin\n'
+            "    displayRef: latest\n"
+            "    skillRoots:\n"
+            "      - skills\n"
+            "    license: MIT\n"
+            "    homepage: https://github.com/owner/existing\n"
+            "    plugins:\n"
+            "      - id: existing-skills\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    manage_vendors.set_sha(
+        repo_root=tmp_path,
+        vendor_id="existing",
+        sha=_NEW_SHA,
+    )
+
+    text = registry.read_text(encoding="utf-8")
+    assert_that(text).contains("  - id: existing # vendor")
+    assert_that(text).contains(f'    sha: "{_NEW_SHA}" # pin')
+    assert_that(text).does_not_contain(_EXISTING_SHA)
+    loaded = load_registry(registry_path=registry)
+    assert_that(loaded[0].sha).is_equal_to(_NEW_SHA)
+
+
+def test_set_sha_rejects_unknown_vendor(tmp_path: Path) -> None:
+    """Unknown vendor ids leave vendors.yaml unchanged."""
+    registry = tmp_path / "vendors.yaml"
+    registry.write_text(_PRODUCTION_LAYOUT, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unknown vendor id"):
+        manage_vendors.set_sha(
+            repo_root=tmp_path,
+            vendor_id="missing",
+            sha=_NEW_SHA,
+        )
+
+    assert_that(registry.read_text(encoding="utf-8")).is_equal_to(_PRODUCTION_LAYOUT)
