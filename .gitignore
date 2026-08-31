@@ -6,6 +6,10 @@
 .claude
 .lintro-cache
 
+# Publish-time vendor plugin bake (ADR-0007). Never commit these trees.
+plugins-baked/
+npm/ai-skills/data/plugins-baked/
+
 ### dirs
 Reports/
 target/

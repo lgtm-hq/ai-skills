@@ -38,6 +38,75 @@ def test_generated_package_is_current() -> None:
     assert_that(module.check_rendered(module.rendered_files("0.0.0-dev"))).is_zero()
 
 
+def test_check_skips_baked_plugins_when_source_absent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """First-party --check does not require a local plugins-baked tree."""
+    module = load_sync_module()
+    files = {tmp_path / "keep.txt": "ok\n"}
+    (tmp_path / "keep.txt").write_text("ok\n", encoding="utf-8")
+    monkeypatch.setattr(module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(module, "DATA_ROOT", tmp_path / "data")
+
+    assert_that(module.check_rendered(files=files)).is_zero()
+
+
+def test_write_copies_baked_plugins_into_package(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sync copies plugins-baked into npm data when a local bake exists."""
+    module = load_sync_module()
+    source = tmp_path / "plugins-baked"
+    dest_root = tmp_path / "npm-data"
+    source.mkdir()
+    (source / "COVERAGE.md").write_text("coverage\n", encoding="utf-8")
+    monkeypatch.setattr(module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(module, "DATA_ROOT", dest_root)
+
+    module.write_baked_plugins()
+
+    copied = dest_root / "plugins-baked" / "COVERAGE.md"
+    assert_that(copied.read_text(encoding="utf-8")).is_equal_to("coverage\n")
+    assert_that(module.check_baked_plugins()).is_false()
+
+
+def test_check_detects_stale_baked_plugin_copy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sync --check fails when the package copy diverges from the bake."""
+    module = load_sync_module()
+    source = tmp_path / "plugins-baked"
+    dest = tmp_path / "data" / "plugins-baked"
+    source.mkdir()
+    dest.mkdir(parents=True)
+    (source / "COVERAGE.md").write_text("fresh\n", encoding="utf-8")
+    (dest / "COVERAGE.md").write_text("stale\n", encoding="utf-8")
+    monkeypatch.setattr(module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(module, "DATA_ROOT", tmp_path / "data")
+
+    assert_that(module.check_baked_plugins()).is_true()
+
+
+def test_write_removes_baked_copy_when_source_absent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A leftover package copy is deleted when plugins-baked is missing."""
+    module = load_sync_module()
+    dest = tmp_path / "data" / "plugins-baked"
+    dest.mkdir(parents=True)
+    (dest / "COVERAGE.md").write_text("leftover\n", encoding="utf-8")
+    monkeypatch.setattr(module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(module, "DATA_ROOT", tmp_path / "data")
+
+    module.write_baked_plugins()
+
+    assert_that(dest.exists()).is_false()
+
+
 def test_normalize_version_removes_tag_prefix() -> None:
     """Translate release tags into valid npm semver versions."""
     module = load_sync_module()

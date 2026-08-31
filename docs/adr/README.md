@@ -17,5 +17,6 @@ do not re-open them.
 | [0004](./0004-doctor-capability-probe.md) | Doctor: implicit cached probe; explicit report / repair / migrate | Accepted |
 | [0005](./0005-collision-doctrine.md) | Collision doctrine: hash, registry rename, CI report, install line | Accepted |
 | [0006](./0006-vendor-bake-safety.md) | Vendor bake safety: no execute, path rejection, coverage reports | Accepted |
+| [0007](./0007-publish-time-vendor-bake.md) | Vendor bake output is a publish-time artifact, not repo content | Accepted |
 
 [lab-decisions]: https://github.com/lgtm-hq/plugin-engine-lab/blob/main/DECISIONS.md

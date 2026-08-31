@@ -622,7 +622,10 @@ def refresh(*, repo_root: Path) -> None:
 
 
 def check(*, repo_root: Path) -> int:
-    """Verify baked indexes, plugin trees, and npm package data are current.
+    """Verify baked indexes, local plugin trees, and npm package data.
+
+    Plugin-tree ``--check`` is a no-op when ``plugins-baked/`` is absent
+    (publish-time artifact). First-party npm sync checks always run.
 
     Args:
         repo_root: Repository root containing generated artifacts.
@@ -829,7 +832,7 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "check",
         parents=[common],
-        help="Verify baked indexes, plugin trees, and npm data are current",
+        help="Verify baked indexes, local plugin trees, and npm data",
     )
     return parser
 

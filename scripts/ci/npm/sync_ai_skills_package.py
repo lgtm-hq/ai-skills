@@ -13,6 +13,7 @@ import argparse
 import difflib
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ SEMVER_PATTERN = re.compile(
     r"(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]+)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]+))*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$",
 )
+PLUGINS_BAKED_DIRNAME = "plugins-baked"
 
 
 def normalize_version(raw_version: str) -> str:
@@ -95,6 +97,109 @@ def rendered_files(version: str) -> dict[Path, str]:
     return files
 
 
+def baked_plugin_source() -> Path:
+    """Return the repository ``plugins-baked/`` directory.
+
+    Returns:
+        Absolute path of the local bake output (may be absent).
+    """
+    return PROJECT_ROOT / PLUGINS_BAKED_DIRNAME
+
+
+def baked_plugin_dest() -> Path:
+    """Return the npm package copy of bake output.
+
+    Returns:
+        Absolute path under ``npm/ai-skills/data/plugins-baked/``.
+    """
+    return DATA_ROOT / PLUGINS_BAKED_DIRNAME
+
+
+def _remove_path(path: Path) -> None:
+    """Remove a file, symlink, or directory tree if it exists.
+
+    Args:
+        path: Path to unlink or recursively delete.
+    """
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+        return
+    if path.is_dir():
+        shutil.rmtree(path)
+
+
+def _baked_plugin_files(*, root: Path) -> dict[str, bytes]:
+    """Map POSIX-relative paths to file bytes under a bake tree.
+
+    Symlinks are skipped; bake validation already rejects them in the
+    source tree. The dest copy is written with ``symlinks=False``.
+
+    Args:
+        root: ``plugins-baked`` directory.
+
+    Returns:
+        Relative path → contents for every regular file.
+    """
+    files: dict[str, bytes] = {}
+    if not root.is_dir() or root.is_symlink():
+        return files
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.is_symlink():
+            continue
+        files[path.relative_to(root).as_posix()] = path.read_bytes()
+    return files
+
+
+def write_baked_plugins() -> None:
+    """Copy local bake output into the npm package, or remove a stale copy.
+
+    When ``plugins-baked/`` is absent, any previous package copy is
+    deleted so a publish cannot ship leftover vendor trees.
+    """
+    source = baked_plugin_source()
+    dest = baked_plugin_dest()
+    _remove_path(dest)
+    if not source.is_dir() or source.is_symlink():
+        return
+    shutil.copytree(src=source, dst=dest, symlinks=False)
+    print(f"Wrote {dest.relative_to(PROJECT_ROOT)}")
+
+
+def check_baked_plugins() -> bool:
+    """Compare local bake output to the npm package copy when a bake exists.
+
+    First-party sync checks are independent of this tree. When
+    ``plugins-baked/`` is absent there is no committed vendor tree to
+    drift-check, so this returns false (no drift).
+
+    Returns:
+        True when the package copy differs from a present bake tree.
+    """
+    source = baked_plugin_source()
+    dest = baked_plugin_dest()
+    if not source.is_dir() or source.is_symlink():
+        return False
+    expected = _baked_plugin_files(root=source)
+    actual = _baked_plugin_files(root=dest)
+    if expected == actual:
+        return False
+    only_expected = sorted(set(expected) - set(actual))
+    only_actual = sorted(set(actual) - set(expected))
+    changed = sorted(
+        path
+        for path in set(expected) & set(actual)
+        if expected[path] != actual[path]
+    )
+    relative = dest.relative_to(PROJECT_ROOT)
+    for path in only_expected:
+        print(f"missing baked copy: {relative / path}", file=sys.stderr)
+    for path in only_actual:
+        print(f"extra baked copy: {relative / path}", file=sys.stderr)
+    for path in changed:
+        print(f"stale baked copy: {relative / path}", file=sys.stderr)
+    return True
+
+
 def write_rendered(files: dict[Path, str]) -> None:
     """Write changed generated files to the package directory.
 
@@ -106,10 +211,14 @@ def write_rendered(files: dict[Path, str]) -> None:
         if not path.is_file() or path.read_text(encoding="utf-8") != content:
             path.write_text(content, encoding="utf-8")
             print(f"Wrote {path.relative_to(PROJECT_ROOT)}")
+    write_baked_plugins()
 
 
 def check_rendered(files: dict[Path, str]) -> int:
     """Report generated package files that differ from source data.
+
+    Vendor bake output is compared only when a local ``plugins-baked/``
+    tree exists. First-party catalog files are always checked.
 
     Args:
         files: Expected generated content by absolute destination path.
@@ -131,7 +240,7 @@ def check_rendered(files: dict[Path, str]) -> int:
                 tofile="generated",
             ),
         )
-    return int(has_drift)
+    return int(has_drift or check_baked_plugins())
 
 
 def main(argv: list[str] | None = None) -> int:

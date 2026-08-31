@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import bake_vendor_indexes
@@ -243,6 +244,23 @@ def test_check_detects_plugin_bake_drift(repo_root: Path) -> None:
         encoding="utf-8",
     )
     assert_that(manage_vendors.check(repo_root=repo_root)).is_equal_to(1)
+
+
+def test_check_passes_when_plugins_baked_is_absent(repo_root: Path) -> None:
+    """Skip plugin-tree drift when the publish-time bake output is missing."""
+    shutil.rmtree(repo_root / "plugins-baked")
+    shutil.rmtree(repo_root / "npm" / "ai-skills" / "data" / "plugins-baked")
+    assert_that(manage_vendors.check(repo_root=repo_root)).is_zero()
+
+
+def test_refresh_copies_baked_plugins_into_npm_package(repo_root: Path) -> None:
+    """Package data receives a copy of plugins-baked after refresh."""
+    source = repo_root / "plugins-baked" / "COVERAGE.md"
+    dest = repo_root / "npm" / "ai-skills" / "data" / "plugins-baked" / "COVERAGE.md"
+    assert_that(dest.is_file()).is_true()
+    assert_that(dest.read_text(encoding="utf-8")).is_equal_to(
+        source.read_text(encoding="utf-8"),
+    )
 
 
 def test_parser_help_mentions_plugin_trees() -> None:

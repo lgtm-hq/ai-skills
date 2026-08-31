@@ -79,6 +79,9 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --locked
 
+      - name: Bake vendor plugins
+        run: bash scripts/ci/bake_vendor_plugins_gate.sh
+
       - name: Synchronize package version and catalog
         run: >-
           uv run python scripts/ci/npm/sync_ai_skills_package.py
@@ -88,9 +91,6 @@ jobs:
         run: >-
           uv run python scripts/ci/npm/sync_ai_skills_package.py
           --check --version "$RELEASE_TAG"
-
-      - name: Verify vendor plugin bake
-        run: uv run python scripts/bake_vendor_plugins.py --check
 
       - name: Publish package
         run: scripts/ci/npm/publish_ai_skills_package.sh
