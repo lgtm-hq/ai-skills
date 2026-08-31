@@ -14,6 +14,7 @@ import repin_vendor
 import yaml
 from assertpy import assert_that
 from vendor_registry.registry import load_registry
+from vendor_registry.vendor import Vendor
 from vendor_registry.vendor_repin_diff import diff_snapshots, render_json
 from vendor_registry.vendor_repin_snapshot import VendorRepinSnapshot
 
@@ -49,7 +50,7 @@ def _fixed_new_sha(_vendor: object) -> str:
     return _NEW_SHA
 
 
-def _fixed_new_sha_kw(*, vendor: object) -> str:
+def _fixed_new_sha_kw(*, vendor: Vendor) -> str:
     """Return the post-re-pin SHA for keyword-only stubs.
 
     Args:
@@ -62,7 +63,7 @@ def _fixed_new_sha_kw(*, vendor: object) -> str:
     return _NEW_SHA
 
 
-def _current_sha_kw(*, vendor: object) -> str:
+def _current_sha_kw(*, vendor: Vendor) -> str:
     """Return the vendor's current pin SHA.
 
     Args:
@@ -71,7 +72,7 @@ def _current_sha_kw(*, vendor: object) -> str:
     Returns:
         The existing pin SHA.
     """
-    return str(getattr(vendor, "sha"))
+    return str(vendor.sha)
 
 
 def _write_skill(*, directory: Path, name: str, body: str | None = None) -> None:
@@ -386,6 +387,30 @@ def test_repin_keeps_pin_and_reports_unresolved_collision(
     assert_that("".join(diff.collisions)).contains("teach")
 
 
+def test_repin_restores_pin_when_index_bake_fails(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed rebake must not leave a bumped SHA or half-written indexes."""
+    bake_vendor_plugins.bake(repo_root=repo_root)
+
+    def fail_index_bake(*, repo_root: Path) -> None:
+        del repo_root
+        raise RuntimeError("index bake failed")
+
+    monkeypatch.setattr(bake_vendor_indexes, "bake", fail_index_bake)
+
+    with pytest.raises(RuntimeError, match="index bake failed"):
+        repin_vendor.repin_vendor(
+            repo_root=repo_root,
+            vendor_id="example-vendor",
+            resolve_sha=_fixed_new_sha,
+        )
+
+    vendor = load_registry(registry_path=repo_root / "vendors.yaml")[0]
+    assert_that(vendor.sha).is_equal_to(_EXISTING_SHA)
+
+
 def test_main_returns_one_when_repin_introduces_collisions(
     repo_root: Path,
     tree_kind: dict[str, str],
@@ -508,5 +533,7 @@ def test_vendor_repin_workflow_is_sha_pinned_weekly_and_never_auto_merges() -> N
     )
     assert_that(script).contains("new-vendor")
     assert_that(script).contains("automation")
+    assert_that(script).contains("git fetch origin")
+    assert_that(script).contains("--force-with-lease")
     assert_that(script).does_not_contain("pr merge")
     assert_that(script).does_not_contain("--auto")

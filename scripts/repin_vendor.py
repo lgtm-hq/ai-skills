@@ -85,6 +85,7 @@ def resolve_upstream_sha(*, vendor: Vendor) -> str:
 
     Raises:
         RuntimeError: If GitHub cannot resolve the ref.
+        TypeError: If a commit payload has a non-string sha.
         ValueError: If the resolved object is not a commit SHA.
     """
     owner, name = vendor.repo.split("/", maxsplit=1)
@@ -104,7 +105,7 @@ def resolve_upstream_sha(*, vendor: Vendor) -> str:
     sha = commit_payload.get("sha")
     if not isinstance(sha, str):
         msg = f"GitHub commit {vendor.repo}@{ref} is missing sha"
-        raise RuntimeError(msg)
+        raise TypeError(msg)
     normalized = sha.strip().lower()
     if _SHA_PATTERN.fullmatch(normalized) is None:
         msg = f"GitHub commit {vendor.repo}@{ref} returned invalid sha {sha!r}"
@@ -122,7 +123,7 @@ def _github_json(*, path: str) -> dict[str, object]:
         Parsed object payload.
 
     Raises:
-        RuntimeError: If the response is not a JSON object.
+        TypeError: If the response is not a JSON object.
     """
     headers = {
         "Accept": "application/vnd.github+json",
@@ -139,7 +140,7 @@ def _github_json(*, path: str) -> dict[str, object]:
     parsed: object = json.loads(payload.decode("utf-8"))
     if not isinstance(parsed, dict):
         msg = f"GitHub {path} did not return a JSON object"
-        raise RuntimeError(msg)
+        raise TypeError(msg)
     return parsed
 
 
@@ -230,6 +231,7 @@ def repin_vendor(
     Raises:
         ValueError: If the vendor id is unknown.
         RuntimeError: If GitHub cannot resolve the upstream ref.
+        TypeError: If a GitHub payload is the wrong type.
     """
     vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
     before = _snapshot_vendor(
@@ -252,20 +254,35 @@ def repin_vendor(
             skill_digests=before.skill_digests,
         )
         return diff_snapshots(before=before, after=after)
+    registry_path = repo_root / "vendors.yaml"
+    original = registry_path.read_text(encoding="utf-8")
+    artifact_paths = manage_vendors._generated_artifact_paths(repo_root=repo_root)
+    snapshot, directories = manage_vendors._snapshot_artifacts(paths=artifact_paths)
     manage_vendors.set_sha(
         repo_root=repo_root,
         vendor_id=vendor_id,
         sha=new_sha,
     )
-    bake_vendor_indexes.bake(repo_root=repo_root)
-    after_vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
-    after = _snapshot_vendor(
-        repo_root=repo_root,
-        vendor=after_vendor,
-        vendor_trees=vendor_trees,
-    )
-    manage_vendors._sync_artifacts(repo_root=repo_root, check_only=False)
-    return diff_snapshots(before=before, after=after)
+    completed = False
+    try:
+        bake_vendor_indexes.bake(repo_root=repo_root)
+        after_vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
+        after = _snapshot_vendor(
+            repo_root=repo_root,
+            vendor=after_vendor,
+            vendor_trees=vendor_trees,
+        )
+        manage_vendors._sync_artifacts(repo_root=repo_root, check_only=False)
+        completed = True
+        return diff_snapshots(before=before, after=after)
+    finally:
+        if not completed:
+            registry_path.write_text(original, encoding="utf-8")
+            manage_vendors._restore_artifacts(
+                paths=artifact_paths,
+                snapshot=snapshot,
+                directories=directories,
+            )
 
 
 def _emit(

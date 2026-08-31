@@ -38,7 +38,14 @@ branch="chore/vendor-repin-${vendor}"
 git checkout -B "$branch"
 git add -- "${paths[@]}"
 git commit -m "chore(vendors): re-pin ${vendor}"
-git push --force-with-lease -u origin "$branch"
+# Fresh Actions checkouts have no remote-tracking ref for an existing
+# chore/vendor-repin-* branch, so implicit --force-with-lease is refused.
+# Fetch the current remote tip when the branch exists, then lease against it.
+if git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}"; then
+  git push --force-with-lease -u origin "$branch"
+else
+  git push -u origin "$branch"
+fi
 
 existing="$(
   gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty'
