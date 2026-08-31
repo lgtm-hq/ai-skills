@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.29.0] - 2026-08-31
+
+### Added
+
+- **vendors**: re-pin and update flow for vendor plugins (#426) (2cb175a)
+- **vendors**: define and bake the five registered vendors (#424) (ee88c02)
 - **vendors**: define and bake the five registered vendors as plugins —
   mattpocock, anthropics (`document-skills`, `example-skills`,
   `claude-api`), anthropics-claude-code, caveman, and davidondrej —
@@ -38,22 +54,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **lintro**: teach build-time artifact generation in add/verify skills (#417) (fb28355)
+- **vendors**: bake vendor plugins at publish time (#423) (19c2808)
+- **deps**: update lintro (#422) (555b739)
+- **deps**: lock file maintenance (#420) (1d33372)
+- **deps**: update step-security/harden-runner action to v2.21.1 (patch) (#419)
+  (8c47f39)
+- **deps**: update lintro (#418) (5fa7f71)
+- **deps**: update lintro (#416) (9733d19)
+- **release**: version 0.28.0 (#414) (48f07e9)
 - **vendors**: bake `plugins-baked/` at CI and npm publish time instead of
   committing the tree. `--check` validates a local bake when present and
   succeeds when the gitignored tree is absent. The package sync copies
   bake output into the tarball only after a bake; first-party catalog
   checks are unchanged.
 
-### Deprecated
-
 ### Removed
 
 - **vendors**: committed `plugins-baked/` placeholders (empty marketplace,
   coverage, `BAKE.json`) from the #378 bake pipeline.
-
-### Fixed
-
-### Security
 
 ## [0.28.0] - 2026-08-28
 
@@ -948,7 +967,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.29.0...HEAD
+[0.29.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.25.0...v0.26.0
