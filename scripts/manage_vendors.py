@@ -611,8 +611,47 @@ def _print_summary(*, action: str, vendor_id: str) -> None:
     print("  - Record the change under the Unreleased section of CHANGELOG.md.")
 
 
+def _patch_vendor_sha_text(*, text: str, vendor_id: str, sha: str) -> str:
+    """Replace one vendor's ``sha`` line, leaving the rest of the file intact.
+
+    Args:
+        text: Current ``vendors.yaml`` contents.
+        vendor_id: Slug of the vendor whose pin to change.
+        sha: New 40-character lowercase hex commit SHA.
+
+    Returns:
+        Registry text with only that vendor's ``sha`` line updated.
+
+    Raises:
+        ValueError: If the vendor id has no ``sha`` line to patch.
+    """
+    lines = text.splitlines(keepends=True)
+    patched: list[str] = []
+    in_target = False
+    replaced = False
+    for line in lines:
+        body = line.split("\n", 1)[0].rstrip("\r")
+        if body.startswith("  - id:"):
+            found_id = body.split(":", 1)[1].strip().strip("\"'")
+            in_target = found_id == vendor_id and not replaced
+        if in_target and body.startswith("    sha:"):
+            patched.append(f'    sha: "{sha}"{line[len(body) :]}')
+            replaced = True
+            in_target = False
+            continue
+        patched.append(line)
+    if not replaced:
+        msg = f"Unknown vendor id: {vendor_id}"
+        raise ValueError(msg)
+    return "".join(patched)
+
+
 def set_sha(*, repo_root: Path, vendor_id: str, sha: str) -> None:
     """Update one vendor pin SHA without rebaking derived artifacts.
+
+    Patches only that vendor's ``sha`` line so comments, field order, and
+    sibling vendors stay as they were. ``add`` / ``update`` still rewrite
+    through ``_dump_registry``.
 
     Args:
         repo_root: Repository root containing ``vendors.yaml``.
@@ -624,6 +663,7 @@ def set_sha(*, repo_root: Path, vendor_id: str, sha: str) -> None:
         TypeError: If the rewritten registry fails type validation.
     """
     registry_path = repo_root / "vendors.yaml"
+    original = registry_path.read_text(encoding="utf-8")
     vendors = _read_raw_registry(registry_path=registry_path)
     target = next(
         (vendor for vendor in vendors if vendor.get("id") == vendor_id),
@@ -632,8 +672,17 @@ def set_sha(*, repo_root: Path, vendor_id: str, sha: str) -> None:
     if target is None:
         msg = f"Unknown vendor id: {vendor_id}"
         raise ValueError(msg)
-    target["sha"] = sha
-    _write_registry(registry_path=registry_path, vendors=vendors)
+    patched = _patch_vendor_sha_text(
+        text=original,
+        vendor_id=vendor_id,
+        sha=sha,
+    )
+    registry_path.write_text(patched, encoding="utf-8")
+    try:
+        load_registry(registry_path=registry_path)
+    except (TypeError, ValueError):
+        registry_path.write_text(original, encoding="utf-8")
+        raise
 
 
 def refresh(*, repo_root: Path) -> None:

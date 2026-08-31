@@ -535,6 +535,24 @@ def test_resolve_upstream_sha_uses_display_ref_tag(
     assert_that(sha).is_equal_to(_NEW_SHA)
 
 
+def test_resolve_upstream_sha_percent_encodes_slash_in_ref(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Slash-containing ``displayRef`` values are encoded in the commits URL."""
+    vendors = load_registry(registry_path=_REPO_ROOT / "vendors.yaml")
+    vendor = vendors[0]
+    tagged = replace(vendor, display_ref="heads/feature/foo")
+
+    def fake_get(*, host: str, path: str, headers: dict[str, str]) -> bytes:
+        del host, headers
+        assert_that(path).contains("/commits/heads%2Ffeature%2Ffoo")
+        return json.dumps({"sha": _NEW_SHA}).encode("utf-8")
+
+    monkeypatch.setattr(bake_vendor_plugins, "_http_get_bytes", fake_get)
+    sha = repin_vendor.resolve_upstream_sha(vendor=tagged)
+    assert_that(sha).is_equal_to(_NEW_SHA)
+
+
 def test_vendor_repin_workflow_is_sha_pinned_weekly_and_never_auto_merges() -> None:
     """The scheduled workflow pins actions, labels PRs, and does not merge."""
     workflow = (_REPO_ROOT / ".github" / "workflows" / "vendor-repin.yml").read_text(

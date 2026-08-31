@@ -223,7 +223,9 @@ uv run python scripts/repin_vendor.py --id mattpocock --json
 Weekly workflow [`.github/workflows/vendor-repin.yml`](.github/workflows/vendor-repin.yml)
 opens one PR per vendor whose pin moved, labeled `new-vendor` and
 `automation`, with the Markdown summary as the PR body. Those PRs
-**never auto-merge**.
+**never auto-merge**. Each job rewrites shared `vendor-indexes/` and
+npm catalog files, so merge sibling re-pin PRs one at a time and
+re-run the workflow for any remaining vendors.
 
 ## Pull requests
 

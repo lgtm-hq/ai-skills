@@ -16,6 +16,7 @@ import re
 import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from urllib.parse import quote
 
 import bake_vendor_indexes
 import bake_vendor_plugins
@@ -100,7 +101,7 @@ def resolve_upstream_sha(*, vendor: Vendor) -> str:
     else:
         ref = display_ref
     commit_payload = _github_json(
-        path=f"/repos/{owner}/{name}/commits/{ref}",
+        path=f"/repos/{owner}/{name}/commits/{quote(ref, safe='')}",
     )
     sha = commit_payload.get("sha")
     if not isinstance(sha, str):
