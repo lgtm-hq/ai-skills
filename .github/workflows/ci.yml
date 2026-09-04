@@ -24,7 +24,7 @@ jobs:
       # Override the reusable default (0.64.1 at this pin) so CI matches
       # pyproject.toml's lintro==0.105.0 and validate-lintro-version.yml.
       # yamllint disable-line rule:line-length
-      lintro-image: ghcr.io/lgtm-hq/py-lintro@sha256:af6ec3bbad39d367a7e102c90202de5cb34085b790dc2024d27ccc0ec6677c8c
+      lintro-image: ghcr.io/lgtm-hq/py-lintro@sha256:19655b0cfc925e10038d6080287da6c78b3dd2f8a4efd46a8a0a09ac197d264e
 
   publish-quality-summary:
     needs: quality
