@@ -124,7 +124,7 @@ First-party plugins, generated from `bundles.yaml`:
 | Plugin | Id | Description | Skills |
 | --- | --- | --- | --- |
 | Git & PR Workflow | `git-pr` | Branching, commits, rebases, and pull requests. | [branch](skills/branch/SKILL.md), [commit](skills/commit/SKILL.md), [rebase](skills/rebase/SKILL.md), [pr](skills/pr/SKILL.md), [reconcile](skills/reconcile/SKILL.md), [issue](skills/issue/SKILL.md) |
-| Review | `review` | Lint, test, and AI review before pushing or opening a PR. | [lint](skills/lint/SKILL.md), [test](skills/test/SKILL.md), [greptile](skills/greptile/SKILL.md), [coderabbit](skills/coderabbit/SKILL.md) |
+| Review | `review` | Lint, test, and AI review before pushing or opening a PR. | [lint](skills/lint/SKILL.md), [test](skills/test/SKILL.md), [greptile](skills/greptile/SKILL.md), [coderabbit](skills/coderabbit/SKILL.md), [lintro-review](skills/lintro-review/SKILL.md) |
 | Standards | `standards` | Language and CI coding standards applied while writing code. | [stand-general](skills/stand-general/SKILL.md), [stand-py](skills/stand-py/SKILL.md), [stand-ts](skills/stand-ts/SKILL.md), [stand-rust](skills/stand-rust/SKILL.md), [stand-odin](skills/stand-odin/SKILL.md), [stand-ci](skills/stand-ci/SKILL.md) |
 | Raycast | `raycast` | Raycast extension development and store submissions. | [raycast](skills/raycast/SKILL.md), [pr-raycast](skills/pr-raycast/SKILL.md) |
 | Analysis | `analysis` | Manual pre-review analysis of code, projects, and test suites. | [analyze-code](skills/analyze-code/SKILL.md), [analyze-project](skills/analyze-project/SKILL.md), [analyze-tests](skills/analyze-tests/SKILL.md), [audit-merges](skills/audit-merges/SKILL.md), [sweep-prs](skills/sweep-prs/SKILL.md) |

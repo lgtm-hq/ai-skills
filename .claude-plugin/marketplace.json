@@ -32,7 +32,8 @@
         "./skills/lint",
         "./skills/test",
         "./skills/greptile",
-        "./skills/coderabbit"
+        "./skills/coderabbit",
+        "./skills/lintro-review"
       ]
     },
     {
