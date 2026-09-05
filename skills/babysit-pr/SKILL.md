@@ -181,9 +181,12 @@ timestamp match is also what a late review of the previous head looks like.
    headRefOid`; then the earliest Actions run on that SHA):
 
    ```bash
-   gh api "repos/<owner>/<repo>/actions/runs?head_sha=<sha>" \
-     --jq '[.workflow_runs[].created_at] | min'
+   gh api --paginate "repos/<owner>/<repo>/actions/runs?head_sha=<sha>" \
+     --jq '[.workflow_runs[] | select(.head_branch == "<head-branch>")] | map(.created_at) | min'
    ```
+
+   (The list is newest-first; `--paginate` walks every page so the min is global,
+   and the `head_branch` filter keeps the probe scoped to this PR's branch.)
 
    (`Commit.pushedDate` is null for most PR head commits, and
    `.commit.committer.date` is the local creation time — neither is the push time.
@@ -305,10 +308,13 @@ Before merging (or enqueuing) any single PR:
   then re-request (`@coderabbitai please review`) and wait before merging — **or**
   CodeRabbit is rate-limited for the current head (known state, fresh rate-limit
   signal) and the pending review is noted in the final report.
-- **Settle window** — never merge before both `arrival + ~5 min` and
-  `review submitted_at + ~2 min` have passed, where the submission is the one with
-  `commit_id` == head (insurance against the in-flight-review race even when every
-  other signal looks complete).
+- **Settle window** — always wait `arrival + ~5 min` from the head's arrival before
+  merging, **except** once positive head evidence exists, where the wait becomes the
+  evidence's own quiet period: a matching review submission waits `submitted_at +
+  ~2 min`; a SHA-citing comment waits its `created_at + ~2 min`; a fresh rate-limit
+  signal has no submission to wait on. A commit_id-matched review is never required
+  to postdate arrival — an identical SHA means identical reviewed content, so the
+  frozen-now arrival path keeps working.
 - **Re-check PR state immediately before merge** — re-fetch `headRefOid` and its
   arrival time (reusing the frozen null-fallback snapshot while the SHA is
   unchanged); if the head changed since Phase 5 (or the evidence does not postdate
