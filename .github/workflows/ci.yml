@@ -17,10 +17,10 @@ jobs:
       contents: read
       packages: read
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-quality-lint.yml@c14fbb654af2fc59c4abd7435e85a269a57057fc  # v0.69.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-quality-lint.yml@f57b4d014f82d7f5996c7b339f1b2ca681780921  # v0.69.4
     with:
       job-name: "🛠️ Lintro Code Quality"
-      tooling-ref: "c14fbb654af2fc59c4abd7435e85a269a57057fc"  # v0.69.2
+      tooling-ref: "f57b4d014f82d7f5996c7b339f1b2ca681780921" # v0.69.4
       # Override the reusable default (0.64.1 at this pin) so CI matches
       # pyproject.toml's lintro==0.142.0 and validate-lintro-version.yml.
       # yamllint disable-line rule:line-length
@@ -33,10 +33,10 @@ jobs:
       && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.fork == false
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-publish-quality-summary.yml@c14fbb654af2fc59c4abd7435e85a269a57057fc  # v0.69.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-publish-quality-summary.yml@f57b4d014f82d7f5996c7b339f1b2ca681780921  # v0.69.4
     with:
       exit-code: ${{ needs.quality.outputs.exit-code }}
-      tooling-ref: "c14fbb654af2fc59c4abd7435e85a269a57057fc"  # v0.69.2
+      tooling-ref: "f57b4d014f82d7f5996c7b339f1b2ca681780921" # v0.69.4
     permissions:
       contents: read
       pull-requests: write
@@ -45,11 +45,11 @@ jobs:
     name: Run pytest suite
     needs: quality
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-test-python.yml@c14fbb654af2fc59c4abd7435e85a269a57057fc  # v0.69.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-test-python.yml@f57b4d014f82d7f5996c7b339f1b2ca681780921  # v0.69.4
     with:
       python-version: "3.13"
       test-path: tests
-      tooling-ref: "c14fbb654af2fc59c4abd7435e85a269a57057fc"  # v0.69.2
+      tooling-ref: "f57b4d014f82d7f5996c7b339f1b2ca681780921" # v0.69.4
     permissions:
       # actions: write is required at compile time by the reusable
       # workflow's aggregate job (matrix mode only, skipped here), which
@@ -63,12 +63,12 @@ jobs:
   validate:
     needs: quality
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@c14fbb654af2fc59c4abd7435e85a269a57057fc  # v0.69.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@f57b4d014f82d7f5996c7b339f1b2ca681780921  # v0.69.4
     with:
       job-name: "📚 Validate Skill Structure"
       setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/validate.sh
-      tooling-ref: "c14fbb654af2fc59c4abd7435e85a269a57057fc"  # v0.69.2
+      tooling-ref: "f57b4d014f82d7f5996c7b339f1b2ca681780921" # v0.69.4
       egress-policy: block
       egress-preset: quality
       # Harden-runner pre reads inputs only. setup installs ripgrep via apt and
@@ -123,12 +123,12 @@ jobs:
       contents: read
       pull-requests: write
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@c14fbb654af2fc59c4abd7435e85a269a57057fc  # v0.69.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@f57b4d014f82d7f5996c7b339f1b2ca681780921  # v0.69.4
     with:
       job-name: "🍞 Bake vendor plugins"
       setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/ci/bake_vendor_plugins_gate.sh
-      tooling-ref: "c14fbb654af2fc59c4abd7435e85a269a57057fc"  # v0.69.2
+      tooling-ref: "f57b4d014f82d7f5996c7b339f1b2ca681780921" # v0.69.4
       egress-policy: block
       egress-preset: quality
       # Same allowlist as validate: uv/PyPI plus GitHub tarball hosts.
