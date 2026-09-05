@@ -184,7 +184,10 @@ summary/walkthrough/skip comment posted **after the head's GitHub push time**.
      -f o=<owner> -f r=<repo> -f s=<sha> --jq '.data.repository.object.pushedDate'
    ```
 
-   If `pushedDate` is null, treat the push time as now (fail closed).
+   If `pushedDate` is null, snapshot the current time **once per head SHA** and
+   reuse that frozen value for every later comparison (freshness checks, the ~5
+   minute waits, the settle window) — re-sampling "now" on each re-fetch would make
+   those windows unmeetable.
 2. Gather all CodeRabbit evidence — issue comments **and** review submissions (a
    review carries the `commit_id` it reviewed; paginate both lists):
 
@@ -298,11 +301,15 @@ Before merging (or enqueuing) any single PR:
   pending review is noted in the final report.
 - **Settle window** — never merge within ~5 minutes of the head's GitHub push time
   unless CodeRabbit's head review has already landed (insurance against the
-  in-flight-review race even when every other signal looks complete).
+  in-flight-review race even when every other signal looks complete). "Landed" means
+  the review submission (`commit_id` == head) is a couple of minutes old — CodeRabbit
+  submits it after its analysis, inline threads included; if a submission appears
+  unusually early relative to the push, wait out the window instead of trusting it.
 - **Re-check PR state immediately before merge** — re-fetch `headRefOid` and its push
-  time; if the head changed since Phase 5 (or the evidence does not postdate the
-  current head push), rerun Step E before merging or enqueuing. An already-merged PR
-  is a normal outcome, not an error; re-baseline the queue and move on.
+  time (reusing the frozen null-fallback snapshot while the SHA is unchanged); if the
+  head changed since Phase 5 (or the evidence does not postdate the current head
+  push), rerun Step E before merging or enqueuing. An already-merged PR is a normal
+  outcome, not an error; re-baseline the queue and move on.
 
 ### Post-merge review backstop (both modes)
 
@@ -311,8 +318,9 @@ do not sweep immediately — an instant sweep sees the same empty-thread picture
 pre-merge. Wait ~5 minutes (or until a post-merge CodeRabbit review lands, whichever
 comes first), polling with a couple of bounded probes, then sweep the merged PR:
 triage late-landing CodeRabbit threads — real findings become fix-forward issues,
-invalid ones get a disposition reply and thread resolution. A review landing after
-the sweep is still triaged; late findings must never be silently orphaned.
+invalid ones get a disposition reply and thread resolution. If still in session, a
+review landing after that sweep is triaged too; otherwise it is left to the
+`sweep-prs` fleet sweep — late findings must never be silently orphaned.
 
 ### Queue-aware mode (primary, when available)
 
