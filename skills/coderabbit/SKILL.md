@@ -2,15 +2,17 @@
 name: coderabbit
 description: >-
   Run CodeRabbit CLI for pre-push AI diff review. Use when asked for CodeRabbit,
-  cr review, or as part of the default dual pre-push workflow with greptile. Max
-  2-3 runs per change set.
+  cr review, or as part of the default pre-push review set with greptile and
+  lintro-review. Max 2-3 runs per change set.
 ---
 
 # CodeRabbit CLI Review
 
 Run **CodeRabbit** (`cr` / `coderabbit`) for automated diff review before push.
-Pair with **`greptile`** for the default pre-CI workflow — both tools catch different
-issues and mirror CI.
+Pair with **`greptile`** and **`lintro-review`** for the default pre-push review
+set — the tools catch different issues and mirror CI. When CodeRabbit (or
+Greptile) is rate-limited, do not wait for the reset: the `lintro-review` pass is
+the review of record for that push.
 
 ## Relationship to analyze-* skills
 
@@ -22,18 +24,18 @@ This skill uses **CodeRabbit CLI** for external AI diff review. Follow the `lint
 `test` skills (or the `commit` skill, which includes them) before invoking CodeRabbit.
 Do not duplicate full analyze rubrics here.
 
-## Relationship to greptile
+## Relationship to greptile and lintro-review
 
-Default pre-push flow when CI runs both tools:
+Default pre-push flow when CI runs the review tools:
 
 ```text
-commit → [greptile ‖ coderabbit] → pr
+commit → [greptile ‖ coderabbit ‖ lintro-review] → pr
 ```
 
 Each step names the skill to follow.
 
-Run **greptile** and **coderabbit** in parallel when possible. Do not re-run on
-unchanged code.
+Run **greptile**, **coderabbit**, and **lintro-review** in parallel when possible. Do
+not re-run on unchanged code.
 
 ## Commands
 

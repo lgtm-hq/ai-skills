@@ -21,7 +21,8 @@
         "lint",
         "test",
         "greptile",
-        "coderabbit"
+        "coderabbit",
+        "lintro-review"
       ]
     },
     "standards": {
