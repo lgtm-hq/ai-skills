@@ -68,8 +68,12 @@ a local lintro pass doesn't resolve GitHub threads.
      the report): logged-in `claude` CLI with `--transport cli` and no `ANTHROPIC_API_KEY`
      in the environment (OAuth session, subscription billing; lintro ≥0.94.7 handles
      `--bare` detection); then `ANTHROPIC_API_KEY` with either transport; then
-     `OPENAI_API_KEY` with `ai.provider: openai` and `--transport api`.
-   - **No engine available** → STOP and report which credential/binary is missing.
+     `OPENAI_API_KEY` with `ai.provider: openai` and `--transport api`. Each fallback
+     also updates the step-1 yaml's `ai.provider` to the matching engine (e.g.
+     `anthropic` for Claude, `openai` for OpenAI) before running `uvx` — the review
+     command reads the provider from that config, not from the fallback list.
+   - **No engine available** → run the step-5 teardown first (it is mandatory whenever
+     step 1 ran), then STOP and report which credential/binary is missing.
 
 3. **Run the review** against the *fresh* base (a stale local `main` reviews the wrong
    diff), including lint:
