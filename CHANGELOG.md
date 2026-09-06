@@ -21,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.30.0] - 2026-09-06
+
+### Added
+
+- **lintro-review**: add lintro-review skill as standard third pre-push pass (#440)
+  (ae030f6)
+
+### Changed
+
+- **deps**: update lintro (#443) (c334614)
+- **deps**: update lintro (#441) (4060eb8)
+- **deps**: update lintro (#439) (bec0a8e)
+
 ## [0.29.1] - 2026-09-05
 
 ### Changed
@@ -985,7 +998,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.29.1...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.29.0...v0.29.1
 [0.29.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.27.0...v0.28.0
