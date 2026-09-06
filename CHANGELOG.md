@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.30.1] - 2026-09-06
+
+### Fixed
+
+- **ci**: exclude private plugin-engine-lab links from external link check (#442)
+  (1c6ddf3)
+
 ## [0.30.0] - 2026-09-06
 
 ### Added
@@ -998,7 +1005,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.1...HEAD
+[0.30.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.0...v0.30.1
 [0.30.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.29.0...v0.29.1
 [0.29.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.28.0...v0.29.0
