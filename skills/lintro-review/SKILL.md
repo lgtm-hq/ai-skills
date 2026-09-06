@@ -45,7 +45,8 @@ a local lintro pass doesn't resolve GitHub threads.
    git update-index --skip-worktree .lintro-config.yaml
    ```
 
-   Then set in `.lintro-config.yaml`:
+   Then merge this `ai:` mapping into `.lintro-config.yaml` (append/merge the block —
+   the rest of the project config stays as-is, so `--with-lint` keeps working):
 
    ```yaml
    ai:
@@ -70,8 +71,10 @@ a local lintro pass doesn't resolve GitHub threads.
      `--bare` detection); then `ANTHROPIC_API_KEY` with either transport; then
      `OPENAI_API_KEY` with `ai.provider: openai` and `--transport api`. Each fallback
      also updates the step-1 yaml's `ai.provider` to the matching engine (e.g.
-     `anthropic` for Claude, `openai` for OpenAI) before running `uvx` — the review
-     command reads the provider from that config, not from the fallback list.
+     `anthropic` for Claude, `openai` for OpenAI) and fixes or removes `ai.model` so
+     the provider never sees `cursor-grok-4.5-high` (removing it uses the provider
+     default) — then reruns `uvx`; the review command reads the config, not the
+     fallback list.
    - **No engine available** → run the step-5 teardown first (it is mandatory whenever
      step 1 ran), then STOP and report which credential/binary is missing.
 
