@@ -1,6 +1,6 @@
 ---
 name: stand-general
-description: Global coding standards for all projects and languages. Use when writing any code. Covers linting with lintro, testing with coverage, semantic commits, PR creation, and pre-push AI review with coderabbit and greptile CLIs.
+description: Global coding standards for all projects and languages. Use when writing any code. Covers linting with lintro, testing with coverage, semantic commits, PR creation, and pre-push AI review with coderabbit, greptile, and lintro review CLIs.
 ---
 
 # Coding Standards
@@ -117,27 +117,30 @@ user's message.
 - Pull requests: follow the `pr` skill
 - Pre-push AI review (CodeRabbit): follow the `coderabbit` skill
 - Pre-push AI review (Greptile): follow the `greptile` skill
+- Pre-push AI review (lintro): follow the `lintro-review` skill
 - Per-repo standing context: see **Per-repo agent context** above
 
 ## Pre-push review workflow
 
 CLI review mirrors CI and catches issues before slow CI completes. Default: run
-**both** Greptile and CodeRabbit when CI uses both.
+**all three** Greptile, CodeRabbit, and lintro review where available (owner
+policy, 2026-08-02). When Greptile/CodeRabbit are rate-limited, do not wait — the
+lintro pass is the review of record for the push.
 
 **Short flow:**
 
 ```text
-commit → [greptile ‖ coderabbit] → pr
+commit → [greptile ‖ coderabbit ‖ lintro-review] → pr
 ```
 
 **Explicit flow:**
 
 ```text
-lint → test → commit → [greptile ‖ coderabbit] → pr
+lint → test → commit → [greptile ‖ coderabbit ‖ lintro-review] → pr
 ```
 
 Each step names the skill to follow.
 
-`‖` means run greptile and coderabbit in parallel when possible. Fix findings, then optional
-verify pass. Do not re-run either CLI on unchanged code. CI remains the merge-time
-confirmation.
+`‖` means run greptile, coderabbit, and lintro-review in parallel when possible. Fix
+findings, then optional verify pass. Do not re-run any CLI on unchanged code. CI
+remains the merge-time confirmation.

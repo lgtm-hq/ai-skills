@@ -2,15 +2,17 @@
 name: greptile
 description: >-
   Run Greptile CLI for pre-push AI branch review. Use when asked for Greptile review,
-  raycast/extensions pre-PR checks, or as part of the default dual pre-push workflow
-  with coderabbit. Max 2 runs per change set.
+  raycast/extensions pre-PR checks, or as part of the default pre-push review set
+  with coderabbit and lintro-review. Max 2 runs per change set.
 ---
 
 # Greptile CLI Review
 
 Run **Greptile** (`greptile`) for automated branch review before push. Pair with
-**`coderabbit`** for the default pre-CI workflow — both tools catch different issues
-and mirror CI.
+**`coderabbit`** and **`lintro-review`** for the default pre-push review set — the
+tools catch different issues and mirror CI. When Greptile (or CodeRabbit) is
+rate-limited, do not wait for the reset: the `lintro-review` pass is the review of
+record for that push.
 
 ## Relationship to analyze-* skills
 
@@ -22,18 +24,18 @@ This skill uses **Greptile CLI** for external AI branch review. Follow the `lint
 `test` skills (or the `commit` skill, which includes them) before invoking Greptile.
 Do not duplicate full analyze rubrics here.
 
-## Relationship to coderabbit
+## Relationship to coderabbit and lintro-review
 
-Default pre-push flow when CI runs both tools:
+Default pre-push flow when CI runs the review tools:
 
 ```text
-commit → [greptile ‖ coderabbit] → pr
+commit → [greptile ‖ coderabbit ‖ lintro-review] → pr
 ```
 
 Each step names the skill to follow.
 
-Run **greptile** and **coderabbit** in parallel (`‖`) when possible. Greptile is typically
-faster (~1 min). Do not re-run on unchanged code.
+Run **greptile**, **coderabbit**, and **lintro-review** in parallel (`‖`) when possible.
+Greptile is typically faster (~1 min). Do not re-run on unchanged code.
 
 ## Prerequisites
 

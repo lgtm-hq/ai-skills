@@ -169,23 +169,60 @@ load entire JSON payloads into context.
 CodeRabbit is not done when its GitHub check says "Review completed" on an **older**
 commit. The babysit loop must cover the **current PR head**.
 
-1. Record the latest commit SHA (`gh pr view --json headRefOid`).
-2. Find the latest CodeRabbit issue comment:
+**Zero unresolved threads is not evidence of review — it is also what an unstarted
+review looks like.** CodeRabbit posts no check-run on the head SHA, so an in-flight
+review is invisible to `gh pr checks`. Positive evidence means a CodeRabbit review
+submission whose `commit_id` equals the current `headRefOid`; a summary/walkthrough/
+skip **comment** counts only when its body cites the current head SHA **and** it
+postdates the head's arrival on GitHub — comments carry no `commit_id`, so a bare
+timestamp match is also what a late review of the previous head looks like.
+
+1. Record the latest commit SHA **and when it arrived on GitHub** (`gh pr view --json
+   headRefOid`; then the earliest Actions run on that SHA):
 
    ```bash
-   gh api repos/<owner>/<repo>/issues/<number>/comments \
-     --jq '.[] | select(.user.login | test("coderabbit"; "i")) | {id, created_at, body}'
+   gh api --paginate "repos/<owner>/<repo>/actions/runs?head_sha=<sha>" \
+     --jq '[.workflow_runs[] | select(.head_branch == "<head-branch>")] | map(.created_at) | min'
    ```
 
-3. **Rate-limited** (`Review limit reached` / `Next review available in`):
+   (The list is newest-first; `--paginate` walks every page so the min is global,
+   and the `head_branch` filter keeps the probe scoped to this PR's branch.)
+
+   (`Commit.pushedDate` is null for most PR head commits, and
+   `.commit.committer.date` is the local creation time — neither is the push time.
+   The first Actions run starts within seconds of the push, which is accurate enough
+   for the freshness checks and settle windows below.) If no runs exist yet,
+   snapshot the current time **once per head SHA** and reuse that frozen value for
+   every later comparison — re-sampling "now" on each re-fetch would make those
+   windows unmeetable.
+2. Gather all CodeRabbit evidence — issue comments **and** review submissions (a
+   review carries the `commit_id` it reviewed; paginate both lists):
+
+   ```bash
+   gh api --paginate repos/<owner>/<repo>/issues/<number>/comments \
+     --jq '.[] | select(.user.login == "coderabbitai[bot]") | {id, created_at, body}'
+   gh api --paginate repos/<owner>/<repo>/pulls/<number>/reviews \
+     --jq '.[] | select(.user.login == "coderabbitai[bot]") | {id, commit_id, submitted_at, state}'
+   ```
+
+   Match the exact `coderabbitai[bot]` identity — a substring match would let
+   look-alike accounts satisfy the gate. A comment is evidence only if its body
+   cites the current head SHA; otherwise it is corroboration at best.
+3. **Rate-limited** (`Review limit reached` / `Next review available in`) — a *known*
+   state, distinct from an in-flight review. The rate-limit comment must postdate the
+   current head's push (CodeRabbit attempted **this** head and hit the limit); a
+   stale rate-limit comment from an older head is not evidence — treat the head as
+   unreviewed (item 4).
    - **Do not sleep or poll for the reset** — the rate limit does not block exit.
    - **If unpushed commits exist**: push per Step A discipline (CI quiescent first),
      then return to the loop.
    - Record that CodeRabbit review of the **current head** is pending due to the rate
      limit, and continue toward the Phase 5 exit conditions.
-4. **Not rate-limited but head unreviewed** (latest CodeRabbit summary/walkthrough
-   comment is **older** than the current head commit, or only a rate-limit comment
-   exists): post `@coderabbitai please review`, then wait and triage.
+4. **Not rate-limited but head unreviewed** (no review submission with `commit_id` ==
+   the current `headRefOid`, and no SHA-citing summary/walkthrough/skip comment after
+   the head's arrival): first wait ~5 minutes from the push (reviews typically land
+   within ~5 minutes) before concluding anything; if nothing arrives, post
+   `@coderabbitai please review`, then wait and triage.
 5. Do not burn CodeRabbit CLI runs during babysit — PR bot comments are the source of
    truth.
 6. Repeat Step E after every push until CodeRabbit has reviewed the current head and
@@ -229,9 +266,13 @@ Done when **all** are true:
 
 - All required CI checks green (or only allowed skips like `REVIEW_REQUIRED`).
 - No unresolved actionable Greptile/CodeRabbit/Bugbot threads (fixed or replied).
-- **CodeRabbit has reviewed the current head** — summary/walkthrough or inline review
-  on the latest commit, with all threads triaged — **or** CodeRabbit is rate-limited
-  and the pending review of the current head is noted in the final report.
+- **CodeRabbit has reviewed the current head, verified positively** — a review
+  submission whose `commit_id` equals the current `headRefOid` (primary), or a
+  summary/walkthrough/skip comment whose body cites the current head SHA and that
+  postdates the head's arrival on GitHub, with all threads triaged; zero unresolved
+  threads alone is not evidence — **or** CodeRabbit is rate-limited for the current
+  head (known state, fresh rate-limit signal) and the pending review is noted in the
+  final report.
 - No unpushed local commits.
 - Branch mergeable (no conflicts).
 
@@ -260,12 +301,37 @@ and signing-park behavior below apply to **both** modes.
 Before merging (or enqueuing) any single PR:
 
 - **Phase 5 exit conditions met** for that PR.
-- **Bot reviewed the CURRENT head** — if the head moved since the last CodeRabbit
-  review, re-request (`@coderabbitai please review`) and wait before merging — **or**
-  CodeRabbit is rate-limited and the pending review of the current head is noted in the
-  final report.
-- **Re-check PR state immediately before merge** — an already-merged PR is a normal
-  outcome, not an error; re-baseline the queue and move on.
+- **Bot reviewed the CURRENT head, verified positively at gate time** — re-gather the
+  evidence (Step E item 2): a review submission whose `commit_id` equals the current
+  `headRefOid` (primary), or a summary/walkthrough/skip comment citing that head SHA
+  and postdating its arrival on GitHub; if absent, wait ~5 minutes from the push,
+  then re-request (`@coderabbitai please review`) and wait before merging — **or**
+  CodeRabbit is rate-limited for the current head (known state, fresh rate-limit
+  signal) and the pending review is noted in the final report.
+- **Settle window** — always wait `arrival + ~5 min` from the head's arrival before
+  merging, **except** once positive head evidence exists, where the wait becomes the
+  evidence's own quiet period: a matching review submission waits `submitted_at +
+  ~2 min`; a SHA-citing comment waits its `created_at + ~2 min`; a fresh rate-limit
+  signal has no submission to wait on. A commit_id-matched review is never required
+  to postdate arrival — an identical SHA means identical reviewed content, so the
+  frozen-now arrival path keeps working.
+- **Re-check PR state immediately before merge** — re-fetch `headRefOid` and its
+  arrival time (reusing the frozen null-fallback snapshot while the SHA is
+  unchanged); if the head changed since Phase 5 (or the evidence does not postdate
+  the current head arrival), rerun Step E before merging or enqueuing. An
+  already-merged PR is a normal outcome, not an error; re-baseline the queue and
+  move on.
+
+### Post-merge review backstop (both modes)
+
+If a merge nonetheless raced a review (or exited with a CodeRabbit review pending),
+do not sweep immediately — an instant sweep sees the same empty-thread picture as
+pre-merge. Wait ~5 minutes (or until a post-merge CodeRabbit review lands, whichever
+comes first), polling with a couple of bounded probes, then sweep the merged PR:
+triage late-landing CodeRabbit threads — real findings become fix-forward issues,
+invalid ones get a disposition reply and thread resolution. If still in session, a
+review landing after that sweep is triaged too; otherwise it is left to the
+`sweep-prs` fleet sweep — late findings must never be silently orphaned.
 
 ### Queue-aware mode (primary, when available)
 

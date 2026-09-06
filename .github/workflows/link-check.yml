@@ -72,5 +72,11 @@ jobs:
       job-name: "🔗 External Link Check"
       file-extensions: md
       check-external: true
+      # plugin-engine-lab is private, so unauthenticated lychee gets 404
+      # on links to it even though the targets exist (every ADR links to
+      # it). Org-internal validity is not something the external checker
+      # gates on (#429); option 2 (passing GITHUB_TOKEN) would
+      # authenticate all github.com checks instead.
+      exclude-patterns: 'github\.com/lgtm-hq/plugin-engine-lab'
       egress-policy: audit
       tooling-ref: "f57b4d014f82d7f5996c7b339f1b2ca681780921" # v0.69.4

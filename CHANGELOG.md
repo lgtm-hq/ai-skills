@@ -21,6 +21,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.30.1] - 2026-09-06
+
+### Fixed
+
+- **ci**: exclude private plugin-engine-lab links from external link check (#442)
+  (1c6ddf3)
+
+## [0.30.0] - 2026-09-06
+
+### Added
+
+- **lintro-review**: add lintro-review skill as standard third pre-push pass (#440)
+  (ae030f6)
+
+### Changed
+
+- **deps**: update lintro (#443) (c334614)
+- **deps**: update lintro (#441) (4060eb8)
+- **deps**: update lintro (#439) (bec0a8e)
+
+## [0.29.1] - 2026-09-05
+
+### Changed
+
+- **lintro**: align version comments (#431) (43955c6)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.69.2 (minor) (#353) (bb550c0)
+- **deps**: update lintro (#435) (e3bfc5b)
+- **deps**: update lintro (#434) (45c4155)
+- **deps**: update dependency python to 3.14.7 (minor) (#428) (93c0200)
+- **deps**: update lintro (#433) (8bed2fb)
+- **deps**: update lintro (#432) (91be8b4)
+- **deps**: update lintro (#427) (131a054)
+
+### Fixed
+
+- **babysit-pr**: verify CodeRabbit reviewed the current head before merge (#436)
+  (6c115b5)
+
 ## [0.29.0] - 2026-08-31
 
 ### Added
@@ -967,7 +1005,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.29.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.1...HEAD
+[0.30.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.0...v0.30.1
+[0.30.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.29.1...v0.30.0
+[0.29.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.29.0...v0.29.1
 [0.29.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.26.0...v0.27.0

@@ -37,12 +37,12 @@ switch to a host plugin marketplace command below.
 
 Pin the gateway to a release. Native `marketplace add` tracks the default
 branch unless you append a git tag. The npm version matches the git tag
-(`@0.29.0` ↔ `v0.29.0`).
+(`@0.30.1` ↔ `v0.30.1`).
 
 ### Claude Code
 
 ```bash
-claude plugin marketplace add lgtm-hq/ai-skills@v0.29.0
+claude plugin marketplace add lgtm-hq/ai-skills@v0.30.1
 claude plugin install git-pr@ai-skills
 ```
 
@@ -76,14 +76,14 @@ ln -s "$(pwd)/ai-skills" ~/.cursor/plugins/local/ai-skills
 ### Gateway (`sk`)
 
 ```bash
-bun add -g @lgtm-hq/ai-skills@0.29.0
+bun add -g @lgtm-hq/ai-skills@0.30.1
 sk install -y --global -a cursor --bundle review
 ```
 
 `skill` is an alias for `sk`. For a pinned, install-free run:
 
 ```bash
-bunx --package=@lgtm-hq/ai-skills@0.29.0 sk install -y --global \
+bunx --package=@lgtm-hq/ai-skills@0.30.1 sk install -y --global \
   -a cursor --bundle review
 ```
 
@@ -124,7 +124,7 @@ First-party plugins, generated from `bundles.yaml`:
 | Plugin | Id | Description | Skills |
 | --- | --- | --- | --- |
 | Git & PR Workflow | `git-pr` | Branching, commits, rebases, and pull requests. | [branch](skills/branch/SKILL.md), [commit](skills/commit/SKILL.md), [rebase](skills/rebase/SKILL.md), [pr](skills/pr/SKILL.md), [reconcile](skills/reconcile/SKILL.md), [issue](skills/issue/SKILL.md) |
-| Review | `review` | Lint, test, and AI review before pushing or opening a PR. | [lint](skills/lint/SKILL.md), [test](skills/test/SKILL.md), [greptile](skills/greptile/SKILL.md), [coderabbit](skills/coderabbit/SKILL.md) |
+| Review | `review` | Lint, test, and AI review before pushing or opening a PR. | [lint](skills/lint/SKILL.md), [test](skills/test/SKILL.md), [greptile](skills/greptile/SKILL.md), [coderabbit](skills/coderabbit/SKILL.md), [lintro-review](skills/lintro-review/SKILL.md) |
 | Standards | `standards` | Language and CI coding standards applied while writing code. | [stand-general](skills/stand-general/SKILL.md), [stand-py](skills/stand-py/SKILL.md), [stand-ts](skills/stand-ts/SKILL.md), [stand-rust](skills/stand-rust/SKILL.md), [stand-odin](skills/stand-odin/SKILL.md), [stand-ci](skills/stand-ci/SKILL.md) |
 | Raycast | `raycast` | Raycast extension development and store submissions. | [raycast](skills/raycast/SKILL.md), [pr-raycast](skills/pr-raycast/SKILL.md) |
 | Analysis | `analysis` | Manual pre-review analysis of code, projects, and test suites. | [analyze-code](skills/analyze-code/SKILL.md), [analyze-project](skills/analyze-project/SKILL.md), [analyze-tests](skills/analyze-tests/SKILL.md), [audit-merges](skills/audit-merges/SKILL.md), [sweep-prs](skills/sweep-prs/SKILL.md) |
@@ -180,7 +180,7 @@ sk update -y --global -a cursor
 sk adopt -y --project
 ```
 
-First-party gateway installs resolve `lgtm-hq/ai-skills@v0.29.0`.
+First-party gateway installs resolve `lgtm-hq/ai-skills@v0.30.1`.
 
 ## Verify a release
 
@@ -188,7 +188,7 @@ Every release ships a `skills-manifest.json` asset mapping each skill name to
 the sha256 of its `SKILL.md`, attested with GitHub build provenance:
 
 ```bash
-gh release download v0.29.0 -R lgtm-hq/ai-skills -p skills-manifest.json
+gh release download v0.30.1 -R lgtm-hq/ai-skills -p skills-manifest.json
 gh attestation verify skills-manifest.json -R lgtm-hq/ai-skills
 shasum -a 256 <install-dir>/<name>/SKILL.md  # compare against the manifest
 ```
