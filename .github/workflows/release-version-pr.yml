@@ -22,7 +22,7 @@ jobs:
       # Keeps README install examples pinned to the release being cut.
       version-update-script: scripts/update-readme-version.sh
       auto-merge: true
-      tooling-ref: "f57b4d014f82d7f5996c7b339f1b2ca681780921" # v0.69.4
+      tooling-ref: "f57b4d014f82d7f5996c7b339f1b2ca681780921"  # v0.69.4
       egress-policy: block
       egress-preset: pypi
       # Harden-runner pre reads inputs only (not resolved presets).

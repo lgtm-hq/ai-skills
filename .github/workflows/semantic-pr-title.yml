@@ -20,7 +20,7 @@ jobs:
     uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-semantic-pr-title.yml@f57b4d014f82d7f5996c7b339f1b2ca681780921  # v0.69.4
     with:
       job-name: "📝 Validate PR Title"
-      tooling-ref: "f57b4d014f82d7f5996c7b339f1b2ca681780921" # v0.69.4
+      tooling-ref: "f57b4d014f82d7f5996c7b339f1b2ca681780921"  # v0.69.4
       egress-policy: block
       egress-preset: github-tooling
       comment-marker: "<!-- semantic-pr-title -->"
