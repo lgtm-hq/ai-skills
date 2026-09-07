@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import io
 import json
+import os
 import sys
 import tarfile
 from collections.abc import Mapping
@@ -37,7 +38,7 @@ from vendor_registry.plugin_report import (
     render_coverage_report,
 )
 from vendor_registry.plugin_version import plugin_version
-from vendor_registry.registry import load_registry
+from vendor_registry.registry import is_within_skill_roots, load_registry
 from vendor_registry.safe_tree import (
     _reject_leftover_backup,
     find_skill_markdown,
@@ -427,12 +428,48 @@ def _materialize_vendor_tree(
     """
     provided = trees.get(vendor.id)
     if provided is not None:
+        _drop_content_free_symlinks(vendor=vendor, root=provided)
         validate_tree(root=provided)
         return provided
     dest = temporary_root / f"vendor-{vendor.id}"
     _fetch_vendor_tree(vendor=vendor, dest=dest)
+    _drop_content_free_symlinks(vendor=vendor, root=dest)
     validate_tree(root=dest)
     return dest
+
+
+def _drop_content_free_symlinks(*, vendor: Vendor, root: Path) -> None:
+    """Unlink symlinks outside skill roots so tree validation passes.
+
+    Upstream repositories alias documentation files (for example
+    ``AGENTS.md -> CLAUDE.md``). The links carry no skill content but the
+    symlink-rejecting tree walk fails on them, which fails the whole
+    vendor bake. Links at or below a declared skill root are kept so
+    ``validate_tree`` still rejects content-bearing links.
+
+    Args:
+        vendor: Registry vendor whose skill roots are protected.
+        root: Materialized vendor tree, pruned in place.
+    """
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        for name in (*dirnames, *filenames):
+            candidate = Path(dirpath) / name
+            if not candidate.is_symlink():
+                continue
+            relative = candidate.relative_to(root).as_posix()
+            if is_within_skill_roots(
+                path=relative,
+                skill_roots=vendor.skill_roots,
+                require_descendant=False,
+            ):
+                continue
+            if name in dirnames:
+                dirnames.remove(name)
+            print(
+                f"bake: {vendor.id}: dropped non-skill symlink "
+                f"{relative} -> {os.readlink(candidate)}",
+            )
+            candidate.unlink()
 
 
 def _fetch_vendor_tree(*, vendor: Vendor, dest: Path) -> None:

@@ -239,6 +239,134 @@ def test_bake_rejects_symlinks(
     assert_that((tmp_path / "plugins-baked").exists()).is_false()
 
 
+def test_bake_drops_navigation_symlink_outside_skill_roots(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Doc-alias symlinks outside skill roots are dropped, not fatal."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    vendor_root.joinpath("CLAUDE.md").write_text("# guide\n", encoding="utf-8")
+    (vendor_root / "AGENTS.md").symlink_to("CLAUDE.md")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    assert_that(vendor_root.joinpath("AGENTS.md").is_symlink()).is_false()
+    assert_that(
+        (tmp_path / "plugins-baked" / "example-plugin" / "skills" / "alpha").is_dir(),
+    ).is_true()
+    assert_that(capsys.readouterr().out).contains(
+        "dropped non-skill symlink AGENTS.md -> CLAUDE.md",
+    )
+
+
+def test_bake_still_rejects_symlink_naming_skill_root(
+    tmp_path: Path,
+) -> None:
+    """A symlink naming a skill root itself still fails closed."""
+    vendor_root = tmp_path / "vendor-src"
+    real_skills = tmp_path / "real-skills"
+    _write_skill(directory=real_skills / "alpha", name="alpha")
+    vendor_root.mkdir()
+    (vendor_root / "skills").symlink_to(real_skills, target_is_directory=True)
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    with pytest.raises(ValueError, match="symlink rejected"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
+def test_bake_skips_wildcard_skill_with_invalid_frontmatter(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Wildcard skills with unusable frontmatter are skipped with a reason."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    broken = vendor_root / "skills" / "broken"
+    broken.mkdir(parents=True)
+    broken.joinpath("SKILL.md").write_text(
+        "---\nname: broken\ndescription: uses a colon: like this\n---\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    baked_skills = tmp_path / "plugins-baked" / "example-plugin" / "skills"
+    assert_that(baked_skills.joinpath("alpha").is_dir()).is_true()
+    assert_that(baked_skills.joinpath("broken").exists()).is_false()
+    assert_that(capsys.readouterr().out).contains(
+        "bake: skipped skills/broken: invalid YAML in SKILL.md frontmatter",
+    )
+
+
+def test_bake_fails_on_explicit_skill_with_invalid_frontmatter(
+    tmp_path: Path,
+) -> None:
+    """An explicitly declared skill with unusable frontmatter still fails."""
+    vendor_root = tmp_path / "vendor-src"
+    broken = vendor_root / "skills" / "broken"
+    broken.mkdir(parents=True)
+    broken.joinpath("SKILL.md").write_text(
+        "---\nname: broken\ndescription: uses a colon: like this\n---\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            "        skills:\n"
+            "          - broken\n"
+        ),
+    )
+
+    with pytest.raises(ValueError, match="invalid YAML"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
 def test_bake_fails_on_first_party_skill_collision(
     tmp_path: Path,
 ) -> None:
@@ -1642,11 +1770,13 @@ def test_bake_renames_quoted_frontmatter_name_key(
     assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
 
 
-def test_bake_rejects_duplicate_frontmatter_name_keys(
+def test_bake_skips_wildcard_skill_with_duplicate_name_keys(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A second name key cannot bypass the explode-identity check."""
     vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "branch", name="branch")
     skill = vendor_root / "skills" / "alpha"
     skill.mkdir(parents=True)
     skill.joinpath("SKILL.md").write_text(
@@ -1664,11 +1794,15 @@ def test_bake_rejects_duplicate_frontmatter_name_keys(
         ),
     )
 
-    with pytest.raises(ValueError, match="duplicate key"):
-        bake_vendor_plugins.bake(
-            repo_root=tmp_path,
-            vendor_trees={"example-vendor": vendor_root},
-        )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    assert_that(
+        (tmp_path / "plugins-baked" / "example-plugin" / "skills" / "alpha").exists(),
+    ).is_false()
+    assert_that(capsys.readouterr().out).contains("duplicate key")
 
 
 def test_bake_rewrites_title_case_frontmatter_to_directory(
@@ -1836,10 +1970,11 @@ def test_bake_lists_uningested_skill_under_node_modules(
     assert_that(coverage).contains("SKIPPED `node_modules/hidden/SKILL.md`")
 
 
-def test_bake_rejects_symlink_under_node_modules(
+def test_bake_drops_symlink_under_node_modules(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """node_modules is not a coverage/validation hole."""
+    """Symlinks outside skill roots are dropped; node_modules is no hole."""
     vendor_root = tmp_path / "vendor-src"
     _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
     nested = vendor_root / "node_modules" / "pkg"
@@ -1858,11 +1993,18 @@ def test_bake_rejects_symlink_under_node_modules(
         ),
     )
 
-    with pytest.raises(ValueError, match="symlink rejected"):
-        bake_vendor_plugins.bake(
-            repo_root=tmp_path,
-            vendor_trees={"example-vendor": vendor_root},
-        )
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    assert_that((nested / "link").is_symlink()).is_false()
+    assert_that(
+        (tmp_path / "plugins-baked" / "example-plugin" / "skills" / "alpha").is_dir(),
+    ).is_true()
+    assert_that(capsys.readouterr().out).contains(
+        "dropped non-skill symlink node_modules/pkg/link",
+    )
 
 
 def test_check_rejects_symlink_in_baked_output(

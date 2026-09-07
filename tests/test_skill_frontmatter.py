@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from assertpy import assert_that
 from skill_frontmatter import (
+    frontmatter_error,
     read_frontmatter_name,
     rewrite_frontmatter_name,
     split_frontmatter,
@@ -137,3 +138,32 @@ def test_read_frontmatter_name_rejects_duplicate_keys() -> None:
         read_frontmatter_name(
             text="---\nname: alpha\nname: branch\n---\n",
         )
+
+
+def test_frontmatter_error_accepts_valid_document() -> None:
+    """A usable frontmatter block reports no error."""
+    assert_that(
+        frontmatter_error(text="---\nname: alpha\ndescription: A skill.\n---\n"),
+    ).is_none()
+
+
+def test_frontmatter_error_reports_missing_block() -> None:
+    """A document without a complete frontmatter block reports a reason."""
+    assert_that(
+        frontmatter_error(text="# No fence\n"),
+    ).contains("missing YAML frontmatter")
+
+
+def test_frontmatter_error_reports_invalid_yaml() -> None:
+    """An unquoted colon in a scalar reports the YAML failure."""
+    reason = frontmatter_error(
+        text=("---\nname: broken\ndescription: uses a colon: like this\n---\n"),
+    )
+    assert_that(reason).contains("invalid YAML in SKILL.md frontmatter")
+
+
+def test_frontmatter_error_reports_missing_name() -> None:
+    """A mapping without a name field reports the missing name."""
+    assert_that(
+        frontmatter_error(text="---\ndescription: No name.\n---\n"),
+    ).contains("missing name")

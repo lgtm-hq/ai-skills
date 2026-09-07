@@ -874,42 +874,49 @@ def discover_skills(
         if pure_path.name != "SKILL.md":
             continue
         skill_path = pure_path.parent.as_posix()
-        if _is_within_skill_roots(
-            skill_path=skill_path,
+        if is_within_skill_roots(
+            path=skill_path,
             skill_roots=skill_roots,
         ):
             skills.append({"name": pure_path.parent.name, "path": skill_path})
     return sorted(skills, key=lambda skill: skill["path"])
 
 
-def _is_within_skill_roots(
+def is_within_skill_roots(
     *,
-    skill_path: str,
+    path: str,
     skill_roots: tuple[str, ...],
+    require_descendant: bool = True,
 ) -> bool:
-    """Return whether a skill directory is descended from a root glob.
+    """Return whether a POSIX path is below (or at) a root glob.
 
     Args:
-        skill_path: POSIX path to a directory containing ``SKILL.md``.
+        path: POSIX path relative to the vendor tree root.
         skill_roots: Root paths or globs configured by the vendor.
+        require_descendant: When ``True`` (skill discovery) the path must
+            be strictly below a root; when ``False`` a path that names a
+            root itself also matches (symlink protection).
 
     Returns:
-        Whether the skill resides below at least one configured root.
+        Whether the path matches at least one configured root prefix.
     """
-    skill_parts = PurePosixPath(skill_path).parts
-    return any(
-        len(skill_parts) > len(root_parts)
-        and all(
-            fnmatchcase(skill_part, root_part)
-            for skill_part, root_part in zip(
-                skill_parts,
+    path_parts = PurePosixPath(path).parts
+    for skill_root in skill_roots:
+        root_parts = PurePosixPath(skill_root).parts
+        if len(path_parts) < len(root_parts):
+            continue
+        if require_descendant and len(path_parts) == len(root_parts):
+            continue
+        if all(
+            fnmatchcase(path_part, root_part)
+            for path_part, root_part in zip(
+                path_parts,
                 root_parts,
                 strict=False,
             )
-        )
-        for skill_root in skill_roots
-        if (root_parts := PurePosixPath(skill_root).parts)
-    )
+        ):
+            return True
+    return False
 
 
 def render_index(*, vendor: Vendor, skills: list[dict[str, str]]) -> str:
@@ -1010,8 +1017,8 @@ def _validate_index_skills(
         if (
             not name
             or pure_path.name != name
-            or not _is_within_skill_roots(
-                skill_path=path,
+            or not is_within_skill_roots(
+                path=path,
                 skill_roots=vendor.skill_roots,
             )
         ):
