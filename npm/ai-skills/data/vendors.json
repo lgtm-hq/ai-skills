@@ -22,7 +22,7 @@
     {
       "id": "anthropics",
       "repo": "anthropics/skills",
-      "sha": "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+      "sha": "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
       "displayRef": "latest",
       "skillRoots": [
         "skills"
