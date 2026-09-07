@@ -33,9 +33,14 @@ guessing: location carries meaning.
 runnable vendor files are an explicit trust decision; default is omit
 (caveman baked skills-only in the lab).
 
-**Reject** symlinks and path escapes at bake time. Internal references
-must resolve inside the plugin. SKILL.md must be present for ingested
-skills.
+**Reject** symlinks at bake time, with one carve-out: content-free
+navigation aliases outside every ingested tree (declared skill roots and
+plugin `extraSkills` paths) — upstream repositories commonly alias docs
+such as `AGENTS.md -> CLAUDE.md` — are dropped with a
+`dropped non-skill symlink` notice in the bake log instead of failing
+the vendor. Symlinks inside an ingested tree, and path escapes anywhere,
+still fail the bake. Internal references must resolve inside the plugin.
+SKILL.md must be present for ingested skills.
 
 **Exclusion is fine; silent exclusion is not.** Every SKILL.md in the
 vendor tree that is not ingested is listed as SKIPPED in a coverage

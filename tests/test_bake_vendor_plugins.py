@@ -3320,3 +3320,146 @@ def test_bake_fetches_github_tarball_when_vendor_trees_omitted(
     plugin = tmp_path / "plugins-baked" / "example-plugin"
     assert_that((plugin / "skills" / "alpha" / "SKILL.md").is_file()).is_true()
     assert_that(bake_vendor_plugins.check(repo_root=tmp_path)).is_equal_to(0)
+
+
+def test_bake_still_rejects_symlink_inside_extra_skills_tree(
+    tmp_path: Path,
+) -> None:
+    """A symlink under an extraSkills path is content-bearing and fails."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    extras = vendor_root / "extras" / "bonus"
+    _write_skill(directory=extras, name="bonus")
+    (extras / "link").symlink_to("SKILL.md")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+            "        extraSkills:\n"
+            "          - extras/bonus\n"
+        ),
+    )
+
+    with pytest.raises(ValueError, match="symlink rejected"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
+def test_bake_drops_symlink_outside_extra_skills_tree(
+    tmp_path: Path,
+) -> None:
+    """Doc aliases next to (not under) extraSkills paths are dropped."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    _write_skill(directory=vendor_root / "extras" / "bonus", name="bonus")
+    vendor_root.joinpath("CLAUDE.md").write_text("# guide\n", encoding="utf-8")
+    (vendor_root / "AGENTS.md").symlink_to("CLAUDE.md")
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+            "        extraSkills:\n"
+            "          - extras/bonus\n"
+        ),
+    )
+
+    bake_vendor_plugins.bake(
+        repo_root=tmp_path,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    assert_that(vendor_root.joinpath("AGENTS.md").is_symlink()).is_false()
+    assert_that(
+        (tmp_path / "plugins-baked" / "example-plugin" / "skills" / "bonus").is_dir(),
+    ).is_true()
+
+
+def test_bake_fails_when_skipped_wildcard_skill_is_renamed(
+    tmp_path: Path,
+) -> None:
+    """A declared rename whose skill is skipped stays a hard failure."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    broken = vendor_root / "skills" / "teach"
+    broken.mkdir(parents=True)
+    broken.joinpath("SKILL.md").write_text(
+        "---\nname: broken\ndescription: uses a colon: like this\n---\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+            "        renameSkills:\n"
+            "          teach: teach-example\n"
+        ),
+    )
+
+    with pytest.raises(ValueError, match="unused renameSkills"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
+def test_bake_drops_symlink_outside_glob_skill_roots(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Globbed skill roots protect ingested trees; other links are dropped."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(
+        directory=vendor_root / "plugins" / "kit" / "skills" / "alpha", name="alpha"
+    )
+    vendor_root.joinpath("CLAUDE.md").write_text("# guide\n", encoding="utf-8")
+    (vendor_root / "AGENTS.md").symlink_to("CLAUDE.md")
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    repo_root.joinpath("vendors.yaml").write_text(
+        "---\n"
+        "vendors:\n"
+        "  - id: example-vendor\n"
+        "    repo: owner/example\n"
+        f'    sha: "{_SHA}"\n'
+        "    displayRef: latest\n"
+        "    skillRoots:\n"
+        "      - 'plugins/*/skills'\n"
+        "    plugins:\n"
+        "      - id: example-plugin\n"
+        "        description: Example vendor plugin.\n"
+        "        skillsRoot: 'plugins/*/skills'\n"
+        '        skills: "*"\n'
+        "    license: MIT\n"
+        "    homepage: https://github.com/owner/example\n",
+        encoding="utf-8",
+    )
+    repo_root.joinpath("bundles.yaml").write_text(
+        "---\ngroups:\n  git-pr:\n    id: git-pr\n    name: Git\n"
+        "    description: First-party.\n    skills:\n      - branch\n",
+        encoding="utf-8",
+    )
+
+    bake_vendor_plugins.bake(
+        repo_root=repo_root,
+        vendor_trees={"example-vendor": vendor_root},
+    )
+
+    assert_that(vendor_root.joinpath("AGENTS.md").is_symlink()).is_false()
+    assert_that(
+        (repo_root / "plugins-baked" / "example-plugin" / "skills" / "alpha").is_dir(),
+    ).is_true()
+    assert_that(capsys.readouterr().out).contains("dropped non-skill symlink AGENTS.md")

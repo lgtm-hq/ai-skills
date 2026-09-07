@@ -167,3 +167,10 @@ def test_frontmatter_error_reports_missing_name() -> None:
     assert_that(
         frontmatter_error(text="---\ndescription: No name.\n---\n"),
     ).contains("missing name")
+
+
+def test_frontmatter_error_reports_non_mapping_frontmatter() -> None:
+    """A YAML sequence frontmatter reports the mapping requirement."""
+    assert_that(
+        frontmatter_error(text="---\n- alpha\n- branch\n---\n"),
+    ).contains("must be a mapping")

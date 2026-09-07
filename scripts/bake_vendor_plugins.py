@@ -439,19 +439,24 @@ def _materialize_vendor_tree(
 
 
 def _drop_content_free_symlinks(*, vendor: Vendor, root: Path) -> None:
-    """Unlink symlinks outside skill roots so tree validation passes.
+    """Unlink symlinks outside ingested trees so validation passes.
 
     Upstream repositories alias documentation files (for example
     ``AGENTS.md -> CLAUDE.md``). The links carry no skill content but the
     symlink-rejecting tree walk fails on them, which fails the whole
-    vendor bake. Links at or below a declared skill root are kept so
-    ``validate_tree`` still rejects content-bearing links.
+    vendor bake. Links at or below an ingested tree — a declared skill
+    root or a plugin ``extraSkills`` path — are kept so ``validate_tree``
+    still rejects content-bearing links (ADR-0006).
 
     Args:
-        vendor: Registry vendor whose skill roots are protected.
+        vendor: Registry vendor whose ingested trees are protected.
         root: Materialized vendor tree, pruned in place.
     """
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+    protected_roots = (
+        *vendor.skill_roots,
+        *(extra for plugin in vendor.plugins for extra in plugin.extra_skills),
+    )
+    for dirpath, dirnames, filenames in os.walk(top=root, followlinks=False):
         for name in (*dirnames, *filenames):
             candidate = Path(dirpath) / name
             if not candidate.is_symlink():
@@ -459,7 +464,7 @@ def _drop_content_free_symlinks(*, vendor: Vendor, root: Path) -> None:
             relative = candidate.relative_to(root).as_posix()
             if is_within_skill_roots(
                 path=relative,
-                skill_roots=vendor.skill_roots,
+                skill_roots=protected_roots,
                 require_descendant=False,
             ):
                 continue
@@ -467,7 +472,7 @@ def _drop_content_free_symlinks(*, vendor: Vendor, root: Path) -> None:
                 dirnames.remove(name)
             print(
                 f"bake: {vendor.id}: dropped non-skill symlink "
-                f"{relative} -> {os.readlink(candidate)}",
+                f"{relative} -> {os.readlink(path=candidate)}",
             )
             candidate.unlink()
 

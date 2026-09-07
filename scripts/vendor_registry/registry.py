@@ -908,7 +908,7 @@ def is_within_skill_roots(
         if require_descendant and len(path_parts) == len(root_parts):
             continue
         if all(
-            fnmatchcase(path_part, root_part)
+            fnmatchcase(name=path_part, pat=root_part)
             for path_part, root_part in zip(
                 path_parts,
                 root_parts,
