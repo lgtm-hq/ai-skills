@@ -16,6 +16,7 @@ import os
 import sys
 import tarfile
 from collections.abc import Mapping
+from fnmatch import fnmatchcase
 from http.client import HTTPException, HTTPSConnection
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
@@ -38,8 +39,6 @@ from vendor_registry.plugin_report import (
     render_coverage_report,
 )
 from vendor_registry.plugin_version import plugin_version
-from fnmatch import fnmatchcase
-
 from vendor_registry.registry import is_within_skill_roots, load_registry
 from vendor_registry.safe_tree import (
     _reject_leftover_backup,
