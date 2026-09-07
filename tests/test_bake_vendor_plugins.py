@@ -3583,3 +3583,35 @@ def test_bake_still_rejects_symlink_under_plugin_skills_root(
             repo_root=repo_root,
             vendor_trees={"example-vendor": vendor_root},
         )
+
+
+def test_bake_fails_on_extra_skill_with_invalid_frontmatter(
+    tmp_path: Path,
+) -> None:
+    """An extraSkills target with unusable frontmatter still fails."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "skills" / "alpha", name="alpha")
+    broken = vendor_root / "extras" / "bonus"
+    broken.mkdir(parents=True)
+    broken.joinpath("SKILL.md").write_text(
+        "---\nname: broken\ndescription: uses a colon: like this\n---\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+            "        extraSkills:\n"
+            "          - extras/bonus\n"
+        ),
+    )
+
+    with pytest.raises(ValueError, match="invalid YAML"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
