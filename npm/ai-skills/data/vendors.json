@@ -3,7 +3,7 @@
     {
       "id": "mattpocock",
       "repo": "mattpocock/skills",
-      "sha": "391a2701dd948f94f56a39f7533f8eea9a859c87",
+      "sha": "3cca18b368ae95cdbdebbff572ccafa662551015",
       "displayRef": "latest",
       "skillRoots": [
         "skills"
@@ -22,7 +22,7 @@
     {
       "id": "anthropics",
       "repo": "anthropics/skills",
-      "sha": "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+      "sha": "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
       "displayRef": "latest",
       "skillRoots": [
         "skills"
@@ -73,7 +73,7 @@
     {
       "id": "anthropics-claude-code",
       "repo": "anthropics/claude-code",
-      "sha": "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2",
+      "sha": "ab9b2cf7bb9e4f98ff264c07a22e46d83c29c558",
       "displayRef": "latest",
       "skillRoots": [
         "plugins/*/skills"
@@ -113,7 +113,7 @@
     {
       "id": "caveman",
       "repo": "JuliusBrussee/caveman",
-      "sha": "0d95a81d35a9f2d123a5e9430d1cfc43d55f1bb0",
+      "sha": "15581d14007fd01fb3f132016741962f34936ca2",
       "displayRef": "latest",
       "skillRoots": [
         "skills"
@@ -132,7 +132,7 @@
     {
       "id": "davidondrej",
       "repo": "davidondrej/skills",
-      "sha": "6e5545081c888b89576a620d9b2e54e9a6590f68",
+      "sha": "8eadd749ee0178371d362d056359b804cbfabb9a",
       "displayRef": "latest",
       "skillRoots": [
         "skills/*"

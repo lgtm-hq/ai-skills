@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
 
-from skill_frontmatter import read_frontmatter_name, rewrite_frontmatter_name
+from skill_frontmatter import (
+    frontmatter_error,
+    read_frontmatter_name,
+    rewrite_frontmatter_name,
+)
 
 from vendor_registry.plugin_bake_result import PluginBakeResult
 from vendor_registry.plugin_manifest import write_plugin_manifests
@@ -192,6 +196,7 @@ def _bake_plugin(
                 ingested=ingested,
                 explode_names=explode_names,
                 renamed=renamed,
+                allow_skip=plugin.skills == "*",
             )
 
     for extra in plugin.extra_skills:
@@ -203,6 +208,7 @@ def _bake_plugin(
             ingested=ingested,
             explode_names=explode_names,
             renamed=renamed,
+            allow_skip=False,
         )
 
     applied = {old for old, _new in renamed}
@@ -254,6 +260,7 @@ def _ingest_skill(
     ingested: list[str],
     explode_names: list[str],
     renamed: list[tuple[str, str]],
+    allow_skip: bool,
 ) -> None:
     """Copy one skill directory and apply a registry rename if declared.
 
@@ -269,6 +276,9 @@ def _ingest_skill(
         ingested: Accumulator of ingested ``SKILL.md`` relative paths.
         explode_names: Accumulator of post-rename skill directory names.
         renamed: Accumulator of applied ``(old, new)`` pairs.
+        allow_skip: When ``True`` (wildcard discovery), a skill whose
+            ``SKILL.md`` frontmatter is unusable is reported and skipped
+            instead of failing the whole vendor bake.
 
     Raises:
         ValueError: If ``SKILL.md`` is missing or the dest name collides.
@@ -283,6 +293,15 @@ def _ingest_skill(
     if not source.is_dir() or not skill_markdown.is_file():
         msg = f"vendor skill missing SKILL.md: {source}"
         raise ValueError(msg)
+    if allow_skip:
+        reason = frontmatter_error(
+            text=skill_markdown.read_text(encoding="utf-8"),
+        )
+        if reason is not None:
+            print(
+                f"bake: skipped {source.relative_to(vendor_root).as_posix()}: {reason}",
+            )
+            return
     original_name = source.name
     out_name = rename_map.get(original_name, original_name)
     skill_destination = skills_destination / out_name

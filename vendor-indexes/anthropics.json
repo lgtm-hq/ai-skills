@@ -1,6 +1,10 @@
 {
   "skills": [
     {
+      "name": "academy-guide",
+      "path": "skills/academy-guide"
+    },
+    {
       "name": "algorithmic-art",
       "path": "skills/algorithmic-art"
     },
@@ -15,6 +19,10 @@
     {
       "name": "claude-api",
       "path": "skills/claude-api"
+    },
+    {
+      "name": "discernment-nudge",
+      "path": "skills/discernment-nudge"
     },
     {
       "name": "doc-coauthoring",
@@ -72,7 +80,7 @@
   "vendor": {
     "id": "anthropics",
     "repo": "anthropics/skills",
-    "sha": "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+    "sha": "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
     "skillRoots": [
       "skills"
     ]
