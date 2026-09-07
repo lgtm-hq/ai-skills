@@ -12,9 +12,11 @@ import argparse
 import hashlib
 import io
 import json
+import os
 import sys
 import tarfile
 from collections.abc import Mapping
+from fnmatch import fnmatchcase
 from http.client import HTTPException, HTTPSConnection
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
@@ -37,7 +39,7 @@ from vendor_registry.plugin_report import (
     render_coverage_report,
 )
 from vendor_registry.plugin_version import plugin_version
-from vendor_registry.registry import load_registry
+from vendor_registry.registry import is_within_skill_roots, load_registry
 from vendor_registry.safe_tree import (
     _reject_leftover_backup,
     find_skill_markdown,
@@ -427,12 +429,97 @@ def _materialize_vendor_tree(
     """
     provided = trees.get(vendor.id)
     if provided is not None:
+        _drop_content_free_symlinks(vendor=vendor, root=provided)
         validate_tree(root=provided)
         return provided
     dest = temporary_root / f"vendor-{vendor.id}"
     _fetch_vendor_tree(vendor=vendor, dest=dest)
+    _drop_content_free_symlinks(vendor=vendor, root=dest)
     validate_tree(root=dest)
     return dest
+
+
+def _drop_content_free_symlinks(*, vendor: Vendor, root: Path) -> None:
+    """Unlink symlinks outside ingested trees so validation passes.
+
+    Upstream repositories alias documentation files (for example
+    ``AGENTS.md -> CLAUDE.md``). The links carry no skill content but the
+    symlink-rejecting tree walk fails on them, which fails the whole
+    vendor bake. Links at or below an ingested tree — a declared skill
+    root, a plugin ``skillsRoot``, or a plugin ``extraSkills`` path —
+    are kept so ``validate_tree`` still rejects content-bearing links
+    (ADR-0006).
+
+    Args:
+        vendor: Registry vendor whose ingested trees are protected.
+        root: Materialized vendor tree, pruned in place.
+    """
+    protected_roots = (
+        *vendor.skill_roots,
+        *(plugin.skills_root for plugin in vendor.plugins),
+        *(extra for plugin in vendor.plugins for extra in plugin.extra_skills),
+    )
+    for dirpath, dirnames, filenames in os.walk(top=root, followlinks=False):
+        for name in (*dirnames, *filenames):
+            candidate = Path(dirpath) / name
+            if not candidate.is_symlink():
+                continue
+            relative = candidate.relative_to(root).as_posix()
+            if _symlink_is_content_bearing(
+                relative=relative,
+                protected_roots=protected_roots,
+            ):
+                continue
+            if name in dirnames:
+                dirnames.remove(name)
+            print(
+                f"bake: {vendor.id}: dropped non-skill symlink "
+                f"{relative} -> {os.readlink(path=candidate)}",
+            )
+            candidate.unlink()
+
+
+def _symlink_is_content_bearing(
+    *,
+    relative: str,
+    protected_roots: tuple[str, ...],
+) -> bool:
+    """Return whether a symlink sits inside or on the way to a root.
+
+    A link is protected when it is at or below a root, or when it is a
+    strict ancestor of a root pattern (a directory link named by the
+    fixed prefix of a globbed ``skillsRoot``). Unlinking an ancestor
+    would silently shrink which directories a glob matches, so ancestor
+    links fail closed in ``validate_tree`` instead of being dropped.
+
+    Args:
+        relative: Symlink path relative to the vendor tree root.
+        protected_roots: Ingested-tree paths or globs from the registry.
+
+    Returns:
+        Whether the link must be kept (and validated) rather than dropped.
+    """
+    parts = PurePosixPath(relative).parts
+    for skill_root in protected_roots:
+        root_parts = PurePosixPath(skill_root).parts
+        if not root_parts:
+            continue
+        if is_within_skill_roots(
+            path=relative,
+            skill_roots=(skill_root,),
+            require_descendant=False,
+        ):
+            return True
+        if len(parts) < len(root_parts) and all(
+            fnmatchcase(name=part, pat=root_part)
+            for part, root_part in zip(
+                parts,
+                root_parts,
+                strict=False,
+            )
+        ):
+            return True
+    return False
 
 
 def _fetch_vendor_tree(*, vendor: Vendor, dest: Path) -> None:
