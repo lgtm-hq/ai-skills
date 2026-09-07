@@ -27,7 +27,7 @@ jobs:
         ${{ github.event_name == 'workflow_dispatch'
             && inputs.version
             || '' }}
-      tooling-ref: "f2b35cdad10df33b60c2996570b3848b70f55ed1" # v0.69.7
+      tooling-ref: "f2b35cdad10df33b60c2996570b3848b70f55ed1"  # v0.69.7
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}

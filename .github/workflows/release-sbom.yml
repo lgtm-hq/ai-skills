@@ -34,7 +34,7 @@ jobs:
       scan-vulnerabilities: true
       create-attestation: true
       artifact-name: sbom
-      tooling-ref: "f2b35cdad10df33b60c2996570b3848b70f55ed1" # v0.69.7
+      tooling-ref: "f2b35cdad10df33b60c2996570b3848b70f55ed1"  # v0.69.7
       egress-policy: block
       egress-preset: sbom
       # Harden-runner pre reads inputs only. Include uploads.github.com and
