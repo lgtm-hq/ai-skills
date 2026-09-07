@@ -21,6 +21,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.30.2] - 2026-09-07
+
+### Changed
+
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.69.7 (patch) (#455) (df1c598)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.69.6 (patch) (#446) (c7666ae)
+- **deps**: update lintro (#454) (da7070b)
+- **deps**: update lintro (#449) (78850fc)
+- **deps**: update ghcr.io/lgtm-hq/py-lintro:latest docker digest to dcf9e90 (#448)
+  (399ca4c)
+- **deps**: lock file maintenance (#447) (a7f7571)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.69.4 (patch) (#437) (f132a29)
+
+### Fixed
+
+- **vendors**: tolerate upstream content drift in vendor re-pin (#453) (e188f39)
+
 ## [0.30.1] - 2026-09-06
 
 ### Fixed
@@ -1005,7 +1022,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.1...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.2...HEAD
+[0.30.2]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.1...v0.30.2
 [0.30.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.0...v0.30.1
 [0.30.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.29.0...v0.29.1
