@@ -38,6 +38,8 @@ from vendor_registry.plugin_report import (
     render_coverage_report,
 )
 from vendor_registry.plugin_version import plugin_version
+from fnmatch import fnmatchcase
+
 from vendor_registry.registry import is_within_skill_roots, load_registry
 from vendor_registry.safe_tree import (
     _reject_leftover_backup,
@@ -462,10 +464,9 @@ def _drop_content_free_symlinks(*, vendor: Vendor, root: Path) -> None:
             if not candidate.is_symlink():
                 continue
             relative = candidate.relative_to(root).as_posix()
-            if is_within_skill_roots(
-                path=relative,
-                skill_roots=protected_roots,
-                require_descendant=False,
+            if _symlink_is_content_bearing(
+                relative=relative,
+                protected_roots=protected_roots,
             ):
                 continue
             if name in dirnames:
@@ -475,6 +476,49 @@ def _drop_content_free_symlinks(*, vendor: Vendor, root: Path) -> None:
                 f"{relative} -> {os.readlink(path=candidate)}",
             )
             candidate.unlink()
+
+
+def _symlink_is_content_bearing(
+    *,
+    relative: str,
+    protected_roots: tuple[str, ...],
+) -> bool:
+    """Return whether a symlink sits inside or on the way to a root.
+
+    A link is protected when it is at or below a root, or when it is a
+    strict ancestor of a root pattern (a directory link named by the
+    fixed prefix of a globbed ``skillsRoot``). Unlinking an ancestor
+    would silently shrink which directories a glob matches, so ancestor
+    links fail closed in ``validate_tree`` instead of being dropped.
+
+    Args:
+        relative: Symlink path relative to the vendor tree root.
+        protected_roots: Ingested-tree paths or globs from the registry.
+
+    Returns:
+        Whether the link must be kept (and validated) rather than dropped.
+    """
+    parts = PurePosixPath(relative).parts
+    for skill_root in protected_roots:
+        root_parts = PurePosixPath(skill_root).parts
+        if not root_parts:
+            continue
+        if is_within_skill_roots(
+            path=relative,
+            skill_roots=(skill_root,),
+            require_descendant=False,
+        ):
+            return True
+        if len(parts) < len(root_parts) and all(
+            fnmatchcase(name=part, pat=root_part)
+            for part, root_part in zip(
+                parts,
+                root_parts,
+                strict=False,
+            )
+        ):
+            return True
+    return False
 
 
 def _fetch_vendor_tree(*, vendor: Vendor, dest: Path) -> None:

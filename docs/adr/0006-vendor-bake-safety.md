@@ -33,14 +33,19 @@ guessing: location carries meaning.
 runnable vendor files are an explicit trust decision; default is omit
 (caveman baked skills-only in the lab).
 
-**Reject** symlinks at bake time, with one carve-out: content-free
-navigation aliases outside every ingested tree (declared skill roots and
-plugin `extraSkills` paths) — upstream repositories commonly alias docs
-such as `AGENTS.md -> CLAUDE.md` — are dropped with a
-`dropped non-skill symlink` notice in the bake log instead of failing
-the vendor. Symlinks inside an ingested tree, and path escapes anywhere,
-still fail the bake. Internal references must resolve inside the plugin.
-SKILL.md must be present for ingested skills.
+**Reject** symlinks at bake time, with two documented exceptions.
+Content-free navigation aliases outside every ingested tree (declared
+skill roots and plugin `extraSkills` paths) — upstream repositories
+commonly alias docs such as `AGENTS.md -> CLAUDE.md` — are **unlinked**
+(not followed) with a `dropped non-skill symlink` notice in the bake
+log, so an escaping alias is removed rather than resolved. Links inside
+an ingested tree, and links on the path to a root (an ancestor of a
+globbed `skillsRoot`), still fail the bake: dropping an ancestor would
+silently shrink what a glob matches. Second, a wildcard-selected skill
+whose `SKILL.md` frontmatter is unusable is skipped with a printed
+reason instead of failing the vendor; explicit skill lists, `extraSkills`,
+and declared renames still fail hard. Internal references must resolve
+inside the plugin. SKILL.md must be present for ingested skills.
 
 **Exclusion is fine; silent exclusion is not.** Every SKILL.md in the
 vendor tree that is not ingested is listed as SKIPPED in a coverage

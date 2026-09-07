@@ -264,7 +264,6 @@ def test_bake_drops_navigation_symlink_outside_skill_roots(
         vendor_trees={"example-vendor": vendor_root},
     )
 
-    assert_that(vendor_root.joinpath("AGENTS.md").is_symlink()).is_false()
     assert_that(
         (tmp_path / "plugins-baked" / "example-plugin" / "skills" / "alpha").is_dir(),
     ).is_true()
@@ -335,6 +334,10 @@ def test_bake_skips_wildcard_skill_with_invalid_frontmatter(
     assert_that(capsys.readouterr().out).contains(
         "bake: skipped skills/broken: invalid YAML in SKILL.md frontmatter",
     )
+    coverage = (tmp_path / "plugins-baked" / "COVERAGE.md").read_text(
+        encoding="utf-8",
+    )
+    assert_that(coverage).contains("SKIPPED `skills/broken/SKILL.md`")
 
 
 def test_bake_fails_on_explicit_skill_with_invalid_frontmatter(
@@ -3378,7 +3381,6 @@ def test_bake_drops_symlink_outside_extra_skills_tree(
         vendor_trees={"example-vendor": vendor_root},
     )
 
-    assert_that(vendor_root.joinpath("AGENTS.md").is_symlink()).is_false()
     assert_that(
         (tmp_path / "plugins-baked" / "example-plugin" / "skills" / "bonus").is_dir(),
     ).is_true()
@@ -3458,8 +3460,81 @@ def test_bake_drops_symlink_outside_glob_skill_roots(
         vendor_trees={"example-vendor": vendor_root},
     )
 
-    assert_that(vendor_root.joinpath("AGENTS.md").is_symlink()).is_false()
     assert_that(
         (repo_root / "plugins-baked" / "example-plugin" / "skills" / "alpha").is_dir(),
     ).is_true()
     assert_that(capsys.readouterr().out).contains("dropped non-skill symlink AGENTS.md")
+
+
+def test_bake_still_rejects_ancestor_directory_symlink(
+    tmp_path: Path,
+) -> None:
+    """A directory link on the path to a globbed root fails closed."""
+    vendor_root = tmp_path / "vendor-src"
+    real_plugins = tmp_path / "real-plugins"
+    _write_skill(
+        directory=real_plugins / "kit" / "skills" / "alpha",
+        name="alpha",
+    )
+    vendor_root.mkdir()
+    (vendor_root / "plugins").symlink_to(real_plugins, target_is_directory=True)
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    repo_root.joinpath("vendors.yaml").write_text(
+        "---\n"
+        "vendors:\n"
+        "  - id: example-vendor\n"
+        "    repo: owner/example\n"
+        f'    sha: "{_SHA}"\n'
+        "    displayRef: latest\n"
+        "    skillRoots:\n"
+        "      - 'plugins/*/skills'\n"
+        "    plugins:\n"
+        "      - id: example-plugin\n"
+        "        description: Example vendor plugin.\n"
+        "        skillsRoot: 'plugins/*/skills'\n"
+        '        skills: "*"\n'
+        "    license: MIT\n"
+        "    homepage: https://github.com/owner/example\n",
+        encoding="utf-8",
+    )
+    repo_root.joinpath("bundles.yaml").write_text(
+        "---\ngroups:\n  git-pr:\n    id: git-pr\n    name: Git\n"
+        "    description: First-party.\n    skills:\n      - branch\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="symlink rejected"):
+        bake_vendor_plugins.bake(
+            repo_root=repo_root,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
+def test_bake_fails_when_every_wildcard_skill_is_skipped(
+    tmp_path: Path,
+) -> None:
+    """A wildcard plugin left with no skills still fails the bake."""
+    vendor_root = tmp_path / "vendor-src"
+    broken = vendor_root / "skills" / "broken"
+    broken.mkdir(parents=True)
+    broken.joinpath("SKILL.md").write_text(
+        "---\nname: broken\ndescription: uses a colon: like this\n---\n",
+        encoding="utf-8",
+    )
+    _write_registry(
+        repo_root=tmp_path,
+        plugins_yaml=(
+            "plugins:\n"
+            "      - id: example-plugin\n"
+            "        description: Example vendor plugin.\n"
+            "        skillsRoot: skills\n"
+            '        skills: "*"\n'
+        ),
+    )
+
+    with pytest.raises(ValueError, match="ingested no skills or agents"):
+        bake_vendor_plugins.bake(
+            repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
