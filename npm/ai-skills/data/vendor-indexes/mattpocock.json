@@ -1,22 +1,6 @@
 {
   "skills": [
     {
-      "name": "design-an-interface",
-      "path": "skills/deprecated/design-an-interface"
-    },
-    {
-      "name": "qa",
-      "path": "skills/deprecated/qa"
-    },
-    {
-      "name": "request-refactor-plan",
-      "path": "skills/deprecated/request-refactor-plan"
-    },
-    {
-      "name": "ubiquitous-language",
-      "path": "skills/deprecated/ubiquitous-language"
-    },
-    {
       "name": "ask-matt",
       "path": "skills/engineering/ask-matt"
     },
@@ -85,20 +69,28 @@
       "path": "skills/engineering/wayfinder"
     },
     {
+      "name": "wizard",
+      "path": "skills/engineering/wizard"
+    },
+    {
       "name": "claude-handoff",
       "path": "skills/in-progress/claude-handoff"
+    },
+    {
+      "name": "implement-spec",
+      "path": "skills/in-progress/implement-spec"
     },
     {
       "name": "loop-me",
       "path": "skills/in-progress/loop-me"
     },
     {
-      "name": "setup-ts-deep-modules",
-      "path": "skills/in-progress/setup-ts-deep-modules"
+      "name": "retro",
+      "path": "skills/in-progress/retro"
     },
     {
-      "name": "wizard",
-      "path": "skills/in-progress/wizard"
+      "name": "setup-ts-deep-modules",
+      "path": "skills/in-progress/setup-ts-deep-modules"
     },
     {
       "name": "writing-beats",
@@ -129,14 +121,6 @@
       "path": "skills/misc/setup-pre-commit"
     },
     {
-      "name": "edit-article",
-      "path": "skills/personal/edit-article"
-    },
-    {
-      "name": "obsidian-vault",
-      "path": "skills/personal/obsidian-vault"
-    },
-    {
       "name": "grill-me",
       "path": "skills/productivity/grill-me"
     },
@@ -153,14 +137,22 @@
       "path": "skills/productivity/teach"
     },
     {
-      "name": "writing-great-skills",
-      "path": "skills/productivity/writing-great-skills"
+      "name": "to-questionnaire",
+      "path": "skills/productivity/to-questionnaire"
+    },
+    {
+      "name": "wait-what",
+      "path": "skills/productivity/wait-what"
+    },
+    {
+      "name": "writing-for-agents",
+      "path": "skills/productivity/writing-for-agents"
     }
   ],
   "vendor": {
     "id": "mattpocock",
     "repo": "mattpocock/skills",
-    "sha": "391a2701dd948f94f56a39f7533f8eea9a859c87",
+    "sha": "3cca18b368ae95cdbdebbff572ccafa662551015",
     "skillRoots": [
       "skills"
     ]
