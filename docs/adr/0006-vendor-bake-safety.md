@@ -35,7 +35,8 @@ runnable vendor files are an explicit trust decision; default is omit
 
 **Reject** symlinks at bake time, with two documented exceptions.
 Content-free navigation aliases outside every ingested tree (declared
-skill roots and plugin `extraSkills` paths) — upstream repositories
+skill roots, plugin `skillsRoot` paths, and plugin `extraSkills` paths)
+— upstream repositories
 commonly alias docs such as `AGENTS.md -> CLAUDE.md` — are **unlinked**
 (not followed) with a `dropped non-skill symlink` notice in the bake
 log, so an escaping alias is removed rather than resolved. Links inside

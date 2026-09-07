@@ -446,8 +446,9 @@ def _drop_content_free_symlinks(*, vendor: Vendor, root: Path) -> None:
     ``AGENTS.md -> CLAUDE.md``). The links carry no skill content but the
     symlink-rejecting tree walk fails on them, which fails the whole
     vendor bake. Links at or below an ingested tree — a declared skill
-    root or a plugin ``extraSkills`` path — are kept so ``validate_tree``
-    still rejects content-bearing links (ADR-0006).
+    root, a plugin ``skillsRoot``, or a plugin ``extraSkills`` path —
+    are kept so ``validate_tree`` still rejects content-bearing links
+    (ADR-0006).
 
     Args:
         vendor: Registry vendor whose ingested trees are protected.
