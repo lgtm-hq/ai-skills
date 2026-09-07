@@ -26,15 +26,15 @@ concurrency:
 jobs:
   validate:
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate-lintro-version.yml@f57b4d014f82d7f5996c7b339f1b2ca681780921  # v0.69.4
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate-lintro-version.yml@f2b35cdad10df33b60c2996570b3848b70f55ed1  # v0.69.7
     with:
-      tooling-ref: "f57b4d014f82d7f5996c7b339f1b2ca681780921"  # v0.69.4
+      tooling-ref: "f2b35cdad10df33b60c2996570b3848b70f55ed1"  # v0.69.7
       # Consumer repos must pass lintro-image: resolve-lintro-image.sh
       # defaults to lgtm-ci-owned paths that do not exist here. Keep this
       # digest in lockstep with pyproject.toml's lintro== pin and the
       # lintro-image override on ci.yml's quality job (py-lintro 0.142.0).
       # yamllint disable-line rule:line-length
-      lintro-image: ghcr.io/lgtm-hq/py-lintro@sha256:15f64e520437017070ab74dbea433562a896f8ffedce634aae1d29080b8c01ea
+      lintro-image: ghcr.io/lgtm-hq/py-lintro@sha256:7c2179f2997a228c989347566f5c9239471e4de0f8b2e5fbc697b7441232898f
       egress-policy: block
       egress-preset: quality
     permissions:
