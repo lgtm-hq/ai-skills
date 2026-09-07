@@ -104,6 +104,28 @@ def read_frontmatter_name(*, text: str) -> str:
     return _frontmatter_name(frontmatter=frontmatter)
 
 
+def frontmatter_error(*, text: str) -> str | None:
+    """Return why a document is unusable as skill frontmatter, or ``None``.
+
+    Args:
+        text: Full SKILL.md document content.
+
+    Returns:
+        A human-readable reason when the document lacks a complete
+        frontmatter block, the block is not a mapping, or ``name`` is
+        missing, duplicated, or not a string. ``None`` when the document
+        would pass ``read_frontmatter_name``.
+    """
+    frontmatter, _body = split_frontmatter(text)
+    if frontmatter is None:
+        return "SKILL.md is missing YAML frontmatter"
+    try:
+        _frontmatter_name(frontmatter=frontmatter)
+    except (TypeError, ValueError) as error:
+        return str(error)
+    return None
+
+
 def _frontmatter_name(*, frontmatter: str) -> str:
     """Return the unique YAML ``name`` from a frontmatter block.
 
