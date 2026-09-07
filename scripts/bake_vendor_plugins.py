@@ -455,6 +455,7 @@ def _drop_content_free_symlinks(*, vendor: Vendor, root: Path) -> None:
     """
     protected_roots = (
         *vendor.skill_roots,
+        *(plugin.skills_root for plugin in vendor.plugins),
         *(extra for plugin in vendor.plugins for extra in plugin.extra_skills),
     )
     for dirpath, dirnames, filenames in os.walk(top=root, followlinks=False):

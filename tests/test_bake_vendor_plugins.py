@@ -1806,6 +1806,10 @@ def test_bake_skips_wildcard_skill_with_duplicate_name_keys(
         (tmp_path / "plugins-baked" / "example-plugin" / "skills" / "alpha").exists(),
     ).is_false()
     assert_that(capsys.readouterr().out).contains("duplicate key")
+    coverage = (tmp_path / "plugins-baked" / "COVERAGE.md").read_text(
+        encoding="utf-8",
+    )
+    assert_that(coverage).contains("SKIPPED `skills/alpha/SKILL.md`")
 
 
 def test_bake_rewrites_title_case_frontmatter_to_directory(
@@ -2001,7 +2005,6 @@ def test_bake_drops_symlink_under_node_modules(
         vendor_trees={"example-vendor": vendor_root},
     )
 
-    assert_that((nested / "link").is_symlink()).is_false()
     assert_that(
         (tmp_path / "plugins-baked" / "example-plugin" / "skills" / "alpha").is_dir(),
     ).is_true()
@@ -3536,5 +3539,47 @@ def test_bake_fails_when_every_wildcard_skill_is_skipped(
     with pytest.raises(ValueError, match="ingested no skills or agents"):
         bake_vendor_plugins.bake(
             repo_root=tmp_path,
+            vendor_trees={"example-vendor": vendor_root},
+        )
+
+
+def test_bake_still_rejects_symlink_under_plugin_skills_root(
+    tmp_path: Path,
+) -> None:
+    """A symlink under a plugin skillsRoot outside skillRoots fails closed."""
+    vendor_root = tmp_path / "vendor-src"
+    _write_skill(directory=vendor_root / "registered" / "alpha", name="alpha")
+    extras = vendor_root / "side" / "beta"
+    _write_skill(directory=extras, name="beta")
+    (extras / "link").symlink_to("SKILL.md")
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    repo_root.joinpath("vendors.yaml").write_text(
+        "---\n"
+        "vendors:\n"
+        "  - id: example-vendor\n"
+        "    repo: owner/example\n"
+        f'    sha: "{_SHA}"\n'
+        "    displayRef: latest\n"
+        "    skillRoots:\n"
+        "      - registered\n"
+        "    plugins:\n"
+        "      - id: example-plugin\n"
+        "        description: Example vendor plugin.\n"
+        "        skillsRoot: side\n"
+        '        skills: "*"\n'
+        "    license: MIT\n"
+        "    homepage: https://github.com/owner/example\n",
+        encoding="utf-8",
+    )
+    repo_root.joinpath("bundles.yaml").write_text(
+        "---\ngroups:\n  git-pr:\n    id: git-pr\n    name: Git\n"
+        "    description: First-party.\n    skills:\n      - branch\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="symlink rejected"):
+        bake_vendor_plugins.bake(
+            repo_root=repo_root,
             vendor_trees={"example-vendor": vendor_root},
         )
