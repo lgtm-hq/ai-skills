@@ -53,6 +53,6 @@ jobs:
       CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
       CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
     with:
-      tooling-ref: "f8f58587e4c324f6f0c9b3b4f59cfc93aa7d5d0f" # v0.69.6
+      tooling-ref: "f8f58587e4c324f6f0c9b3b4f59cfc93aa7d5d0f"  # v0.69.6
       model: ${{ vars.LINTRO_AI_MODEL }}
       max-cost-usd: ${{ vars.LINTRO_AI_MAX_COST_USD }}

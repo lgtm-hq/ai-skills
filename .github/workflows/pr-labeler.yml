@@ -21,7 +21,7 @@ jobs:
       job-name: "🏷️ Auto Label PR"
       configuration-path: .github/labeler.yml
       sync-labels: false
-      tooling-ref: "f8f58587e4c324f6f0c9b3b4f59cfc93aa7d5d0f" # v0.69.6
+      tooling-ref: "f8f58587e4c324f6f0c9b3b4f59cfc93aa7d5d0f"  # v0.69.6
       egress-policy: block
       egress-preset: github-tooling
     permissions:
