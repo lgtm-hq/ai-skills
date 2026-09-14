@@ -1,10 +1,6 @@
 {
   "skills": [
     {
-      "name": "agent-self-scheduling",
-      "path": "skills/agent-orchestration/agent-self-scheduling"
-    },
-    {
       "name": "bb-cli",
       "path": "skills/agent-orchestration/bb-cli"
     },
@@ -49,10 +45,6 @@
       "path": "skills/agent-orchestration/herdr"
     },
     {
-      "name": "launch-subagent",
-      "path": "skills/agent-orchestration/launch-subagent"
-    },
-    {
       "name": "nagent",
       "path": "skills/agent-orchestration/nagent"
     },
@@ -61,28 +53,24 @@
       "path": "skills/agent-orchestration/new-grok-bot"
     },
     {
-      "name": "render-images-in-cursor",
-      "path": "skills/agent-orchestration/render-images-in-cursor"
-    },
-    {
       "name": "reset-cursor-acp",
       "path": "skills/agent-orchestration/reset-cursor-acp"
     },
     {
-      "name": "run-deep-swe",
-      "path": "skills/agent-orchestration/run-deep-swe"
+      "name": "self-archive",
+      "path": "skills/agent-orchestration/self-archive"
     },
     {
       "name": "total-review",
       "path": "skills/agent-orchestration/total-review"
     },
     {
-      "name": "agentic-productivity-setup",
-      "path": "skills/ops-and-setup/agentic-productivity-setup"
-    },
-    {
       "name": "anti-sleep",
       "path": "skills/ops-and-setup/anti-sleep"
+    },
+    {
+      "name": "box-ascii",
+      "path": "skills/ops-and-setup/box-ascii"
     },
     {
       "name": "create-readonly-db-role",
@@ -97,18 +85,6 @@
       "path": "skills/ops-and-setup/global-agent-guardrails"
     },
     {
-      "name": "google-safe-browsing",
-      "path": "skills/ops-and-setup/google-safe-browsing"
-    },
-    {
-      "name": "macbook-metrics-setup",
-      "path": "skills/ops-and-setup/macbook-metrics-setup"
-    },
-    {
-      "name": "nuke-cursor-app",
-      "path": "skills/ops-and-setup/nuke-cursor-app"
-    },
-    {
       "name": "openrouter",
       "path": "skills/ops-and-setup/openrouter"
     },
@@ -117,12 +93,16 @@
       "path": "skills/ops-and-setup/persistent-localhost"
     },
     {
-      "name": "pi-custom-model",
-      "path": "skills/ops-and-setup/pi-custom-model"
-    },
-    {
       "name": "prompt-for-others",
       "path": "skills/ops-and-setup/prompt-for-others"
+    },
+    {
+      "name": "rename-process",
+      "path": "skills/ops-and-setup/rename-process"
+    },
+    {
+      "name": "repo-sync",
+      "path": "skills/ops-and-setup/repo-sync"
     },
     {
       "name": "risky-changes",
@@ -153,6 +133,10 @@
       "path": "skills/research-and-web/deepapi"
     },
     {
+      "name": "domain-checker",
+      "path": "skills/research-and-web/domain-checker"
+    },
+    {
       "name": "fireflies-transcript",
       "path": "skills/research-and-web/fireflies-transcript"
     },
@@ -161,24 +145,8 @@
       "path": "skills/research-and-web/online-shopping"
     },
     {
-      "name": "pi-web-search",
-      "path": "skills/research-and-web/pi-web-search"
-    },
-    {
-      "name": "research-prompt",
-      "path": "skills/research-and-web/research-prompt"
-    },
-    {
-      "name": "twitter-alpha",
-      "path": "skills/research-and-web/twitter-alpha"
-    },
-    {
       "name": "who-is-this",
       "path": "skills/research-and-web/who-is-this"
-    },
-    {
-      "name": "youtube-transcript",
-      "path": "skills/research-and-web/youtube-transcript"
     },
     {
       "name": "distribute-skill-to-all-agents",
@@ -193,8 +161,8 @@
       "path": "skills/skill-authoring/folder-specific-claude-and-agents-md"
     },
     {
-      "name": "push-skill-to-github",
-      "path": "skills/skill-authoring/push-skill-to-github"
+      "name": "push-skills",
+      "path": "skills/skill-authoring/push-skills"
     },
     {
       "name": "adr-verbatim",
@@ -209,10 +177,6 @@
       "path": "skills/thinking-and-docs/before-building"
     },
     {
-      "name": "brain-to-docs",
-      "path": "skills/thinking-and-docs/brain-to-docs"
-    },
-    {
       "name": "decisions",
       "path": "skills/thinking-and-docs/decisions"
     },
@@ -225,16 +189,8 @@
       "path": "skills/thinking-and-docs/image-prompt"
     },
     {
-      "name": "level-up",
-      "path": "skills/thinking-and-docs/level-up"
-    },
-    {
-      "name": "next-decision",
-      "path": "skills/thinking-and-docs/next-decision"
-    },
-    {
-      "name": "prompt-me",
-      "path": "skills/thinking-and-docs/prompt-me"
+      "name": "keep-track",
+      "path": "skills/thinking-and-docs/keep-track"
     },
     {
       "name": "read-all-adrs",
@@ -272,7 +228,7 @@
   "vendor": {
     "id": "davidondrej",
     "repo": "davidondrej/skills",
-    "sha": "8eadd749ee0178371d362d056359b804cbfabb9a",
+    "sha": "106d4243251dbf0d6feff40648414501a0b71268",
     "skillRoots": [
       "skills/*"
     ]
