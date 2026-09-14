@@ -17,22 +17,74 @@
       "path": "skills/caveman-compress"
     },
     {
+      "name": "caveman-discover",
+      "path": "skills/caveman-discover"
+    },
+    {
+      "name": "caveman-evidence-review",
+      "path": "skills/caveman-evidence-review"
+    },
+    {
+      "name": "caveman-explore",
+      "path": "skills/caveman-explore"
+    },
+    {
       "name": "caveman-help",
       "path": "skills/caveman-help"
+    },
+    {
+      "name": "caveman-learn",
+      "path": "skills/caveman-learn"
+    },
+    {
+      "name": "caveman-manage",
+      "path": "skills/caveman-manage"
+    },
+    {
+      "name": "caveman-optimize",
+      "path": "skills/caveman-optimize"
     },
     {
       "name": "caveman-review",
       "path": "skills/caveman-review"
     },
     {
+      "name": "caveman-setup",
+      "path": "skills/caveman-setup"
+    },
+    {
       "name": "caveman-stats",
       "path": "skills/caveman-stats"
+    },
+    {
+      "name": "investigate-first",
+      "path": "skills/investigate-first"
+    },
+    {
+      "name": "lean-build",
+      "path": "skills/lean-build"
+    },
+    {
+      "name": "migration",
+      "path": "skills/migration"
+    },
+    {
+      "name": "safe-refactor",
+      "path": "skills/safe-refactor"
+    },
+    {
+      "name": "surgical-patch",
+      "path": "skills/surgical-patch"
+    },
+    {
+      "name": "verify-and-stop",
+      "path": "skills/verify-and-stop"
     }
   ],
   "vendor": {
     "id": "caveman",
     "repo": "JuliusBrussee/caveman",
-    "sha": "0d95a81d35a9f2d123a5e9430d1cfc43d55f1bb0",
+    "sha": "15581d14007fd01fb3f132016741962f34936ca2",
     "skillRoots": [
       "skills"
     ]

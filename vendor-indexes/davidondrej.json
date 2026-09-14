@@ -5,6 +5,14 @@
       "path": "skills/agent-orchestration/agent-self-scheduling"
     },
     {
+      "name": "bb-cli",
+      "path": "skills/agent-orchestration/bb-cli"
+    },
+    {
+      "name": "bb-plugins",
+      "path": "skills/agent-orchestration/bb-plugins"
+    },
+    {
       "name": "cmux",
       "path": "skills/agent-orchestration/cmux"
     },
@@ -45,8 +53,32 @@
       "path": "skills/agent-orchestration/launch-subagent"
     },
     {
+      "name": "nagent",
+      "path": "skills/agent-orchestration/nagent"
+    },
+    {
+      "name": "new-grok-bot",
+      "path": "skills/agent-orchestration/new-grok-bot"
+    },
+    {
+      "name": "render-images-in-cursor",
+      "path": "skills/agent-orchestration/render-images-in-cursor"
+    },
+    {
+      "name": "reset-cursor-acp",
+      "path": "skills/agent-orchestration/reset-cursor-acp"
+    },
+    {
       "name": "run-deep-swe",
       "path": "skills/agent-orchestration/run-deep-swe"
+    },
+    {
+      "name": "total-review",
+      "path": "skills/agent-orchestration/total-review"
+    },
+    {
+      "name": "agentic-productivity-setup",
+      "path": "skills/ops-and-setup/agentic-productivity-setup"
     },
     {
       "name": "anti-sleep",
@@ -57,8 +89,8 @@
       "path": "skills/ops-and-setup/create-readonly-db-role"
     },
     {
-      "name": "cyber-audit",
-      "path": "skills/ops-and-setup/cyber-audit"
+      "name": "github-outside-sandbox",
+      "path": "skills/ops-and-setup/github-outside-sandbox"
     },
     {
       "name": "global-agent-guardrails",
@@ -77,12 +109,24 @@
       "path": "skills/ops-and-setup/nuke-cursor-app"
     },
     {
+      "name": "openrouter",
+      "path": "skills/ops-and-setup/openrouter"
+    },
+    {
+      "name": "persistent-localhost",
+      "path": "skills/ops-and-setup/persistent-localhost"
+    },
+    {
       "name": "pi-custom-model",
       "path": "skills/ops-and-setup/pi-custom-model"
     },
     {
-      "name": "prod-push",
-      "path": "skills/ops-and-setup/prod-push"
+      "name": "prompt-for-others",
+      "path": "skills/ops-and-setup/prompt-for-others"
+    },
+    {
+      "name": "risky-changes",
+      "path": "skills/ops-and-setup/risky-changes"
     },
     {
       "name": "setup-help",
@@ -93,8 +137,16 @@
       "path": "skills/research-and-web/browser-harness"
     },
     {
+      "name": "browser-use",
+      "path": "skills/research-and-web/browser-use"
+    },
+    {
       "name": "deep-research",
       "path": "skills/research-and-web/deep-research"
+    },
+    {
+      "name": "deep-scrape",
+      "path": "skills/research-and-web/deep-scrape"
     },
     {
       "name": "deepapi",
@@ -117,6 +169,14 @@
       "path": "skills/research-and-web/research-prompt"
     },
     {
+      "name": "twitter-alpha",
+      "path": "skills/research-and-web/twitter-alpha"
+    },
+    {
+      "name": "who-is-this",
+      "path": "skills/research-and-web/who-is-this"
+    },
+    {
       "name": "youtube-transcript",
       "path": "skills/research-and-web/youtube-transcript"
     },
@@ -137,6 +197,14 @@
       "path": "skills/skill-authoring/push-skill-to-github"
     },
     {
+      "name": "adr-verbatim",
+      "path": "skills/thinking-and-docs/adr-verbatim"
+    },
+    {
+      "name": "ask-then-build",
+      "path": "skills/thinking-and-docs/ask-then-build"
+    },
+    {
       "name": "before-building",
       "path": "skills/thinking-and-docs/before-building"
     },
@@ -147,6 +215,14 @@
     {
       "name": "decisions",
       "path": "skills/thinking-and-docs/decisions"
+    },
+    {
+      "name": "file-tree",
+      "path": "skills/thinking-and-docs/file-tree"
+    },
+    {
+      "name": "image-prompt",
+      "path": "skills/thinking-and-docs/image-prompt"
     },
     {
       "name": "level-up",
@@ -169,12 +245,24 @@
       "path": "skills/thinking-and-docs/remind"
     },
     {
+      "name": "rename",
+      "path": "skills/thinking-and-docs/rename"
+    },
+    {
       "name": "save-idea",
       "path": "skills/thinking-and-docs/save-idea"
     },
     {
       "name": "short",
       "path": "skills/thinking-and-docs/short"
+    },
+    {
+      "name": "signal-from-expert",
+      "path": "skills/thinking-and-docs/signal-from-expert"
+    },
+    {
+      "name": "stop-overthinking",
+      "path": "skills/thinking-and-docs/stop-overthinking"
     },
     {
       "name": "teach",
@@ -184,7 +272,7 @@
   "vendor": {
     "id": "davidondrej",
     "repo": "davidondrej/skills",
-    "sha": "6e5545081c888b89576a620d9b2e54e9a6590f68",
+    "sha": "8eadd749ee0178371d362d056359b804cbfabb9a",
     "skillRoots": [
       "skills/*"
     ]
