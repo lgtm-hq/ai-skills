@@ -20,7 +20,7 @@ jobs:
     uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-quality-lint.yml@a167ee7165319d00dc92604ecdef87b719a0a55d  # v0.74.4
     with:
       job-name: "🛠️ Lintro Code Quality"
-      tooling-ref: "a167ee7165319d00dc92604ecdef87b719a0a55d" # v0.74.4
+      tooling-ref: "a167ee7165319d00dc92604ecdef87b719a0a55d"  # v0.74.4
       # Override the reusable default (0.64.1 at this pin) so CI matches
       # pyproject.toml's lintro==0.142.0 and validate-lintro-version.yml.
       # yamllint disable-line rule:line-length
@@ -36,7 +36,7 @@ jobs:
     uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-publish-quality-summary.yml@a167ee7165319d00dc92604ecdef87b719a0a55d  # v0.74.4
     with:
       exit-code: ${{ needs.quality.outputs.exit-code }}
-      tooling-ref: "a167ee7165319d00dc92604ecdef87b719a0a55d" # v0.74.4
+      tooling-ref: "a167ee7165319d00dc92604ecdef87b719a0a55d"  # v0.74.4
     permissions:
       contents: read
       pull-requests: write
@@ -49,7 +49,7 @@ jobs:
     with:
       python-version: "3.13"
       test-path: tests
-      tooling-ref: "a167ee7165319d00dc92604ecdef87b719a0a55d" # v0.74.4
+      tooling-ref: "a167ee7165319d00dc92604ecdef87b719a0a55d"  # v0.74.4
     permissions:
       # actions: write is required at compile time by the reusable
       # workflow's aggregate job (matrix mode only, skipped here), which
@@ -68,7 +68,7 @@ jobs:
       job-name: "📚 Validate Skill Structure"
       setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/validate.sh
-      tooling-ref: "a167ee7165319d00dc92604ecdef87b719a0a55d" # v0.74.4
+      tooling-ref: "a167ee7165319d00dc92604ecdef87b719a0a55d"  # v0.74.4
       egress-policy: block
       egress-preset: quality
       # Harden-runner pre reads inputs only. setup installs ripgrep via apt and
@@ -128,7 +128,7 @@ jobs:
       job-name: "🍞 Bake vendor plugins"
       setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/ci/bake_vendor_plugins_gate.sh
-      tooling-ref: "a167ee7165319d00dc92604ecdef87b719a0a55d" # v0.74.4
+      tooling-ref: "a167ee7165319d00dc92604ecdef87b719a0a55d"  # v0.74.4
       egress-policy: block
       egress-preset: quality
       # Same allowlist as validate: uv/PyPI plus GitHub tarball hosts.
