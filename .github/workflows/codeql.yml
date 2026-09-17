@@ -35,7 +35,7 @@ jobs:
     with:
       languages: python
       build-mode: none
-      tooling-ref: 'a167ee7165319d00dc92604ecdef87b719a0a55d' # v0.74.4
+      tooling-ref: 'a167ee7165319d00dc92604ecdef87b719a0a55d'  # v0.74.4
       egress-policy: block
       egress-preset: github-tooling
       # Harden-runner pre reads workflow inputs only (not resolved presets).
