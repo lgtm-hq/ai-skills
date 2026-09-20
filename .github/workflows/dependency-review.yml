@@ -19,7 +19,7 @@ jobs:
     uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-dependency-review.yml@d32388495d571a0ee13383bacc732765bf4e9e7d  # v0.74.6
     with:
       fail-on-severity: high
-      tooling-ref: "d32388495d571a0ee13383bacc732765bf4e9e7d" # v0.74.6
+      tooling-ref: "d32388495d571a0ee13383bacc732765bf4e9e7d"  # v0.74.6
       egress-policy: block
       egress-preset: scorecard
       # replace: harden-runner pre cannot see resolved presets; pass the full

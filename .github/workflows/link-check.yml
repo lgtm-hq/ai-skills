@@ -38,7 +38,7 @@ jobs:
       job-name: "🔗 Internal Link Check"
       file-extensions: md
       check-external: false
-      tooling-ref: "d32388495d571a0ee13383bacc732765bf4e9e7d" # v0.74.6
+      tooling-ref: "d32388495d571a0ee13383bacc732765bf4e9e7d"  # v0.74.6
       # reusable-link-check hardens with inputs.allowed-endpoints before
       # checkout (append/preset resolve happens too late). Pass the full
       # github-tooling default list plus release-assets so Lychee can download
@@ -79,4 +79,4 @@ jobs:
       # authenticate all github.com checks instead.
       exclude-patterns: 'github\.com/lgtm-hq/plugin-engine-lab'
       egress-policy: audit
-      tooling-ref: "d32388495d571a0ee13383bacc732765bf4e9e7d" # v0.74.6
+      tooling-ref: "d32388495d571a0ee13383bacc732765bf4e9e7d"  # v0.74.6
