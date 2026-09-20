@@ -10,8 +10,8 @@ name: AI Review
 # repo-wide uniqueness and still requires uses/tooling-ref lockstep.
 #
 # Provider and transport resolve inside the reusable
-# (input → vars.LINTRO_AI_*). Model and max-cost are input-only
-# on reusable v0.67.0, so this caller forwards the repository
+# (input → vars.LINTRO_AI_*). Model and max-cost are optional inputs
+# on reusable v0.74.5, so this caller forwards the repository
 # variables. Those two vars are required: an empty with: value
 # overrides the reusable input default.
 #
@@ -53,6 +53,6 @@ jobs:
       CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
       CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
     with:
-      tooling-ref: "86e29ba560701a8d73f31713eb0841ef50f6029c" # v0.74.5
+      tooling-ref: "86e29ba560701a8d73f31713eb0841ef50f6029c"  # v0.74.5
       model: ${{ vars.LINTRO_AI_MODEL }}
       max-cost-usd: ${{ vars.LINTRO_AI_MAX_COST_USD }}
