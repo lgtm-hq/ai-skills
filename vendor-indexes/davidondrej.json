@@ -73,8 +73,16 @@
       "path": "skills/ops-and-setup/box-ascii"
     },
     {
+      "name": "computer-use",
+      "path": "skills/ops-and-setup/computer-use"
+    },
+    {
       "name": "create-readonly-db-role",
       "path": "skills/ops-and-setup/create-readonly-db-role"
+    },
+    {
+      "name": "cua-driver",
+      "path": "skills/ops-and-setup/cua-driver"
     },
     {
       "name": "github-outside-sandbox",
@@ -145,6 +153,10 @@
       "path": "skills/research-and-web/online-shopping"
     },
     {
+      "name": "varied-search",
+      "path": "skills/research-and-web/varied-search"
+    },
+    {
       "name": "who-is-this",
       "path": "skills/research-and-web/who-is-this"
     },
@@ -159,10 +171,6 @@
     {
       "name": "folder-specific-claude-and-agents-md",
       "path": "skills/skill-authoring/folder-specific-claude-and-agents-md"
-    },
-    {
-      "name": "push-skills",
-      "path": "skills/skill-authoring/push-skills"
     },
     {
       "name": "adr-verbatim",
@@ -228,7 +236,7 @@
   "vendor": {
     "id": "davidondrej",
     "repo": "davidondrej/skills",
-    "sha": "106d4243251dbf0d6feff40648414501a0b71268",
+    "sha": "cb2f8ba486ad35a9176ec0c4e4a1f5ccc865d283",
     "skillRoots": [
       "skills/*"
     ]
