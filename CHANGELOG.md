@@ -21,6 +21,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.30.3] - 2026-09-17
+
+### Changed
+
+- **deps**: update astral-sh/setup-uv action to v10.1.0 (minor) (#474) (458bb72)
+- **deps**: update lintro (#500) (84e795b)
+- **deps**: update lintro (#499) (6bbae13)
+- **deps**: update lintro (#498) (5f4b4fc)
+- **deps**: update lintro (#497) (8a3b83a)
+- **deps**: lock file maintenance (#493) (960bb47)
+- **deps**: update lintro (#492) (9dc0428)
+- **deps**: update lintro (#491) (f9a803e)
+- **deps**: update lintro (#490) (14362d8)
+- **deps**: update lintro (#489) (eb28089)
+- **deps**: update lintro (#488) (27bf750)
+- **deps**: update lintro (#487) (62af4a1)
+- **deps**: update lintro (#486) (fb05e8a)
+- **deps**: update lintro (#485) (592775c)
+- **deps**: update lintro (#484) (70bdffe)
+- **deps**: update lintro (#483) (194c65a)
+- **deps**: update lintro (#482) (ff48b02)
+- **deps**: update lintro (#481) (cdf53bc)
+- **deps**: update lintro (#480) (aa7aabe)
+- **deps**: update lintro (#478) (b709e7d)
+- **deps**: update lintro (#477) (c1a4471)
+- **deps**: update lintro (#475) (cf79d15)
+- **deps**: update lintro (#473) (b2df005)
+- **deps**: update lintro (#472) (2a35ab3)
+- **deps**: update lintro (#471) (5330788)
+- **deps**: update ghcr.io/lgtm-hq/py-lintro:latest docker digest to 60e4c72 (#470)
+  (f88d3bb)
+- **deps**: update lintro (#469) (ab98120)
+- **deps**: update lintro (#468) (2612787)
+- **deps**: update lintro (#467) (4a48c27)
+- **deps**: update lintro (#466) (89bfbbf)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.69.8 (#465) (6d9bfcd)
+- **vendors**: re-pin davidondrej (#464) (dccdbd9)
+- **vendors**: re-pin mattpocock (#463) (0a719e2)
+- **vendors**: re-pin caveman (#462) (fdb3a06)
+- **vendors**: re-pin anthropics-claude-code (#461) (367ce21)
+- **vendors**: re-pin anthropics (#460) (d82d37d)
+
+### Fixed
+
+- **deps**: update dependency @clack/prompts to 1.8.1 (minor) (#476) (9c5b12f)
+
 ## [0.30.2] - 2026-09-07
 
 ### Changed
@@ -1022,7 +1068,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.2...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.3...HEAD
+[0.30.3]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.2...v0.30.3
 [0.30.2]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.1...v0.30.2
 [0.30.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.0...v0.30.1
 [0.30.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.29.1...v0.30.0
