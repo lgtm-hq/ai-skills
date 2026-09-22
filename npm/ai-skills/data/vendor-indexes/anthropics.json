@@ -80,7 +80,7 @@
   "vendor": {
     "id": "anthropics",
     "repo": "anthropics/skills",
-    "sha": "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
+    "sha": "34040c9c568585f6929bedeaad110ad08f079624",
     "skillRoots": [
       "skills"
     ]
