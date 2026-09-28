@@ -73,7 +73,7 @@
     {
       "id": "anthropics-claude-code",
       "repo": "anthropics/claude-code",
-      "sha": "ab9b2cf7bb9e4f98ff264c07a22e46d83c29c558",
+      "sha": "7779afb12e3635f46f56ec823979d68350ae000b",
       "displayRef": "latest",
       "skillRoots": [
         "plugins/*/skills"
