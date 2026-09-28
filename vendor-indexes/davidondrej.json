@@ -69,8 +69,8 @@
       "path": "skills/ops-and-setup/anti-sleep"
     },
     {
-      "name": "box-ascii",
-      "path": "skills/ops-and-setup/box-ascii"
+      "name": "boat",
+      "path": "skills/ops-and-setup/boat"
     },
     {
       "name": "computer-use",
@@ -169,8 +169,8 @@
       "path": "skills/skill-authoring/effective-agent-skills"
     },
     {
-      "name": "folder-specific-claude-and-agents-md",
-      "path": "skills/skill-authoring/folder-specific-claude-and-agents-md"
+      "name": "push-skills",
+      "path": "skills/skill-authoring/push-skills"
     },
     {
       "name": "adr-verbatim",
@@ -217,10 +217,6 @@
       "path": "skills/thinking-and-docs/save-idea"
     },
     {
-      "name": "short",
-      "path": "skills/thinking-and-docs/short"
-    },
-    {
       "name": "signal-from-expert",
       "path": "skills/thinking-and-docs/signal-from-expert"
     },
@@ -236,7 +232,7 @@
   "vendor": {
     "id": "davidondrej",
     "repo": "davidondrej/skills",
-    "sha": "cb2f8ba486ad35a9176ec0c4e4a1f5ccc865d283",
+    "sha": "1864aafa4c29fa70333a648470ec614c917bbd0b",
     "skillRoots": [
       "skills/*"
     ]
