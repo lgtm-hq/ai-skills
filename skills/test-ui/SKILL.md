@@ -16,22 +16,22 @@ Use user-facing locators.
 
 ```typescript
 // BEST: Semantic locators
-page.getByRole("button", { name: "Submit" });
-page.getByRole("tab", { name: "Dashboard" });
-page.getByLabel("Email");
-page.getByPlaceholder("Search...");
-page.getByText("Welcome");
-page.getByTitle("Document title");
+page.getByRole('button', { name: 'Submit' });
+page.getByRole('tab', { name: 'Dashboard' });
+page.getByLabel('Email');
+page.getByPlaceholder('Search...');
+page.getByText('Welcome');
+page.getByTitle('Document title');
 
 // GOOD: Test IDs (attribute set by testIdAttribute in playwright.config.ts)
-page.getByTestId("delete-row-btn");
+page.getByTestId('delete-row-btn');
 
 // ACCEPTABLE: CSS locators for structural queries
 page.locator('input[type="file"][multiple]');
 
 // AVOID: Fragile CSS selectors
-page.locator("#submit-btn");
-page.locator("div > button.primary");
+page.locator('#submit-btn');
+page.locator('div > button.primary');
 ```
 
 ## Auto-Waiting
@@ -49,11 +49,11 @@ await button.click();
 
 // CORRECT: Poll for async state
 await expect
-  .poll(async () => page.evaluate(() => localStorage.getItem("theme")))
-  .toBe("dark");
+  .poll(async () => page.evaluate(() => localStorage.getItem('theme')))
+  .toBe('dark');
 
 // CORRECT: Wait for specific conditions
-await page.waitForLoadState("networkidle");
+await page.waitForLoadState('networkidle');
 await page.waitForURL(/\/dashboard/);
 
 // ACCEPTABLE: toPass() for polling complex async operations
@@ -70,16 +70,16 @@ possible.
 
 ```typescript
 // CORRECT: Web-first (auto-retries)
-await expect(page.getByRole("heading")).toHaveText("Dashboard");
-await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+await expect(page.getByRole('heading')).toHaveText('Dashboard');
+await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 await expect(button).toBeEnabled();
 
 // CORRECT: Page object assertion methods
-await dashboardPage.assertSelectedCheckboxes(["Odd", "Free"]);
+await dashboardPage.assertSelectedCheckboxes(['Odd', 'Free']);
 
 // AVOID: Manual checks (no retry)
 const text = await heading.textContent();
-expect(text).toBe("Dashboard");
+expect(text).toBe('Dashboard');
 ```
 
 ## Page Object Model
@@ -94,7 +94,7 @@ export default class BasePage {
   constructor(readonly page: Page) {}
 
   async openTab(tabName: string): Promise<void> {
-    await this.page.getByRole("tab", { name: tabName }).click();
+    await this.page.getByRole('tab', { name: tabName }).click();
   }
 
   async assertUrl(path: string | RegExp): Promise<void> {
@@ -106,7 +106,7 @@ export default class BasePage {
 export default class DetailPage extends BasePage {
   public fileUploadComponent = new FileUpload(this.page);
 
-  readonly errorLabel: Locator = this.page.getByRole("alert");
+  readonly errorLabel: Locator = this.page.getByRole('alert');
 
   async assertError(message?: string): Promise<void> {
     await expect(this.errorLabel).toBeVisible();
@@ -166,28 +166,28 @@ Name the test after what it actually asserts, not the component you started with
 
 ```typescript
 // BAD: only checks the element exists — passes even if broken
-await detailPage.assertBadgeVisible("Theme");
+await detailPage.assertBadgeVisible('Theme');
 
 // GOOD: verify content and interaction
-await detailPage.assertBadgeText("Theme", "Default");
-await detailPage.selectBadge("Theme", "Dark");
-await detailPage.assertBadgeText("Theme", "Dark");
+await detailPage.assertBadgeText('Theme', 'Default');
+await detailPage.selectBadge('Theme', 'Dark');
+await detailPage.assertBadgeText('Theme', 'Dark');
 ```
 
 ## Network Interception
 
 ```typescript
 // Mock API responses
-await page.route("**/api/user", (route) => {
-  route.fulfill({ json: { name: "Test User" } });
+await page.route('**/api/user', (route) => {
+  route.fulfill({ json: { name: 'Test User' } });
 });
 
 // Simulate failures
-await page.route("**/*.css", (route) => route.abort("failed"));
+await page.route('**/*.css', (route) => route.abort('failed'));
 
 // Cleanup after test — unroute every mock you registered
-await page.unroute("**/api/user");
-await page.unroute("**/*.css");
+await page.unroute('**/api/user');
+await page.unroute('**/*.css');
 ```
 
 ## Checklist

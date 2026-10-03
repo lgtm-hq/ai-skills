@@ -80,7 +80,7 @@ catalog/validation/generator scripts (managed with **uv**) and the JS gateway CL
 - Gateway `install`/`update` shell out to the upstream Vercel `skills` CLI via
   `bunx skills@^…`, which needs network + GitHub access. To smoke-test a real
   install, prefer a vendor source (for example `--vendor mattpocock --skill code-review
-  -a cursor --project -y` inside a scratch directory). First-party installs resolve
+-a cursor --project -y` inside a scratch directory). First-party installs resolve
   `lgtm-hq/ai-skills@v<package-version>`, and on `main` the package version is
   `0.0.0-dev` (not a real tag), so a first-party install will not resolve there.
 

@@ -25,8 +25,8 @@ skill — this skill only adds what is QSF-specific.
 `testIdAttribute` in `playwright.config.ts`):
 
 ```typescript
-page.getByTestId("no-handles-available-indicator");
-page.getByTestId("open-filter-section-button");
+page.getByTestId('no-handles-available-indicator');
+page.getByTestId('open-filter-section-button');
 ```
 
 ## Fixtures (Auth Pattern)
@@ -37,9 +37,9 @@ storage state files in `playwright-tests/.auth/`.
 ```typescript
 // fixtures/authFixtures.ts
 const authFiles = {
-  guest: "guest_storage_state.json",
-  testView: "test_view_storage_state.json",
-  testNoRights: "test_no_rights_storage_state.json",
+  guest: 'guest_storage_state.json',
+  testView: 'test_view_storage_state.json',
+  testNoRights: 'test_no_rights_storage_state.json',
   // ... more users
 };
 
@@ -47,7 +47,7 @@ const baseFixtures = Object.fromEntries(
   Object.entries(authFiles).map(([key, fileName]) => [
     key,
     async ({ browser }: { browser: Browser }, use: (page: Page) => Promise<void>) => {
-      const storageState = path.join(__dirname, "../.auth", fileName);
+      const storageState = path.join(__dirname, '../.auth', fileName);
       const context = await browser.newContext({ storageState });
       const page = await context.newPage();
       try {
@@ -56,7 +56,7 @@ const baseFixtures = Object.fromEntries(
         await context.close();
       }
     },
-  ]),
+  ])
 );
 
 export const test = baseTest.extend(baseFixtures);
@@ -67,14 +67,14 @@ export const expect = test.expect;
 
 ```typescript
 // Tests import from authFixtures, NOT from @playwright/test
-import { test, expect } from "../../fixtures/authFixtures";
+import { test, expect } from '../../fixtures/authFixtures';
 
-test("user sees their handles", async ({ guest }) => {
-  await guest.goto("/"); // `guest` is a pre-authenticated Page — no login needed
+test('user sees their handles', async ({ guest }) => {
+  await guest.goto('/'); // `guest` is a pre-authenticated Page — no login needed
 });
 
-test("restricted user cannot access admin", async ({ testNoRights }) => {
-  await testNoRights.goto("/admin");
+test('restricted user cannot access admin', async ({ testNoRights }) => {
+  await testNoRights.goto('/admin');
 });
 ```
 
@@ -118,19 +118,19 @@ export const Buttons = { SUBMIT: 'Submit', UPLOAD: 'Upload files', ... };
 ## Typical Test Pattern
 
 ```typescript
-import { test, expect } from "../../fixtures/authFixtures";
-import { AppsDetailPage } from "../../pageObjects/AppsDetailPage";
-import { MyAppsPage } from "../../pageObjects/MyAppsPage";
-import { HandleNames } from "../../enums/handles";
+import { test, expect } from '../../fixtures/authFixtures';
+import { AppsDetailPage } from '../../pageObjects/AppsDetailPage';
+import { MyAppsPage } from '../../pageObjects/MyAppsPage';
+import { HandleNames } from '../../enums/handles';
 
-test.describe("Feature Area", () => {
+test.describe('Feature Area', () => {
   test.beforeEach(async ({ guest }) => {
     const myAppsPage = new MyAppsPage(guest);
-    await guest.goto("/");
+    await guest.goto('/');
     await myAppsPage.navigation.openHandle(HandleNames.PING_FILES);
   });
 
-  test("describes expected behavior", async ({ guest }) => {
+  test('describes expected behavior', async ({ guest }) => {
     const appsDetailPage = new AppsDetailPage(guest);
     await appsDetailPage.doSomething();
     await appsDetailPage.assertSomething(expected);
@@ -145,9 +145,9 @@ describe blocks, extract a shared helper (e.g.
 ## Environment-Aware Tests
 
 ```typescript
-import { isOpenAmEnv } from "../../src/utils/environment";
+import { isOpenAmEnv } from '../../src/utils/environment';
 
-test.skip(isOpenAmEnv, "This test is only for Keycloak environments");
+test.skip(isOpenAmEnv, 'This test is only for Keycloak environments');
 ```
 
 Env is loaded via `source ./bin/load_env.sh`; the `ENVIRONMENT` variable controls
@@ -157,7 +157,7 @@ the target URL (default: `test`).
 
 ```typescript
 export default defineConfig({
-  testDir: "./playwright-tests",
+  testDir: './playwright-tests',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.TEST_HANDLE ? 0 : 1,
@@ -167,17 +167,17 @@ export default defineConfig({
   expect: { timeout: 10000 },
   use: {
     ignoreHTTPSErrors: true,
-    testIdAttribute: "data-test-label",
+    testIdAttribute: 'data-test-label',
     baseURL: envUrl,
-    trace: "on-first-retry",
+    trace: 'on-first-retry',
   },
   projects: [
-    { name: "auth-setup", testMatch: "**/setup/auth.setup.ts" },
+    { name: 'auth-setup', testMatch: '**/setup/auth.setup.ts' },
     {
-      name: "regression-tests",
-      testMatch: ["**/tests/*.spec.ts", "**/tests/**/*.spec.ts"],
-      dependencies: process.env.CI ? ["auth-setup"] : [],
-      use: { trace: "retain-on-failure", headless: true },
+      name: 'regression-tests',
+      testMatch: ['**/tests/*.spec.ts', '**/tests/**/*.spec.ts'],
+      dependencies: process.env.CI ? ['auth-setup'] : [],
+      use: { trace: 'retain-on-failure', headless: true },
     },
   ],
 });

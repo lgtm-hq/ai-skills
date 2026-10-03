@@ -149,22 +149,22 @@ Playwright Snapshots → Run workflow).
 
 ## Quick Fix Reference
 
-| Issue                         | Solution                                              |
-| ----------------------------- | ----------------------------------------------------- |
-| Theme reverts on navigation   | Add variants to `themeGroups` in theme-meta.ts        |
-| Wrong/missing header label    | Fix `themeNames` in theme-meta.ts                     |
-| Missing icon                  | Fix `themeIcons` in theme-meta.ts + add PNG           |
-| Theme in wrong group          | Fix `VENDOR_FAMILY_MAP` in theme-mapper.ts            |
-| Theme not appearing           | Check `ThemeFamily` type, `THEME_FAMILIES` constant   |
-| Tests fail on theme order     | Use `data-theme-id` lookups, not array indices        |
-| Bundle too large              | Review asset diff; raise bundle budget if intentional |
-| CI "Cannot find module"       | Add sync script to `theme:sync` in package.json       |
-| tokens.json wrong metadata    | Add to `vendorMeta` in prepare-style-dictionary.mjs   |
-| Generated assets outdated     | Run `bun run build` and commit generated files        |
-| Missing descriptions          | Add to `FLAVOR_DESCRIPTIONS` in theme-mapper.ts       |
-| Sync writes to wrong path     | Change outPath to `src/themes/packs/`                 |
-| Visual regression fails       | Run `maintenance-generate-snapshots.yml` workflow     |
-| Missing from examples/Swift   | Re-run the section-1 diff and fill the gaps           |
+| Issue                       | Solution                                              |
+| --------------------------- | ----------------------------------------------------- |
+| Theme reverts on navigation | Add variants to `themeGroups` in theme-meta.ts        |
+| Wrong/missing header label  | Fix `themeNames` in theme-meta.ts                     |
+| Missing icon                | Fix `themeIcons` in theme-meta.ts + add PNG           |
+| Theme in wrong group        | Fix `VENDOR_FAMILY_MAP` in theme-mapper.ts            |
+| Theme not appearing         | Check `ThemeFamily` type, `THEME_FAMILIES` constant   |
+| Tests fail on theme order   | Use `data-theme-id` lookups, not array indices        |
+| Bundle too large            | Review asset diff; raise bundle budget if intentional |
+| CI "Cannot find module"     | Add sync script to `theme:sync` in package.json       |
+| tokens.json wrong metadata  | Add to `vendorMeta` in prepare-style-dictionary.mjs   |
+| Generated assets outdated   | Run `bun run build` and commit generated files        |
+| Missing descriptions        | Add to `FLAVOR_DESCRIPTIONS` in theme-mapper.ts       |
+| Sync writes to wrong path   | Change outPath to `src/themes/packs/`                 |
+| Visual regression fails     | Run `maintenance-generate-snapshots.yml` workflow     |
+| Missing from examples/Swift | Re-run the section-1 diff and fill the gaps           |
 
 ## Review Output Format
 

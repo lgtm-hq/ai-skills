@@ -148,7 +148,7 @@ them. Contributors edit the YAML, then run
 missing.
 
 The catalog is harness-agnostic by construction: one authoring tree, per-host
-JSON as build output. Settled *why* lives in
+JSON as build output. Settled _why_ lives in
 [docs/adr/](./docs/adr/README.md).
 
 ## Vendors, pins, and locks
