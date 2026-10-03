@@ -15,14 +15,14 @@ generic `gh pr create` mechanics, use **`pr`**.
 
 ## Related skills
 
-| Skill        | Role                                              |
-| ------------ | ------------------------------------------------- |
-| `raycast`    | Lint order, store checklist, code patterns        |
-| `lint`       | `uv run lintro fmt/chk` (first pass)              |
-| `commit`     | Signed semantic commits, history restructuring    |
-| `rebase`     | Sync onto `upstream/main`                         |
-| `greptile`   | Pre-push Greptile CLI (max 2 runs)                |
-| `coderabbit` | Pre-push CodeRabbit CLI (max 2–3 runs)            |
+| Skill        | Role                                           |
+| ------------ | ---------------------------------------------- |
+| `raycast`    | Lint order, store checklist, code patterns     |
+| `lint`       | `uv run lintro fmt/chk` (first pass)           |
+| `commit`     | Signed semantic commits, history restructuring |
+| `rebase`     | Sync onto `upstream/main`                      |
+| `greptile`   | Pre-push Greptile CLI (max 2 runs)             |
+| `coderabbit` | Pre-push CodeRabbit CLI (max 2–3 runs)         |
 
 ## Checklist
 

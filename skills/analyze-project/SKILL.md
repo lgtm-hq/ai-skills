@@ -148,7 +148,7 @@ Find things that look wired up but aren't — verify by reference, not by name:
 Build one row per area of the codebase — the full catalog, not a sample. Columns:
 
 | Area | Correctness risk (low/med/high) | Test coverage (y/partial/none) | Consistency (ok/drifts) | Staleness / dead-code flags | Action |
-| ---- | -------------------------------- | ------------------------------- | ------------------------ | ---------------------------- | ------ |
+| ---- | ------------------------------- | ------------------------------ | ----------------------- | --------------------------- | ------ |
 
 Sort worst-first. Follow with the distribution across risk levels, the top 5-10
 highest-risk areas, and any repo-wide patterns the scorecard reveals.

@@ -757,7 +757,7 @@ def test_vendor_repin_workflow_is_sha_pinned_weekly_and_never_auto_merges() -> N
     )
     parsed = yaml.safe_load(workflow)
 
-    assert_that(workflow).contains('cron: "0 7 * * 1"')
+    assert_that(parsed["on"]["schedule"][0]["cron"]).is_equal_to("0 7 * * 1")
     assert_that(_TAG_USES.search(workflow)).is_none()
     pins = _SHA_USES.findall(workflow)
     assert_that(pins).is_not_empty()

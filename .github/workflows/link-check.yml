@@ -10,13 +10,13 @@ name: Link Check
 #     HTTP(S) links, which are inherently flaky (rate limits, transient 5xx),
 #     so it is kept off the PR path to avoid blocking merges on link rot.
 
-"on":
+'on':
   pull_request:
     branches: [main]
   merge_group:
   schedule:
     # Weekly, Monday 06:00 UTC — surfaces external link rot without gating PRs.
-    - cron: "0 6 * * 1"
+    - cron: '0 6 * * 1'
   workflow_dispatch:
 
 jobs:
@@ -33,12 +33,12 @@ jobs:
       contents: read
       pull-requests: write
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@d32388495d571a0ee13383bacc732765bf4e9e7d  # v0.74.6
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@d32388495d571a0ee13383bacc732765bf4e9e7d # v0.74.6
     with:
-      job-name: "🔗 Internal Link Check"
+      job-name: '🔗 Internal Link Check'
       file-extensions: md
       check-external: false
-      tooling-ref: "d32388495d571a0ee13383bacc732765bf4e9e7d"  # v0.74.6
+      tooling-ref: 'd32388495d571a0ee13383bacc732765bf4e9e7d' # v0.74.6
       # reusable-link-check hardens with inputs.allowed-endpoints before
       # checkout (append/preset resolve happens too late). Pass the full
       # github-tooling default list plus release-assets so Lychee can download
@@ -67,9 +67,9 @@ jobs:
       contents: read
       pull-requests: write
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@d32388495d571a0ee13383bacc732765bf4e9e7d  # v0.74.6
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@d32388495d571a0ee13383bacc732765bf4e9e7d # v0.74.6
     with:
-      job-name: "🔗 External Link Check"
+      job-name: '🔗 External Link Check'
       file-extensions: md
       check-external: true
       # plugin-engine-lab is private, so unauthenticated lychee gets 404
@@ -79,4 +79,4 @@ jobs:
       # authenticate all github.com checks instead.
       exclude-patterns: 'github\.com/lgtm-hq/plugin-engine-lab'
       egress-policy: audit
-      tooling-ref: "d32388495d571a0ee13383bacc732765bf4e9e7d"  # v0.74.6
+      tooling-ref: 'd32388495d571a0ee13383bacc732765bf4e9e7d' # v0.74.6

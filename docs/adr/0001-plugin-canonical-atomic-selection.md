@@ -23,7 +23,7 @@ plugin is the same class of partial tree; the engine does not offer it.
 
 A **plugin** is the canonical artifact and the only user-facing selection
 unit. A plugin is a distribution envelope, not a completeness requirement:
-it holds whatever mix of components its *job* needs.
+it holds whatever mix of components its _job_ needs.
 
 Installs are atomic. Marketplace = store, plugin = product, components =
 ingredients: contents stay visible; users do not cherry-pick. Granularity
@@ -32,7 +32,7 @@ is solved by slicing smaller plugins at the registry or bake layer.
 Explode is a delivery projection, not the model. It survives only as a
 doctor-gated fallback for hosts without plugin loading (see
 [ADR 0004](./0004-doctor-capability-probe.md)). The post-install escape
-valve is per-component *disable* (MCP/hooks), never a partial install.
+valve is per-component _disable_ (MCP/hooks), never a partial install.
 That disable path is post-v1 backlog, not a v1 engine feature.
 
 ## Consequences
