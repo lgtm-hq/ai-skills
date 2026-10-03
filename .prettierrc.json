@@ -1,0 +1,21 @@
+{
+  "semi": true,
+  "singleQuote": true,
+  "tabWidth": 2,
+  "printWidth": 88,
+  "trailingComma": "es5",
+  "overrides": [
+    {
+      "files": "renovate.json",
+      "options": {
+        "printWidth": 50
+      }
+    },
+    {
+      "files": "*.md",
+      "options": {
+        "printWidth": 88
+      }
+    }
+  ]
+}
