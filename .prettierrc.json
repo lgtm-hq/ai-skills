@@ -14,7 +14,8 @@
     {
       "files": "*.md",
       "options": {
-        "printWidth": 88
+        "printWidth": 88,
+        "embeddedLanguageFormatting": "off"
       }
     }
   ]

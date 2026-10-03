@@ -34,15 +34,15 @@ Standards for TypeScript and JavaScript code.
   ```typescript
   // Good
   const Status = {
-    Active: 'active',
-    Inactive: 'inactive',
+    Active: "active",
+    Inactive: "inactive",
   } as const;
   type Status = (typeof Status)[keyof typeof Status];
 
   // Avoid
   enum Status {
-    Active = 'active',
-    Inactive = 'inactive',
+    Active = "active",
+    Inactive = "inactive",
   }
   ```
 
@@ -98,14 +98,14 @@ Follow the `lint` skill for linting and formatting workflow.
 
 ```typescript
 // Good
-describe('parseConfig', () => {
-  it('returns defaults for empty input', () => {
+describe("parseConfig", () => {
+  it("returns defaults for empty input", () => {
     expect(parseConfig({})).toEqual(defaults);
   });
 
   it.each([
-    { input: 'yes', expected: true },
-    { input: 'no', expected: false },
+    { input: "yes", expected: true },
+    { input: "no", expected: false },
   ])("parses '$input' as $expected", ({ input, expected }) => {
     expect(parseBoolean(input)).toBe(expected);
   });

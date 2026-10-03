@@ -128,20 +128,20 @@ Per plugin:
   key rather than `null`. This is not a host-id allowlist.
 
 ```yaml
-plugins:
-  - id: example-plugin
-    description: Example vendor plugin.
-    skillsRoot: skills
-    skills: '*'
-    extraSkills:
-      - extras/bonus
-    extraFiles:
-      - README.md
-    renameSkills:
-      teach: teach-example
-    agents:
-      - comment-sicko
-      - code-reviewer
+    plugins:
+      - id: example-plugin
+        description: Example vendor plugin.
+        skillsRoot: skills
+        skills: "*"
+        extraSkills:
+          - extras/bonus
+        extraFiles:
+          - README.md
+        renameSkills:
+          teach: teach-example
+        agents:
+          - comment-sicko
+          - code-reviewer
 ```
 
 `scripts/manage_vendors.py` round-trips `plugins` when refreshing SHAs. Do

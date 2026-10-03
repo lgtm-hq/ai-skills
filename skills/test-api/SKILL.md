@@ -70,15 +70,15 @@ const body: ApiResponse<User> = await response.json();
 
 ```typescript
 // clients/user.client.ts
-const BASE_PATH = '/api/users';
+const BASE_PATH = "/api/users";
 
 function userPath(...segments: string[]): string {
-  return [BASE_PATH, ...segments].join('/');
+  return [BASE_PATH, ...segments].join("/");
 }
 
 export async function createUser(
   request: APIRequestContext,
-  data: CreateUserInput
+  data: CreateUserInput,
 ): Promise<User> {
   const response = await request.post(userPath(), { data });
   return UserResponseSchema.parse(await response.json()).data;
@@ -87,7 +87,7 @@ export async function createUser(
 // Raw variant for error testing (no validation, returns raw response)
 export function createUserRaw(
   request: APIRequestContext,
-  data: unknown
+  data: unknown,
 ): Promise<APIResponse> {
   return request.post(userPath(), { data });
 }
@@ -99,7 +99,7 @@ Fixtures delegate to clients and handle cleanup:
 
 ```typescript
 // fixtures/user.fixture.ts
-import * as userClient from '../clients/user.client';
+import * as userClient from "../clients/user.client";
 
 export const test = base.extend<UserFixtures>({
   userApi: async ({ request }, use) => {
@@ -151,9 +151,9 @@ Playwright lacks native `test.each()`. Use a for-loop:
 
 ```typescript
 const cases = [
-  { name: 'empty string', input: '', status: 400 },
-  { name: 'too long', input: 'x'.repeat(256), status: 400 },
-  { name: 'valid', input: 'test@example.com', status: 201 },
+  { name: "empty string", input: "", status: 400 },
+  { name: "too long", input: "x".repeat(256), status: 400 },
+  { name: "valid", input: "test@example.com", status: 201 },
 ];
 
 for (const { name, input, status } of cases) {
@@ -169,7 +169,7 @@ Or wrap in a helper if used frequently:
 ```typescript
 function testEach<T>(
   cases: { name: string; data: T }[],
-  fn: (data: T) => Promise<void>
+  fn: (data: T) => Promise<void>,
 ) {
   for (const { name, data } of cases) {
     test(name, () => fn(data));
@@ -182,15 +182,15 @@ function testEach<T>(
 Include basic security validation:
 
 ```typescript
-test.describe('Security', () => {
-  test('SQL injection in ID parameter', async ({ request }) => {
-    const response = await request.get('/api/users/1 OR 1=1');
+test.describe("Security", () => {
+  test("SQL injection in ID parameter", async ({ request }) => {
+    const response = await request.get("/api/users/1 OR 1=1");
     expect([400, 404]).toContain(response.status());
   });
 
-  test('rejects oversized payload', async ({ request }) => {
-    const response = await request.post('/api/users', {
-      data: { name: 'x'.repeat(1_000_000) },
+  test("rejects oversized payload", async ({ request }) => {
+    const response = await request.post("/api/users", {
+      data: { name: "x".repeat(1_000_000) },
     });
     expect(response.status()).toBe(413);
   });
@@ -204,8 +204,8 @@ Centralize test data:
 ```typescript
 // constants/test-data.ts
 export const TEST_USERS = {
-  VALID: { email: 'test@example.com', name: 'Test User' },
-  ADMIN: { email: 'admin@example.com', name: 'Admin', role: 'admin' },
+  VALID: { email: "test@example.com", name: "Test User" },
+  ADMIN: { email: "admin@example.com", name: "Admin", role: "admin" },
 } as const;
 
 // constants/business-rules.ts
