@@ -84,7 +84,7 @@ same issue (a race that has bitten this workflow before).
 ## Guardrails
 
 - **Signing pre-flight before spawning.** Confirm commit signing works now — a
-  locked signing key must be surfaced to the user *before* you go AFK, not
+  locked signing key must be surfaced to the user _before_ you go AFK, not
   discovered mid-run.
 - A lane that **cannot stay green STOPS and reports.** Never weaken or delete
   tests, never open a knowingly broken PR.

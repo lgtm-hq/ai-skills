@@ -28,7 +28,7 @@ document:
 - **README plugin table:** the `## Plugins` table in `README.md` is generated
   from `bundles.yaml`. Release-tag / npm-version pins are generated from
   `pyproject.toml`. Regenerate with `uv run python scripts/generate_readme.py`.
-- **Architecture decisions:** settled plugin-canonical *why* lives in
+- **Architecture decisions:** settled plugin-canonical _why_ lives in
   [`docs/adr/`](docs/adr/README.md). Implementation PRs follow accepted ADRs;
   a superseding ADR is the way to change one.
 - **No secrets:** do not add API keys, tokens, or environment-specific paths in skill

@@ -71,7 +71,7 @@ For every merged/closed PR, via GraphQL:
 
 - **Unresolved threads** from any reviewer — CodeRabbit, Greptile, Bugbot,
   github-advanced-security/CodeQL, humans.
-- **Post-merge reviews**: reviewer activity timestamped *after* the merge —
+- **Post-merge reviews**: reviewer activity timestamped _after_ the merge —
   the in-flight-review race (see `babysit-pr`'s merge-gate rule: zero
   threads is not evidence of review). These are invisible to normal PR
   hygiene and must be surfaced explicitly.

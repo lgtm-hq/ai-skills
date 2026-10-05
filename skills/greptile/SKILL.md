@@ -79,11 +79,11 @@ For Raycast extension PRs, run static greps from `pr-raycast` before the CLI rev
 
 ## Differences from CodeRabbit
 
-|              | CodeRabbit                           | Greptile                                              |
-| ------------ | ------------------------------------ | ----------------------------------------------------- |
-| Scope        | `all` / `committed` / `uncommitted`  | Branch commits vs base only                           |
-| Agent output | `--agent` → JSON stream              | `--agent` → plain text; `--json` for machine-readable |
-| Base branch  | `--base main`                        | `-b main`                                             |
+|              | CodeRabbit                          | Greptile                                              |
+| ------------ | ----------------------------------- | ----------------------------------------------------- |
+| Scope        | `all` / `committed` / `uncommitted` | Branch commits vs base only                           |
+| Agent output | `--agent` → JSON stream             | `--agent` → plain text; `--json` for machine-readable |
+| Base branch  | `--base main`                       | `-b main`                                             |
 
 ## References
 
