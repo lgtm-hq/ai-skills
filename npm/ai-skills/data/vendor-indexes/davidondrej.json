@@ -45,6 +45,10 @@
       "path": "skills/agent-orchestration/herdr"
     },
     {
+      "name": "larp-detector",
+      "path": "skills/agent-orchestration/larp-detector"
+    },
+    {
       "name": "nagent",
       "path": "skills/agent-orchestration/nagent"
     },
@@ -71,10 +75,6 @@
     {
       "name": "boat",
       "path": "skills/ops-and-setup/boat"
-    },
-    {
-      "name": "computer-use",
-      "path": "skills/ops-and-setup/computer-use"
     },
     {
       "name": "create-readonly-db-role",
@@ -232,7 +232,7 @@
   "vendor": {
     "id": "davidondrej",
     "repo": "davidondrej/skills",
-    "sha": "1864aafa4c29fa70333a648470ec614c917bbd0b",
+    "sha": "f025cb43cbbfe5810b130a207c4353c8555af7cb",
     "skillRoots": [
       "skills/*"
     ]
