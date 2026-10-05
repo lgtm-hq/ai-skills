@@ -15,7 +15,7 @@ vendors:
         skills: "*"
   - id: anthropics
     repo: anthropics/skills
-    sha: "33375500bcea98d610eb30ce10ac4e59b89c390d"
+    sha: "683bc88e56f3e09ba94f7055977f3d3aa499f202"
     displayRef: latest
     skillRoots:
       - skills
