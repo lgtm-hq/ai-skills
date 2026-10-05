@@ -5,17 +5,17 @@
 documentation:
   - changed-files:
       - any-glob-to-any-file:
-          - "docs/**"
-          - "README.md"
-          - "CHANGELOG.md"
-          - "**/*.md"
-          - "!.github/**/*.md"
+          - 'docs/**'
+          - 'README.md'
+          - 'CHANGELOG.md'
+          - '**/*.md'
+          - '!.github/**/*.md'
 
 dependencies:
   - changed-files:
       - any-glob-to-any-file:
-          - "pyproject.toml"
-          - "uv.lock"
-          - "npm/**/package.json"
-          - "npm/**/bun.lock"
-          - "renovate.json"
+          - 'pyproject.toml'
+          - 'uv.lock'
+          - 'npm/**/package.json'
+          - 'npm/**/bun.lock'
+          - 'renovate.json'

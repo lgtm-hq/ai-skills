@@ -64,7 +64,7 @@ a local lintro pass doesn't resolve GitHub threads.
    - **Workspace trust is required once per directory**, or lintro's invocation dies
      with "Workspace Trust Required". Grant it non-interactively from the repo/worktree
      root: `cursor-agent -p 'Reply with exactly: ok' --trust --model cursor-grok-4.5-high
-     --output-format text` — trust persists for subsequent runs.
+--output-format text` — trust persists for subsequent runs.
    - **Fallbacks, in order, only when `cursor-agent` is missing or erroring** (say so in
      the report): logged-in `claude` CLI with `--transport cli` and no `ANTHROPIC_API_KEY`
      in the environment (OAuth session, subscription billing; lintro ≥0.94.7 handles
@@ -78,7 +78,7 @@ a local lintro pass doesn't resolve GitHub threads.
    - **No engine available** → run the step-5 teardown first (it is mandatory whenever
      step 1 ran), then STOP and report which credential/binary is missing.
 
-3. **Run the review** against the *fresh* base (a stale local `main` reviews the wrong
+3. **Run the review** against the _fresh_ base (a stale local `main` reviews the wrong
    diff), including lint:
 
    ```bash

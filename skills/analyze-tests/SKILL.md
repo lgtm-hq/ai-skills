@@ -34,7 +34,7 @@ Search for tests that assert little or trivially pass:
 rg -U 'def test_\w+.*\n(\s+pass|\s+assert True|\s+assert 1 == 1)' --type py
 
 # Tests with no expect/assert (JS/TS)
-rg -n 'it\(|test\(' --type ts --type js -A 5 | rg -B2 '^\s*\}\);?\s*$' 
+rg -n 'it\(|test\(' --type ts --type js -A 5 | rg -B2 '^\s*\}\);?\s*$'
 
 # Placeholder / TODO tests
 rg -n '(test_|it\(|describe\().*(skip|todo|pending|\.only)' -i
@@ -81,7 +81,7 @@ Identify duplicated setup that should be shared:
 
 ```bash
 rg -n '@pytest\.fixture|def setUp|beforeEach' tests/ --type py
-rg -n 'def test_' -A 15 tests/ --type py | rg -c 'client\s*=|db\s*=|setup\s*=' 
+rg -n 'def test_' -A 15 tests/ --type py | rg -c 'client\s*=|db\s*=|setup\s*='
 ```
 
 Look for repeated boilerplate across tests in the same file.

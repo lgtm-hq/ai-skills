@@ -1,7 +1,7 @@
 ---
 name: CodeQL
 
-"on":
+'on':
   push:
     branches: [main]
     paths: ['**.py', 'pyproject.toml', '.github/**']
@@ -31,11 +31,11 @@ jobs:
     # is none: Python is interpreted, so the database is built from source
     # without a build step (do not use autobuild for interpreted languages).
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-codeql.yml@d32388495d571a0ee13383bacc732765bf4e9e7d  # v0.74.6
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-codeql.yml@e10242e81ebb34ceb796efeff39ba9824178f46e # v0.75.2
     with:
       languages: python
       build-mode: none
-      tooling-ref: 'd32388495d571a0ee13383bacc732765bf4e9e7d'  # v0.74.6
+      tooling-ref: 'e10242e81ebb34ceb796efeff39ba9824178f46e' # v0.75.2
       egress-policy: block
       egress-preset: github-tooling
       # Harden-runner pre reads workflow inputs only (not resolved presets).

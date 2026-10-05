@@ -1,6 +1,6 @@
 ---
 name: turbo-test
-description:
+description: >-
   Run the full turbo-themes build and test pipeline. Use when asked to build,
   test, lint, or validate the turbo-themes project. Includes example projects
   by default.
