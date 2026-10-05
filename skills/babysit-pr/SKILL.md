@@ -178,7 +178,7 @@ postdates the head's arrival on GitHub — comments carry no `commit_id`, so a b
 timestamp match is also what a late review of the previous head looks like.
 
 1. Record the latest commit SHA **and when it arrived on GitHub** (`gh pr view --json
-   headRefOid`; then the earliest Actions run on that SHA):
+headRefOid`; then the earliest Actions run on that SHA):
 
    ```bash
    gh api --paginate "repos/<owner>/<repo>/actions/runs?head_sha=<sha>" \
@@ -195,6 +195,7 @@ timestamp match is also what a late review of the previous head looks like.
    snapshot the current time **once per head SHA** and reuse that frozen value for
    every later comparison — re-sampling "now" on each re-fetch would make those
    windows unmeetable.
+
 2. Gather all CodeRabbit evidence — issue comments **and** review submissions (a
    review carries the `commit_id` it reviewed; paginate both lists):
 
@@ -208,7 +209,8 @@ timestamp match is also what a late review of the previous head looks like.
    Match the exact `coderabbitai[bot]` identity — a substring match would let
    look-alike accounts satisfy the gate. A comment is evidence only if its body
    cites the current head SHA; otherwise it is corroboration at best.
-3. **Rate-limited** (`Review limit reached` / `Next review available in`) — a *known*
+
+3. **Rate-limited** (`Review limit reached` / `Next review available in`) — a _known_
    state, distinct from an in-flight review. The rate-limit comment must postdate the
    current head's push (CodeRabbit attempted **this** head and hit the limit); a
    stale rate-limit comment from an older head is not evidence — treat the head as
@@ -311,7 +313,7 @@ Before merging (or enqueuing) any single PR:
 - **Settle window** — always wait `arrival + ~5 min` from the head's arrival before
   merging, **except** once positive head evidence exists, where the wait becomes the
   evidence's own quiet period: a matching review submission waits `submitted_at +
-  ~2 min`; a SHA-citing comment waits its `created_at + ~2 min`; a fresh rate-limit
+~2 min`; a SHA-citing comment waits its `created_at + ~2 min`; a fresh rate-limit
   signal has no submission to wait on. A commit_id-matched review is never required
   to postdate arrival — an identical SHA means identical reviewed content, so the
   frozen-now arrival path keeps working.
@@ -347,7 +349,7 @@ defaults produce the correct commit on their own: PR title + auto-appended `(#N)
 blank body. An explicit `--subject` suppresses the `(#N)` append (seen: py-lintro
 `#1916`/`#1922` landed numberless); a custom `--body` trips commitlint
 `body-max-line-length` on main's dogfood. "Squash with PR title and blank body"
-means *rely on the defaults*, not *pass them as flags*.
+means _rely on the defaults_, not _pass them as flags_.
 
 The platform serializes merges, rebases each PR, merges when its turn comes, and
 blocks on unresolved threads. Do **not** re-implement that machinery: no manual
@@ -415,17 +417,17 @@ Queue discipline (this mode only):
 
 Return a concise summary:
 
-| Field | Value |
-| --- | --- |
-| PR | URL, title, number |
-| Branch | name @ final SHA |
-| CI | pass/fail per check |
-| Commits pushed | list (short) |
-| Threads handled | fixed / replied N/A |
-| CodeRabbit | reviewed current head / review pending (rate-limited) |
-| Merge-ready? | yes/no + why |
-| PRs merged | list (or n/a without `--merge`) |
-| Human blockers | approval, decisions, etc. |
+| Field           | Value                                                 |
+| --------------- | ----------------------------------------------------- |
+| PR              | URL, title, number                                    |
+| Branch          | name @ final SHA                                      |
+| CI              | pass/fail per check                                   |
+| Commits pushed  | list (short)                                          |
+| Threads handled | fixed / replied N/A                                   |
+| CodeRabbit      | reviewed current head / review pending (rate-limited) |
+| Merge-ready?    | yes/no + why                                          |
+| PRs merged      | list (or n/a without `--merge`)                       |
+| Human blockers  | approval, decisions, etc.                             |
 
 ## Notes
 

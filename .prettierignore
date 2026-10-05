@@ -1,0 +1,21 @@
+# Ignore artifacts
+build
+dist
+node_modules
+.venv
+.lintro
+
+# Publish-time vendor plugin bake (third-party trees; ADR-0007)
+plugins-baked
+npm/ai-skills/data/plugins-baked
+
+# Machine-written files: generators and vendor tooling own their formatting
+# (validate.sh runs each generator with --check).
+.claude-plugin/marketplace.json
+.cursor-plugin/marketplace.json
+vendors.yaml
+vendor-indexes/
+NOTICE.md
+npm/ai-skills/data/
+# Test fixtures are patched by exact string in tests; keep them verbatim.
+tests/fixtures/

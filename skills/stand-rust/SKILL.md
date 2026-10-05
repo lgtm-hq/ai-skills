@@ -80,7 +80,7 @@ Standards for Rust code.
 - `///` doc comments on all public items (functions, types, traits, modules)
 - Include code examples in doc comments for non-trivial APIs:
 
-  ```rust
+  ````rust
   /// Parse a duration string like "5s", "100ms", or "2m".
   ///
   /// # Examples
@@ -92,7 +92,7 @@ Standards for Rust code.
   /// assert_eq!(d, std::time::Duration::from_secs(5));
   /// ```
   pub fn parse_duration(s: &str) -> Result<Duration> { ... }
-  ```
+  ````
 
 - Use `#![deny(missing_docs)]` for library crates
 - Module-level `//!` doc comments for crate and module overviews

@@ -14,7 +14,7 @@ disable-model-invocation: true
 
 Retrospective, read-only **code-substance audit** of every merge to `main`
 across one or more repos over a time window. Where `sweep-prs` audits the PR
-*lifecycle* (green builds, red main, thread hygiene), this skill re-reads the
+_lifecycle_ (green builds, red main, thread hygiene), this skill re-reads the
 **merged code itself** — quality, correctness, safety, and whether deferred
 work was actually tracked. Built for high-automation repos where most merges
 are agent-authored or auto-merged and human review coverage is thin.
@@ -63,8 +63,8 @@ the date window when a repo's merge volume can exceed it.
    treat any mismatch or truncated connection as a gathering failure, not a
    smaller audit.
 2. Default-branch workflow-run health across the window (`gh run list
-   --branch <default-branch> --created "START..END" --limit 1000 --json
-   databaseId,headSha,createdAt,event,conclusion,workflowName,url` — an
+--branch <default-branch> --created "START..END" --limit 1000 --json
+databaseId,headSha,createdAt,event,conclusion,workflowName,url` — an
    explicit date range plus a limit well above the repo's run volume; never
    the bare default, which returns a recent time-unbounded subset). If the
    returned count equals the limit, the window is truncated: raise the
@@ -77,7 +77,7 @@ the date window when a repo's merge volume can exceed it.
 Then triage:
 
 - **Bot PRs** (Renovate, release bots): light pass — merged green, `main`
-  stayed green after. Exception: in repos whose *content* is the product
+  stayed green after. Exception: in repos whose _content_ is the product
   (skills, configs, infra), also read what the bot changed.
 - **Substantive PRs** (human- or agent-authored): full deep-read against the
   checklist below.
