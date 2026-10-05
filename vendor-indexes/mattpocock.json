@@ -29,8 +29,16 @@
       "path": "skills/engineering/implement"
     },
     {
+      "name": "implement-spec",
+      "path": "skills/engineering/implement-spec"
+    },
+    {
       "name": "improve-codebase-architecture",
       "path": "skills/engineering/improve-codebase-architecture"
+    },
+    {
+      "name": "pr",
+      "path": "skills/engineering/pr"
     },
     {
       "name": "prototype",
@@ -41,8 +49,8 @@
       "path": "skills/engineering/research"
     },
     {
-      "name": "resolving-merge-conflicts",
-      "path": "skills/engineering/resolving-merge-conflicts"
+      "name": "retro",
+      "path": "skills/engineering/retro"
     },
     {
       "name": "setup-matt-pocock-skills",
@@ -73,24 +81,16 @@
       "path": "skills/engineering/wizard"
     },
     {
+      "name": "chief-of-staff",
+      "path": "skills/in-progress/chief-of-staff"
+    },
+    {
       "name": "claude-handoff",
       "path": "skills/in-progress/claude-handoff"
     },
     {
-      "name": "implement-spec",
-      "path": "skills/in-progress/implement-spec"
-    },
-    {
       "name": "loop-me",
       "path": "skills/in-progress/loop-me"
-    },
-    {
-      "name": "pr",
-      "path": "skills/in-progress/pr"
-    },
-    {
-      "name": "retro",
-      "path": "skills/in-progress/retro"
     },
     {
       "name": "setup-ts-deep-modules",
@@ -156,7 +156,7 @@
   "vendor": {
     "id": "mattpocock",
     "repo": "mattpocock/skills",
-    "sha": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7",
+    "sha": "4588b32ecab9ecc9fc8cc6b6c5e7d675b6004b0d",
     "skillRoots": [
       "skills"
     ]

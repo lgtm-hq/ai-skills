@@ -2,7 +2,7 @@
 vendors:
   - id: mattpocock
     repo: mattpocock/skills
-    sha: "c55ee46073ed923f86ce59a5eb3b6d895095d1b7"
+    sha: "4588b32ecab9ecc9fc8cc6b6c5e7d675b6004b0d"
     displayRef: latest
     skillRoots:
       - skills
