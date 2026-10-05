@@ -44,7 +44,7 @@
   "vendor": {
     "id": "anthropics-claude-code",
     "repo": "anthropics/claude-code",
-    "sha": "7779afb12e3635f46f56ec823979d68350ae000b",
+    "sha": "2bfb629dfaff0c8318047a4beb93cf1dc5b58b18",
     "skillRoots": [
       "plugins/*/skills"
     ]
