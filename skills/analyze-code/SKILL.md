@@ -23,12 +23,12 @@ below; use the rubric sections as reference when interpreting findings.
 
 Emphasize different risk categories depending on what the repo is:
 
-| Shape | Emphasize |
-| --- | --- |
-| App/service | authZ per route (ownership on account-scoped routes), auth token lifecycle (expiry/single-use/timing/enumeration), quota races, SSRF in fetchers/ingestion, prompt injection from untrusted content reaching an LLM, SQLi, CORS/rate limits |
-| CI library/actions | script injection (untrusted context in `run:`), SHA pinning, egress, permission ceilings — a bad action ships unsafe CI to every consumer |
-| Content/docs site | XSS (`set:html` / `innerHTML`, export paths), command validity in guides, currency of claims, link rot |
-| Package index/tap | artifact checksum re-verification vs upstream, update-automation payload trust (dispatch payload -> file rewrite = RCE surface), version freshness |
+| Shape              | Emphasize                                                                                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App/service        | authZ per route (ownership on account-scoped routes), auth token lifecycle (expiry/single-use/timing/enumeration), quota races, SSRF in fetchers/ingestion, prompt injection from untrusted content reaching an LLM, SQLi, CORS/rate limits |
+| CI library/actions | script injection (untrusted context in `run:`), SHA pinning, egress, permission ceilings — a bad action ships unsafe CI to every consumer                                                                                                   |
+| Content/docs site  | XSS (`set:html` / `innerHTML`, export paths), command validity in guides, currency of claims, link rot                                                                                                                                      |
+| Package index/tap  | artifact checksum re-verification vs upstream, update-automation payload trust (dispatch payload -> file rewrite = RCE surface), version freshness                                                                                          |
 
 ## Usage
 

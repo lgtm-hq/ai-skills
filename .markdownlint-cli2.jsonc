@@ -1,0 +1,15 @@
+{
+  "config": {
+    // Matches enforce.line_length in .lintro-config.yaml.
+    "MD013": {
+      "line_length": 88,
+      "code_blocks": false,
+      "tables": false,
+    },
+  },
+  "ignores": [
+    // Publish-time vendor plugin bake (third-party trees; ADR-0007)
+    "plugins-baked/**",
+    "npm/ai-skills/data/plugins-baked/**",
+  ],
+}

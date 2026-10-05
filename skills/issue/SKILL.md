@@ -167,7 +167,7 @@ When asked to create an issue:
 Rules for managing an existing backlog, not just creating new issues.
 
 - **Comment before closing.** Every closed issue gets a comment explaining
-  *why* it's closed and linking to whatever supersedes it (issue, PR, or
+  _why_ it's closed and linking to whatever supersedes it (issue, PR, or
   commit).
   - Don't: `gh issue close 42` with no comment.
   - Do: `gh issue comment 42 --body "Superseded by #57, merged in a1b2c3d."`
