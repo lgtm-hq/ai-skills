@@ -19,7 +19,7 @@ jobs:
   scorecards:
     # lgtm-ci owns the scorecard scan; this repo stays a thin caller.
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-scorecards.yml@e10242e81ebb34ceb796efeff39ba9824178f46e # v0.75.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-scorecards.yml@d1a4cbe278d60e631d95800f449d25e174140ea1 # v0.77.4
     with:
       # Re-enabled after lgtm-ci v0.52.4 (lgtm-ci#535).
       publish-results: true
