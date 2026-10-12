@@ -213,6 +213,18 @@ def test_resolve_pinned_ref_falls_back_to_sole_ai_review() -> None:
     assert_that(ref).is_equal_to(SHA_B)
 
 
+def test_resolve_pinned_ref_allows_only_independent_callers_at_two_shas() -> None:
+    """Independent callers alone may differ; the lowest SHA is the base."""
+    ref = audit.resolve_pinned_ref(
+        pins={
+            audit.AI_REVIEW_WORKFLOW: {SHA_A},
+            audit.SCORECARDS_WORKFLOW: {SHA_B},
+        },
+        exclude=audit.INDEPENDENT_PIN_WORKFLOWS,
+    )
+    assert_that(ref).is_equal_to(min(SHA_A, SHA_B))
+
+
 def test_assert_single_pin_per_name_rejects_internal_mix() -> None:
     """Two SHAs for one reusable name fail even when excluded repo-wide."""
     with pytest.raises(ValueError, match="inside"):
@@ -401,6 +413,43 @@ def test_main_allows_held_back_scorecards_pin(
     assert_that(code).is_equal_to(0)
     assert_that(out).contains(f"lgtm-ci pinned ref: {SHA_A}")
     assert_that(out).contains(f"{audit.SCORECARDS_WORKFLOW} pinned ref: {SHA_B}")
+    assert_that(out).contains("Adopted (2):")
+
+
+def test_main_reports_only_independent_callers_at_two_shas(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """main() reports ai-review and scorecards at different SHAs, no shared caller."""
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ai-review.yml",
+        called=audit.AI_REVIEW_WORKFLOW,
+        sha=SHA_A,
+        tooling_ref=SHA_A,
+    )
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="scorecards.yml",
+        called=audit.SCORECARDS_WORKFLOW,
+        sha=SHA_B,
+    )
+    monkeypatch.setattr(
+        audit.subprocess,
+        "run",
+        _fake_gh_by_ref(
+            names_by_ref={
+                SHA_A: [audit.AI_REVIEW_WORKFLOW],
+                SHA_B: [audit.SCORECARDS_WORKFLOW],
+            },
+        ),
+    )
+    code = audit.main(argv=["--workflows-dir", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert_that(code).is_equal_to(0)
+    assert_that(out).contains(f"lgtm-ci pinned ref: {SHA_B}")
+    assert_that(out).contains(f"{audit.AI_REVIEW_WORKFLOW} pinned ref: {SHA_A}")
     assert_that(out).contains("Adopted (2):")
 
 

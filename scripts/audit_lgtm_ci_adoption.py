@@ -36,6 +36,8 @@ LGTM_CI_REPO = "lgtm-hq/lgtm-ci"
 AI_REVIEW_WORKFLOW = "reusable-ai-review.yml"
 SCORECARDS_WORKFLOW = "reusable-scorecards.yml"
 # Workflows allowed to pin a different SHA than the shared one.
+# TODO(lgtm-hq/lgtm-ci#1173): drop SCORECARDS_WORKFLOW once scorecards.yml
+# is repinned to the shared SHA.
 INDEPENDENT_PIN_WORKFLOWS = frozenset({AI_REVIEW_WORKFLOW, SCORECARDS_WORKFLOW})
 
 _USES_RE = re.compile(
@@ -90,12 +92,13 @@ def resolve_pinned_ref(
     Returns:
         The common pinned SHA of non-excluded callers. If every caller
         is excluded (for example ``reusable-ai-review.yml`` is the only
-        pin), the sole excluded SHA is returned so a one-workflow tree
-        still produces a report.
+        pin), the lowest excluded SHA is returned so the tree still
+        produces a report; excluded callers may pin different SHAs, and
+        :func:`main` reports each one that differs separately.
 
     Raises:
-        ValueError: If no lgtm-ci calls were found, or if the resolved
-            set of callers pins more than one distinct SHA.
+        ValueError: If no lgtm-ci calls were found, or if the
+            non-excluded callers pin more than one distinct SHA.
     """
     refs = sorted(
         {
@@ -106,7 +109,7 @@ def resolve_pinned_ref(
         },
     )
     if not refs:
-        refs = sorted(
+        excluded_refs = sorted(
             {
                 ref
                 for name, ref_set in pins.items()
@@ -114,7 +117,8 @@ def resolve_pinned_ref(
                 for ref in ref_set
             },
         )
-    if not refs:
+        if excluded_refs:
+            return excluded_refs[0]
         msg = "no lgtm-ci reusable-workflow calls found"
         raise ValueError(msg)
     if len(refs) > 1:
