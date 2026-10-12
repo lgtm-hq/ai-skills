@@ -30,6 +30,9 @@ catches partial updates. All callers except `reusable-ai-review.yml`
 share `23c79b65490a3307fb08cdefafa22db12f75b9b2` (v0.63.1). Local
 callers of `reusable-ai-review.yml` must share one SHA, include a
 `tooling-ref`, and keep `uses` / `tooling-ref` in lockstep.
+`reusable-scorecards.yml` is also excluded while it stays on v0.75.2
+for [lgtm-hq/lgtm-ci#1173](https://github.com/lgtm-hq/lgtm-ci/issues/1173);
+its callers must still share one SHA.
 
 ## Classification
 
@@ -130,7 +133,8 @@ SHA-pinned callers. This repo now adopts them per-repo as well:
   (`23c79b65490a3307fb08cdefafa22db12f75b9b2`, v0.63.1).
   `ai-review.yml` may pin a newer `reusable-ai-review.yml` SHA;
   `scripts/audit_lgtm_ci_adoption.py` excludes that name from repo-wide
-  uniqueness. Local callers of `reusable-ai-review.yml` must still share
+  uniqueness, and likewise `reusable-scorecards.yml` while it is held
+  back for lgtm-hq/lgtm-ci#1173. Local callers of `reusable-ai-review.yml` must still share
   one SHA and keep `uses` / `tooling-ref` in lockstep. Always pin to a SHA
   that is reachable from a tag or `main` — never to a PR-branch or
   squash-orphaned commit.

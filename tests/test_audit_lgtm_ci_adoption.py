@@ -367,6 +367,66 @@ def test_main_allows_newer_ai_review_pin(
     assert_that(out).contains("Adopted (2):")
 
 
+def test_main_allows_held_back_scorecards_pin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """main() reports a held-back reusable-scorecards SHA, not mixed pins."""
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ci.yml",
+        called="reusable-quality.yml",
+        sha=SHA_A,
+        tooling_ref=SHA_A,
+    )
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="scorecards.yml",
+        called=audit.SCORECARDS_WORKFLOW,
+        sha=SHA_B,
+    )
+    monkeypatch.setattr(
+        audit.subprocess,
+        "run",
+        _fake_gh_by_ref(
+            names_by_ref={
+                SHA_A: ["reusable-quality.yml"],
+                SHA_B: [audit.SCORECARDS_WORKFLOW],
+            },
+        ),
+    )
+    code = audit.main(argv=["--workflows-dir", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert_that(code).is_equal_to(0)
+    assert_that(out).contains(f"lgtm-ci pinned ref: {SHA_A}")
+    assert_that(out).contains(f"{audit.SCORECARDS_WORKFLOW} pinned ref: {SHA_B}")
+    assert_that(out).contains("Adopted (2):")
+
+
+def test_main_rejects_mixed_pins_inside_scorecards(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Two reusable-scorecards SHAs fail even though the name is excluded."""
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="scorecards.yml",
+        called=audit.SCORECARDS_WORKFLOW,
+        sha=SHA_A,
+    )
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="scorecards-old.yml",
+        called=audit.SCORECARDS_WORKFLOW,
+        sha=SHA_B,
+    )
+    code = audit.main(argv=["--workflows-dir", str(tmp_path)])
+    err = capsys.readouterr().err
+    assert_that(code).is_equal_to(2)
+    assert_that(err).contains("inside")
+
+
 def test_main_sole_ai_review_caller_reports(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
