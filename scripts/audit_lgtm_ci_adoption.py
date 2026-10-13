@@ -12,9 +12,10 @@ and needs no local lgtm-ci checkout).
 
 ``reusable-ai-review.yml`` may pin a newer published contract than the
 rest of the repo (the current caller contract landed after the shared
-quality/release SHA). ``reusable-scorecards.yml`` may stay on an older
-SHA while lgtm-hq/lgtm-ci#1173 is open. Repo-wide uniqueness excludes
-those names. Pins *inside* each of them must still be a single SHA.
+quality/release SHA). ``reusable-scorecards.yml`` was held on an older
+SHA for lgtm-hq/lgtm-ci#1173 (fixed in v0.77.6) and is still tolerated
+on its own SHA until that exception is removed. Repo-wide uniqueness
+excludes those names. Pins *inside* each of them must still be a single SHA.
 
 Output: three sections — the pinned ref, adopted workflows, and
 available-but-unadopted workflows — plus summary counts.
@@ -36,8 +37,8 @@ LGTM_CI_REPO = "lgtm-hq/lgtm-ci"
 AI_REVIEW_WORKFLOW = "reusable-ai-review.yml"
 SCORECARDS_WORKFLOW = "reusable-scorecards.yml"
 # Workflows allowed to pin a different SHA than the shared one.
-# TODO(lgtm-hq/lgtm-ci#1173): drop SCORECARDS_WORKFLOW once scorecards.yml
-# is repinned to the shared SHA.
+# TODO(#534): scorecards.yml is back on the shared SHA (lgtm-ci#1173 is
+# fixed); drop SCORECARDS_WORKFLOW and its tests.
 INDEPENDENT_PIN_WORKFLOWS = frozenset({AI_REVIEW_WORKFLOW, SCORECARDS_WORKFLOW})
 
 _USES_RE = re.compile(
