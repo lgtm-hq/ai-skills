@@ -136,8 +136,8 @@ SHA-pinned callers. This repo now adopts them per-repo as well:
   (currently `b777111fb3aaa6f09589fb029f0094a05dd76003`, v0.77.7).
   `ai-review.yml` may pin a different `reusable-ai-review.yml` SHA;
   `scripts/audit_lgtm_ci_adoption.py` excludes that name from repo-wide
-  uniqueness, and likewise `reusable-scorecards.yml` (held back for
-  lgtm-hq/lgtm-ci#1173 until v0.77.6, now on the shared SHA). Local callers of
+  uniqueness, and likewise `reusable-scorecards.yml`, which is back on
+  the shared SHA since lgtm-hq/lgtm-ci#1173 was fixed. Local callers of
   `reusable-ai-review.yml` must still share one SHA and keep `uses` /
   `tooling-ref` in lockstep. Always pin to a SHA
   that is reachable from a tag or `main` — never to a PR-branch or
