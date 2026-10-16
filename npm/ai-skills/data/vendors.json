@@ -132,7 +132,7 @@
     {
       "id": "davidondrej",
       "repo": "davidondrej/skills",
-      "sha": "8eadd749ee0178371d362d056359b804cbfabb9a",
+      "sha": "f025cb43cbbfe5810b130a207c4353c8555af7cb",
       "displayRef": "latest",
       "skillRoots": [
         "skills/*"
