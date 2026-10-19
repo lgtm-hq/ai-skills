@@ -49,6 +49,10 @@
       "path": "skills/agent-orchestration/larp-detector"
     },
     {
+      "name": "muse-review",
+      "path": "skills/agent-orchestration/muse-review"
+    },
+    {
       "name": "nagent",
       "path": "skills/agent-orchestration/nagent"
     },
@@ -173,6 +177,10 @@
       "path": "skills/skill-authoring/push-skills"
     },
     {
+      "name": "4x4",
+      "path": "skills/thinking-and-docs/4x4"
+    },
+    {
       "name": "adr-verbatim",
       "path": "skills/thinking-and-docs/adr-verbatim"
     },
@@ -185,8 +193,16 @@
       "path": "skills/thinking-and-docs/before-building"
     },
     {
+      "name": "better-prompt",
+      "path": "skills/thinking-and-docs/better-prompt"
+    },
+    {
       "name": "decisions",
       "path": "skills/thinking-and-docs/decisions"
+    },
+    {
+      "name": "designs",
+      "path": "skills/thinking-and-docs/designs"
     },
     {
       "name": "file-tree",
@@ -232,7 +248,7 @@
   "vendor": {
     "id": "davidondrej",
     "repo": "davidondrej/skills",
-    "sha": "f025cb43cbbfe5810b130a207c4353c8555af7cb",
+    "sha": "979beb7077585445b13139f3182551cc30434749",
     "skillRoots": [
       "skills/*"
     ]
