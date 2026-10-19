@@ -27,9 +27,15 @@ uv run python scripts/audit_lgtm_ci_adoption.py
 
 The script exits non-zero on mixed pins, so re-running it after any repin
 catches partial updates. All callers except `reusable-ai-review.yml`
-share `23c79b65490a3307fb08cdefafa22db12f75b9b2` (v0.63.1). Local
+and `reusable-scorecards.yml` share one SHA (currently
+`b777111fb3aaa6f09589fb029f0094a05dd76003`, v0.77.7). Local
 callers of `reusable-ai-review.yml` must share one SHA, include a
 `tooling-ref`, and keep `uses` / `tooling-ref` in lockstep.
+`reusable-scorecards.yml` is back on the shared SHA now that
+[lgtm-hq/lgtm-ci#1173](https://github.com/lgtm-hq/lgtm-ci/issues/1173)
+is fixed (v0.77.6+). The audit still excludes it from repo-wide
+uniqueness until that exception is removed; its callers must still
+share one SHA.
 
 ## Classification
 
@@ -127,10 +133,12 @@ SHA-pinned callers. This repo now adopts them per-repo as well:
   (adopted via `validate-lintro-version.yml`) fails the build on any future
   drift. See [lintro version alignment](#lintro-version-alignment).
 - **Single-SHA pin discipline:** quality/release callers share one SHA
-  (`23c79b65490a3307fb08cdefafa22db12f75b9b2`, v0.63.1).
-  `ai-review.yml` may pin a newer `reusable-ai-review.yml` SHA;
+  (currently `b777111fb3aaa6f09589fb029f0094a05dd76003`, v0.77.7).
+  `ai-review.yml` may pin a different `reusable-ai-review.yml` SHA;
   `scripts/audit_lgtm_ci_adoption.py` excludes that name from repo-wide
-  uniqueness. Local callers of `reusable-ai-review.yml` must still share
-  one SHA and keep `uses` / `tooling-ref` in lockstep. Always pin to a SHA
+  uniqueness, and likewise `reusable-scorecards.yml`, which is back on
+  the shared SHA since lgtm-hq/lgtm-ci#1173 was fixed. Local callers of
+  `reusable-ai-review.yml` must still share one SHA and keep `uses` /
+  `tooling-ref` in lockstep. Always pin to a SHA
   that is reachable from a tag or `main` — never to a PR-branch or
   squash-orphaned commit.
