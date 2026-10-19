@@ -12,8 +12,10 @@ and needs no local lgtm-ci checkout).
 
 ``reusable-ai-review.yml`` may pin a newer published contract than the
 rest of the repo (the current caller contract landed after the shared
-quality/release SHA). Repo-wide uniqueness excludes that one name.
-Pins *inside* ``reusable-ai-review.yml`` must still be a single SHA.
+quality/release SHA). ``reusable-scorecards.yml`` was held on an older
+SHA for lgtm-hq/lgtm-ci#1173 (fixed in v0.77.6) and is still tolerated
+on its own SHA until that exception is removed. Repo-wide uniqueness
+excludes those names. Pins *inside* each of them must still be a single SHA.
 
 Output: three sections — the pinned ref, adopted workflows, and
 available-but-unadopted workflows — plus summary counts.
@@ -33,6 +35,11 @@ from pathlib import Path
 
 LGTM_CI_REPO = "lgtm-hq/lgtm-ci"
 AI_REVIEW_WORKFLOW = "reusable-ai-review.yml"
+SCORECARDS_WORKFLOW = "reusable-scorecards.yml"
+# Workflows allowed to pin a different SHA than the shared one.
+# TODO(#534): scorecards.yml is back on the shared SHA (lgtm-ci#1173 is
+# fixed); drop SCORECARDS_WORKFLOW and its tests.
+INDEPENDENT_PIN_WORKFLOWS = frozenset({AI_REVIEW_WORKFLOW, SCORECARDS_WORKFLOW})
 
 _USES_RE = re.compile(
     r"uses:\s*lgtm-hq/lgtm-ci/\.github/workflows/(?P<name>[\w.-]+\.ya?ml)"
@@ -80,18 +87,19 @@ def resolve_pinned_ref(
         pins: Mapping of workflow name to pinned SHA set, as returned by
             :func:`find_lgtm_ci_pins`.
         exclude: Workflow names omitted from the uniqueness check so
-            ``reusable-ai-review.yml`` can pin a newer published
-            contract than the rest of the repo.
+            they can pin a different SHA than the rest of the repo
+            (see ``INDEPENDENT_PIN_WORKFLOWS``).
 
     Returns:
         The common pinned SHA of non-excluded callers. If every caller
-        is excluded (``reusable-ai-review.yml`` is the only pin), the
-        sole excluded SHA is returned so a one-workflow tree still
-        produces a report.
+        is excluded (for example ``reusable-ai-review.yml`` is the only
+        pin), the lowest excluded SHA is returned so the tree still
+        produces a report; excluded callers may pin different SHAs, and
+        :func:`main` reports each one that differs separately.
 
     Raises:
-        ValueError: If no lgtm-ci calls were found, or if the resolved
-            set of callers pins more than one distinct SHA.
+        ValueError: If no lgtm-ci calls were found, or if the
+            non-excluded callers pin more than one distinct SHA.
     """
     refs = sorted(
         {
@@ -102,7 +110,7 @@ def resolve_pinned_ref(
         },
     )
     if not refs:
-        refs = sorted(
+        excluded_refs = sorted(
             {
                 ref
                 for name, ref_set in pins.items()
@@ -110,7 +118,8 @@ def resolve_pinned_ref(
                 for ref in ref_set
             },
         )
-    if not refs:
+        if excluded_refs:
+            return excluded_refs[0]
         msg = "no lgtm-ci reusable-workflow calls found"
         raise ValueError(msg)
     if len(refs) > 1:
@@ -284,29 +293,32 @@ def main(
     """
     args = _parse_args(argv=sys.argv[1:] if argv is None else argv)
     pins = find_lgtm_ci_pins(workflows_dir=args.workflows_dir)
-    extra_ai_ref: str | None = None
+    extra_refs: dict[str, str] = {}
     try:
-        assert_single_pin_per_name(pins=pins, name=AI_REVIEW_WORKFLOW)
+        for name in sorted(INDEPENDENT_PIN_WORKFLOWS):
+            assert_single_pin_per_name(pins=pins, name=name)
         assert_uses_tooling_ref_lockstep(workflows_dir=args.workflows_dir)
         ref = resolve_pinned_ref(
             pins=pins,
-            exclude=frozenset({AI_REVIEW_WORKFLOW}),
+            exclude=INDEPENDENT_PIN_WORKFLOWS,
         )
         available = set(list_available_workflows(ref=ref))
-        ai_refs = pins.get(AI_REVIEW_WORKFLOW, set())
-        if len(ai_refs) == 1:
-            ai_ref = next(iter(ai_refs))
-            if ai_ref != ref:
-                extra_ai_ref = ai_ref
-                ai_available = list_available_workflows(ref=ai_ref)
-                if AI_REVIEW_WORKFLOW in ai_available:
-                    available.add(AI_REVIEW_WORKFLOW)
+        for name in sorted(INDEPENDENT_PIN_WORKFLOWS):
+            name_refs = pins.get(name, set())
+            if len(name_refs) != 1:
+                continue
+            name_ref = next(iter(name_refs))
+            if name_ref == ref:
+                continue
+            extra_refs[name] = name_ref
+            if name in list_available_workflows(ref=name_ref):
+                available.add(name)
     except (RuntimeError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(f"lgtm-ci pinned ref: {ref}")
-    if extra_ai_ref is not None:
-        print(f"{AI_REVIEW_WORKFLOW} pinned ref: {extra_ai_ref}")
+    for name, name_ref in extra_refs.items():
+        print(f"{name} pinned ref: {name_ref}")
     print()
     print(build_report(available=sorted(available), called=set(pins)))
     return 0
