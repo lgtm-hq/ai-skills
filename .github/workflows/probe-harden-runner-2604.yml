@@ -1,0 +1,45 @@
+---
+# Throwaway probe (never merged): does harden-runner v2.22.2 enforce
+# egress-policy: block on ubuntu-26.04 / ubuntu-26.04-arm? Answers the
+# lintro review question on lgtm-hq/ai-skills#528.
+name: Probe harden-runner on ubuntu-26.04
+
+"on":
+  pull_request:
+
+permissions: {}
+
+jobs:
+  probe:
+    name: harden-runner block on ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-26.04, ubuntu-26.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >-
+            api.github.com:443
+      - name: Allowed host is reachable, blocked host is not
+        shell: bash
+        run: |
+          set -u
+          grep -E '^(PRETTY_NAME|VERSION_ID)=' /etc/os-release
+          uname -r
+          if curl -fsS -m 20 -o /dev/null https://api.github.com/zen; then
+            echo "allowed api.github.com: reachable (expected)"
+          else
+            echo "::error::allowed api.github.com unreachable"; exit 1
+          fi
+          if curl -fsS -m 20 -o /dev/null https://example.com/; then
+            echo "::error::example.com reachable: block policy NOT enforced"; exit 1
+          fi
+          echo "blocked example.com: unreachable (expected, policy enforced)"
