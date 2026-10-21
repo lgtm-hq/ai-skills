@@ -416,6 +416,45 @@ def test_main_allows_held_back_scorecards_pin(
     assert_that(out).contains("Adopted (2):")
 
 
+def test_main_allows_unreleased_all_checks_gate_pin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """main() reports the main-pinned all-checks gate SHA, not mixed pins."""
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ci.yml",
+        called="reusable-quality.yml",
+        sha=SHA_A,
+        tooling_ref=SHA_A,
+    )
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="all-checks-gate.yml",
+        called=audit.ALL_CHECKS_GATE_WORKFLOW,
+        sha=SHA_B,
+    )
+    monkeypatch.setattr(
+        audit.subprocess,
+        "run",
+        _fake_gh_by_ref(
+            names_by_ref={
+                SHA_A: ["reusable-quality.yml"],
+                SHA_B: [audit.ALL_CHECKS_GATE_WORKFLOW],
+            },
+        ),
+    )
+    code = audit.main(argv=["--workflows-dir", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert_that(code).is_equal_to(0)
+    assert_that(out).contains(f"lgtm-ci pinned ref: {SHA_A}")
+    assert_that(out).contains(
+        f"{audit.ALL_CHECKS_GATE_WORKFLOW} pinned ref: {SHA_B}",
+    )
+    assert_that(out).contains("Adopted (2):")
+
+
 def test_main_reports_only_independent_callers_at_two_shas(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

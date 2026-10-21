@@ -26,8 +26,9 @@ uv run python scripts/audit_lgtm_ci_adoption.py
 ```
 
 The script exits non-zero on mixed pins, so re-running it after any repin
-catches partial updates. All callers except `reusable-ai-review.yml`
-and `reusable-scorecards.yml` share one SHA (currently
+catches partial updates. All callers except `reusable-ai-review.yml`,
+`reusable-scorecards.yml` and `reusable-all-checks-gate.yml` share one
+SHA (currently
 `b777111fb3aaa6f09589fb029f0094a05dd76003`, v0.77.7). Local
 callers of `reusable-ai-review.yml` must share one SHA, include a
 `tooling-ref`, and keep `uses` / `tooling-ref` in lockstep.
@@ -36,6 +37,10 @@ callers of `reusable-ai-review.yml` must share one SHA, include a
 is fixed (v0.77.6+). The audit still excludes it from repo-wide
 uniqueness until that exception is removed; its callers must still
 share one SHA.
+`reusable-all-checks-gate.yml` is not in an lgtm-ci release yet
+([lgtm-hq/lgtm-ci#1188](https://github.com/lgtm-hq/lgtm-ci/pull/1188)), so
+its caller pins an lgtm-ci `main` commit; move it to the shared SHA with
+the next release and drop the exception.
 
 ## Classification
 
