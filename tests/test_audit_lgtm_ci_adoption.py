@@ -416,12 +416,12 @@ def test_main_allows_held_back_scorecards_pin(
     assert_that(out).contains("Adopted (2):")
 
 
-def test_main_allows_unreleased_all_checks_gate_pin(
+def test_main_accepts_all_checks_gate_on_shared_pin(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """main() reports the main-pinned all-checks gate SHA, not mixed pins."""
+    """main() accepts a gate caller that shares the lgtm-ci pin."""
     _write_workflow(
         workflows_dir=tmp_path,
         name="ci.yml",
@@ -432,16 +432,15 @@ def test_main_allows_unreleased_all_checks_gate_pin(
     _write_workflow(
         workflows_dir=tmp_path,
         name="all-checks-gate.yml",
-        called=audit.ALL_CHECKS_GATE_WORKFLOW,
-        sha=SHA_B,
+        called="reusable-all-checks-gate.yml",
+        sha=SHA_A,
     )
     monkeypatch.setattr(
         audit.subprocess,
         "run",
         _fake_gh_by_ref(
             names_by_ref={
-                SHA_A: ["reusable-quality.yml"],
-                SHA_B: [audit.ALL_CHECKS_GATE_WORKFLOW],
+                SHA_A: ["reusable-quality.yml", "reusable-all-checks-gate.yml"],
             },
         ),
     )
@@ -449,10 +448,33 @@ def test_main_allows_unreleased_all_checks_gate_pin(
     out = capsys.readouterr().out
     assert_that(code).is_equal_to(0)
     assert_that(out).contains(f"lgtm-ci pinned ref: {SHA_A}")
-    assert_that(out).contains(
-        f"{audit.ALL_CHECKS_GATE_WORKFLOW} pinned ref: {SHA_B}",
-    )
     assert_that(out).contains("Adopted (2):")
+
+
+def test_main_rejects_all_checks_gate_off_shared_pin(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """main() reports a gate caller at another SHA as mixed pins."""
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="ci.yml",
+        called="reusable-quality.yml",
+        sha=SHA_A,
+        tooling_ref=SHA_A,
+    )
+    _write_workflow(
+        workflows_dir=tmp_path,
+        name="all-checks-gate.yml",
+        called="reusable-all-checks-gate.yml",
+        sha=SHA_B,
+    )
+    code = audit.main(argv=["--workflows-dir", str(tmp_path)])
+    err = capsys.readouterr().err
+    assert_that(code).is_equal_to(2)
+    assert_that(err).contains("mixed lgtm-ci pins found")
+    assert_that(err).contains(SHA_A)
+    assert_that(err).contains(SHA_B)
 
 
 def test_main_reports_only_independent_callers_at_two_shas(
