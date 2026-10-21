@@ -38,7 +38,7 @@ uniqueness until that exception is removed; its callers must still
 share one SHA.
 `reusable-all-checks-gate.yml` (released in v0.78.0,
 [lgtm-hq/lgtm-ci#1188](https://github.com/lgtm-hq/lgtm-ci/pull/1188)) is
-on the shared SHA like every other caller.
+on the shared SHA, with no audit exception.
 
 ## Classification
 
