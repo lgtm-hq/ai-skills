@@ -1,0 +1,10 @@
+# Configuration for actionlint.
+# See: https://github.com/rhysd/actionlint/blob/main/docs/config.md
+---
+self-hosted-runner:
+  # ubuntu-26.04 GitHub-hosted runners are GA, but actionlint <= 1.7.12 does
+  # not know the labels yet (rhysd/actionlint#682). Remove these entries once
+  # the pinned actionlint release ships them.
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm
