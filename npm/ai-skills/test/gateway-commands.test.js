@@ -621,15 +621,17 @@ describe("gateway maintenance commands", () => {
       },
     });
 
-    expect(calls[0]).toEqual([
-      "skills@^1.5.0",
-      "add",
-      `lgtm-hq/ai-skills@v${getPackageVersion()}`,
-      "-a",
-      "cursor",
-      "--skill",
-      ...reviewSkills,
-      "-y",
+    expect(calls).toEqual([
+      [
+        "skills@^1.5.0",
+        "add",
+        `lgtm-hq/ai-skills@v${getPackageVersion()}`,
+        "-a",
+        "cursor",
+        "--skill",
+        ...reviewSkills,
+        "-y",
+      ],
     ]);
     expect(Object.keys(written.plugins.review.agents.cursor.files).sort()).toEqual(
       reviewSkills.map((skill) => `${skill}/SKILL.md`).sort(),
@@ -740,11 +742,20 @@ describe("gateway maintenance commands", () => {
     });
 
     expect(calls).toEqual([
-      expect.arrayContaining(["add", "--skill", "lint", "test", "greptile", "coderabbit"]),
+      [
+        "skills@^1.5.0",
+        "add",
+        `lgtm-hq/ai-skills@v${getPackageVersion()}`,
+        "-a",
+        "cursor",
+        "--skill",
+        ...reviewSkills,
+        "-y",
+      ],
     ]);
     expect(unlinked).toEqual(["/tmp/project/.cursor/skills/retired/SKILL.md"]);
-    expect(Object.keys(written.plugins.review.agents.cursor.files)).not.toContain(
-      "retired/SKILL.md",
+    expect(Object.keys(written.plugins.review.agents.cursor.files).sort()).toEqual(
+      reviewSkills.map((skill) => `${skill}/SKILL.md`).sort(),
     );
   });
 
