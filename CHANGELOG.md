@@ -21,6 +21,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.30.4] - 2026-10-22
+
+### Changed
+
+- **deps**: update astral-sh/setup-uv action to v10.3.1 (patch) (#544) (9e39cb7)
+- **deps**: update dependency ubuntu to 26.04 (major) (#528) (bda13be)
+- pin the all-checks gate to lgtm-ci v0.78.0 (#542) (5ff1141)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.78.0 (minor) (#541) (ab672ef)
+- add all-checks gate so auto-merge waits for every check (#539) (1156ed1)
+- **actionlint**: allow ubuntu-26.04 runner labels (#538) (4de60b3)
+- **deps**: update step-security/harden-runner action to v2.22.2 (patch) (#537)
+  (a84626e)
+- **deps**: update lintro (#536) (29b9aa0)
+- **deps**: lock file maintenance (#535) (abb62df)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.77.7 (#533) (d4115c8)
+- **deps**: update dependency python to 3.15.0 (minor) (#532) (eb29b5c)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.77.5 (minor) (#529) (f394162)
+- **deps**: update github-actions (#513) (94c9c40)
+- **deps**: lock file maintenance (#531) (77f4bf7)
+- **deps**: lock file maintenance (#530) (64070ed)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.75.2 (patch) (#527) (5981947)
+- **deps**: update lintro (#526) (a8589de)
+- **deps**: update lintro (#525) (b59ea7b)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.75.1 (patch) (#524) (7ee2a52)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.75.0 (minor) (#518) (45e1ae4)
+- **lintro**: adopt org lintro config baseline (#520) (bc08ca0)
+- **deps**: lock file maintenance (#519) (9227c1b)
+- **deps**: update lintro (#516) (4378f34)
+- **deps**: update lintro (#515) (bd56fe5)
+- **deps**: update lintro (#514) (22e0d6b)
+- **deps**: update lintro (#510) (0082301)
+- **deps**: lock file maintenance (#509) (31fc6c7)
+- **deps**: update lintro (#508) (7382f02)
+- **deps**: update lintro (#507) (cbf98ce)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.74.6 (patch) (#506) (4ea6357)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.74.5 (patch) (#505) (964cfed)
+- **deps**: update dependency lgtm-hq/lgtm-ci to v0.74.4 (minor) (#479) (9b31955)
+- **deps**: update lintro (#503) (2cff257)
+
+### Fixed
+
+- **tests**: derive gateway expectations from current catalogs (#547) (c25104d)
+
 ## [0.30.3] - 2026-09-17
 
 ### Changed
@@ -1068,7 +1111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.3...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.4...HEAD
+[0.30.4]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.3...v0.30.4
 [0.30.3]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.2...v0.30.3
 [0.30.2]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.1...v0.30.2
 [0.30.1]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.0...v0.30.1
