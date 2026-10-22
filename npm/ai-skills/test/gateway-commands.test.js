@@ -7,6 +7,12 @@ import { join } from "node:path";
 import { listSkills, removeSkills, updateSkills } from "../lib/gateway-commands.js";
 import { hashFile, readLockfile, writeLockfile } from "../lib/lockfile.js";
 import { getPackageVersion } from "../lib/package-version.js";
+import bundleCatalog from "../data/bundles.json" with { type: "json" };
+import vendorCatalog from "../data/vendors.json" with { type: "json" };
+
+// These integration tests project the current catalog, not historical vendor pins.
+const anthropics = vendorCatalog.vendors.find((vendor) => vendor.id === "anthropics");
+const reviewSkills = bundleCatalog.groups.review.skills;
 
 const pluginEntry = (overrides) => ({
   agents: {
@@ -78,7 +84,7 @@ describe("gateway maintenance commands", () => {
       [
         "skills@^1.5.0",
         "add",
-        "anthropics/skills@9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+        `anthropics/skills@${anthropics.sha}`,
         "-a",
         "cursor",
         "--skill",
@@ -88,7 +94,7 @@ describe("gateway maintenance commands", () => {
     ]);
     expect(written.plugins.pdf).toMatchObject({
       installedAt: "2026-07-10T17:00:00.000Z",
-      sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+      sha: anthropics.sha,
     });
     expect(written.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toBe("refreshed");
     expect(written.plugins.lint).toBeUndefined();
@@ -101,8 +107,8 @@ describe("gateway maintenance commands", () => {
       ...lock,
       plugins: {
         anthropics: pluginEntry({
-          sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
-          version: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+          sha: anthropics.sha,
+          version: anthropics.sha,
         }),
       },
     };
@@ -144,10 +150,10 @@ describe("gateway maintenance commands", () => {
           installedAt: "2026-07-10T16:00:00.000Z",
           projector: "explode",
           repo: "anthropics/skills",
-          sha: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+          sha: anthropics.sha,
           skills: ["docx", "pdf", "pptx", "xlsx"],
           vendor: "anthropics",
-          version: "9d2f1ae",
+          version: anthropics.sha.slice(0, 7),
         },
       },
     };
@@ -214,7 +220,7 @@ describe("gateway maintenance commands", () => {
       [
         "skills@^1.5.0",
         "add",
-        "anthropics/skills@9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+        `anthropics/skills@${anthropics.sha}`,
         "-a",
         "claude-code",
         "cursor",
@@ -615,15 +621,21 @@ describe("gateway maintenance commands", () => {
       },
     });
 
-    expect(calls[0]).toEqual(
-      expect.arrayContaining(["--skill", "lint", "test", "greptile", "coderabbit"]),
-    );
-    expect(Object.keys(written.plugins.review.agents.cursor.files).sort()).toEqual([
-      "coderabbit/SKILL.md",
-      "greptile/SKILL.md",
-      "lint/SKILL.md",
-      "test/SKILL.md",
+    expect(calls).toEqual([
+      [
+        "skills@^1.5.0",
+        "add",
+        `lgtm-hq/ai-skills@v${getPackageVersion()}`,
+        "-a",
+        "cursor",
+        "--skill",
+        ...reviewSkills,
+        "-y",
+      ],
     ]);
+    expect(Object.keys(written.plugins.review.agents.cursor.files).sort()).toEqual(
+      reviewSkills.map((skill) => `${skill}/SKILL.md`).sort(),
+    );
   });
 
   test("keeps nested tracked files for remaining skills on update", async () => {
@@ -730,11 +742,20 @@ describe("gateway maintenance commands", () => {
     });
 
     expect(calls).toEqual([
-      expect.arrayContaining(["add", "--skill", "lint", "test", "greptile", "coderabbit"]),
+      [
+        "skills@^1.5.0",
+        "add",
+        `lgtm-hq/ai-skills@v${getPackageVersion()}`,
+        "-a",
+        "cursor",
+        "--skill",
+        ...reviewSkills,
+        "-y",
+      ],
     ]);
     expect(unlinked).toEqual(["/tmp/project/.cursor/skills/retired/SKILL.md"]);
-    expect(Object.keys(written.plugins.review.agents.cursor.files)).not.toContain(
-      "retired/SKILL.md",
+    expect(Object.keys(written.plugins.review.agents.cursor.files).sort()).toEqual(
+      reviewSkills.map((skill) => `${skill}/SKILL.md`).sort(),
     );
   });
 
