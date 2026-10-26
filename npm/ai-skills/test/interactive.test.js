@@ -14,6 +14,9 @@ import {
   vendorSkillGroupKey,
 } from "../lib/install.js";
 import { KNOWN_AGENTS } from "../lib/ui.js";
+import bundleCatalog from "../data/bundles.json" with { type: "json" };
+
+const reviewSkills = bundleCatalog.groups.review.skills;
 
 /**
  * Build a scripted UI that returns canned answers in order.
@@ -242,7 +245,7 @@ describe("cart helpers", () => {
       {
         pluginId: "review",
         vendor: null,
-        skills: ["lint", "test", "greptile", "coderabbit"],
+        skills: reviewSkills,
       },
     ]);
   });
@@ -324,7 +327,9 @@ describe("cart helpers", () => {
       driftedVendors: new Set(["davidondrej"]),
     });
     expect(options.some((option) => option.value === "review")).toBe(true);
-    expect(options.find((option) => option.value === "review")?.label).toContain("4 skills");
+    expect(options.find((option) => option.value === "review")?.label).toContain(
+      `${reviewSkills.length} skills`,
+    );
     expect(options.some((option) => option.value === "document-skills")).toBe(true);
     expect(options.find((option) => option.value === "document-skills")?.label).toContain(
       "[baked from vendor 'anthropics']",
@@ -368,7 +373,7 @@ describe("completeInteractively", () => {
       {
         pluginId: "review",
         vendor: null,
-        skills: ["lint", "test", "greptile", "coderabbit"],
+        skills: reviewSkills,
       },
     ]);
     expect(options.agents).toEqual(["claude-code", "cursor", "codex", "copilot"]);
@@ -392,7 +397,7 @@ describe("completeInteractively", () => {
     expect(options.installBatches[0]).toEqual({
       pluginId: "review",
       vendor: null,
-      skills: ["lint", "test", "greptile", "coderabbit"],
+      skills: reviewSkills,
     });
     expect(options.installBatches[1]?.pluginId).toBe("document-skills");
     expect(options.installBatches[1]?.vendor).toBe("anthropics");
