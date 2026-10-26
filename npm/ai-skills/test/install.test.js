@@ -20,6 +20,9 @@ import { removeSkills, updateSkills } from "../lib/gateway-commands.js";
 import { readLockfile, writeLockfile } from "../lib/lockfile.js";
 import { MINIMUM_SKILLS_VERSION } from "../lib/options.js";
 import { buildSkillsArguments } from "../lib/skills-runner.js";
+import vendorCatalog from "../data/vendors.json" with { type: "json" };
+
+const claudeCode = vendorCatalog.vendors.find((vendor) => vendor.id === "anthropics-claude-code");
 
 const unattendedOptions = {
   agents: ["cursor"],
@@ -197,9 +200,9 @@ describe("install", () => {
       expect(lock.plugins.hookify).toMatchObject({
         projector: "explode",
         repo: "anthropics/claude-code",
-        sha: "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2",
+        sha: claudeCode.sha,
         vendor: "anthropics-claude-code",
-        version: "15a21e1",
+        version: claudeCode.sha.slice(0, 7),
         skills: ["writing-rules"],
       });
       expect(lock.plugins.hookify.agents.cursor.files["writing-rules/SKILL.md"]).toBeTruthy();
@@ -257,7 +260,7 @@ describe("install", () => {
       expect(exploded).toBe(false);
       expect(result).toEqual({ pruned: [], updated: [] });
       expect(after.plugins.hookify.installedAt).toBe(before.plugins.hookify.installedAt);
-      expect(after.plugins.hookify.version).toBe("15a21e1");
+      expect(after.plugins.hookify.version).toBe(claudeCode.sha.slice(0, 7));
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -307,9 +310,9 @@ describe("install", () => {
       expect(lock.plugins["claude-code-frontend-design"]).toMatchObject({
         projector: "explode",
         repo: "anthropics/claude-code",
-        sha: "15a21e1b4e240e2da6a4953d5f148a806c9c9bb2",
+        sha: claudeCode.sha,
         vendor: "anthropics-claude-code",
-        version: "15a21e1",
+        version: claudeCode.sha.slice(0, 7),
       });
       expect(
         lock.plugins["claude-code-frontend-design"].agents.cursor.files[
