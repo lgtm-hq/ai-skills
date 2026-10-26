@@ -10,9 +10,11 @@ import {
   VENDOR_DRIFT_SUFFIX,
 } from "../lib/ui.js";
 
+import vendorCatalog from "../data/vendors.json" with { type: "json" };
+
 const REGISTRY_URL = "https://registry.npmjs.org/@lgtm-hq/ai-skills/latest";
 /** Baked anthropics pin from data/vendors.json (matching entries show as fresh). */
-const ANTHROPICS_PIN = "9d2f1ae187231d8199c64b5b762e1bdf2244733d";
+const ANTHROPICS_PIN = vendorCatalog.vendors.find((vendor) => vendor.id === "anthropics").sha;
 
 const blankOptions = {
   agents: [],
@@ -272,6 +274,9 @@ describe("completeInteractively signals", () => {
         (label) => label.includes("document-skills") && label.includes("installed"),
       ),
     ).toBe(true);
+    expect(pluginLabels.find((label) => label.includes("document-skills"))).not.toContain(
+      "update available",
+    );
   });
 
   test("merges global and project lockfiles while scope is undetermined", async () => {

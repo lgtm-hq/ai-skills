@@ -39,7 +39,9 @@ SCORECARDS_WORKFLOW = "reusable-scorecards.yml"
 # Workflows allowed to pin a different SHA than the shared one.
 # TODO(#534): scorecards.yml is back on the shared SHA (lgtm-ci#1173 is
 # fixed); drop SCORECARDS_WORKFLOW and its tests.
-INDEPENDENT_PIN_WORKFLOWS = frozenset({AI_REVIEW_WORKFLOW, SCORECARDS_WORKFLOW})
+INDEPENDENT_PIN_WORKFLOWS = frozenset(
+    {AI_REVIEW_WORKFLOW, SCORECARDS_WORKFLOW},
+)
 
 _USES_RE = re.compile(
     r"uses:\s*lgtm-hq/lgtm-ci/\.github/workflows/(?P<name>[\w.-]+\.ya?ml)"
