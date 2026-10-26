@@ -45,6 +45,10 @@
       "path": "skills/agent-orchestration/herdr"
     },
     {
+      "name": "kimi-review",
+      "path": "skills/agent-orchestration/kimi-review"
+    },
+    {
       "name": "larp-detector",
       "path": "skills/agent-orchestration/larp-detector"
     },
@@ -248,7 +252,7 @@
   "vendor": {
     "id": "davidondrej",
     "repo": "davidondrej/skills",
-    "sha": "979beb7077585445b13139f3182551cc30434749",
+    "sha": "9170142cfa1a57e2609d42fc7598a4788a8adbd7",
     "skillRoots": [
       "skills/*"
     ]
