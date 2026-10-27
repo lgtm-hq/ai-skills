@@ -35,7 +35,7 @@ jobs:
       create-attestation: true
       artifact-name: sbom
       tooling-ref: '9ea778eb4e6b876d60b7b3d7d0d0aee5182717bb' # v0.78.0
-      egress-policy: block
+      egress-policy: audit # TEMP: lgtm-hq/lgtm-ci#1207
       egress-preset: sbom
       # Harden-runner pre reads inputs only. Include uploads.github.com and
       # github-releases.githubusercontent.com so anchore/sbom-action can attach

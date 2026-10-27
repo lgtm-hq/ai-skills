@@ -69,7 +69,7 @@ jobs:
       setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/validate.sh
       tooling-ref: '9ea778eb4e6b876d60b7b3d7d0d0aee5182717bb' # v0.78.0
-      egress-policy: block
+      egress-policy: audit # TEMP: lgtm-hq/lgtm-ci#1207
       egress-preset: quality
       # Harden-runner pre reads inputs only. setup installs ripgrep via apt and
       # uv via astral.sh, then uv sync against PyPI — pass the full quality
@@ -129,7 +129,7 @@ jobs:
       setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/ci/bake_vendor_plugins_gate.sh
       tooling-ref: '9ea778eb4e6b876d60b7b3d7d0d0aee5182717bb' # v0.78.0
-      egress-policy: block
+      egress-policy: audit # TEMP: lgtm-hq/lgtm-ci#1207
       egress-preset: quality
       # Same allowlist as validate: uv/PyPI plus GitHub tarball hosts.
       allowed-endpoints-mode: replace
