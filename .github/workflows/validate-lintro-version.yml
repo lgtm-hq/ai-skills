@@ -35,7 +35,7 @@ jobs:
       # lintro-image override on ci.yml's quality job (py-lintro 0.142.0).
       # yamllint disable-line rule:line-length
       lintro-image: ghcr.io/lgtm-hq/py-lintro@sha256:116e60912a8c7a2002349ef096cfa93644314492751746aacdd5ef228c74306f
-      egress-policy: block
+      egress-policy: audit # TEMP: lgtm-hq/lgtm-ci#1207
       egress-preset: quality
     permissions:
       # read: pyproject.toml and workflow files for the version-sync check

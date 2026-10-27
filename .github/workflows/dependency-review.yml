@@ -20,7 +20,7 @@ jobs:
     with:
       fail-on-severity: high
       tooling-ref: '9ea778eb4e6b876d60b7b3d7d0d0aee5182717bb' # v0.78.0
-      egress-policy: block
+      egress-policy: audit # TEMP: lgtm-hq/lgtm-ci#1207
       egress-preset: scorecard
       # replace: harden-runner pre cannot see resolved presets; pass the full
       # allowlist (scorecard default + deps.dev) as a folded input.

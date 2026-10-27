@@ -23,7 +23,7 @@ jobs:
     with:
       # Re-enabled after lgtm-ci v0.52.4 (lgtm-ci#535).
       publish-results: true
-      egress-policy: block
+      egress-policy: audit # TEMP: lgtm-hq/lgtm-ci#1207
       allowed-endpoints: >
         github.com:443
         api.github.com:443
