@@ -28,7 +28,7 @@ uv run python scripts/audit_lgtm_ci_adoption.py
 The script exits non-zero on mixed pins, so re-running it after any repin
 catches partial updates. All callers except `reusable-ai-review.yml` and
 `reusable-scorecards.yml` share one SHA (currently
-`9ea778eb4e6b876d60b7b3d7d0d0aee5182717bb`, v0.78.0). Local
+`2097a900753e3e5ad0e336483501b278e99855ae`, v0.78.1). Local
 callers of `reusable-ai-review.yml` must share one SHA, include a
 `tooling-ref`, and keep `uses` / `tooling-ref` in lockstep.
 `reusable-scorecards.yml` is back on the shared SHA now that
@@ -136,7 +136,7 @@ SHA-pinned callers. This repo now adopts them per-repo as well:
   (adopted via `validate-lintro-version.yml`) fails the build on any future
   drift. See [lintro version alignment](#lintro-version-alignment).
 - **Single-SHA pin discipline:** quality/release callers share one SHA
-  (currently `9ea778eb4e6b876d60b7b3d7d0d0aee5182717bb`, v0.78.0).
+  (currently `2097a900753e3e5ad0e336483501b278e99855ae`, v0.78.1).
   `ai-review.yml` may pin a different `reusable-ai-review.yml` SHA;
   `scripts/audit_lgtm_ci_adoption.py` excludes that name from repo-wide
   uniqueness, and likewise `reusable-scorecards.yml`, which is back on

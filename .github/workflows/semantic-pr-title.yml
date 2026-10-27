@@ -17,10 +17,10 @@ jobs:
   # lgtm-ci owns the title validation; this repo stays a thin caller.
   semantic-title:
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-semantic-pr-title.yml@9ea778eb4e6b876d60b7b3d7d0d0aee5182717bb # v0.78.0
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-semantic-pr-title.yml@2097a900753e3e5ad0e336483501b278e99855ae # v0.78.1
     with:
       job-name: '📝 Validate PR Title'
-      tooling-ref: '9ea778eb4e6b876d60b7b3d7d0d0aee5182717bb' # v0.78.0
+      tooling-ref: '2097a900753e3e5ad0e336483501b278e99855ae' # v0.78.1
       egress-policy: audit # TEMP: lgtm-hq/lgtm-ci#1207
       egress-preset: github-tooling
       comment-marker: '<!-- semantic-pr-title -->'
