@@ -17,11 +17,11 @@ jobs:
       contents: read
       packages: read
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-quality-lint.yml@614c5ad1fc91d742baed959643bdd1f261a71210 # v0.79.1
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-quality-lint.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
     with:
-      egress-policy: audit # TEMP: lgtm-hq/lgtm-ci#1207
+      egress-policy: block
       job-name: '🛠️ Lintro Code Quality'
-      tooling-ref: '614c5ad1fc91d742baed959643bdd1f261a71210' # v0.79.1
+      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
       # Override the reusable default so CI matches
       # pyproject.toml's lintro==0.142.0 and validate-lintro-version.yml.
       # yamllint disable-line rule:line-length
@@ -34,11 +34,11 @@ jobs:
       && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.fork == false
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-publish-quality-summary.yml@614c5ad1fc91d742baed959643bdd1f261a71210 # v0.79.1
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-publish-quality-summary.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
     with:
-      egress-policy: audit # TEMP: lgtm-hq/lgtm-ci#1207
+      egress-policy: block
       exit-code: ${{ needs.quality.outputs.exit-code }}
-      tooling-ref: '614c5ad1fc91d742baed959643bdd1f261a71210' # v0.79.1
+      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
     permissions:
       contents: read
       pull-requests: write
@@ -47,12 +47,12 @@ jobs:
     name: Run pytest suite
     needs: quality
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-test-python.yml@614c5ad1fc91d742baed959643bdd1f261a71210 # v0.79.1
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-test-python.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
     with:
-      egress-policy: audit # TEMP: lgtm-hq/lgtm-ci#1207
+      egress-policy: block
       python-version: '3.13'
       test-path: tests
-      tooling-ref: '614c5ad1fc91d742baed959643bdd1f261a71210' # v0.79.1
+      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
     permissions:
       # actions: write is required at compile time by the reusable
       # workflow's aggregate job (matrix mode only, skipped here), which
@@ -66,13 +66,13 @@ jobs:
   validate:
     needs: quality
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@614c5ad1fc91d742baed959643bdd1f261a71210 # v0.79.1
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
     with:
       job-name: '📚 Validate Skill Structure'
       setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/validate.sh
-      tooling-ref: '614c5ad1fc91d742baed959643bdd1f261a71210' # v0.79.1
-      egress-policy: audit # TEMP: lgtm-hq/lgtm-ci#1207
+      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
+      egress-policy: block
       egress-preset: quality
       # Harden-runner pre reads inputs only. setup installs ripgrep via apt and
       # uv via astral.sh, then uv sync against PyPI — pass the full quality
@@ -126,13 +126,13 @@ jobs:
       contents: read
       pull-requests: write
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@614c5ad1fc91d742baed959643bdd1f261a71210 # v0.79.1
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
     with:
       job-name: '🍞 Bake vendor plugins'
       setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/ci/bake_vendor_plugins_gate.sh
-      tooling-ref: '614c5ad1fc91d742baed959643bdd1f261a71210' # v0.79.1
-      egress-policy: audit # TEMP: lgtm-hq/lgtm-ci#1207
+      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
+      egress-policy: block
       egress-preset: quality
       # Same allowlist as validate: uv/PyPI plus GitHub tarball hosts.
       allowed-endpoints-mode: replace
