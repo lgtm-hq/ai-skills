@@ -16,10 +16,10 @@ concurrency:
 jobs:
   dependency-review:
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-dependency-review.yml@2097a900753e3e5ad0e336483501b278e99855ae # v0.78.1
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-dependency-review.yml@229e00aaa727ecd88de5ab3711b07f701c4aae21 # v0.79.0
     with:
       fail-on-severity: high
-      tooling-ref: '2097a900753e3e5ad0e336483501b278e99855ae' # v0.78.1
+      tooling-ref: '229e00aaa727ecd88de5ab3711b07f701c4aae21' # v0.79.0
       egress-policy: audit # TEMP: lgtm-hq/lgtm-ci#1207
       egress-preset: scorecard
       # replace: harden-runner pre cannot see resolved presets; pass the full
