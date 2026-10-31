@@ -31,12 +31,38 @@ def _write_executable(*, path: Path, text: str) -> None:
     path.chmod(0o755)
 
 
+@pytest.fixture(
+    params=[("sha256sum", "shasum"), ("shasum",)],
+    ids=["preferred-hash", "shasum-only"],
+)
+def installer_hash_tool(request: pytest.FixtureRequest) -> Path:
+    """Discover a real hash utility, including a shasum-only host configuration.
+
+    Args:
+        request: Candidate utilities selected by the fixture parametrization.
+
+    Returns:
+        Available hash utility to expose in the hermetic fixture PATH.
+    """
+    for command in request.param:
+        binary = shutil.which(command, path="/usr/bin:/bin")
+        if binary is not None:
+            return Path(binary)
+    if request.param == ("shasum",):
+        pytest.skip("The real shasum fallback requires shasum on the host")
+    raise ValueError("Missing fixture hash utility: sha256sum or shasum")
+
+
 @pytest.fixture
-def installer_repo(tmp_path: Path) -> Path:
+def installer_repo(
+    tmp_path: Path,
+    installer_hash_tool: Path,
+) -> Path:
     """Copy real consumers and inject harmless installer payloads and hashes.
 
     Args:
         tmp_path: Isolated test directory.
+        installer_hash_tool: Real hash utility available in the fixture PATH.
 
     Returns:
         Fixture repository with no dependency downloads or host tool access.
@@ -95,12 +121,12 @@ def installer_repo(tmp_path: Path) -> Path:
         "rm",
         "cp",
         "mkdir",
-        "sha256sum",
     ]:
         binary = shutil.which(command, path="/usr/bin:/bin")
         if binary is None:
             raise ValueError(f"Missing fixture utility: {command}")
         (tmp_path / "bin" / command).symlink_to(binary)
+    (tmp_path / "bin" / installer_hash_tool.name).symlink_to(installer_hash_tool)
     _write_executable(path=tmp_path / "bin/rg", text="#!/bin/sh\nexit 0\n")
     _write_executable(
         path=tmp_path / "bin/curl",
@@ -291,12 +317,18 @@ def test_consumers_reject_unverified_installer(
 
 
 @pytest.mark.parametrize("tool", ["uv", "bun"])
-def test_checksum_gate_rejects_version_only_update(
+@pytest.mark.parametrize(
+    "installer_changed",
+    [True, False],
+    ids=["changed-bytes", "unchanged-bytes"],
+)
+def test_checksum_gate_verifies_bytes_after_version_update(
     installer_repo: Path,
     installer_env: dict[str, str],
     tool: str,
+    installer_changed: bool,
 ) -> None:
-    """A changed installer at a new version fails even if both tools are on PATH."""
+    """A new version needs a new hash only when its installer bytes change."""
     for installed_tool in ["uv", "bun"]:
         shutil.copy(
             installer_repo / "payloads" / installed_tool,
@@ -310,15 +342,23 @@ def test_checksum_gate_rejects_version_only_update(
             pin_file.read_text(),
         ),
     )
-    payload = installer_repo / "payloads" / f"{tool}-install.sh"
-    payload.write_text(payload.read_text() + "# new release bytes\n")
+    if installer_changed:
+        payload = installer_repo / "payloads" / f"{tool}-install.sh"
+        payload.write_text(payload.read_text() + "# new release bytes\n")
     result = _run(
         repo=installer_repo,
         env=installer_env,
         args=[str(installer_repo / _CHECK)],
     )
-    assert_that(result.returncode).is_not_zero()
-    assert_that(result.stderr).contains("Checksum mismatch", "999.0.0")
+    if installer_changed:
+        assert_that(result.returncode).is_not_zero()
+        assert_that(result.stderr).contains("Checksum mismatch", "999.0.0")
+    else:
+        assert_that(result.returncode).described_as(result.stderr).is_zero()
+        assert_that(result.stdout).contains(f"Verified {tool} 999.0.0")
+        assert_that((installer_repo / "downloads").read_text().splitlines()).is_length(
+            2
+        )
     assert_that((installer_repo / "events").exists()).is_false()
     assert_that(list((installer_repo / "temp").iterdir())).is_empty()
 
@@ -344,20 +384,24 @@ def test_checksum_gate_only_downloads_and_verifies(
 def test_shared_fetch_handles_fallback_and_failures_in_conditionals(
     installer_repo: Path,
     installer_env: dict[str, str],
+    installer_hash_tool: Path,
     mode: str,
 ) -> None:
     """Explicit failure returns hold even where Bash disables errexit for an if."""
     if mode == "fallback":
-        (installer_repo / "bin/sha256sum").unlink()
-        _write_executable(
-            path=installer_repo / "bin/shasum",
-            text='#!/bin/sh\n[ "$1" = -a ] && [ "$2" = 256 ] || exit 91\n'
-            'shift 2\nexec /usr/bin/sha256sum "$@"\n',
-        )
+        if installer_hash_tool.name != "shasum":
+            shasum = shutil.which("shasum", path="/usr/bin:/bin")
+            if shasum is None:
+                pytest.skip("The real shasum fallback requires shasum on the host")
+            (installer_repo / "bin/sha256sum").unlink()
+            (installer_repo / "bin/shasum").symlink_to(shasum)
+        assert_that(shutil.which("sha256sum", path=installer_env["PATH"])).is_none()
+        assert_that(shutil.which("shasum", path=installer_env["PATH"])).is_not_none()
     elif mode == "hash-error":
-        (installer_repo / "bin/sha256sum").unlink()
+        hash_tool = installer_repo / "bin" / installer_hash_tool.name
+        hash_tool.unlink()
         _write_executable(
-            path=installer_repo / "bin/sha256sum",
+            path=hash_tool,
             text="#!/bin/sh\nexit 7\n",
         )
     else:

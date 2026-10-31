@@ -66,7 +66,9 @@ CI bootstrap and Cursor source `scripts/tool-versions.sh` and use
 `scripts/lib/fetch-verified.sh` to check installer bytes before execution.
 The independent **Verify tool installer checksums** CI job always downloads and
 checks both installers, even if uv or Bun is already installed. It never runs
-them. A version-only Renovate update fails until its checksum is refreshed.
+them. A Renovate update fails if the downloaded installer bytes no longer match
+the pinned checksum. A new version with identical installer bytes still passes
+without changing the checksum.
 
 To refresh a pin, update its version in `scripts/tool-versions.sh`, then download
 the pinned installer and measure its bytes without executing it:
