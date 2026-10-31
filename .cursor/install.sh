@@ -15,44 +15,19 @@
 # a compromised endpoint or delivery path fails the bootstrap closed.
 set -euo pipefail
 
-# uv pin mirrors scripts/install-validate-deps.sh so local, CI, and Cloud
-# Agent setups resolve the same interpreter and tooling. bun pin matches
-# the version the environment was validated with.
-UV_VERSION="0.11.26"
-UV_INSTALLER_URL="https://astral.sh/uv/${UV_VERSION}/install.sh"
-UV_INSTALLER_SHA256="92fa9085d24c214bb4445cc1da8c15ca9cca8cffb34726240fa08c5302e94ccc"
-BUN_VERSION="1.4.0"
-BUN_INSTALLER_URL="https://raw.githubusercontent.com/oven-sh/bun/bun-v${BUN_VERSION}/src/runtime/cli/install.sh"
-BUN_INSTALLER_SHA256="04882bf41679d49d9af108657a1e5515bf04fdf2940d12c0d0b1e5d79dc53be8"
-
 # Resolve the repo root so the script is safe to invoke from any working
 # directory, not only via the .cursor/environment.json install hook.
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
+# shellcheck source=scripts/tool-versions.sh
+source "$repo_root/scripts/tool-versions.sh"
+# shellcheck source=scripts/lib/fetch-verified.sh
+source "$repo_root/scripts/lib/fetch-verified.sh"
+
 export PATH="${HOME}/.local/bin:${HOME}/.bun/bin:${PATH}"
 # uv hardlink warnings are noisy across the VM's separate filesystems.
 export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
-
-sha256_of() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{print $1}'
-  else
-    shasum -a 256 "$1" | awk '{print $1}'
-  fi
-}
-
-# fetch_verified <url> <sha256> <dest>: download to a file and fail closed
-# on a digest mismatch instead of executing unverified remote content.
-fetch_verified() {
-  local url="$1" expected="$2" dest="$3" actual
-  curl -LsSf "$url" -o "$dest"
-  actual=$(sha256_of "$dest")
-  if [[ "$actual" != "$expected" ]]; then
-    echo "Checksum mismatch for ${url}: expected ${expected}, got ${actual}" >&2
-    exit 1
-  fi
-}
 
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT

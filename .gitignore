@@ -49,6 +49,9 @@ downloads/
 eggs/
 .eggs/
 lib/
+# Shared shell helpers are source code, not Python build output.
+!scripts/lib/
+!scripts/lib/**
 # Keep the npm package source tree trackable despite the Python `lib/` ignore.
 !npm/ai-skills/lib/
 !npm/ai-skills/lib/**

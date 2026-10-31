@@ -60,6 +60,33 @@ uv run python scripts/generate_readme.py
 bash scripts/validate.sh
 ```
 
+### Shared installer pins
+
+CI bootstrap and Cursor source `scripts/tool-versions.sh` and use
+`scripts/lib/fetch-verified.sh` to check installer bytes before execution.
+The independent **Verify tool installer checksums** CI job always downloads and
+checks both installers, even if uv or Bun is already installed. It never runs
+them. A version-only Renovate update fails until its checksum is refreshed.
+
+To refresh a pin, update its version in `scripts/tool-versions.sh`, then download
+the pinned installer and measure its bytes without executing it:
+
+```bash
+source scripts/tool-versions.sh
+installer_tmp=$(mktemp -d)
+trap 'rm -rf "$installer_tmp"' EXIT
+curl --proto '=https' --proto-redir '=https' -fLsS \
+  "$UV_INSTALLER_URL" -o "$installer_tmp/uv-install.sh"
+curl --proto '=https' --proto-redir '=https' -fLsS \
+  "$BUN_INSTALLER_URL" -o "$installer_tmp/bun-install.sh"
+sha256sum "$installer_tmp/uv-install.sh" "$installer_tmp/bun-install.sh"
+```
+
+Review the downloaded installer against the upstream release before recording its
+measured SHA-256 in the shared pin file. Run
+`bash scripts/ci/check-tool-installers.sh` to verify both pins. A mismatch reports
+the expected and measured hashes and exits nonzero; verification cannot be skipped.
+
 ## Adding / updating a vendor
 
 Third-party vendors live in root **`vendors.yaml`** (SHA-pinned). Use

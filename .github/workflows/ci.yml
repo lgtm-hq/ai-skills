@@ -9,6 +9,34 @@ name: CI
     branches: [main]
 
 jobs:
+  verify-installers:
+    name: Verify tool installer checksums
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          # Checkout plus the uv redirect and pinned Bun installer source.
+          allowed-endpoints: >-
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+            astral.sh:443
+            releases.astral.sh:443
+            raw.githubusercontent.com:443
+      - name: Checkout repository
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify pinned installers without executing them
+        run: bash scripts/ci/check-tool-installers.sh
+
   quality:
     # reusable-quality split upstream: quality-lint runs the checks and the
     # PR summary comment moved to publish-quality-summary, so this job no

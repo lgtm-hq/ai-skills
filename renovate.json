@@ -6,6 +6,16 @@
   "customManagers": [
     {
       "customType": "regex",
+      "description": "Track the shared uv and Bun installer versions",
+      "managerFilePatterns": [
+        "/^scripts/tool-versions\\.sh$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)(?: extractVersion=(?<extractVersion>[^\\s]+))?\\s+(?:UV|BUN)_VERSION=\"(?<currentValue>[^\"]+)\""
+      ]
+    },
+    {
+      "customType": "regex",
       "managerFilePatterns": [
         "/^vendors\\.yaml$/"
       ],
@@ -31,6 +41,17 @@
     }
   ],
   "packageRules": [
+    {
+      "description": "Require reviewed installer checksums alongside version updates",
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": [
+        "astral-sh/uv",
+        "oven-sh/bun"
+      ],
+      "prBodyNotes": [
+        "Update the matching installer SHA-256 in `scripts/tool-versions.sh` after reviewing the pinned upstream installer. Run `bash scripts/ci/check-tool-installers.sh` to measure and check the hashes (mismatches fail closed). See CONTRIBUTING.md for the refresh commands."
+      ]
+    },
     {
       "description": "Keep pyproject lintro pin and workflow py-lintro digests in one PR (org preset also groups these; local rule documents the lockstep).",
       "groupName": "lintro",
