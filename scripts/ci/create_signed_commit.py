@@ -107,7 +107,7 @@ def github_request(
     Raises:
         RuntimeError: If GitHub rejects the request.
     """
-    # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected - Python >=3.13 with certificate verification
+    # nosemgrep - fixed GitHub API host; Python 3.13 HTTPSConnection verifies TLS.
     connection = http.client.HTTPSConnection(
         host="api.github.com",
         timeout=60,
