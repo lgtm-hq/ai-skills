@@ -3,6 +3,7 @@ vendors:
   - id: mattpocock
     repo: mattpocock/skills
     sha: "3cca18b368ae95cdbdebbff572ccafa662551015"
+    branch: main
     displayRef: latest
     skillRoots:
       - skills
@@ -16,6 +17,7 @@ vendors:
   - id: anthropics
     repo: anthropics/skills
     sha: "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f"
+    branch: main
     displayRef: latest
     skillRoots:
       - skills
@@ -56,6 +58,7 @@ vendors:
   - id: anthropics-claude-code
     repo: anthropics/claude-code
     sha: "ab9b2cf7bb9e4f98ff264c07a22e46d83c29c558"
+    branch: main
     displayRef: latest
     skillRoots:
       - plugins/*/skills
@@ -83,6 +86,7 @@ vendors:
   - id: caveman
     repo: JuliusBrussee/caveman
     sha: "15581d14007fd01fb3f132016741962f34936ca2"
+    branch: main
     displayRef: latest
     skillRoots:
       - skills
@@ -96,6 +100,7 @@ vendors:
   - id: davidondrej
     repo: davidondrej/skills
     sha: "8eadd749ee0178371d362d056359b804cbfabb9a"
+    branch: main
     displayRef: latest
     skillRoots:
       - skills/*

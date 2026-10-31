@@ -76,9 +76,9 @@ def list_vendor_ids(*, repo_root: Path) -> tuple[str, ...]:
 def resolve_upstream_sha(*, vendor: Vendor) -> str:
     """Resolve the commit SHA for a vendor's consumer-facing pin.
 
-    ``displayRef: latest`` (or a missing / ``HEAD`` ref) tracks the
-    repository default branch. Any other ``displayRef`` is resolved as a
-    git ref (tag, branch, or commit).
+    An explicit ``branch`` takes precedence. Otherwise ``displayRef: latest``
+    (or a missing / ``HEAD`` ref) tracks the repository default branch;
+    other display refs resolve as a tag, branch, or commit.
 
     Args:
         vendor: Registry vendor whose ``repo`` and ``displayRef`` to resolve.
@@ -93,7 +93,9 @@ def resolve_upstream_sha(*, vendor: Vendor) -> str:
     """
     owner, name = vendor.repo.split("/", maxsplit=1)
     display_ref = vendor.display_ref
-    if display_ref is None or display_ref in _FLOATING_REFS:
+    if vendor.branch is not None:
+        ref = f"refs/heads/{vendor.branch}"
+    elif display_ref is None or display_ref in _FLOATING_REFS:
         repo_payload = _github_json(path=f"/repos/{owner}/{name}")
         default_branch = repo_payload.get("default_branch")
         if not isinstance(default_branch, str) or not default_branch:
@@ -270,6 +272,7 @@ def repin_vendor(
     resolve_sha: ResolveSha | None = None,
     baseline_ref: str | None = None,
     baseline_registry_text: str | None = None,
+    keep_sha: bool = False,
 ) -> VendorRepinDiff:
     """Bump one vendor pin, refresh derived artifacts, and diff bakes.
 
@@ -292,6 +295,7 @@ def repin_vendor(
             baseline. Mutually exclusive with ``baseline_registry_text``.
         baseline_registry_text: Registry snapshot used as ``before``.
             Tests inject this instead of a git ref.
+        keep_sha: Summarize the selected pin without resolving upstream.
 
     Returns:
         Snapshot delta. ``unchanged`` is true when the pin already
@@ -321,7 +325,9 @@ def repin_vendor(
         baseline_text = working_text
     if baseline_text != working_text:
         _vendor_from_registry_text(text=baseline_text, vendor_id=vendor_id)
-    if resolve_sha is not None:
+    if keep_sha:
+        new_sha = vendor.sha
+    elif resolve_sha is not None:
         new_sha = resolve_sha(vendor)
     else:
         new_sha = resolve_upstream_sha(vendor=vendor)
@@ -380,30 +386,6 @@ def repin_vendor(
             )
 
 
-def _emit(
-    *,
-    diff: VendorRepinDiff,
-    display_ref: str | None,
-    as_json: bool,
-    summary_path: Path | None,
-) -> None:
-    """Write human and optional machine summaries.
-
-    Args:
-        diff: Snapshot delta.
-        display_ref: Registry ``displayRef``.
-        as_json: When true, print JSON instead of Markdown.
-        summary_path: Optional Markdown file for a PR body.
-    """
-    markdown = render_markdown(diff=diff, display_ref=display_ref)
-    if summary_path is not None:
-        summary_path.write_text(markdown, encoding="utf-8")
-    if as_json:
-        print(render_json(diff=diff, display_ref=display_ref), end="")
-        return
-    print(markdown, end="")
-
-
 def main(argv: list[str] | None = None) -> int:
     """Parse CLI arguments and re-pin one or every vendor.
 
@@ -428,6 +410,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Re-pin every vendor in vendors.yaml",
     )
     parser.add_argument(
+        "--keep-sha",
+        action="store_true",
+        help="Keep the registry pin instead of resolving a newer upstream SHA",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Print the machine-readable summary to stdout",
@@ -436,7 +423,7 @@ def main(argv: list[str] | None = None) -> int:
         "--summary-path",
         type=Path,
         default=None,
-        help="Write the Markdown summary to this path (PR body)",
+        help="Write combined Markdown summaries to this path",
     )
     parser.add_argument(
         "--baseline-ref",
@@ -458,10 +445,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.list_json and args.vendor_id is None and not args.all:
         parser.error("one of --id, --all, or --list-json is required")
-    if args.all and (args.json or args.summary_path is not None):
-        parser.error("--json and --summary-path require --id")
-    if args.baseline_ref is not None and args.vendor_id is None:
-        parser.error("--baseline-ref requires --id")
+    if args.all and args.json:
+        parser.error("--json requires --id")
     repo_root = args.repo_root if args.repo_root is not None else _repo_root()
     try:
         vendor_ids = list_vendor_ids(repo_root=repo_root)
@@ -472,31 +457,47 @@ def main(argv: list[str] | None = None) -> int:
         if args.list_json:
             print(json.dumps(list(selected), separators=(",", ":")))
             return 0
+        baseline_text = (
+            _registry_text_at_ref(repo_root=repo_root, git_ref=args.baseline_ref)
+            if args.baseline_ref is not None
+            else None
+        )
+        if args.all and args.keep_sha and baseline_text is not None:
+            selected = tuple(
+                vendor_id
+                for vendor_id in selected
+                if _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
+                != _vendor_from_registry_text(text=baseline_text, vendor_id=vendor_id)
+            )
         failed = False
+        summaries: list[str] = []
         for vendor_id in selected:
             diff = repin_vendor(
                 repo_root=repo_root,
                 vendor_id=vendor_id,
-                baseline_ref=args.baseline_ref,
+                baseline_registry_text=baseline_text,
+                keep_sha=args.keep_sha,
             )
             vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
+            markdown = render_markdown(diff=diff, display_ref=vendor.display_ref)
+            summaries.append(markdown)
             if diff.new_collisions and not diff.unchanged:
                 failed = True
-            if args.json or args.summary_path is not None:
-                _emit(
-                    diff=diff,
-                    display_ref=vendor.display_ref,
-                    as_json=args.json,
-                    summary_path=args.summary_path,
-                )
-            else:
+            if args.json:
                 print(
-                    render_markdown(
+                    render_json(
                         diff=diff,
                         display_ref=vendor.display_ref,
                     ),
                     end="",
                 )
+            else:
+                print(markdown, end="")
+        if args.summary_path is not None:
+            args.summary_path.write_text(
+                "\n".join(summaries) or "No vendor pin or slice changes.\n",
+                encoding="utf-8",
+            )
         return 1 if failed else 0
     except _CLI_FAILURES as error:
         print(error, file=sys.stderr)

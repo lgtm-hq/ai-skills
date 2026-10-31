@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import replace
 from pathlib import Path
 
@@ -26,13 +25,6 @@ _EXISTING_SHA = "0123456789abcdef0123456789abcdef01234567"
 _NEW_SHA = "89abcdef0123456789abcdef0123456789abcdef"
 _BASELINE_SHA = "fedcba9876543210fedcba9876543210fedcba98"
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_SHA_USES = re.compile(
-    r"uses:\s+\S+@(?P<ref>[0-9a-f]{40})\s+#",
-)
-_TAG_USES = re.compile(
-    r"uses:\s+\S+@v\d",
-)
-
 _PLUGINS_YAML = (
     "plugins:\n"
     "      - id: example-plugin\n"
@@ -559,10 +551,10 @@ def test_registry_text_at_ref_reads_git_show(
     assert_that(text).is_equal_to("vendors:\n")
 
 
-def test_main_baseline_ref_requires_id() -> None:
-    """``--baseline-ref`` is a single-vendor flag."""
+def test_main_baseline_ref_requires_selection() -> None:
+    """A baseline needs a vendor selection."""
     with pytest.raises(SystemExit):
-        repin_vendor.main(["--all", "--baseline-ref", "abc123"])
+        repin_vendor.main(["--baseline-ref", "abc123"])
 
 
 def test_repin_is_unchanged_when_upstream_matches_pin(
@@ -692,11 +684,17 @@ def test_main_list_json_and_summary_path(
     assert_that(summary.read_text(encoding="utf-8")).contains("already at")
 
 
+@pytest.mark.parametrize("display_ref", [None, "latest", "HEAD", "head"])
 def test_resolve_upstream_sha_uses_default_branch_for_latest(
     monkeypatch: pytest.MonkeyPatch,
+    display_ref: str | None,
 ) -> None:
     """``latest`` tracks the GitHub default branch HEAD."""
-    vendor = load_registry(registry_path=_REPO_ROOT / "vendors.yaml")[0]
+    vendor = replace(
+        load_registry(registry_path=_REPO_ROOT / "vendors.yaml")[0],
+        branch=None,
+        display_ref=display_ref,
+    )
 
     def fake_get(*, host: str, path: str, headers: dict[str, str]) -> bytes:
         del host, headers
@@ -717,7 +715,7 @@ def test_resolve_upstream_sha_uses_display_ref_tag(
     """A tag ``displayRef`` is resolved as that git ref."""
     vendors = load_registry(registry_path=_REPO_ROOT / "vendors.yaml")
     vendor = vendors[0]
-    tagged = replace(vendor, display_ref="v1.2.3")
+    tagged = replace(vendor, display_ref="v1.2.3", branch=None)
 
     def fake_get(*, host: str, path: str, headers: dict[str, str]) -> bytes:
         del host, headers
@@ -735,7 +733,7 @@ def test_resolve_upstream_sha_percent_encodes_slash_in_ref(
     """Slash-containing ``displayRef`` values are encoded in the commits URL."""
     vendors = load_registry(registry_path=_REPO_ROOT / "vendors.yaml")
     vendor = vendors[0]
-    tagged = replace(vendor, display_ref="heads/feature/foo")
+    tagged = replace(vendor, display_ref="heads/feature/foo", branch=None)
 
     def fake_get(*, host: str, path: str, headers: dict[str, str]) -> bytes:
         del host, headers
@@ -747,64 +745,99 @@ def test_resolve_upstream_sha_percent_encodes_slash_in_ref(
     assert_that(sha).is_equal_to(_NEW_SHA)
 
 
-def test_vendor_repin_workflow_is_sha_pinned_weekly_and_never_auto_merges() -> None:
-    """The scheduled workflow pins actions, labels PRs, and does not merge."""
-    workflow = (_REPO_ROOT / ".github" / "workflows" / "vendor-repin.yml").read_text(
-        encoding="utf-8",
+@pytest.mark.parametrize("branch", ["stable", "release/next"])
+def test_resolve_upstream_sha_prefers_explicit_branch_over_same_name_tag(
+    monkeypatch: pytest.MonkeyPatch,
+    branch: str,
+) -> None:
+    """Use heads even when a tag shares the explicit branch's name."""
+    vendor = replace(
+        load_registry(registry_path=_REPO_ROOT / "vendors.yaml")[0],
+        branch=branch,
+        display_ref=branch,
     )
-    script = (_REPO_ROOT / "scripts" / "ci" / "open_vendor_repin_pr.sh").read_text(
-        encoding="utf-8",
-    )
-    parsed = yaml.safe_load(workflow)
+    encoded_branch = branch.replace("/", "%2F")
 
-    assert_that(parsed["on"]["schedule"][0]["cron"]).is_equal_to("0 7 * * 1")
-    assert_that(_TAG_USES.search(workflow)).is_none()
-    pins = _SHA_USES.findall(workflow)
-    assert_that(pins).is_not_empty()
-    assert_that(all(len(pin) == 40 for pin in pins)).is_true()
-    assert_that("auto-merge:" in workflow.lower()).is_false()
-    assert_that("enable-auto-merge" in workflow.lower()).is_false()
-    assert_that(parsed["jobs"]["repin"]["permissions"]["contents"]).is_equal_to(
-        "write",
+    def fake_get(*, host: str, path: str, headers: dict[str, str]) -> bytes:
+        """Return distinct commits for the branch and its same-name tag."""
+        del host, headers
+        if path == f"/repos/{vendor.repo}/commits/refs%2Fheads%2F{encoded_branch}":
+            return json.dumps({"sha": _NEW_SHA}).encode()
+        if path in {
+            f"/repos/{vendor.repo}/commits/{encoded_branch}",
+            f"/repos/{vendor.repo}/commits/refs%2Ftags%2F{encoded_branch}",
+        }:
+            return json.dumps({"sha": _BASELINE_SHA}).encode()
+        pytest.fail(f"Unexpected upstream lookup: {path}")
+
+    monkeypatch.setattr(bake_vendor_plugins, "_http_get_bytes", fake_get)
+    assert_that(repin_vendor.resolve_upstream_sha(vendor=vendor)).is_equal_to(_NEW_SHA)
+
+
+def test_keep_sha_summarizes_baseline_without_resolving_upstream(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Renovate summaries keep the selected digest even if upstream moves."""
+    registry_path = repo_root / "vendors.yaml"
+    baseline = registry_path.read_text(encoding="utf-8")
+    manage_vendors = repin_vendor.manage_vendors
+    manage_vendors.set_sha(
+        repo_root=repo_root,
+        vendor_id="example-vendor",
+        sha=_NEW_SHA,
     )
-    assert_that(script).contains("new-vendor")
-    assert_that(script).contains("automation")
-    assert_that(script).contains(
-        'git ls-remote --exit-code origin "refs/heads/${branch}"',
+
+    def no_resolution(*, vendor: Vendor) -> str:
+        del vendor
+        pytest.fail("A summary must not resolve upstream")
+
+    monkeypatch.setattr(repin_vendor, "resolve_upstream_sha", no_resolution)
+    diff = repin_vendor.repin_vendor(
+        repo_root=repo_root,
+        vendor_id="example-vendor",
+        baseline_registry_text=baseline,
+        keep_sha=True,
     )
-    assert_that(script).contains('[[ "$ls_status" -eq 2 ]]')
-    assert_that(script).contains(
-        'git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}"',
+    assert_that(diff.old_sha).is_equal_to(_EXISTING_SHA)
+    assert_that(diff.new_sha).is_equal_to(_NEW_SHA)
+    assert_that(load_registry(registry_path=registry_path)[0].sha).is_equal_to(_NEW_SHA)
+
+
+def test_keep_sha_all_summarizes_only_changed_vendors(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The workflow CLI summarizes only vendors that differ from its baseline."""
+    registry = repo_root / "vendors.yaml"
+    baseline = registry.read_text(encoding="utf-8")
+    repin_vendor.manage_vendors.set_sha(
+        repo_root=repo_root,
+        vendor_id="example-vendor",
+        sha=_NEW_SHA,
     )
-    assert_that(script).contains('git checkout -B "$branch" "origin/$branch"')
-    assert_that(script).contains('git merge --no-edit "$base_sha"')
-    assert_that(script).contains("--force-with-lease")
-    assert_that(script).contains("gh auth setup-git")
-    assert_that(script).does_not_contain("git push --force ")
-    assert_that(workflow).contains("fetch-depth: 0")
-    checkout = next(
-        step
-        for step in parsed["jobs"]["repin"]["steps"]
-        if step.get("name") == "Checkout"
+    monkeypatch.setattr(
+        repin_vendor, "_registry_text_at_ref", lambda **kwargs: baseline
     )
-    assert_that(checkout["with"]["persist-credentials"]).is_false()
-    assert_that(checkout["with"]["fetch-depth"]).is_equal_to(0)
-    assert_that(workflow).contains("VENDOR_INPUT:")
-    assert_that(workflow).contains("VENDOR_ID:")
-    assert_that(workflow).contains('"$VENDOR_INPUT"')
-    assert_that(workflow).contains('"$VENDOR_ID"')
-    assert_that(script).contains("--baseline-ref")
-    assert_that(script).does_not_contain("--from-sha")
-    assert_that(script).contains(
-        'changed="$(git status --porcelain -- "${paths[@]}")"',
+    summary = repo_root / "summary.md"
+    args = [
+        "--repo-root",
+        str(repo_root),
+        "--all",
+        "--keep-sha",
+        "--baseline-ref",
+        "base",
+        "--summary-path",
+        str(summary),
+    ]
+    assert_that(repin_vendor.main(args)).is_zero()
+    assert_that(summary.read_text(encoding="utf-8")).contains(_EXISTING_SHA, _NEW_SHA)
+    monkeypatch.setattr(
+        repin_vendor,
+        "_registry_text_at_ref",
+        lambda **kwargs: registry.read_text(encoding="utf-8"),
     )
-    assert_that(script).contains(
-        '[[ "$status" -ne 0 && ! -s "$summary" ]]',
+    assert_that(repin_vendor.main(args)).is_zero()
+    assert_that(summary.read_text(encoding="utf-8")).contains(
+        "No vendor pin or slice changes",
     )
-    assert_that(script).contains(
-        '[[ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/${branch}")" ]]',
-    )
-    assert_that(script).contains('gh pr edit "$existing" --body-file "$summary"')
-    assert_that(script).contains("No pin change")
-    assert_that(script).does_not_contain("pr merge")
-    assert_that(script).does_not_contain("--auto")

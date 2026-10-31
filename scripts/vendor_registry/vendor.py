@@ -14,6 +14,7 @@ class Vendor:
     ``display_ref`` is the optional consumer-facing pin (``displayRef``).
     Bake uses it as the plugin version when it is a tag; floating pins
     such as ``latest`` fall back to the short SHA.
+    ``branch`` optionally selects the upstream heads ref for automated repins.
     """
 
     id: str
@@ -24,3 +25,4 @@ class Vendor:
     homepage: str
     display_ref: str | None = None
     plugins: tuple[VendorPlugin, ...] = ()
+    branch: str | None = None
