@@ -129,9 +129,9 @@ def _publish(
             repo_root=repo_root,
             repository=_REPOSITORY,
             branch=_BRANCH,
-            expected_head=expected_head
-            if expected_head is not None
-            else _head(repo_root),
+            expected_head=(
+                expected_head if expected_head is not None else _head(repo_root)
+            ),
             pr_number=522,
             summary="# Bake summary\n",
             request=request,
