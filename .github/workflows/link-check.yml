@@ -33,13 +33,13 @@ jobs:
       contents: read
       pull-requests: write
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@3f5d4b551b78c2a971c47f31a241426cb69a8b6a # v0.81.0
     with:
       egress-policy: block
       job-name: '🔗 Internal Link Check'
       file-extensions: md
       check-external: false
-      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
+      tooling-ref: '3f5d4b551b78c2a971c47f31a241426cb69a8b6a' # v0.81.0
       # reusable-link-check hardens with inputs.allowed-endpoints before
       # checkout (append/preset resolve happens too late). Pass the full
       # github-tooling default list plus release-assets so Lychee can download
@@ -68,7 +68,7 @@ jobs:
       contents: read
       pull-requests: write
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-link-check.yml@3f5d4b551b78c2a971c47f31a241426cb69a8b6a # v0.81.0
     with:
       job-name: '🔗 External Link Check'
       file-extensions: md
@@ -80,4 +80,4 @@ jobs:
       # authenticate all github.com checks instead.
       exclude-patterns: 'github\.com/lgtm-hq/plugin-engine-lab'
       egress-policy: audit
-      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
+      tooling-ref: '3f5d4b551b78c2a971c47f31a241426cb69a8b6a' # v0.81.0
