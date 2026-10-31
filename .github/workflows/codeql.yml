@@ -31,11 +31,11 @@ jobs:
     # is none: Python is interpreted, so the database is built from source
     # without a build step (do not use autobuild for interpreted languages).
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-codeql.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-codeql.yml@3f5d4b551b78c2a971c47f31a241426cb69a8b6a # v0.81.0
     with:
       languages: python
       build-mode: none
-      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
+      tooling-ref: '3f5d4b551b78c2a971c47f31a241426cb69a8b6a' # v0.81.0
       egress-policy: block
       egress-preset: github-tooling
       # Harden-runner pre reads workflow inputs only (not resolved presets).
