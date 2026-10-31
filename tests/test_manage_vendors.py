@@ -131,12 +131,16 @@ def test_add_appends_vendor_and_refreshes(repo_root: Path) -> None:
         license_name="Apache-2.0",
         homepage="https://github.com/owner/brand-new",
         display_ref=None,
+        branch="main",
     )
 
     vendors = load_registry(registry_path=repo_root / "vendors.yaml")
     added = next(vendor for vendor in vendors if vendor.id == "brand-new")
     assert_that(added.repo).is_equal_to("owner/brand-new")
     assert_that(added.sha).is_equal_to(_NEW_SHA)
+    assert_that(added.branch).is_equal_to("main")
+    registry_text = (repo_root / "vendors.yaml").read_text(encoding="utf-8")
+    assert_that(registry_text).contains(f'sha: "{_NEW_SHA}"\n    branch: main\n')
     index = json.loads(
         (repo_root / "vendor-indexes" / "brand-new.json").read_text(encoding="utf-8"),
     )
@@ -190,11 +194,17 @@ def test_update_patches_sha_and_rebakes(repo_root: Path) -> None:
         license_name=None,
         homepage=None,
         display_ref=None,
+        branch="release/next",
     )
 
     vendors = load_registry(registry_path=repo_root / "vendors.yaml")
     updated = next(vendor for vendor in vendors if vendor.id == "existing")
     assert_that(updated.sha).is_equal_to(_NEW_SHA)
+    assert_that(updated.branch).is_equal_to("release/next")
+    registry_text = (repo_root / "vendors.yaml").read_text(encoding="utf-8")
+    assert_that(registry_text).contains(
+        f'sha: "{_NEW_SHA}"\n    branch: release/next\n'
+    )
     assert_that(updated.repo).is_equal_to("owner/existing")
     index = json.loads(
         (repo_root / "vendor-indexes" / "existing.json").read_text(encoding="utf-8"),

@@ -10,10 +10,9 @@
         "/^vendors\\.yaml$/"
       ],
       "matchStrings": [
-        "repo:\\s*(?<depName>[^\\s]+)\\s+sha:\\s*[\"']?(?<currentDigest>[0-9a-f]{40})[\"']?"
+        "repo:\\s*(?<depName>[^\\s]+)\\s+sha:\\s*[\"']?(?<currentDigest>[0-9a-f]{40})[\"']?\\s+branch:\\s*(?<currentValue>\\S+)"
       ],
       "datasourceTemplate": "git-refs",
-      "currentValueTemplate": "HEAD",
       "packageNameTemplate": "https://github.com/{{{depName}}}"
     },
     {
@@ -41,5 +40,8 @@
         "lintro"
       ]
     }
+  ],
+  "gitIgnoredAuthors": [
+    "273006376+lgtm-release-bot[bot]@users.noreply.github.com"
   ]
 }

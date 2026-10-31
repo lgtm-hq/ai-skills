@@ -88,6 +88,63 @@ def test_load_registry_accepts_valid_vendor(
     )
 
 
+@pytest.mark.parametrize("branch", ["main", "release/next"])
+def test_load_registry_accepts_branch(valid_registry_path: Path, branch: str) -> None:
+    """Expose valid optional branch refs on the vendor record."""
+    text = valid_registry_path.read_text(encoding="utf-8")
+    valid_registry_path.write_text(text + f"    branch: {branch}\n", encoding="utf-8")
+    vendor = load_registry(registry_path=valid_registry_path)[0]
+    assert_that(vendor.branch).is_equal_to(branch)
+
+
+@pytest.mark.parametrize(
+    "branch",
+    [
+        "a" * 40,
+        "A" * 40,
+        "",
+        " ",
+        None,
+        123,
+        "HEAD",
+        "../main",
+        "a b",
+        "a.lock",
+        "a..b",
+        "a@{b",
+        "a//b",
+        "/a",
+        "a/",
+        "-main",
+        "a~1",
+        "a^",
+        "a?",
+        "a[",
+        "a\\b",
+    ],
+)
+def test_load_registry_rejects_invalid_branch(
+    valid_registry_path: Path,
+    branch: object,
+) -> None:
+    """Reject SHAs, empty values, and invalid Git ref names."""
+    text = valid_registry_path.read_text(encoding="utf-8")
+    valid_registry_path.write_text(
+        text + f"    branch: {json.dumps(branch)}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises((ValueError, TypeError), match="branch"):
+        load_registry(registry_path=valid_registry_path)
+
+
+def test_load_registry_still_rejects_unknown_fields(valid_registry_path: Path) -> None:
+    """Adding branch support must not make the registry schema permissive."""
+    text = valid_registry_path.read_text(encoding="utf-8")
+    valid_registry_path.write_text(text + "    unknown: main\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="required fields"):
+        load_registry(registry_path=valid_registry_path)
+
+
 @pytest.mark.parametrize(
     ("source", "replacement", "message"),
     [

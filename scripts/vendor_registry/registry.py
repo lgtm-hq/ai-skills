@@ -19,7 +19,7 @@ _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _VENDOR_REQUIRED_FIELDS = frozenset(
     {"id", "repo", "sha", "skillRoots", "license", "homepage"},
 )
-_VENDOR_OPTIONAL_FIELDS = frozenset({"displayRef", "plugins"})
+_VENDOR_OPTIONAL_FIELDS = frozenset({"branch", "displayRef", "plugins"})
 _VENDOR_FIELDS = _VENDOR_REQUIRED_FIELDS | _VENDOR_OPTIONAL_FIELDS
 _PLUGIN_REQUIRED_FIELDS = frozenset(
     {"id", "description", "skillsRoot", "skills"},
@@ -205,6 +205,11 @@ def _parse_vendor(*, raw_vendor: object, position: int) -> Vendor:
             msg = f"Vendor {position} displayRef must not be a commit SHA"
             raise ValueError(msg)
 
+    branch = (
+        _parse_branch(value=raw_vendor["branch"], position=position)
+        if "branch" in raw_vendor
+        else None
+    )
     vendor_id = _required_string(
         value=raw_vendor["id"],
         field="id",
@@ -261,7 +266,42 @@ def _parse_vendor(*, raw_vendor: object, position: int) -> Vendor:
         homepage=homepage,
         display_ref=display_ref,
         plugins=plugins,
+        branch=branch,
     )
+
+
+def _parse_branch(*, value: object, position: int) -> str:
+    """Validate a non-SHA Git branch name without resolving it.
+
+    Args:
+        value: Raw YAML branch value.
+        position: One-based vendor position.
+
+    Returns:
+        Branch name suitable for Git's heads ref namespace.
+
+    Raises:
+        TypeError: If the branch is not a string.
+        ValueError: If it is empty, SHA-shaped, or an invalid ref name.
+    """
+    branch = _required_string(value=value, field="branch", position=position)
+    if _SHA_PATTERN.fullmatch(branch.lower()) is not None:
+        msg = f"Vendor {position} branch must not be a commit SHA"
+        raise ValueError(msg)
+    if (
+        branch in {"@", "HEAD"}
+        or branch.startswith("-")
+        or any(char.isspace() or char in "~^:?*[\\" for char in branch)
+        or any(part in branch for part in ("..", "@{", "//"))
+        or branch.endswith(".")
+        or any(
+            not part or part.startswith(".") or part.endswith(".lock")
+            for part in branch.split("/")
+        )
+    ):
+        msg = f"Vendor {position} branch must be a valid Git branch name"
+        raise ValueError(msg)
+    return branch
 
 
 def _required_string(

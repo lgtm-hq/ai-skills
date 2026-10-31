@@ -52,6 +52,7 @@ _FIELD_ORDER = (
     "id",
     "repo",
     "sha",
+    "branch",
     "displayRef",
     "skillRoots",
     "plugins",
@@ -567,6 +568,7 @@ def _build_vendor_mapping(
     license_name: str,
     homepage: str,
     display_ref: str | None,
+    branch: str | None = None,
 ) -> dict[str, Any]:
     """Build a camelCase vendor mapping from add-command arguments.
 
@@ -578,6 +580,7 @@ def _build_vendor_mapping(
         license_name: SPDX or descriptive license label.
         homepage: Vendor homepage URL.
         display_ref: Consumer-facing pin, defaulting to ``latest``.
+        branch: Optional upstream branch tracked by Renovate.
 
     Returns:
         Ordered vendor mapping ready for serialization.
@@ -586,6 +589,7 @@ def _build_vendor_mapping(
         "id": vendor_id,
         "repo": repo,
         "sha": sha,
+        **({"branch": branch} if branch is not None else {}),
         "displayRef": display_ref if display_ref is not None else _DEFAULT_DISPLAY_REF,
         "skillRoots": list(skill_roots),
         "license": license_name,
@@ -755,6 +759,7 @@ def add(
     license_name: str,
     homepage: str,
     display_ref: str | None,
+    branch: str | None = None,
 ) -> None:
     """Append a new vendor to the registry, then rebake and synchronize.
 
@@ -767,6 +772,7 @@ def add(
         license_name: SPDX or descriptive license label.
         homepage: Vendor homepage URL.
         display_ref: Consumer-facing pin, defaulting to ``latest``.
+        branch: Optional upstream branch tracked by Renovate.
 
     Raises:
         ValueError: If the vendor id already exists in the registry.
@@ -785,6 +791,7 @@ def add(
             license_name=license_name,
             homepage=homepage,
             display_ref=display_ref,
+            branch=branch,
         ),
     )
     original = _write_registry(registry_path=registry_path, vendors=vendors)
@@ -806,6 +813,7 @@ def update(
     license_name: str | None,
     homepage: str | None,
     display_ref: str | None,
+    branch: str | None = None,
 ) -> None:
     """Patch provided fields on an existing vendor, then rebake and synchronize.
 
@@ -818,6 +826,7 @@ def update(
         license_name: New license label, or ``None`` to keep the current value.
         homepage: New homepage URL, or ``None`` to keep the current value.
         display_ref: New display ref, or ``None`` to keep the current value.
+        branch: New upstream branch, or ``None`` to keep the current value.
 
     Raises:
         ValueError: If the vendor id is not present in the registry.
@@ -834,6 +843,7 @@ def update(
     patch: dict[str, Any] = {
         "repo": repo,
         "sha": sha,
+        "branch": branch,
         "skillRoots": list(skill_roots) if skill_roots is not None else None,
         "license": license_name,
         "homepage": homepage,
@@ -872,6 +882,10 @@ def _add_vendor_arguments(
         "--sha",
         required=require_fields,
         help="40-character lowercase hex commit SHA",
+    )
+    parser.add_argument(
+        "--branch",
+        help="Upstream branch tracked by Renovate (for example main)",
     )
     parser.add_argument(
         "--skill-roots",
@@ -965,6 +979,7 @@ def main(argv: list[str] | None = None) -> int:
                 license_name=args.license_name,
                 homepage=args.homepage,
                 display_ref=args.display_ref,
+                branch=args.branch,
             )
             return 0
         if args.command == "update":
@@ -981,6 +996,7 @@ def main(argv: list[str] | None = None) -> int:
                 license_name=args.license_name,
                 homepage=args.homepage,
                 display_ref=args.display_ref,
+                branch=args.branch,
             )
             return 0
         if args.command == "refresh":
