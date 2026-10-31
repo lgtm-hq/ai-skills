@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
+import manage_vendors
 import pytest
 import yaml
 from assertpy import assert_that
@@ -139,15 +140,26 @@ def _publish(
     )
 
 
-def test_renovate_captures_every_explicit_vendor_branch() -> None:
-    """The actual Renovate regex extracts all pins and their branch refs."""
+@pytest.fixture
+def renovate_vendor_manager() -> dict[str, Any]:
+    """Read the actual Renovate manager for vendor refs.
+
+    Returns:
+        The git-refs custom manager configuration.
+    """
     config = json.loads((_ROOT / "renovate.json").read_text(encoding="utf-8"))
-    manager = next(
+    return next(
         item
         for item in config["customManagers"]
         if item.get("datasourceTemplate") == "git-refs"
     )
-    pattern = manager["matchStrings"][0].replace("(?<", "(?P<")
+
+
+def test_renovate_captures_every_explicit_vendor_branch(
+    renovate_vendor_manager: dict[str, Any],
+) -> None:
+    """The actual Renovate regex extracts all pins and their branch refs."""
+    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
     matches = [
         match.groupdict()
         for match in re.finditer(
@@ -167,9 +179,84 @@ def test_renovate_captures_every_explicit_vendor_branch() -> None:
         ],
     )
     assert_that(len(matches)).is_equal_to(5)
-    assert_that(manager).does_not_contain_key("currentValueTemplate")
+    assert_that(renovate_vendor_manager).does_not_contain_key("currentValueTemplate")
     for vendor in vendors:
         assert_that(vendor.branch).is_equal_to("main")
+
+
+@pytest.mark.parametrize(
+    "branch",
+    [
+        "main",
+        "release/next",
+        "123",
+        "1.2",
+        "true",
+        "False",
+        "yes",
+        "null",
+        "2026-10-31",
+    ],
+    ids=[
+        "plain",
+        "slash",
+        "integer",
+        "decimal",
+        "true",
+        "false",
+        "yes",
+        "null",
+        "date",
+    ],
+)
+def test_renovate_captures_registry_writer_branch(
+    tmp_path: Path,
+    renovate_vendor_manager: dict[str, Any],
+    branch: str,
+) -> None:
+    """Capture branch names without the quotes emitted by the registry writer."""
+    registry_path = tmp_path / "vendors.yaml"
+    vendor = manage_vendors._build_vendor_mapping(
+        vendor_id="example",
+        repo="owner/example",
+        sha=_NEW_HEAD,
+        branch=branch,
+        skill_roots=("skills",),
+        license_name="MIT",
+        homepage="https://github.com/owner/example",
+        display_ref=None,
+    )
+    manage_vendors._write_registry(registry_path=registry_path, vendors=[vendor])
+    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
+    matches = list(re.finditer(pattern, registry_path.read_text(encoding="utf-8")))
+
+    assert_that(load_registry(registry_path=registry_path)[0].branch).is_equal_to(
+        branch
+    )
+    assert_that(matches).is_length(1)
+    assert_that(matches[0].groupdict()).is_equal_to(
+        {
+            "depName": "owner/example",
+            "currentDigest": _NEW_HEAD,
+            "currentValue": branch,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "branch_scalar", ["release/next", "'release/next'", '"release/next"']
+)
+def test_renovate_captures_yaml_branch_quote_styles(
+    renovate_vendor_manager: dict[str, Any],
+    branch_scalar: str,
+) -> None:
+    """Accept plain, single-quoted, and double-quoted YAML branch scalars."""
+    text = f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n    branch: {branch_scalar}\n'
+    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
+    matches = list(re.finditer(pattern, text))
+
+    assert_that(matches).is_length(1)
+    assert_that(matches[0].group("currentValue")).is_equal_to("release/next")
 
 
 def test_registry_branch_follows_sha() -> None:

@@ -225,6 +225,20 @@ Renovate tracks the explicit `branch` after each vendor's `sha` (currently
 custom manager can capture the branch and digest. `manage_vendors.py add`
 and `update` accept `--branch` and preserve this ordering.
 
+To switch an existing vendor from branch tracking to a release tag, use the
+update-only `--clear-branch` flag together with `--display-ref` and the tag's
+commit SHA:
+
+```bash
+uv run python scripts/manage_vendors.py update --id owner-skills \
+  --clear-branch --display-ref v1.2.3 \
+  --sha 89abcdef0123456789abcdef0123456789abcdef
+```
+
+`--clear-branch` removes the `branch` key and is mutually exclusive with
+`--branch`. Omitting both flags preserves existing branch tracking, even when
+`--display-ref` changes.
+
 [`.github/workflows/vendor-pin-regen.yml`](.github/workflows/vendor-pin-regen.yml)
 refreshes generated data on same-repository `renovate/**` PRs that change
 `vendors.yaml`. It checks out the exact PR head, runs the generators, and

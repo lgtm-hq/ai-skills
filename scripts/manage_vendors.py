@@ -814,6 +814,7 @@ def update(
     homepage: str | None,
     display_ref: str | None,
     branch: str | None = None,
+    clear_branch: bool = False,
 ) -> None:
     """Patch provided fields on an existing vendor, then rebake and synchronize.
 
@@ -827,10 +828,14 @@ def update(
         homepage: New homepage URL, or ``None`` to keep the current value.
         display_ref: New display ref, or ``None`` to keep the current value.
         branch: New upstream branch, or ``None`` to keep the current value.
+        clear_branch: Remove the branch field, restoring display-ref resolution.
 
     Raises:
-        ValueError: If the vendor id is not present in the registry.
+        ValueError: If the vendor id is absent or branch edits conflict.
     """
+    if clear_branch and branch is not None:
+        msg = "branch and clear_branch are mutually exclusive"
+        raise ValueError(msg)
     registry_path = repo_root / "vendors.yaml"
     vendors = _read_raw_registry(registry_path=registry_path)
     target = next(
@@ -852,6 +857,8 @@ def update(
     target.update(
         {field: value for field, value in patch.items() if value is not None},
     )
+    if clear_branch:
+        target.pop("branch", None)
     original = _write_registry(registry_path=registry_path, vendors=vendors)
     _refresh_or_restore(
         repo_root=repo_root,
@@ -883,10 +890,17 @@ def _add_vendor_arguments(
         required=require_fields,
         help="40-character lowercase hex commit SHA",
     )
-    parser.add_argument(
+    branch_flags = parser.add_mutually_exclusive_group()
+    branch_flags.add_argument(
         "--branch",
         help="Upstream branch tracked by Renovate (for example main)",
     )
+    if not require_fields:
+        branch_flags.add_argument(
+            "--clear-branch",
+            action="store_true",
+            help="Remove branch tracking and resolve displayRef instead",
+        )
     parser.add_argument(
         "--skill-roots",
         dest="skill_roots",
@@ -997,6 +1011,7 @@ def main(argv: list[str] | None = None) -> int:
                 homepage=args.homepage,
                 display_ref=args.display_ref,
                 branch=args.branch,
+                clear_branch=args.clear_branch,
             )
             return 0
         if args.command == "refresh":

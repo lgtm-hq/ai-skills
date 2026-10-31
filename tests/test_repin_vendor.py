@@ -684,13 +684,16 @@ def test_main_list_json_and_summary_path(
     assert_that(summary.read_text(encoding="utf-8")).contains("already at")
 
 
+@pytest.mark.parametrize("display_ref", [None, "latest", "HEAD", "head"])
 def test_resolve_upstream_sha_uses_default_branch_for_latest(
     monkeypatch: pytest.MonkeyPatch,
+    display_ref: str | None,
 ) -> None:
     """``latest`` tracks the GitHub default branch HEAD."""
     vendor = replace(
         load_registry(registry_path=_REPO_ROOT / "vendors.yaml")[0],
         branch=None,
+        display_ref=display_ref,
     )
 
     def fake_get(*, host: str, path: str, headers: dict[str, str]) -> bytes:
@@ -742,20 +745,30 @@ def test_resolve_upstream_sha_percent_encodes_slash_in_ref(
     assert_that(sha).is_equal_to(_NEW_SHA)
 
 
-def test_resolve_upstream_sha_prefers_explicit_branch(
+@pytest.mark.parametrize("branch", ["stable", "release/next"])
+def test_resolve_upstream_sha_prefers_explicit_branch_over_same_name_tag(
     monkeypatch: pytest.MonkeyPatch,
+    branch: str,
 ) -> None:
-    """An explicit branch wins over displayRef without a default-branch lookup."""
+    """Use heads even when a tag shares the explicit branch's name."""
     vendor = replace(
         load_registry(registry_path=_REPO_ROOT / "vendors.yaml")[0],
-        branch="release/next",
-        display_ref="v1.2.3",
+        branch=branch,
+        display_ref=branch,
     )
+    encoded_branch = branch.replace("/", "%2F")
 
     def fake_get(*, host: str, path: str, headers: dict[str, str]) -> bytes:
+        """Return distinct commits for the branch and its same-name tag."""
         del host, headers
-        assert_that(path).ends_with("/commits/release%2Fnext")
-        return json.dumps({"sha": _NEW_SHA}).encode()
+        if path == f"/repos/{vendor.repo}/commits/refs%2Fheads%2F{encoded_branch}":
+            return json.dumps({"sha": _NEW_SHA}).encode()
+        if path in {
+            f"/repos/{vendor.repo}/commits/{encoded_branch}",
+            f"/repos/{vendor.repo}/commits/refs%2Ftags%2F{encoded_branch}",
+        }:
+            return json.dumps({"sha": _BASELINE_SHA}).encode()
+        pytest.fail(f"Unexpected upstream lookup: {path}")
 
     monkeypatch.setattr(bake_vendor_plugins, "_http_get_bytes", fake_get)
     assert_that(repin_vendor.resolve_upstream_sha(vendor=vendor)).is_equal_to(_NEW_SHA)

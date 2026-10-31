@@ -120,6 +120,31 @@ def repo_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
+@pytest.fixture
+def branch_repo_root(repo_root: Path) -> Path:
+    """Enable branch tracking in the offline repository fixture.
+
+    Args:
+        repo_root: Repository with injected vendor fetches.
+
+    Returns:
+        Repository root with synchronized branch-tracking artifacts.
+    """
+    status = manage_vendors.main(
+        [
+            "update",
+            "--repo-root",
+            str(repo_root),
+            "--id",
+            "existing",
+            "--branch",
+            "main",
+        ],
+    )
+    assert_that(status).is_zero()
+    return repo_root
+
+
 def test_add_appends_vendor_and_refreshes(repo_root: Path) -> None:
     """Add a vendor, persist it, and bake a matching index."""
     manage_vendors.add(
@@ -226,6 +251,189 @@ def test_update_rejects_unknown_id(repo_root: Path) -> None:
             homepage=None,
             display_ref=None,
         )
+
+
+@pytest.mark.parametrize("clear_branch", [True, False], ids=["clear", "omit"])
+def test_update_branch_tracking_to_release_tag(
+    branch_repo_root: Path,
+    clear_branch: bool,
+) -> None:
+    """Remove branch tracking explicitly; omission preserves the existing branch."""
+    args = [
+        "update",
+        "--repo-root",
+        str(branch_repo_root),
+        "--id",
+        "existing",
+        "--display-ref",
+        "v1.2.3",
+        "--sha",
+        _NEW_SHA,
+    ]
+    if clear_branch:
+        args.append("--clear-branch")
+    assert_that(manage_vendors.main(args)).is_zero()
+
+    vendor = load_registry(registry_path=branch_repo_root / "vendors.yaml")[0]
+    assert_that(vendor.branch).is_equal_to(None if clear_branch else "main")
+    assert_that(vendor.display_ref).is_equal_to("v1.2.3")
+    assert_that(vendor.sha).is_equal_to(_NEW_SHA)
+    for registry_path in (
+        branch_repo_root / "vendors.yaml",
+        branch_repo_root / "npm" / "ai-skills" / "data" / "vendors.yaml",
+    ):
+        mapping = yaml.safe_load(registry_path.read_text(encoding="utf-8"))["vendors"][
+            0
+        ]
+        if clear_branch:
+            assert_that(mapping).does_not_contain_key("branch")
+        else:
+            assert_that(mapping["branch"]).is_equal_to("main")
+    assert_that(manage_vendors.check(repo_root=branch_repo_root)).is_zero()
+
+
+def test_update_clear_branch_when_already_absent(repo_root: Path) -> None:
+    """Clearing absent branch tracking is a valid update."""
+    status = manage_vendors.main(
+        ["update", "--repo-root", str(repo_root), "--id", "existing", "--clear-branch"],
+    )
+    assert_that(status).is_zero()
+    assert_that(
+        load_registry(registry_path=repo_root / "vendors.yaml")[0].branch
+    ).is_none()
+    assert_that(manage_vendors.check(repo_root=repo_root)).is_zero()
+
+
+@pytest.mark.parametrize("failure", ["validation", "bake", "sync"])
+def test_update_clear_branch_rolls_back_on_failure(
+    branch_repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    """Restore the branch and all derived files if validation or refresh fails."""
+    original = {
+        path.relative_to(branch_repo_root): path.read_bytes()
+        for path in branch_repo_root.rglob("*")
+        if path.is_file()
+    }
+
+    def fail_bake(*, vendor: Vendor) -> list[str]:
+        """Fail the injected tree lookup without using the network."""
+        del vendor
+        raise RuntimeError("bake failed")
+
+    def fail_sync(*, repo_root: Path, check_only: bool) -> int:
+        """Simulate a partial sync after the release-tag artifacts were baked."""
+        del check_only
+        (repo_root / "NOTICE.md").write_text("partial sync\n", encoding="utf-8")
+        raise RuntimeError("sync failed")
+
+    with monkeypatch.context() as patch:
+        if failure == "bake":
+            patch.setattr(bake_vendor_indexes, "_fetch_tree_paths", fail_bake)
+        elif failure == "sync":
+            patch.setattr(manage_vendors, "_sync_artifacts", fail_sync)
+        status = manage_vendors.main(
+            [
+                "update",
+                "--repo-root",
+                str(branch_repo_root),
+                "--id",
+                "existing",
+                "--clear-branch",
+                "--display-ref",
+                _NEW_SHA if failure == "validation" else "v1.2.3",
+            ],
+        )
+    assert_that(status).is_equal_to(1)
+    assert_that(
+        {
+            path.relative_to(branch_repo_root): path.read_bytes()
+            for path in branch_repo_root.rglob("*")
+            if path.is_file()
+        }
+    ).is_equal_to(original)
+    assert_that(manage_vendors.check(repo_root=branch_repo_root)).is_zero()
+
+
+def test_update_rejects_branch_and_clear_branch(
+    branch_repo_root: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Reject conflicting CLI flags before changing the registry."""
+    registry_path = branch_repo_root / "vendors.yaml"
+    original = registry_path.read_bytes()
+    with pytest.raises(SystemExit) as error:
+        manage_vendors.main(
+            [
+                "update",
+                "--repo-root",
+                str(branch_repo_root),
+                "--id",
+                "existing",
+                "--branch",
+                "release/next",
+                "--clear-branch",
+            ],
+        )
+    assert_that(error.value.code).is_equal_to(2)
+    assert_that(capsys.readouterr().err).contains("not allowed with argument --branch")
+    assert_that(registry_path.read_bytes()).is_equal_to(original)
+
+
+def test_update_api_rejects_branch_and_clear_branch(branch_repo_root: Path) -> None:
+    """The Python entry point also rejects conflicting branch edits before writing."""
+    registry_path = branch_repo_root / "vendors.yaml"
+    original = registry_path.read_bytes()
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        manage_vendors.update(
+            repo_root=branch_repo_root,
+            vendor_id="existing",
+            repo=None,
+            sha=None,
+            skill_roots=None,
+            license_name=None,
+            homepage=None,
+            display_ref=None,
+            branch="release/next",
+            clear_branch=True,
+        )
+    assert_that(registry_path.read_bytes()).is_equal_to(original)
+
+
+def test_add_rejects_clear_branch(
+    repo_root: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The branch-removal flag is only available for updates."""
+    registry_path = repo_root / "vendors.yaml"
+    original = registry_path.read_bytes()
+    with pytest.raises(SystemExit) as error:
+        manage_vendors.main(
+            [
+                "add",
+                "--repo-root",
+                str(repo_root),
+                "--id",
+                "new",
+                "--repo",
+                "owner/new",
+                "--sha",
+                _NEW_SHA,
+                "--skill-roots",
+                "skills",
+                "--license",
+                "MIT",
+                "--homepage",
+                "https://github.com/owner/new",
+                "--clear-branch",
+            ],
+        )
+    assert_that(error.value.code).is_equal_to(2)
+    assert_that(capsys.readouterr().err).contains(
+        "unrecognized arguments: --clear-branch"
+    )
+    assert_that(registry_path.read_bytes()).is_equal_to(original)
 
 
 def test_refresh_reports_clean_after_bake(repo_root: Path) -> None:

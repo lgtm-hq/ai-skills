@@ -94,7 +94,7 @@ def resolve_upstream_sha(*, vendor: Vendor) -> str:
     owner, name = vendor.repo.split("/", maxsplit=1)
     display_ref = vendor.display_ref
     if vendor.branch is not None:
-        ref = vendor.branch
+        ref = f"refs/heads/{vendor.branch}"
     elif display_ref is None or display_ref in _FLOATING_REFS:
         repo_payload = _github_json(path=f"/repos/{owner}/{name}")
         default_branch = repo_payload.get("default_branch")
