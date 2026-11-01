@@ -8,7 +8,10 @@ from pathlib import Path
 import pytest
 from assertpy import assert_that
 from markdown_it import MarkdownIt
-from vendor_registry.safe_tree import validate_internal_references
+from vendor_registry.safe_tree import (
+    _assert_relative_markdown_target,
+    _iter_markdown_destinations,
+)
 
 
 def _obsolete_decision_phrases(document: str) -> list[str]:
@@ -315,6 +318,58 @@ def test_adrs_have_required_sections(adr_files: list[Path]) -> None:
         )
 
 
-def test_adr_internal_links_resolve(adr_dir: Path) -> None:
-    """Validate local inline and reference links offline using the bake checker."""
-    validate_internal_references(root=adr_dir)
+@pytest.fixture(params=["0009", "0010", "0011"])
+def accepted_engine_adr(adr_dir: Path, request: pytest.FixtureRequest) -> Path:
+    """Locate each accepted engine contract without silently omitting missing ADRs.
+
+    Args:
+        adr_dir: Directory containing the architecture decisions.
+        request: Required engine ADR number.
+
+    Returns:
+        The unique ADR path for that number.
+    """
+    paths = list(adr_dir.glob(f"{request.param}-*.md"))
+    assert_that(paths).described_as(request.param).is_length(1)
+    return paths[0]
+
+
+def test_engine_adr_acceptance_and_index(
+    accepted_engine_adr: Path,
+    index_rows: list[tuple[str, str, str]],
+) -> None:
+    """New contracts have exact Accepted status, dated metadata and matching titles."""
+    document = accepted_engine_adr.read_text(encoding="utf-8")
+    number = accepted_engine_adr.name[:4]
+    assert_that(document).matches(rf"\A# ADR {number}: \S[^\n]+\n")
+    assert_that(document).matches(r"(?m)^- Status: Accepted$")
+    assert_that(document).matches(r"(?m)^- Date: \d{4}-\d{2}-\d{2}$")
+    title = document.splitlines()[0].split(": ", maxsplit=1)[1]
+    assert_that(index_rows).contains((accepted_engine_adr.name, title, "Accepted"))
+
+
+def test_engine_adrs_cross_link_contracts(accepted_engine_adr: Path) -> None:
+    """Each accepted contract links the glossary and the other two contracts."""
+    document = accepted_engine_adr.read_text(encoding="utf-8")
+    targets = set(_iter_markdown_destinations(text=document))
+    assert_that(targets).contains("../glossary.md")
+    for number in range(9, 12):
+        if f"{number:04d}" != accepted_engine_adr.name[:4]:
+            assert_that(
+                any(target.startswith(f"./{number:04d}-") for target in targets),
+            ).described_as(
+                f"{accepted_engine_adr.name} links ADR {number:04d}"
+            ).is_true()
+
+
+def test_adr_internal_links_resolve(adr_dir: Path, adr_files: list[Path]) -> None:
+    """Reuse the offline bake link checks with the repository as containment root."""
+    for path in [*adr_files, adr_dir / "README.md"]:
+        for target in _iter_markdown_destinations(
+            text=path.read_text(encoding="utf-8")
+        ):
+            _assert_relative_markdown_target(
+                raw_target=target,
+                file_path=path,
+                root=adr_dir.parents[1],
+            )
