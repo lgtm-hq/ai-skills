@@ -21,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.30.7] - 2026-11-01
+
+### Changed
+
+- **deps**: update anthropics/skills pin from `41bbe19` to `ca45fc4` (#606) (4e14c33)
+- **deps**: update davidondrej/skills pin from `8eadd74` to `7201ee3` (#609) (9e8acb5)
+
+### Fixed
+
+- **vendors**: harden final M4 publication diagnostics (#607) with bounded sticky
+  comments, clear JSON nesting errors, and validation before atomic artifact
+  publication (#608) (a5100c3)
+
 ## [0.30.6] - 2026-11-01
 
 ### Changed
