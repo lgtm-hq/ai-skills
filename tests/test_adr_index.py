@@ -11,6 +11,32 @@ from markdown_it import MarkdownIt
 from vendor_registry.safe_tree import validate_internal_references
 
 
+def _obsolete_decision_phrases(document: str) -> list[str]:
+    """Find banned terms and retired directives despite Markdown and wrapping.
+
+    Args:
+        document: ADR text or a candidate clarification.
+
+    Returns:
+        Banned terms and obsolete directives present in the normalized text.
+    """
+    normalized = " ".join(
+        re.sub(pattern=r"[-*_`]", repl=" ", string=document.casefold()).split(),
+    )
+    return [
+        phrase
+        for phrase in (
+            "post v1 backlog",
+            "interactive choice deferred to post v1",
+            "unconditionally",
+            "first wins",
+            "event append",
+            "wipe and reinstall",
+        )
+        if phrase in normalized
+    ]
+
+
 @pytest.fixture
 def adr_dir() -> Path:
     """Return the repository's architecture decision directory.
@@ -108,7 +134,7 @@ def test_adr_index_status_matches_document(
     adr_files: list[Path],
     index_rows: list[tuple[str, str, str]],
 ) -> None:
-    """Index statuses match document statuses, allowing parenthetical detail."""
+    """Index statuses preserve amendment dates and omit other status detail."""
     statuses = {filename: status for filename, _, status in index_rows}
     for path in adr_files:
         document = path.read_text(encoding="utf-8")
@@ -119,28 +145,130 @@ def test_adr_index_status_matches_document(
         )
         assert_that(declared).described_as(path.name).is_length(1)
         assert_that(statuses).described_as(path.name).contains_key(path.name)
-        status_prefix = declared[0].split(" (", maxsplit=1)[0]
-        assert_that(statuses[path.name]).described_as(path.name).is_in(
-            declared[0],
-            status_prefix,
+        expected_status = (
+            declared[0]
+            if declared[0].startswith("Accepted (amended ")
+            else declared[0].split(" (", maxsplit=1)[0]
+        )
+        assert_that(statuses[path.name]).described_as(path.name).is_equal_to(
+            expected_status,
         )
 
 
 def test_amended_adrs_remove_obsolete_decisions(amended_adr: Path) -> None:
     """Reject retired selection, delivery and collision rules, even when wrapped."""
-    document = amended_adr.read_text(encoding="utf-8").casefold()
-    normalized = " ".join(
-        re.sub(pattern=r"[-*_`]", repl=" ", string=document).split(),
+    document = amended_adr.read_text(encoding="utf-8")
+
+    assert_that(_obsolete_decision_phrases(document)).described_as(
+        amended_adr.name,
+    ).is_empty()
+
+
+@pytest.mark.parametrize(
+    ("document", "expected"),
+    [
+        pytest.param(
+            "That disable path is post-v1 backlog, not a v1 engine feature.",
+            "post v1 backlog",
+            id="disable-deferral",
+        ),
+        pytest.param(
+            "Interactive keep-both / pick-one, "
+            "with answers persisted as declarations,\n"
+            "is **post-v1 backlog** (epic #381 rules).",
+            "post v1 backlog",
+            id="persisted-choices-deferral",
+        ),
+        pytest.param(
+            "(collision classes 1–3; interactive choice deferred to post-v1)",
+            "interactive choice deferred to post v1",
+            id="interactive-evidence-deferral",
+        ),
+        pytest.param(
+            "Org denies apply unconditionally.",
+            "unconditionally",
+            id="owner-banned-term",
+        ),
+        pytest.param(
+            "MCP server keys first-wins, never overwrite.",
+            "first wins",
+            id="owner-banned-conflict-rule",
+        ),
+        pytest.param(
+            "MCP server keys **first\nwins**, never overwrite.",
+            "first wins",
+            id="wrapped-conflict-rule",
+        ),
+        pytest.param(
+            "Hooks merge by event\nappend.",
+            "event append",
+            id="wrapped-event-append",
+        ),
+        pytest.param(
+            'Breaking changes document "wipe and reinstall" in the changelog.',
+            "wipe and reinstall",
+            id="retired-migration-rule",
+        ),
+    ],
+)
+def test_obsolete_decision_phrases_reject_retired_wording(
+    document: str,
+    expected: str,
+) -> None:
+    """Actual retired directives and both owner-banned terms remain rejected."""
+    assert_that(_obsolete_decision_phrases(document)).is_equal_to([expected])
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        pytest.param(
+            "A historical implementation was deferred pending evidence.",
+            id="historical-deferral",
+        ),
+        pytest.param(
+            "The issue backlog tracks implementation sequencing.",
+            id="issue-backlog",
+        ),
+        pytest.param(
+            "Post-v1 observations do not change these accepted decisions.",
+            id="historical-post-v1",
+        ),
+        pytest.param(
+            "Some post-v1 documentation was deferred; see the backlog.",
+            id="ordinary-words-together",
+        ),
+        pytest.param(
+            "Interactive collision choices are persisted as declarations.",
+            id="accepted-interactive-rule",
+        ),
+    ],
+)
+def test_obsolete_decision_phrases_allow_legitimate_wording(document: str) -> None:
+    """Ordinary uses of deferral-related words do not restore retired directives."""
+    assert_that(_obsolete_decision_phrases(document)).is_empty()
+
+
+def test_package_selection_supersedes_only_adr_0003_selection(adr_dir: Path) -> None:
+    """Supersede ADR 0003's selection consequence while preserving other decisions."""
+    document = " ".join(
+        (adr_dir / "0001-plugin-canonical-atomic-selection.md")
+        .read_text(encoding="utf-8")
+        .split(),
     )
 
-    assert_that(normalized).described_as(amended_adr.name).does_not_contain(
-        "post v1",
-        "backlog",
-        "deferred",
-        "unconditionally",
-        "first wins",
-        "event append",
-        "wipe and reinstall",
+    assert_that(document).contains(
+        "A **package** is the unit of publication and the default unit of selection.",
+        "Absent `include` selects all capabilities; `include: []` selects none.",
+        "selectors over qualified capability IDs:",
+        "supersedes only the plugin-only selection consequence "
+        "of [ADR 0003](./0003-upstream-native-slicing.md)",
+        "including its requirement that individual skills join a plugin "
+        "or remain unavailable",
+        "The package default and capability `include` / `exclude` rules "
+        "above apply instead.",
+        "ADR 0003's canonical `skills/` authoring layout, upstream-native slicing "
+        "and other decisions remain unchanged.",
     )
 
 

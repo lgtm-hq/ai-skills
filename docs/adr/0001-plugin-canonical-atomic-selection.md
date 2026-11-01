@@ -35,12 +35,17 @@ selectors over qualified capability IDs:
   fails the plan with the dependency chain.
 - Every explicit selector must match; unmatched selectors fail the plan.
 
+This amendment supersedes only the plugin-only selection consequence
+of [ADR 0003](./0003-upstream-native-slicing.md), including its requirement
+that individual skills join a plugin or remain unavailable. The package
+default and capability `include` / `exclude` rules above apply instead.
+ADR 0003's canonical `skills/` authoring layout, upstream-native slicing
+and other decisions remain unchanged.
+
 Installs and updates are atomic per plan. There is no interactive
 cherry-pick cart. Runtime enable/disable is separate from selection.
-Delivery mode and scope are policy choices enforced by destination
-adapters ([ADR 0004](./0004-doctor-capability-probe.md)). The build plane
-resolves closure; the install plane only filters and validates embedded
-closure, following [ADR 0008](./0008-engine-runtime-build-and-install-planes.md).
+Delivery mode is a policy choice; destination adapters honor the requested
+scope or reject the plan ([ADR 0004](./0004-doctor-capability-probe.md)).
 
 ## Consequences
 
