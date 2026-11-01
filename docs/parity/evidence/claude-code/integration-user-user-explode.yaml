@@ -47,3 +47,7 @@ notes: |-
   integration discovery criterion, but the conservative record remains
   partial/discovered; no tool invocation claim. MCP registration was
   removed using the same host scope.
+  D002 (probe-log.md) recovers the original in-process MCP path
+  replacement after R059, before R060/R061, to the isolated copy
+  ~/probe/claude/mcp/sentinel.py. No independent edit output or
+  exit code was captured; the subsequent MCP listing shows that path.

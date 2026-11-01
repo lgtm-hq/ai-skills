@@ -76,6 +76,10 @@ steps:
       logs and projects; no case directories remained.
 notes: |-
   Namespaced probe-sentinel:probe-skill. R031 let the model choose the
-  skill despite disable-model-invocation: true. Local source mutation
-  did not change the installed cache or invoked token. R047 shows native
+  skill despite disable-model-invocation: true. D001 (probe-log.md)
+  recovers the original driver edit to PROBE-7f3a-skill-mutated and
+  CACHE_IS_SOURCE False CACHE_SYMLINK False before R031. R031 read the
+  cached payload and returned PROBE-7f3a-skill. This supports snapshot
+  loading for 0.164.0/package 1.0.0; no pre/post cache hashes or per-edit
+  exit code were captured, so unchanged cache bytes are unverified. R047 shows native
   and both user copies loaded concurrently; no automatic dedupe.

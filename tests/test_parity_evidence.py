@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import shlex
+from collections import Counter
 from datetime import date
 from itertools import product
 from pathlib import Path
@@ -157,18 +159,72 @@ def test_supported_requires_invocation_and_complete_cycle(
         assert_that(invocation_output).contains(f"PROBE-7f3a-{record['role']}")
 
 
-def test_evidence_dates_and_redaction(
+def test_evidence_dates_and_unverified_reasons(
     evidence_records: list[tuple[Path, dict[str, Any]]],
 ) -> None:
-    """Evidence has a forward recheck date and no personal absolute paths."""
-    home_path = re.compile(r"(?:/home/|/Users/|[A-Za-z]:[\\/]Users[\\/])[^\s]+")
-    for path, record in evidence_records:
+    """Evidence has a forward recheck date and explains unverified states."""
+    for _, record in evidence_records:
         checked = date.fromisoformat(str(record["checkedOn"]))
         recheck = date.fromisoformat(str(record["recheckBy"]))
         assert_that(recheck).is_greater_than(checked)
-        assert_that(home_path.search(path.read_text(encoding="utf-8"))).is_none()
         if record["state"] == "unverified":
             assert_that(record["notes"].lower()).contains("reason:")
+
+
+def test_published_evidence_redaction(evidence_paths: list[Path]) -> None:
+    """Scan records and prose for personal paths/secrets while permitting aliases."""
+    root = evidence_paths[0].parents[2]
+    paths = [*evidence_paths, *root.glob("*.md")]
+    home_path = re.compile(
+        r"(?<![\w~/])(?:/home/|/Users/|[A-Za-z]:[\\/]Users[\\/])[^\s]+",
+    )
+    secret = re.compile(
+        r"(?:\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}"
+        r"|\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}"
+        r"|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
+        r"|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})",
+    )
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert_that(home_path.search(text)).described_as(str(path)).is_none()
+        assert_that(secret.search(text)).described_as(str(path)).is_none()
+
+
+def test_recorded_attempt_totals(evidence_paths: list[Path]) -> None:
+    """Count process attempts and exclude CLI help from model-attempt totals."""
+    root = evidence_paths[0].parents[2]
+    log = (root / "probe-log.md").read_text(encoding="utf-8")
+    attempts = re.findall(
+        r"^### (R\d{3}): [^\n]+ \(exit ([^)]+)\)\n\n```text\n(.*?)\n```",
+        log,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    assert_that([ref for ref, _, _ in attempts]).is_equal_to(
+        [f"R{number:03d}" for number in range(1, 113)],
+    )
+    commands = {ref: shlex.split(command) for ref, _, command in attempts}
+    model_attempts: dict[str, list[str]] = {"Codex": [], "Claude": [], "Cursor": []}
+    for ref, argv in commands.items():
+        if any(flag in argv for flag in ("--help", "-h", "help")):
+            continue
+        if argv[:2] == ["codex", "exec"]:
+            model_attempts["Codex"].append(ref)
+        elif argv[0] == "claude" and "-p" in argv:
+            model_attempts["Claude"].append(ref)
+        elif argv[0] == "cursor-agent" and "-p" in argv:
+            model_attempts["Cursor"].append(ref)
+    assert_that(commands["R009"]).is_equal_to(["codex", "exec", "--help"])
+    assert_that(model_attempts["Codex"]).does_not_contain("R009").is_length(10)
+    assert_that(model_attempts["Claude"]).is_length(6)
+    assert_that(model_attempts["Cursor"]).is_length(1)
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert_that(readme).contains("Model attempts: 10 Codex, six Claude, one Cursor")
+    exits = Counter(exit_code for _, exit_code, _ in attempts)
+    assert_that(exits["0"]).is_equal_to(100)
+    assert_that(exits["1"]).is_equal_to(7)
+    assert_that(exits["2"]).is_equal_to(1)
+    assert_that(exits["124"]).is_equal_to(1)
+    assert_that(exits["not captured; RPC succeeded"]).is_equal_to(3)
 
 
 def test_cursor_policy_claims_require_machine_evidence(

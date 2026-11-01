@@ -24,7 +24,7 @@ steps:
     exitCode: 1
     output: Not logged in · Please run /login
   - phase: invoke
-    command: R079 (see probe-log.md)
+    command: R079 hook-log inspection before removal (see probe-log.md)
     exitCode: 0
     output: |-
       {"stage": "before-remove", "hook": "PROBE-7f3a-lifecycle\n",
@@ -51,3 +51,6 @@ notes: |-
   independent hook side effect proves lifecycle invocation.
   CLAUDE_PLUGIN_ROOT resolved to the local marketplace directory. Native
   uninstall left a cache; final owned-root purge removed it.
+  Invoke phase is inspection of a hook log from the earlier model
+  attempt, not a new session. No fresh post-removal session tested
+  noninvocation; final whole-root purge proves owned-residue cleanup.

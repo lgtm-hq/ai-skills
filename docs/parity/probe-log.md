@@ -23,12 +23,92 @@ App-server attempts R030/R032/R035/R037/R040 closed stdin too early.
 Only R047–R049 waited for response id 2. Their server shutdown exit codes
 were not captured; their displayed output omits
 system skills and remote-control notifications. For MCP registration in
-R059/R062, the fixture path was immediately replaced in isolated config
-with the copied `~/probe/.../mcp/sentinel.py` before any MCP invocation.
+R059/R062, the fixture path was replaced in isolated config with the copied
+`~/probe/.../mcp/sentinel.py` before the subsequent model attempts/health checks.
+Recovered driver steps D002/D003 below preserve those edits.
 
 Python argv abbreviations below expand to the exact captured `-c` argument.
 Fixture placement and final whole-root purge are documented as recipes in
 the [kit README](../../tests/fixtures/host-probe/README.md).
+
+## Recovered driver evidence (original run, not a replay)
+
+These extracts were recovered during PR #617 R1 from the original full
+implementer log, `563-sol.log`. They belong to the 2026-11-01 run from
+`032ee309`, Codex CLI **0.164.0**, Claude Code CLI **2.1.310**, and probe package
+**1.0.0**. The committed measurement report was `ffa0f08`; the extracts restore
+omitted evidence from that run, not measurements with the revised MCP fixture.
+Paths are sanitized with the same aliases as R001–R112. `r`, `base`, `FIX` and
+`setup` below are original driver variables, not shell environment variables.
+
+D001–D003 are in-process driver operations, **not additional process attempts**.
+They have no separately captured exit codes. The enclosing `follow.py` and
+`filemodes.py` commands completed successfully; their saved output reported
+`succeeded in 76997ms` and `succeeded in 14044ms`, respectively. No source/cache
+file digests or pre-edit byte comparison were preserved. No missing output or
+exit code has been reconstructed, and no host probe was rerun for this revision.
+
+### D001: source edit and cache comparison before R031
+
+Source: `563-sol.log` lines 10287–10293 (`follow.py`), result at line 11286;
+the next saved process result is R031 at line 11287. After R014/R015 installed
+the local marketplace, R017 returned the original skill token. After R029/R030,
+the driver changed only the isolated marketplace source:
+
+```python
+r,e=setup('codex-native')
+source=r/'marketplace/probe-sentinel/skills/probe-skill/SKILL.md'
+source.write_text(source.read_text().replace('PROBE-7f3a-skill','PROBE-7f3a-skill-mutated'))
+cached=r/'codex/plugins/cache/probe-marketplace/probe-sentinel/1.0.0/skills/probe-skill/SKILL.md'
+print('CACHE_IS_SOURCE',source.read_bytes()==cached.read_bytes(),'CACHE_SYMLINK',cached.is_symlink(),flush=True)
+```
+
+Captured driver output:
+
+```text
+CACHE_IS_SOURCE False CACHE_SYMLINK False
+```
+
+The replacement token was `PROBE-7f3a-skill-mutated`; R031 returned
+`PROBE-7f3a-skill`. Its saved stderr records the model reading
+`~/probe/codex/plugins/cache/probe-marketplace/probe-sentinel/1.0.0/skills/probe-skill/SKILL.md`
+and displays the payload containing the original token. Thus the installed
+cache differed from the edited source and served the original token on this
+invocation. This supports snapshot loading for this case. It does **not** prove
+that every cache byte stayed unchanged, that no ancestor was a symlink, or how
+same-version re-add/update invalidation behaves. No pre/post cache hash exists.
+
+### D002/D003: copied MCP path replacement after R059/R062
+
+Source: `563-sol.log` lines 11921–11947 (`filemodes.py`); results follow at
+11949–11959. The same loop ran once per isolated case. `FIX` was
+`~/Code/ai-skills-563/tests/fixtures/host-probe/probe-sentinel`.
+
+```python
+for scope in ('user','project'):
+ name='claude-files-'+scope;r,e=setup(name)
+ base=r/'claude' if scope=='user' else r/'project/.claude'
+```
+
+After registering the checkout path (R059 for user; R062 for project), the
+driver performed these operations before the next `claude -p` and `mcp list`:
+
+```python
+ shutil.copytree(FIX/'mcp',base/'mcp',dirs_exist_ok=True)
+ for f in (r/'claude/.claude.json',r/'project/.mcp.json'):
+  if f.exists():f.write_text(f.read_text().replace(str(FIX/'mcp/sentinel.py'),str(base/'mcp/sentinel.py')))
+```
+
+- **D002**, between R059 and R060: user config
+  `~/probe/claude/.claude.json` received
+  `~/probe/claude/mcp/sentinel.py`. R061 subsequently printed that path and
+  `✔ Connected`.
+- **D003**, between R062 and R063: project config `~/probe/project/.mcp.json`
+  received `~/probe/project/.claude/mcp/sentinel.py`. R064 subsequently printed
+  that path and "⏸ Pending approval (run `claude` to approve)".
+
+The edits emitted no independent output. R061/R064 preserve the observed
+paths; neither is evidence of a `probe_integration` tool call.
 
 ## Commands
 

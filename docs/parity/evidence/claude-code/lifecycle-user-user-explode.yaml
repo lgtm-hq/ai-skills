@@ -30,7 +30,7 @@ steps:
     exitCode: 1
     output: Not logged in · Please run /login
   - phase: invoke
-    command: R110 (see probe-log.md)
+    command: R110 hook-log inspection after file removal (see probe-log.md)
     exitCode: 0
     output: |-
       {"stage": "after-file-remove", "hook": "PROBE-7f3a-lifecycle\n",
@@ -53,3 +53,10 @@ notes: |-
   independent hook side effect proves lifecycle invocation. Hook
   settings explicitly referenced the copied Python file; this is a hand
   projection, not a gateway change.
+  Invoke phase is inspection of a hook log from the earlier model
+  attempt, not a new session. No fresh post-removal session tested
+  noninvocation; final whole-root purge proves owned-residue cleanup.
+  D002 (probe-log.md) recovers the original in-process MCP path
+  replacement after R059, before R060/R061, to the isolated copy
+  ~/probe/claude/mcp/sentinel.py. No independent edit output or
+  exit code was captured; the subsequent MCP listing shows that path.

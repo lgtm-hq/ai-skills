@@ -71,11 +71,13 @@ activation. [Record format](evidence-format.md), [command log](probe-log.md),
   `[plugins."probe-sentinel@probe-marketplace"] enabled = true`. The installed
   tree was copied into `$CODEX_HOME/plugins/cache/probe-marketplace/
 probe-sentinel/1.0.0/`, rather than linked to the source.
-- Changing the source skill token after install left both the cache bytes
-  and the subsequently invoked token unchanged (R031). Thus this local
-  marketplace install is a snapshot, not a live source directory. Same-version
-  re-add/update invalidation was not tested; retain digest-version safety
-  until separately verified.
+- The recovered D001 driver step changed the isolated source token from
+  `PROBE-7f3a-skill` to `PROBE-7f3a-skill-mutated`. Source and cache then differed
+  (`CACHE_IS_SOURCE False CACHE_SYMLINK False`); R031 read the installed cached
+  payload and returned the original token. This supports snapshot loading in
+  this **0.164.0/package 1.0.0** case. No pre/post cache hashes were captured,
+  so unchanged cache bytes are not proven. Same-version re-add/update
+  invalidation was not tested; retain digest-version safety until verified.
 - Native skills are namespaced: `probe-sentinel:probe-skill` (R047).
   `disable-model-invocation: true` did not stop the model selecting this skill
   when asked to choose any appropriate skill (R031). The native skill cell is
@@ -97,7 +99,7 @@ probe-sentinel/1.0.0/`, rather than linked to the source.
 
 | Question                                    | Answer and evidence                                                                                                                                                                                                                                                                                                   |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Local marketplace pinned or live?           | Installed snapshot; mutation of the source did not change cached bytes or the invoked token. Same-version re-add is not determinable from this run.                                                                                                                                                                   |
+| Local marketplace pinned or live?           | D001 source edit produced different source/cache bytes; R031 read the cache and returned the original token. Snapshot loading observed for this case; unchanged cache bytes and same-version re-add remain unverified.                                                                                                |
 | Namespaced skills?                          | Yes: `probe-sentinel:probe-skill`; migrated command gets its own namespaced skill name (R047).                                                                                                                                                                                                                        |
 | Double loads across user roots and plugins? | Yes at discovery: R047 returned three separate probe-skill entries: native, `$CODEX_HOME/skills`, and `~/.agents/skills`. The two user entries have the same unqualified name. Each root invoked independently (R017/R033/R036). Multiple executions in a single turn were not tested.                                |
 | Any project scope?                          | `.codex/skills` and repo `AGENTS.md` invoked (R038/R039), even in the untrusted disposable repo. Project config/hooks/exec policies were separately trust-gated. Native `--scope project` is rejected; trusted project-native registration is not determinable.                                                       |
@@ -122,6 +124,9 @@ listing worked. No MCP config table was created by native plugin import.
 | Detectable on-disk policy markers?                  | Not determinable without a policy machine. No marker key/path is invented; an empty policyMarkers list means no observation. Capture effective policy plus its source and test whether it is server-only. |
 
 The [exact checklist](cursor-probe-checklist.md) is the outstanding human step.
+All 36 Cursor cells remain unverified; the owner's
+[policy-host gate](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6557600027)
+remains pending. This work is **Part of #563**, not completion of that issue.
 Neither authentication failure nor a missing policy test is `policy-blocked`.
 
 ### Claude Code
@@ -193,6 +198,31 @@ after recording their summaries. No sentinel was installed in real host config.
 The log contains 112 process attempts: 100 exit 0, seven exit 1 (six Claude
 auth failures and one Cursor auth failure), one exit 2 (Codex project scope),
 one timeout/124, and three app-server shutdown exit codes not captured after
-successful skills/list responses. Model attempts: 11 Codex, six Claude, one Cursor. Five
+successful skills/list responses. Model attempts: 10 Codex, six Claude, one Cursor.
+R009 is `codex exec --help` and is excluded from model attempts. Five
 early app-server attempts produced no usable response and are explicitly
 excluded from discovery conclusions. None of the offline tests use network.
+
+## Post-measurement revision (PR #617 R1)
+
+The MCP fixture now validates the advertised tool name and empty-object
+arguments and returns JSON-RPC errors for invalid requests. The integration
+token is emitted only by a valid tool call, rather than also as server metadata.
+This is an executable behavior/schema revision after the measurement, not a
+byte- or behavior-equivalent copy of the measured fixture. Offline subprocess
+tests exercise the revised oracle; they do not certify host wiring. Existing
+listed-only MCP records remain **partial/discovered**, with no retroactive
+model/tool invocation claim.
+
+Recovered driver evidence D001–D003 in the [command log](probe-log.md) restores
+the original source edit/cache comparison and MCP path replacements. Parent
+reconciliation for #384/#583 should carry this narrower wording: snapshot
+loading was observed for Codex 0.164.0/package 1.0.0, but cache-byte immutability
+and same-version invalidation were not measured. The R031 invocation-restriction
+loss remains evidenced; #583's strict semantic gate still applies.
+
+Claude lifecycle invocation steps inspect the SessionStart hook log produced
+by earlier authentication-failing requests. In the two file modes, R110/R112
+inspect that log **after file removal**. No fresh session established
+post-removal noninvocation. Final whole-root purge removed the owned hook logs
+and other residue; it is the cleanup proof, not a new hook execution test.

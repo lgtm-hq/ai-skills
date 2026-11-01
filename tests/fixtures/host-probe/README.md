@@ -13,9 +13,14 @@ inputs, not production generated adapters. Tokens live only in payloads:
 | lifecycle | `hooks/hooks.json`, `hooks/sentinel.py` | `PROBE-7f3a-lifecycle` |
 | integration | `.mcp.json`, `mcp/sentinel.py` | `PROBE-7f3a-integration` |
 
-The published kit adds lint-only Markdown headings and Python package markers
-after measurement. Sentinel bodies, frontmatter and executable behavior are
-unchanged; this spike does not claim a byte-identical artifact digest.
+The initial published kit added lint-only Markdown headings and Python package
+markers after measurement. PR #617 R1 then revised the MCP executable and its
+schema to validate JSON-RPC requests, the advertised `probe_integration` name,
+and empty-object arguments (omitted arguments default to `{}`). Invalid calls
+return errors without the token; notifications are silent. Only a valid call
+emits the integration token. This is a **post-measurement behavioral revision**;
+neither byte nor behavior equivalence to the measured MCP fixture is claimed.
+Offline subprocess tests do not upgrade the original host discovery records.
 
 The hook appends only to the explicitly supplied `$TMPDIR/probe-hook.log`.
 The stdio MCP server uses Python's standard library, lists one read-only tool,
@@ -137,6 +142,19 @@ with `$CODEX_HOME/skills` and the native plugin to test duplicate discovery.
 In a native case, change only the copied source skill token after install;
 compare installed cache bytes and invoke again to distinguish live versus
 snapshot loading. Do not change the checked-in fixture.
+The original run's actual edit and result are preserved as
+[D001](../../../docs/parity/probe-log.md#d001-source-edit-and-cache-comparison-before-r031):
+the replacement was `PROBE-7f3a-skill-mutated`, source/cache comparison was
+false, and R031 read the cached original token. No pre/post cache hash was
+recorded; do not turn this case into a claim of unchanged cache bytes.
+
+For the original Claude file-mode registrations, the driver copied `mcp/`
+after R059/R062, then replaced the checkout path in isolated
+`claude/.claude.json` or `project/.mcp.json` with the copied server path before
+R060/R063. Exact recovered driver operations and subsequent health results
+are [D002/D003](../../../docs/parity/probe-log.md#d002d003-copied-mcp-path-replacement-after-r059r062).
+These edits are driver steps, separate from the 112 process attempts. For a
+future run, register the isolated copy directly as shown below.
 
 The additional Codex envelope experiment copied the same marketplace to a
 new case and amended only `.codex-plugin/plugin.json` with Python:

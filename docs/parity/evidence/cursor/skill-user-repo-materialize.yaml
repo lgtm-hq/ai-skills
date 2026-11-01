@@ -17,12 +17,10 @@ steps:
     command: not run
     exitCode: null
     output: |-
-      requires maintainer-run policy machine; this laptop has no
-      plugin-import-disabled admin policy. Clean-HOME CLI invocation failed
-      authentication (R046); no portable auth-only file was identified. See
-      cursor-probe-checklist.md.
+      Not run: this mode/scope pair is undefined by #581; policy-host
+      acceptance also remains pending (owner gate 6557600027).
 notes: |-
-  Reason: requires maintainer-run policy machine; this laptop has no
-  plugin-import-disabled admin policy. Clean-HOME CLI invocation failed
-  authentication (R046); no portable auth-only file was identified. See
-  cursor-probe-checklist.md.
+  Reason: this mode/scope pair is undefined by #581. Policy-host
+  acceptance also remains pending (owner gate 6557600027); this
+  laptop has no plugin-import-disabled admin policy. No policy claim
+  is established. See cursor-probe-checklist.md.
