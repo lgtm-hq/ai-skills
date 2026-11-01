@@ -62,7 +62,7 @@ rg -n 'shell\s*=\s*True' --type py
 rg -n '(execute|query)\s*\(\s*f["\x27]|\.format\s*\(' --type py
 
 # Dependency vulnerabilities
-uv run pip-audit           # Python with uv (pip-audit in dev deps)
+uv run lintro chk          # Python: runs pip_audit, osv_scanner and the other bundled tools
 bun audit                    # JavaScript/TypeScript with bun
 ```
 
