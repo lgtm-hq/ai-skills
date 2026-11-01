@@ -17,6 +17,14 @@ TARGET = ENDPOINT["address"]
 PORT = ENDPOINT["port"]
 
 
+def socket_error(*, error: OSError, stage: str) -> dict[str, Any]:
+    """Retain the raw OS failure and the lifecycle operation that raised it."""
+    raw = {"stage": stage, "errno": error.errno, "error": str(error)}
+    if (winerror := getattr(error, "winerror", None)) is not None:
+        raw["winerror"] = winerror
+    return raw
+
+
 def probe() -> list[dict[str, Any]]:
     """Probe a fixed IPv4 endpoint and collect informational IPv6 observations.
 
@@ -33,16 +41,18 @@ def probe() -> list[dict[str, Any]]:
             "port": PORT,
             "informational": family == socket.AF_INET6,
         }
+        connection = None
+        stage = "create"
         try:
-            with socket.socket(family=family) as connection:
-                connection.settimeout(2)
-                connection.connect((address, PORT))
+            connection = socket.socket(family=family)
+            stage = "settimeout"
+            connection.settimeout(2)
+            stage = "connect"
+            connection.connect((address, PORT))
             item["outcome"] = "connected"
         except OSError as error:
-            item.update(errno=error.errno, error=str(error))
+            item.update(socket_error(error=error, stage=stage))
             winerror = getattr(error, "winerror", None)
-            if winerror is not None:
-                item["winerror"] = winerror
             # A lost route is not access denial, even after a connected baseline.
             # Windows errno is translated; require the actual Winsock WSAEACCES.
             denied = (
@@ -50,7 +60,20 @@ def probe() -> list[dict[str, Any]]:
                 if sys.platform == "win32"
                 else error.errno in {errno.EPERM, errno.EACCES}
             )
-            item["outcome"] = "explicit-denial" if denied else "inconclusive"
+            item["outcome"] = (
+                "explicit-denial" if stage == "connect" and denied else "inconclusive"
+            )
+        finally:
+            if connection is not None:
+                try:
+                    connection.close()
+                except OSError as error:
+                    raw = socket_error(error=error, stage="close")
+                    item["cleanup_error"] = raw
+                    item["outcome_before_cleanup"] = item["outcome"]
+                    if "error" not in item:
+                        item.update(raw)
+                    item["outcome"] = "inconclusive"
         outcomes.append(item)
     return outcomes
 

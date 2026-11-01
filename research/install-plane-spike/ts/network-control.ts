@@ -9,6 +9,7 @@ export async function networkControl({
   isBun = Boolean(process.versions.bun),
   arch = process.arch,
   windows = windowsNetworkControl,
+  createSocket = () => new Socket(),
 } = {}): Promise<unknown[]> {
   if (platform === "win32" && isBun) {
     if (arch !== "x64")
@@ -16,38 +17,69 @@ export async function networkControl({
     return windows();
   }
   return new Promise((resolve) => {
-    const socket = new Socket();
-    const finish = (outcome: string, error?: NodeJS.ErrnoException) => {
-      socket.destroy();
-      resolve([
-        {
-          address: endpoint.address,
-          port: endpoint.port,
-          outcome,
-          ...(error
-            ? {
-                error: error.message,
-                raw_error: { code: error.code, errno: error.errno, syscall: error.syscall },
-              }
-            : {}),
-        },
-      ]);
+    let socket: Socket | undefined;
+    let stage = "create";
+    let finishing = false;
+    const observation: Record<string, unknown> = { ...endpoint, outcome: "inconclusive" };
+    const failure = (error: unknown, operation: string) => {
+      const raw = error instanceof Error ? (error as NodeJS.ErrnoException) : undefined;
+      return {
+        stage: operation,
+        error: raw?.message ?? String(error),
+        raw_error: { code: raw?.code, errno: raw?.errno, syscall: raw?.syscall },
+      };
     };
-    socket.setTimeout(2000);
-    socket.once("connect", () => finish("connected"));
-    socket.once("timeout", () => finish("inconclusive"));
-    socket.once("error", (error: NodeJS.ErrnoException) => {
-      finish(
-        // Node maps Winsock access denial to EACCES. Keep that permission code
-        // structured for the exact npm Node launcher; never infer native 10013.
-        // Lost routes, refusal and timeouts cannot prove denial on any platform.
-        error.code === "EACCES" || (platform !== "win32" && error.code === "EPERM")
-          ? "explicit-denial"
-          : "inconclusive",
-        error,
-      );
-    });
-    socket.connect({ host: endpoint.address, port: endpoint.port, family: 4 });
+    const cleanupFailure = (error: unknown) => {
+      const raw = failure(error, "close");
+      observation.outcome_before_cleanup ??= observation.outcome;
+      observation.cleanup_error = raw;
+      if (!observation.error) Object.assign(observation, raw);
+      observation.outcome = "inconclusive";
+    };
+    const finish = (outcome: string, error?: unknown) => {
+      if (finishing) {
+        if (error !== undefined) cleanupFailure(error);
+        return;
+      }
+      finishing = true;
+      observation.outcome = outcome;
+      if (error !== undefined) Object.assign(observation, failure(error, stage));
+      if (!socket) {
+        resolve([observation]);
+        return;
+      }
+      stage = "close";
+      try {
+        socket.destroy();
+        // Resolve on close, so an asynchronous destroy error also invalidates proof.
+      } catch (error: unknown) {
+        cleanupFailure(error);
+        resolve([observation]);
+      }
+    };
+    const connectionError = (error: unknown) => {
+      const raw = error instanceof Error ? (error as NodeJS.ErrnoException) : undefined;
+      // Only an actual connect permission failure proves denial. Node's EACCES
+      // is structured permission evidence, never an observed native WinError 10013.
+      const denied =
+        stage === "connect" &&
+        raw?.syscall === "connect" &&
+        (raw.code === "EACCES" || (platform !== "win32" && raw.code === "EPERM"));
+      finish(denied ? "explicit-denial" : "inconclusive", error);
+    };
+    try {
+      socket = createSocket();
+      socket.once("close", () => resolve([observation]));
+      socket.on("error", connectionError);
+      stage = "settimeout";
+      socket.setTimeout(2000);
+      socket.once("connect", () => finish("connected"));
+      socket.once("timeout", () => finish("inconclusive"));
+      stage = "connect";
+      socket.connect({ host: endpoint.address, port: endpoint.port, family: 4 });
+    } catch (error: unknown) {
+      connectionError(error);
+    }
   });
 }
 

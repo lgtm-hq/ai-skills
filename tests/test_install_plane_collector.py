@@ -11,7 +11,7 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Any
+from typing import Any, Self
 
 import pytest
 from assertpy import assert_that
@@ -279,6 +279,7 @@ def collector(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ModuleType]
     names = (
         "common",
         "network_control",
+        "linux_namespace",
         "offline",
         "registry",
         "packages",
@@ -294,6 +295,7 @@ def collector(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ModuleType]
         modules = {
             "common": importlib.import_module("common"),
             "network_control": importlib.import_module("network_control"),
+            "linux_namespace": importlib.import_module("linux_namespace"),
             "offline": importlib.import_module("offline"),
             "registry": importlib.import_module("registry"),
             "packages": importlib.import_module("packages"),
@@ -419,18 +421,44 @@ class SocketError(OSError):
     winerror: int
 
 
+class SocketFake(SimpleNamespace):
+    """Support explicit close and the previous context-manager implementation."""
+
+    def __enter__(self) -> Self:
+        """Enter the fake socket without performing an OS operation."""
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        """Exercise the same close boundary when used as a context manager."""
+        self.close()
+
+
 def injected_probe(
-    *, network: ModuleType, monkeypatch: pytest.MonkeyPatch, error: OSError | None
+    *,
+    network: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    error: OSError | None,
+    stage: str = "connect",
+    cleanup_error: OSError | None = None,
 ) -> dict[str, Any]:
     """Run the real classifier with a socket fake and verify bounded cleanup."""
     closed: list[int] = []
+    attempted: list[int] = []
 
-    @contextlib.contextmanager
-    def socket(*, family: int) -> Iterator[Any]:
-        """Yield a fake connection; never create a network socket."""
+    def socket(*, family: int) -> Any:
+        """Return a complete lifecycle fake; never create a network socket."""
+        if stage == "create" and error is not None:
+            raise error
+
+        def settimeout(value: int) -> None:
+            """Inject configuration errors separately from connect errors."""
+            assert_that(value).is_equal_to(2)
+            if stage == "settimeout" and error is not None:
+                raise error
 
         def connect(address: tuple[str, int]) -> None:
             """Validate the fixed destination and inject the connection outcome."""
+            attempted.append(family)
             assert_that(address).is_equal_to(
                 (
                     (
@@ -441,21 +469,93 @@ def injected_probe(
                     network.PORT,
                 )
             )
-            if error is not None:
+            if stage == "connect" and error is not None:
                 raise error
 
-        try:
-            yield SimpleNamespace(
-                settimeout=lambda value: assert_that(value).is_equal_to(2),
-                connect=connect,
-            )
-        finally:
+        def close() -> None:
+            """Attempt cleanup even when connection establishment failed."""
             closed.append(family)
+            if cleanup_error is not None:
+                raise cleanup_error
+            if stage == "close" and error is not None:
+                raise error
+
+        return SocketFake(settimeout=settimeout, connect=connect, close=close)
 
     monkeypatch.setattr(network.socket, "socket", socket)
     outcomes = network.probe()
-    assert_that(closed).is_equal_to([network.socket.AF_INET, network.socket.AF_INET6])
+    assert_that(attempted).is_equal_to(
+        []
+        if stage in {"create", "settimeout"} and error is not None
+        else [network.socket.AF_INET, network.socket.AF_INET6]
+    )
+    assert_that(closed).is_equal_to(
+        []
+        if stage == "create" and error is not None
+        else [network.socket.AF_INET, network.socket.AF_INET6]
+    )
     return {"exit": 0, "stdout": json.dumps(outcomes)}
+
+
+@pytest.mark.parametrize("stage", ["create", "settimeout", "connect", "close"])
+@pytest.mark.parametrize("code", [errno.EPERM, errno.EACCES, errno.ENETUNREACH])
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_socket_lifecycle_only_connect_can_prove_denial(
+    collector: dict[str, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+    code: int,
+    platform: str,
+) -> None:
+    """Permission errors during setup/cleanup cannot certify a connection."""
+    network = collector["network_control"]
+    monkeypatch.setattr(network, "sys", SimpleNamespace(platform=platform))
+    error = SocketError(code, "lifecycle failure")
+    error.winerror = 10013 if code in {errno.EPERM, errno.EACCES} else 10051
+    before = injected_probe(network=network, monkeypatch=monkeypatch, error=None)
+    after = injected_probe(
+        network=network, monkeypatch=monkeypatch, error=error, stage=stage
+    )
+    denied = stage == "connect" and code != errno.ENETUNREACH
+    assert_that(network.proven_denial(control=before, restricted=after)).is_equal_to(
+        denied
+    )
+    assert_that(network.proven_denial(control=after, restricted=before)).is_false()
+    for item in json.loads(after["stdout"]):
+        assert_that(item).contains_entry(
+            {"stage": stage}, {"errno": code}, {"winerror": error.winerror}
+        )
+
+
+@pytest.mark.parametrize("connected", [False, True])
+def test_socket_cleanup_failure_invalidates_baseline_and_denial(
+    collector: dict[str, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    connected: bool,
+) -> None:
+    """Close is attempted after connect failure and overrides apparent proof."""
+    network = collector["network_control"]
+    monkeypatch.setattr(network, "sys", SimpleNamespace(platform="linux"))
+    before = injected_probe(network=network, monkeypatch=monkeypatch, error=None)
+    after = injected_probe(
+        network=network,
+        monkeypatch=monkeypatch,
+        error=None if connected else OSError(errno.EACCES, "denied"),
+        cleanup_error=OSError(errno.EPERM, "close failed"),
+    )
+    for item in json.loads(after["stdout"]):
+        assert_that(item["outcome"]).is_equal_to("inconclusive")
+        assert_that(item["cleanup_error"]).contains_entry(
+            {"stage": "close"}, {"errno": errno.EPERM}
+        )
+        assert_that(item["outcome_before_cleanup"]).is_equal_to(
+            "connected" if connected else "explicit-denial"
+        )
+    assert_that(network.proven_denial(control=before, restricted=after)).is_false()
+    denied = injected_probe(
+        network=network, monkeypatch=monkeypatch, error=OSError(errno.EACCES, "denied")
+    )
+    assert_that(network.proven_denial(control=after, restricted=denied)).is_false()
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
@@ -527,6 +627,15 @@ def test_route_loss_keeps_offline_transports_unverified(
 ) -> None:
     """A real classified route loss cannot certify direct/npm or skip rule cleanup."""
     offline, network = collector["offline"], collector["network_control"]
+    # Reproduce a Windows host without any POSIX-only os APIs on every host.
+    monkeypatch.setattr(
+        offline, "os", SimpleNamespace(name="nt", environ=dict(offline.os.environ))
+    )
+    monkeypatch.setattr(
+        offline,
+        "identity",
+        lambda: {"uid": 1234, "effective_uid": 1234, "effective_gid": 5678},
+    )
     monkeypatch.setattr(offline.platform, "system", lambda: system)
     monkeypatch.setattr(
         network,
@@ -576,6 +685,7 @@ def test_route_loss_keeps_offline_transports_unverified(
 
     monkeypatch.setattr(offline, "worker", worker)
     monkeypatch.setattr(offline, "command", command)
+    monkeypatch.setattr(collector["linux_namespace"], "command", command)
     observed = offline.measure_offline(build=tmp_path / "build", work=tmp_path)
     assert_that(workers).is_equal_to([tmp_path / "positive-installs"])
     for result in observed.values():
@@ -748,7 +858,6 @@ def test_registry_account_failure_is_sanitized_evidence(
         ),
     )
     # Prevent even the loopback port reservation from touching a socket.
-    import contextlib
 
     monkeypatch.setattr(
         registry.socket,
@@ -1507,7 +1616,6 @@ def test_network_probe_uses_socket_boundary_fakes(
     collector: dict[str, ModuleType], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Unavailable IPv6 and IPv4 timeout stay inconclusive without real networking."""
-    import contextlib
     import errno
 
     network = collector["network_control"]
@@ -1519,7 +1627,7 @@ def test_network_probe_uses_socket_boundary_fakes(
             family: Selected socket family.
 
         Returns:
-            Context-managed fake that never opens a socket.
+            Explicitly closed fake that never opens a socket.
         """
 
         def connect(address: object) -> None:
@@ -1536,8 +1644,8 @@ def test_network_probe_uses_socket_boundary_fakes(
                 raise TimeoutError("DROP")
             raise OSError(errno.EADDRNOTAVAIL, "IPv6 unavailable")
 
-        return contextlib.nullcontext(
-            SimpleNamespace(settimeout=lambda _: None, connect=connect)
+        return SimpleNamespace(
+            settimeout=lambda _: None, connect=connect, close=lambda: None
         )
 
     monkeypatch.setattr(network.socket, "socket", socket)
@@ -1964,7 +2072,7 @@ def test_windows_job_abi_sizes(collector: dict[str, ModuleType]) -> None:
 
 @pytest.mark.parametrize("direct_status", ["pass", "fail", "unverified", None])
 @pytest.mark.parametrize("npm_status", ["pass", "fail", "unverified"])
-def test_namespace_fallback_restores_environment_after_dropping_identity(
+def test_namespace_restores_environment_after_dropping_identity(
     collector: dict[str, ModuleType],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1975,9 +2083,14 @@ def test_namespace_fallback_restores_environment_after_dropping_identity(
     offline = collector["offline"]
     monkeypatch.setattr(offline.platform, "system", lambda: "Linux")
     monkeypatch.setattr(offline.shutil, "which", lambda name: f"/setup/{name}")
-    monkeypatch.setattr(offline.os, "getuid", lambda: 1234, raising=False)
-    monkeypatch.setattr(offline.os, "geteuid", lambda: 1234, raising=False)
-    monkeypatch.setattr(offline.os, "getgid", lambda: 5678, raising=False)
+    monkeypatch.setattr(
+        offline, "os", SimpleNamespace(name="nt", environ=dict(offline.os.environ))
+    )
+    monkeypatch.setattr(
+        offline,
+        "identity",
+        lambda: {"uid": 1234, "effective_uid": 1234, "effective_gid": 5678},
+    )
     monkeypatch.setattr(
         offline,
         "worker",
@@ -1992,7 +2105,7 @@ def test_namespace_fallback_restores_environment_after_dropping_identity(
     calls: list[dict[str, Any]] = []
 
     def command(**kwargs: Any) -> dict[str, Any]:
-        """Reject user namespaces, then model the privileged setup boundary.
+        """Model the privileged namespace setup and unprivileged worker boundary.
 
         Args:
             kwargs: Probe or worker inputs.
@@ -2023,24 +2136,38 @@ def test_namespace_fallback_restores_environment_after_dropping_identity(
                 json.dumps(result), encoding="utf-8"
             )
             return {"exit": 0}
-        if "--user" in argv:
-            return {"exit": 1, "stdout": ""}
+        if "network_control.py" not in argv[-1]:
+            return {"exit": 0, "stdout": ""}
         return probe_record("connected" if len(calls) == 1 else "explicit-denial")
 
     monkeypatch.setattr(offline, "command", command)
+    monkeypatch.setattr(collector["linux_namespace"], "command", command)
     observed = offline.measure_offline(build=tmp_path / "build", work=tmp_path)
-    sudo_calls = [call for call in calls if call["argv"][0] == "/setup/sudo"]
+    sudo_calls = [call for call in calls if "/setup/setpriv" in call["argv"]]
     assert_that(sudo_calls).is_length(2)
     for call in sudo_calls:
         argv = call["argv"]
         assert_that(argv).contains(
-            "--reuid", "1234", "--regid", "5678", "--clear-groups"
+            "--reuid",
+            "1234",
+            "--regid",
+            "5678",
+            "--clear-groups",
+            "--bounding-set=-all",
+            "--inh-caps=-all",
+            "--ambient-caps=-all",
+            "--no-new-privs",
         )
         assignments = argv[argv.index("-i") + 1 :]
         assert_that(assignments).contains(
             *[f"{key}={value}" for key, value in call["env"].items()]
         )
         assert_that(argv.index("--reuid")).is_less_than(argv.index("-i"))
+    # Probe and worker enter the very same persistent namespace and identity.
+    assert_that(
+        sudo_calls[0]["argv"][: sudo_calls[0]["argv"].index("-i") + 1]
+    ).is_equal_to(sudo_calls[1]["argv"][: sudo_calls[1]["argv"].index("-i") + 1])
+    assert_that(observed["ts"]["cleanup"]["status"]).is_equal_to("verified removed")
     assert_that(
         observed["ts"]["installation_observation"]["identity"]["effective_uid"]
     ).is_equal_to(1234)
@@ -2060,6 +2187,155 @@ def test_namespace_fallback_restores_environment_after_dropping_identity(
     assert_that(observed["ts"]["direct_execution"]["denial_proven"]).is_true()
     assert_that(observed["ts"]["probe_denial_proven"]).is_true()
     assert_that(observed["ts"]["installer_denial_proven"]).is_true()
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "pass",
+        "no-baseline",
+        "route-loss",
+        "host-loss",
+        "restricted-connected",
+        "probe-launch",
+        "worker-failed",
+        "delete-failed",
+        "list-failed",
+        "name-remains",
+        "missing-sudo",
+        "missing-ip",
+        "missing-setpriv",
+        "missing-env",
+        "root",
+        *[f"setup-{step}" for step in range(8)],
+    ],
+)
+def test_linux_namespace_fails_closed_at_command_boundaries(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+) -> None:
+    """Exercise real setup/proof/worker/cleanup without any real OS-only APIs."""
+    offline, namespace, network = (
+        collector["offline"],
+        collector["linux_namespace"],
+        collector["network_control"],
+    )
+    monkeypatch.setattr(offline.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(network, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setattr(
+        offline, "os", SimpleNamespace(name="nt", environ=dict(offline.os.environ))
+    )
+    monkeypatch.setattr(
+        offline,
+        "identity",
+        lambda: {"effective_uid": 0 if case == "root" else 1234, "effective_gid": 5678},
+    )
+    monkeypatch.setattr(
+        offline.shutil,
+        "which",
+        lambda tool: None if case == f"missing-{tool}" else f"/setup/{tool}",
+    )
+    monkeypatch.setattr(offline, "runtime", lambda **_: [sys.executable])
+    monkeypatch.setattr(
+        offline, "worker", lambda **_: {v: {"status": "pass"} for v in ("ts", "py")}
+    )
+    calls: list[list[str]] = []
+    setup_count = 0
+    name = ""
+
+    def command(**kwargs: Any) -> dict[str, Any]:
+        """Inject failures at setup, connection, privilege, worker or removal."""
+        nonlocal setup_count, name
+        argv = kwargs["argv"]
+        calls.append(argv)
+        result: dict[str, Any] = {"exit": 0, "stdout": ""}
+        if argv[-1].endswith("network_control.py"):
+            if "/setup/setpriv" not in argv:
+                result = probe_record(
+                    "inconclusive" if case == "no-baseline" else "connected"
+                )
+            elif case == "probe-launch":
+                result = {"exit": 1, "stdout": "", "stderr": "setpriv denied"}
+            else:
+                code = {
+                    "route-loss": errno.ENETUNREACH,
+                    "host-loss": errno.EHOSTUNREACH,
+                }.get(case, errno.EACCES)
+                result = injected_probe(
+                    network=network,
+                    monkeypatch=monkeypatch,
+                    error=(
+                        None
+                        if case == "restricted-connected"
+                        else OSError(code, "restricted connect")
+                    ),
+                )
+        elif "--worker" in argv:
+            if case == "worker-failed":
+                result["exit"] = 1
+            else:
+                Path(argv[argv.index("--result") + 1]).write_text(
+                    json.dumps(
+                        {
+                            v: {
+                                "identity": {"effective_uid": 1234},
+                                "direct_execution": {"status": "pass"},
+                                "clients": {"npm": {"status": "pass"}},
+                            }
+                            for v in ("ts", "py")
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+        elif "delete" in argv:
+            result["exit"] = 1 if case == "delete-failed" else 0
+        elif argv[-1] == "list":
+            result["exit"] = 1 if case == "list-failed" else 0
+            result["stdout"] = f"{name} (id: 42)\n" if case == "name-remains" else ""
+        else:
+            if "add" in argv and "netns" in argv and "exec" not in argv:
+                name = argv[-1]
+            if case == f"setup-{setup_count}":
+                result.update(exit=1, stderr="injected setup failure")
+            setup_count += 1
+        kwargs["records"].append({"argv": argv, **result})
+        return result
+
+    monkeypatch.setattr(offline, "command", command)
+    monkeypatch.setattr(namespace, "command", command)
+    observed = offline.measure_offline(build=tmp_path / "build", work=tmp_path)
+    worker_expected = case in {
+        "pass",
+        "worker-failed",
+        "delete-failed",
+        "list-failed",
+        "name-remains",
+    }
+    assert_that(any("--worker" in argv for argv in calls)).is_equal_to(worker_expected)
+    created = not (case.startswith("missing-") or case in {"root", "setup-0"})
+    assert_that(any("delete" in argv for argv in calls)).is_equal_to(created)
+    for result in observed.values():
+        assert_that(result["status"]).is_equal_to(
+            "pass" if case == "pass" else "unverified"
+        )
+        assert_that(result["cleanup"]["status"]).is_equal_to(
+            "not created"
+            if not created
+            else (
+                "unverified removal"
+                if case in {"delete-failed", "list-failed", "name-remains"}
+                else "verified removed"
+            )
+        )
+        if case.startswith("setup-"):
+            assert_that(setup_count).is_equal_to(int(case[-1]) + 1)
+        for argv in calls:
+            if "rule" in argv or "route" in argv or "link" in argv:
+                assert_that(argv[:6]).is_equal_to(
+                    ["/setup/sudo", "-n", "/setup/ip", "netns", "exec", name]
+                )
 
 
 @pytest.mark.parametrize("bun_status", ["pass", "fail"])
@@ -2278,7 +2554,6 @@ def test_cleanup_failure_still_exports_evidence(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Cleanup errors remain errors while persisted JSON reaches log and summary."""
-    import contextlib
 
     measure = collector["measure"]
     monkeypatch.setenv("SPIKE_SOURCE_SHA", "head")

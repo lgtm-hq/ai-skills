@@ -30,7 +30,7 @@ are preserved verbatim in the artifacts. Under R13 those observations are
 inconclusive; direct/npm offline acceptance on both Linux targets remains
 unverified by this control. Namespace creation may support an independent
 isolation argument, but this repair neither verifies nor adopts that different
-trust basis. No routes, firewall rules, endpoints or pipeline policy are changed.
+trust basis. R13 itself changed no routes, firewall rules, endpoints or pipeline policy.
 macOS's recorded EPERM is a permission outcome, but historical runs still cannot
 certify R13's changed executable source.
 
@@ -41,6 +41,21 @@ evidence, including any native Windows FFI observations; they cannot certify R13
 Injected regressions cover platform boundaries, errno/WinError, connected and
 unavailable baselines, real Windows control aggregation, route-loss rollups and
 cleanup without network I/O. They establish source behavior only.
+
+The next repair confines Linux policy-routing `prohibit` rules to one disposable
+network namespace, with a loopback-only route to the unchanged fixed endpoint.
+Local command-boundary collection observed an unrestricted connected IPv4 control
+followed by actual `connect` EACCES/errno 13. The probe and worker use the same
+namespace and nonroot UID/GID, with groups/capabilities cleared and `no-new-privs`.
+Local removal was verified; a restricted child could not remove the policy.
+This is **local control evidence only**, not direct/npm payload acceptance or
+Harden Runner proof. nft OUTPUT DROP/reject experiments timed out and supply no
+denial proof. Runner dependencies and fail-closed setup/removal are documented in
+the spike README. Fresh hosted observations must validate both Linux targets.
+Python and Node diagnostics also retain socket lifecycle stages: setup and cleanup
+errors invalidate proof; only actual connect permission failures may establish it.
+Portable Linux simulations inject identity completely, including on a host without
+POSIX `os.geteuid`, so the Windows test-portability defect is exercised locally.
 
 Parent must obtain and inspect fresh exact-source native/dispatch evidence and
 settle the Linux control limitation before applying the ADR decision rule. A

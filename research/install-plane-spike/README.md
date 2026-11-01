@@ -131,6 +131,28 @@ UID/GID and restores only explicitly passed setup environment; workers record
 effective identity and refuse root package managers. Cleanup errors remain fatal,
 and finally exports persisted JSON to logs/summary even on cleanup failure.
 
+Linux requires passwordless noninteractive `sudo`, iproute2 `ip` with network
+namespace/policy-rule support, util-linux `setpriv`, and `env`. Setup creates one
+owned `install-plane-<uuid>` namespace, brings up only loopback, and adds
+`ip route add 1.1.1.1/32 dev lo` using the canonical probe address. Inside that
+namespace, `ip -4 rule add priority 1 prohibit` and its `-6` counterpart establish
+an explicit kernel permission policy. Both the probe and the existing direct/npm
+worker enter the **same namespace**, after groups and all capability sets are
+dropped with `setpriv` and `no-new-privs` is set. No host routes/firewall or runner
+control-plane processes are changed. Setup/route/rule errors, unavailable tools,
+failed sudo, an inconclusive baseline or restricted probe, and unverified removal
+cannot pass. Raw setup, route/rule readbacks, worker commands and namespace deletion
+plus absence checks are retained. This is separate from dedicated Harden Runner.
+
+A local disposable-namespace experiment observed connected unrestricted IPv4,
+then `connect` EACCES/errno 13 under this policy. A worker-boundary child had
+UID/GID 1000, no groups, zero capability sets, and could not remove the rule;
+namespace removal was verified. This is local control evidence, **not native
+payload/npm acceptance**. Earlier nft OUTPUT DROP and admin-prohibited attempts
+timed out and are not used as proof. Fresh exact-source hosted results remain
+required. Socket creation/configuration/cleanup failures are inconclusive, with
+raw failure stages retained; only `connect` permission errors can prove denial.
+
 Each independent scenario is persisted before the next starts. Account readiness,
 status, parsing and token failures retain sanitized registry/server evidence;
 random test credentials never enter runtime environments or evidence. Raw output
@@ -176,7 +198,8 @@ denial. Parent reports historical dispatch 41323324901 SUCCESS with all twelve
 results inspected. Neither
 run validates R13. R12 PR 41326695290 and dispatch 41326779456 at `8b1194b` also
 used the old shared classifier and cannot certify this repair. Raw historical
-JSON and summaries remain unchanged; no alternate namespace proof is introduced.
+JSON and summaries remain unchanged. The new Linux control requires fresh evidence;
+namespace creation alone never proves denial.
 ADR/index stay Proposed until fresh native/dispatch evidence settles the corrected
 controls, including the Linux limitation and A's Windows comparison;
 then apply the [merged ADR escape hatch](https://github.com/lgtm-hq/ai-skills/blob/032ee309817813a9ef81bb2450cbed646a625222/docs/adr/0008-engine-runtime-build-and-install-planes.md)

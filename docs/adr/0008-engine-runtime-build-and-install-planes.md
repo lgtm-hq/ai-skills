@@ -174,7 +174,14 @@ WinError 10013, and Windows npm's exact Node launcher retains structured EACCES
 without claiming a native code. The native Winsock path remains unchanged.
 Historical Linux namespace `pass` labels and raw errno 101 are preserved, but do
 not establish current denial proof. An independently verified namespace argument
-would be a different trust basis; this repair does not introduce it.
+would be a different trust basis; R13 did not introduce it. The subsequent Linux
+repair instead requires actual connection EACCES from namespace-only policy-routing
+`prohibit` rules after a same-endpoint connected baseline. Local control collection
+observed errno 13, nonroot execution with no groups/capabilities, inability to remove
+the rule, and verified namespace deletion. The existing direct/npm worker shares
+that exact namespace/identity prefix. This local observation is not hosted payload
+acceptance. Socket setup/cleanup failures invalidate the Python/Node proof; injected
+tests retain lifecycle errors and cover hosts without POSIX identity APIs.
 R12 PR 41326695290 and dispatch 41326779456 at `8b1194b` use the old classifier
 and cannot certify R13, including any native Windows results in their artifacts.
 

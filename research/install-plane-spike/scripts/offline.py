@@ -21,6 +21,8 @@ from common import (
     runtime,
     write_json,
 )
+from linux_namespace import cleanup as cleanup_linux_namespace
+from linux_namespace import prepare as prepare_linux_namespace
 from network_control import proven_denial
 from packages import client_env, install_client, prepare_packages
 from windows_control import finish as finish_windows_controls
@@ -291,30 +293,7 @@ def measure_offline(
         prefixes = [[]]
         mechanism = "Harden Runner directly; no namespace/sandbox/firewall prefix"
     elif platform.system() == "Linux":
-        mechanism = "Linux network namespace (not Harden Runner)"
-        unshare, sudo = shutil.which("unshare"), shutil.which("sudo")
-        if unshare:
-            prefixes.append([unshare, "--user", "--map-current-user", "--net", "--"])
-            setpriv, env_tool = shutil.which("setpriv"), shutil.which("env")
-            if sudo and setpriv and env_tool and os.geteuid() != 0:
-                prefixes.append(
-                    [
-                        sudo,
-                        "-n",
-                        unshare,
-                        "--net",
-                        "--",
-                        setpriv,
-                        "--reuid",
-                        str(os.getuid()),
-                        "--regid",
-                        str(os.getgid()),
-                        "--clear-groups",
-                        "--",
-                        env_tool,
-                        "-i",
-                    ]
-                )
+        mechanism = "Linux namespace policy-routing prohibit (not Harden Runner)"
     elif platform.system() == "Darwin":
         mechanism = "macOS sandbox-exec (not Harden Runner)"
         if sandbox := shutil.which("sandbox-exec"):
@@ -349,7 +328,19 @@ def measure_offline(
         for variant in ("ts", "py")
     }
     program_controls: dict[str, Any] = {}
+    namespace: dict[str, Any] | None = (
+        {} if not harden_block and platform.system() == "Linux" else None
+    )
     try:
+        if namespace is not None:
+            prefix = prepare_linux_namespace(
+                state=namespace, records=records, consumer=identity()
+            )
+            prefixes = [prefix] if prefix is not None else []
+            for result in results.values():
+                result["namespace_control"] = namespace
+                if prefix is None:
+                    result["reason"] = namespace["reason"]
         if not harden_block and platform.system() == "Windows":
             shell = shutil.which("powershell") or shutil.which("pwsh")
             mechanism = "Windows per-program outbound firewall (not Harden Runner)"
@@ -568,6 +559,20 @@ def measure_offline(
                     partial.read_text(encoding="utf-8")
                 )
     finally:
+        if namespace is not None:
+            cleanup.update(cleanup_linux_namespace(state=namespace, records=records))
+            if cleanup["status"] == "unverified removal":
+                for result in results.values():
+                    result["direct_execution"].update(
+                        status="unverified",
+                        denial_proven=False,
+                        reason="namespace cleanup not verified",
+                    )
+                    result.update(
+                        status="unverified",
+                        installer_denial_proven=False,
+                        reason="namespace cleanup not verified",
+                    )
         if firewall:
             removed = command(
                 argv=[
