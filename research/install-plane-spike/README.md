@@ -150,7 +150,9 @@ The report links inspected R3 at ca2db52, R4 at d77da01, R5 at 6d2d86b and compl
 R6 PR/green dispatch evidence at **10205e3 only**. Historical dual-client offline
 rollups and raw JSON are retained under the superseded rule. R6 has no independent
 original-payload direct execution under restriction; R7 native CI failed before
-build/measurement. R8 has local verification only. ADR 0008 stays Proposed for
+build/measurement. R8 run 41310148490 at `623c098` exposed six Windows test failures
+before build/measurement; R9 local corrections await hosted verification.
+ADR 0008 stays Proposed for
 fresh comparable restricted direct-runtime plus npm evidence, with Windows scope,
 Harden Runner baseline and payload provenance still explicit limits. The
 [security policy](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942)

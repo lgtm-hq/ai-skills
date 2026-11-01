@@ -224,6 +224,8 @@ export async function install({
   const target = join(home, ".spike-target");
   const staging = await mkdtemp(join(home, ".spike-stage-"));
   let ownsTarget = false;
+  let isPublished = false;
+  const failures: unknown[] = [];
   try {
     for (const [name, content] of Object.entries(output)) {
       const destination = join(staging, name);
@@ -237,11 +239,35 @@ export async function install({
     for (const child of await readdir(staging)) {
       await rename(join(staging, child), join(target, child));
     }
+    isPublished = true;
   } catch (error: unknown) {
-    if (ownsTarget) await rm(target, { recursive: true });
-    throw error;
-  } finally {
+    failures.push(error);
+    if (ownsTarget) {
+      try {
+        await rm(target, { recursive: true });
+      } catch (cleanupError: unknown) {
+        failures.push(cleanupError);
+      }
+    }
+  }
+  try {
     await rm(staging, { recursive: true });
+  } catch (cleanupError: unknown) {
+    if (isPublished) {
+      // Publication is the commit point; leftover staging is a cleanup warning.
+      console.warn("Installation completed; staging cleanup failed:", cleanupError);
+    } else {
+      failures.push(cleanupError);
+    }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    const details = failures
+      .map((error) => (error instanceof Error ? error.message : String(error)))
+      .join("; ");
+    throw new AggregateError(failures, `Installation failed; cleanup also failed: ${details}`, {
+      cause: failures[0],
+    });
   }
   return output;
 }

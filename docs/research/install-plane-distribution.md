@@ -42,7 +42,7 @@ All R3–R6 tables below retain **historical raw outcomes under the superseded
 both-clients-offline policy**. In particular, POSIX offline `fail` reflects Bun
 selection failure under that old rule. It is not a current-policy gate failure,
 and cannot be retroactively turned into a direct-runtime pass. No raw JSON is
-modified or relabeled, and no earlier run certifies R8.
+modified or relabeled, and no earlier run certifies R9.
 
 ## Method and evidence identity
 
@@ -238,7 +238,7 @@ build/measurement. Those failed jobs provide **no native scenario evidence**.
 Missing payload acquisition in the dependent offline job is not a scenario pass.
 R6 evidence above applies only to 10205e3. Historical R3/R4/R5/R6 raw JSON is unchanged.
 
-## R8 source corrections (local verification only)
+## R8 source corrections and hosted Windows test failure
 
 The actual isolated test command now reads exact pytest/assertpy/PyYAML versions
 from `uv.lock` and uses `--no-project --isolated`, preventing a local project
@@ -272,8 +272,49 @@ Local logs are outside the worktree at the coder profile's
 actual `test-ci.sh` invocation fails interpreter discovery with downloads disabled.
 The installed **3.14.7** interpreter is used for the isolated local smoke and is
 not interchangeable with pinned hosted evidence. Only the small locked test
-dependencies may be fetched; no runtime/toolchain bundle is installed. No R8
-hosted validation or ADR acceptance is claimed.
+dependencies may be fetched; no runtime/toolchain bundle is installed.
+
+The actual [R8 PR run 41310148490][r8-pr] at
+`623c0988fb486a28a0fc8a9c0e8049d0a08da09d` exposed two further Windows test
+portability failures: the modeled POSIX deadline test used the host's missing
+`SIGKILL`, and the oracle-tampering test expected LF instead of native CRLF.
+Windows job 124858617419 stopped with **6 failed, 292 passed, 2 skipped** before
+build/measurement. Other native targets were still collecting at inspection.
+This is no Windows scenario evidence and does not validate the R8 direct-offline
+cells. The earlier local pass did not establish native CI portability.
+
+## R9 local corrections (hosted verification pending)
+
+The deadline model supplies explicit synthetic TERM/KILL constants on every host,
+retaining all four deterministic time-budget cases. The oracle attack regression
+now emits both LF and CRLF explicitly and compares parsed JSON; it still requires
+the forged empty output/tree to fail against the pre-execution trusted golden.
+Product validation is unchanged.
+
+TypeScript publication is the commit point. A subsequent staging-removal error
+emits a warning while preserving successful installation and output. Before
+publication, target rollback and staging cleanup retain the original failure plus
+any cleanup failures; injected regressions cover successful publication with
+failed cleanup and prepublication failure followed by retry.
+
+Acquisition and upload reporting now live in the dedicated stdlib-only
+`scripts/retain-ci.py`, acquired through an independent sparse first-party checkout
+at the requested source SHA. A successful source checkout is a second available
+copy if helper acquisition fails. This occurs after measurement, preserves the
+first-step empty allowlist, and never executes downloaded vendor/tooling code.
+JSON includes both checkout outcomes and keeps `source_head: null` and status
+`unverified`. If **both** checkouts fail, no dedicated repository script exists to
+produce JSON or a summary: the always-running pinned upload action instead logs
+both checkout outcomes and the skipped acquisition outcome as declarative inputs,
+with unknown source identity. Its own upload outcome remains in the Actions step
+record and retention step name. This is an explicit acquisition limitation, not a
+waiver of the separate-script rule or a passing measurement.
+
+R9 local checks do not establish hosted Windows behavior. The hosted Python pin
+remains **3.14.6**; local isolated verification uses installed **3.14.7** with
+downloads disabled and offline mode. No historical artifacts are rewritten and
+ADR 0008 remains Proposed pending the required current-head native/dispatch
+direct-offline, denial and provenance evidence.
 
 ## R3 restricted-scenario comparison
 
@@ -453,7 +494,7 @@ Linux has no macOS/Windows security observation; third-party EDR is unverified t
 The R2 runs [41288233178][r2] and [41290059704][r2-dispatch] predate these R3
 observations; R2 Windows stopped at firewall Error 87 without restricted installs.
 The R3 green dispatch now satisfies the dispatch collection/link criterion at
-`ca2db52`. R4, R5 and R6 collection are separately inspected above; none validates R8.
+`ca2db52`. R4, R5 and R6 collection are separately inspected above; none validates R9.
 
 R4's schema **3** enforces a clean checkout and required matching expected head in
 hosted mode, records `GITHUB_RUN_ATTEMPT`, and labels local runs as local
@@ -513,6 +554,7 @@ security, controls, provenance and ADR finalization are not deferred to #614.
 [r6-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41303888697
 [r6-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41304035426
 [r7-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41307370871
+[r8-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41310148490
 [r5-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41299584188
 [r5-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41299627797
 [r5-pr-artifacts]: https://github.com/lgtm-hq/ai-skills/actions/runs/41299584188#artifacts

@@ -132,8 +132,13 @@ at `774ba560bcb0fdffa21b41c6e9127a11d26a02eb` failed all five native test jobs
 before build/measurement because isolated tests lacked PyYAML. It supplies no
 native scenario evidence. R8 corrects that isolated command, adds independent
 restricted direct-runtime cells, and applies direct-plus-npm offline rollups;
-Bun evidence is retained and registry requirements are unchanged. R8 has local
-verification only. Earlier green runs cannot validate R8.
+Bun evidence is retained and registry requirements are unchanged. The actual
+[R8 PR run 41310148490](https://github.com/lgtm-hq/ai-skills/actions/runs/41310148490)
+at `623c0988fb486a28a0fc8a9c0e8049d0a08da09d` then exposed missing synthetic
+`SIGKILL` and LF/CRLF assumptions in Windows tests: 6 failed, 292 passed, 2 skipped,
+before build/measurement. R9 fixes those tests, publication cleanup semantics and
+the dedicated acquisition/upload helper layout locally; hosted verification is
+pending. Earlier green runs cannot validate R9.
 
 **Proposed remains for a measured criterion:** inspect fresh comparable hosted
 JSON for the original standalone A and B payloads under restriction on all five

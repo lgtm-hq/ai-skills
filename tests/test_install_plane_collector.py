@@ -17,12 +17,14 @@ from assertpy import assert_that
 SPIKE = Path(__file__).resolve().parents[1] / "research/install-plane-spike"
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
 @pytest.mark.parametrize("rewrite_trusted", [False, True])
 def test_payload_cannot_rewrite_oracle(
     collector: dict[str, ModuleType],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     rewrite_trusted: bool,
+    newline: str,
 ) -> None:
     """Snapshot the trusted golden before a payload rewrites fixtures and prints {}."""
     common = collector["common"]
@@ -45,7 +47,8 @@ def test_payload_cannot_rewrite_oracle(
         "import os, sys\nfrom pathlib import Path\n"
         "Path(sys.argv[1], 'expected-output.json').write_bytes(b'{}')\n"
         + rewrite
-        + "Path(os.environ['HOME'], '.spike-target').mkdir()\nprint('{}')\n",
+        + "Path(os.environ['HOME'], '.spike-target').mkdir()\n"
+        + f"sys.stdout.buffer.write({('{}' + newline).encode()!r})\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(
@@ -54,7 +57,7 @@ def test_payload_cannot_rewrite_oracle(
     records: list[dict[str, Any]] = []
     result = common.run_payload(root=payload, variant="py", home=home, records=records)
     assert_that(records[0]["exit"]).is_zero()
-    assert_that(records[0]["stdout"]).is_equal_to("{}\n")
+    assert_that(json.loads(records[0]["stdout"])).is_equal_to({})
     assert_that((payload / "fixtures/expected-output.json").read_bytes()).is_equal_to(
         b"{}"
     )
@@ -116,8 +119,16 @@ def test_output_tree_rejects_reparse_points(
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="fallback runs only on Ubuntu")
-def test_checkout_failure_has_source_independent_evidence(tmp_path: Path) -> None:
-    """Run the actual fallback in an empty checkout with blocked acquisition/upload."""
+@pytest.mark.parametrize(
+    ("source_outcome", "helper_outcome"),
+    [("failure", "success"), ("success", "failure")],
+)
+def test_checkout_failure_has_source_independent_evidence(
+    tmp_path: Path,
+    source_outcome: str,
+    helper_outcome: str,
+) -> None:
+    """Run the real helper when either acquisition fails, including failed upload."""
     import os
     import subprocess  # nosec B404 - fixed workflow fallback, no network
 
@@ -129,6 +140,20 @@ def test_checkout_failure_has_source_independent_evidence(tmp_path: Path) -> Non
     steps = workflow["jobs"]["offline-linux"]["steps"]
     fallback = next(step for step in steps if step.get("id") == "acquisition")
     assert_that(fallback["if"]).contains("always()")
+    helper = next(step for step in steps if step.get("id") == "helper")
+    assert_that(helper["if"]).is_equal_to("always()")
+    assert_that(helper["with"]["persist-credentials"]).is_false()
+    helper_script = Path(helper["with"]["sparse-checkout"])
+    helper_root = helper["with"]["path"] if helper_outcome == "success" else "."
+    acquired = tmp_path / helper_root / helper_script
+    acquired.parent.mkdir(parents=True)
+    acquired.write_bytes((SPIKE.parents[1] / helper_script).read_bytes())
+    # Render only the workflow's constant path choice, without a source checkout
+    # in the helper-success case or a helper checkout in the source-success case.
+    selection = (
+        "${{ steps.helper.outcome == 'success' && '.spike-evidence-helper' || '.' }}"
+    )
+    command = fallback["run"].replace(selection, helper_root)
     env = {
         **os.environ,
         "SPIKE_SOURCE_SHA": "a" * 40,
@@ -138,13 +163,14 @@ def test_checkout_failure_has_source_independent_evidence(tmp_path: Path) -> Non
         "GITHUB_REPOSITORY": "lgtm-hq/ai-skills",
         "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
         "SPIKE_HARDEN_OUTCOME": "success",
-        "SPIKE_CHECKOUT_OUTCOME": "failure",
+        "SPIKE_CHECKOUT_OUTCOME": source_outcome,
+        "SPIKE_HELPER_CHECKOUT_OUTCOME": helper_outcome,
         "SPIKE_DOWNLOAD_OUTCOME": "skipped",
         "SPIKE_UNPACK_OUTCOME": "skipped",
         "SPIKE_MEASURE_OUTCOME": "skipped",
     }
     result = subprocess.run(  # nosec B603 - literal shell; repository-owned workflow
-        args=["bash", "-e", "-c", fallback["run"]],
+        args=["bash", "-e", "-c", command],
         cwd=tmp_path,
         env=env,
         capture_output=True,
@@ -161,7 +187,12 @@ def test_checkout_failure_has_source_independent_evidence(tmp_path: Path) -> Non
     assert_that(saved["workflow_event"]).is_equal_to("pull_request")
     assert_that(saved["workflow_run_id"]).is_equal_to("1234")
     assert_that(saved["workflow_run_attempt"]).is_equal_to("2")
-    assert_that(saved["acquisition"]["SPIKE_CHECKOUT_OUTCOME"]).is_equal_to("failure")
+    assert_that(saved["acquisition"]["SPIKE_CHECKOUT_OUTCOME"]).is_equal_to(
+        source_outcome
+    )
+    assert_that(saved["acquisition"]["SPIKE_HELPER_CHECKOUT_OUTCOME"]).is_equal_to(
+        helper_outcome
+    )
     assert_that(saved["acquisition"]["SPIKE_MEASURE_OUTCOME"]).is_equal_to("skipped")
     assert_that(saved["probe_denial_proven"]).is_false()
     assert_that(saved["installer_denial_proven"]).is_false()
@@ -173,7 +204,7 @@ def test_checkout_failure_has_source_independent_evidence(tmp_path: Path) -> Non
     assert_that(upload["with"]["if-no-files-found"]).is_equal_to("error")
     retention = next(step for step in steps if step.get("id") == "retention")
     result = subprocess.run(  # nosec B603 - literal shell; no artifact network needed
-        args=["bash", "-e", "-c", retention["run"]],
+        args=["bash", "-e", "-c", retention["run"].replace(selection, helper_root)],
         cwd=tmp_path,
         env={**env, "SPIKE_UPLOAD_OUTCOME": "failure"},
         capture_output=True,
@@ -184,6 +215,43 @@ def test_checkout_failure_has_source_independent_evidence(tmp_path: Path) -> Non
     assert_that(result.returncode).is_zero()
     assert_that(result.stdout).contains("failure", "unverified")
     assert_that((tmp_path / "summary").read_text(encoding="utf-8")).contains("failure")
+
+
+def test_missing_source_and_helper_keep_declarative_failure_evidence() -> None:
+    """Both failed checkouts remain logged even when no script can be invoked."""
+    import yaml
+
+    workflow = yaml.safe_load(
+        (SPIKE.parents[1] / ".github/workflows/install-plane-spike.yml").read_bytes()
+    )
+    steps = workflow["jobs"]["offline-linux"]["steps"]
+    assert_that(steps[0]["id"]).is_equal_to("harden")
+    assert_that(steps[0]["with"]["egress-policy"]).is_equal_to("block")
+    assert_that(steps[0]["with"]["allowed-endpoints"]).is_empty()
+    upload = next(step for step in steps if step.get("id") == "evidence")
+    assert_that(upload["if"]).is_equal_to("always()")
+    assert_that(upload["env"]["SPIKE_COLLECTION_STATUS"]).is_equal_to("unverified")
+    assert_that(upload["env"]["SPIKE_SOURCE_HEAD"]).is_equal_to("null")
+    for key, step_id in (
+        ("SPIKE_CHECKOUT_OUTCOME", "checkout"),
+        ("SPIKE_HELPER_CHECKOUT_OUTCOME", "helper"),
+        ("SPIKE_ACQUISITION_OUTCOME", "acquisition"),
+    ):
+        assert_that(upload["env"][key]).is_equal_to(
+            "${{ steps." + step_id + ".outcome }}"
+        )
+    for step in steps:
+        if step.get("id") in ("acquisition", "retention"):
+            assert_that(step["if"]).contains(
+                "always()",
+                "steps.helper.outcome == 'success' || "
+                "steps.checkout.outcome == 'success'",
+            )
+            assert_that(step["run"]).contains("scripts/retain-ci.py")
+        if "run" in step:
+            assert_that(step["run"].rstrip()).does_not_contain("\n", "<<", "python3 -c")
+    retention = next(step for step in steps if step.get("id") == "retention")
+    assert_that(retention["name"]).contains("${{ steps.evidence.outcome }}")
 
 
 @pytest.fixture
@@ -1756,6 +1824,7 @@ def test_posix_shutdown_shares_phase_deadline(
         raise tree.subprocess.TimeoutExpired("ignores TERM", timeout)
 
     monkeypatch.setattr(tree, "os", SimpleNamespace(name="posix", killpg=killpg))
+    monkeypatch.setattr(tree, "signal", SimpleNamespace(SIGTERM=15, SIGKILL=9))
     monkeypatch.setattr(
         tree, "time", SimpleNamespace(monotonic=lambda: clock["now"], sleep=advance)
     )

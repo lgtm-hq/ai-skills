@@ -75,6 +75,63 @@ test.each([false, true])("existing target is preserved (occupied=%s)", async (oc
   expect(await fs.readdir(target)).toEqual(occupied ? ["owned"] : []);
   if (occupied) expect(await readFile(join(target, "owned"), "utf8")).toBe("preserve me");
 });
+
+test("staging cleanup failure after publication preserves successful installation", async () => {
+  const originalRm = fs.rm;
+  const cleanupError = new Error("injected staging cleanup failure");
+  const removed = spyOn(fs, "rm").mockImplementation(async (...args: Parameters<typeof fs.rm>) => {
+    if (String(args[0]).includes(".spike-stage-")) throw cleanupError;
+    return originalRm(...args);
+  });
+  const warning = spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const expected = JSON.parse(
+      await readFile(join(fixture, "expected-output.json"), "utf8"),
+    ) as Record<string, string>;
+    expect(await install({ fixture, home: root, exclude: "fixture:drop" })).toEqual(expected);
+    for (const [name, content] of Object.entries(expected)) {
+      expect(await readFile(join(root, ".spike-target", name), "utf8")).toBe(content);
+    }
+    expect(warning).toHaveBeenCalledWith(
+      "Installation completed; staging cleanup failed:",
+      cleanupError,
+    );
+    expect((await fs.readdir(root)).some((name) => name.startsWith(".spike-stage-"))).toBe(true);
+  } finally {
+    removed.mockRestore();
+    warning.mockRestore();
+  }
+});
+
+test("prepublication cleanup failure retains original error and permits retry", async () => {
+  const originalRm = fs.rm;
+  const publicationError = new Error("injected publication failure");
+  const cleanupError = new Error("injected staging cleanup failure");
+  const renamed = spyOn(fs, "rename").mockRejectedValue(publicationError);
+  const removed = spyOn(fs, "rm").mockImplementation(async (...args: Parameters<typeof fs.rm>) => {
+    if (String(args[0]).includes(".spike-stage-")) throw cleanupError;
+    return originalRm(...args);
+  });
+  try {
+    const failure = await install({ fixture, home: root, exclude: "fixture:drop" }).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(AggregateError);
+    if (!(failure instanceof AggregateError)) throw new Error("expected combined errors");
+    expect(failure.cause).toBe(publicationError);
+    expect(failure.errors).toEqual([publicationError, cleanupError]);
+    expect(failure.message).toContain(publicationError.message);
+    expect(failure.message).toContain(cleanupError.message);
+    await expect(access(join(root, ".spike-target"))).rejects.toThrow();
+  } finally {
+    renamed.mockRestore();
+    removed.mockRestore();
+  }
+  const expected = JSON.parse(
+    await readFile(join(fixture, "expected-output.json"), "utf8"),
+  ) as Record<string, string>;
+  expect(await install({ fixture, home: root, exclude: "fixture:drop" })).toEqual(expected);
+});
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "spike-ts-"));
   fixture = join(root, "fixture");

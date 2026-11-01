@@ -156,56 +156,51 @@ jobs:
           SPIKE_DOWNLOAD_OUTCOME: ${{ steps.payloads.outcome }}
           SPIKE_UNPACK_OUTCOME: ${{ steps.unpack.outcome }}
         run: bash research/install-plane-spike/scripts/offline-ci.sh
-      - name: Preserve acquisition outcomes without checkout
-        id: acquisition
+      - name: Acquire first-party evidence helper independently of source checkout
+        id: helper
         if: always()
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: .spike-evidence-helper
+          sparse-checkout-cone-mode: false
+          sparse-checkout: research/install-plane-spike/scripts/retain-ci.py
+      - name: Preserve acquisition outcomes independently of source checkout
+        id: acquisition
+        # If both checkouts fail, the upload step logs their outcomes below.
+        # yamllint disable-line rule:line-length
+        if: ${{ always() && (steps.helper.outcome == 'success' || steps.checkout.outcome == 'success') }}
         env:
           SPIKE_HARDEN_OUTCOME: ${{ steps.harden.outcome }}
           SPIKE_CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          SPIKE_HELPER_CHECKOUT_OUTCOME: ${{ steps.helper.outcome }}
           SPIKE_DOWNLOAD_OUTCOME: ${{ steps.payloads.outcome }}
           SPIKE_UNPACK_OUTCOME: ${{ steps.unpack.outcome }}
           SPIKE_MEASURE_OUTCOME: ${{ steps.measure.outcome }}
-        # Source-independent exception: repository scripts may not exist here.
-        # Runner-provided stdlib only; no download or expanded egress allowance.
-        run: |
-          python3 -I -B - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-          env = os.environ
-          result = {
-              "status": "unverified",
-              "collection_scope": "hosted acquisition outcomes only",
-              "source_head": None,
-              "expected_source_head": env.get("SPIKE_SOURCE_SHA"),
-              "workflow_event": env.get("GITHUB_EVENT_NAME"),
-              "workflow_run_id": env.get("GITHUB_RUN_ID"),
-              "workflow_run_attempt": env.get("GITHUB_RUN_ATTEMPT"),
-              "acquisition": {key: env.get(key) for key in (
-                  "SPIKE_HARDEN_OUTCOME", "SPIKE_CHECKOUT_OUTCOME",
-                  "SPIKE_DOWNLOAD_OUTCOME", "SPIKE_UNPACK_OUTCOME",
-                  "SPIKE_MEASURE_OUTCOME",
-              )},
-              "probe_denial_proven": False,
-              "installer_denial_proven": False,
-              "reason": "No same-host unrestricted control or payload provenance; "
-                        "missing scenario evidence is not a pass",
-          }
-          raw = json.dumps(result, indent=2) + "\n"
-          print(raw, flush=True)
-          if env.get("GITHUB_STEP_SUMMARY"):
-              with Path(env["GITHUB_STEP_SUMMARY"]).open("a") as summary:
-                  summary.write(
-                      "\n### Acquisition (unverified)\n```json\n" + raw + "```\n"
-                  )
-          path = Path("build/spike/results/acquisition.json")
-          path.parent.mkdir(parents=True, exist_ok=True)
-          path.write_text(raw, encoding="utf-8")
-          PY
+        # Runner stdlib only, never code from the measured vendor/tooling payload.
+        run: >-
+          python3 -I -B
+          "${{ steps.helper.outcome == 'success' && '.spike-evidence-helper'
+          || '.' }}/research/install-plane-spike/scripts/retain-ci.py"
+          acquisition
       - name: Upload offline evidence
         id: evidence
         if: always()
         continue-on-error: true
+        # Runner logs these declarative inputs even when neither script exists.
+        # No source identity or scenario result is inferred from acquisition.
+        env:
+          SPIKE_COLLECTION_STATUS: unverified
+          SPIKE_SOURCE_HEAD: 'null'
+          SPIKE_HARDEN_OUTCOME: ${{ steps.harden.outcome }}
+          SPIKE_CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          SPIKE_HELPER_CHECKOUT_OUTCOME: ${{ steps.helper.outcome }}
+          SPIKE_DOWNLOAD_OUTCOME: ${{ steps.payloads.outcome }}
+          SPIKE_UNPACK_OUTCOME: ${{ steps.unpack.outcome }}
+          SPIKE_MEASURE_OUTCOME: ${{ steps.measure.outcome }}
+          SPIKE_ACQUISITION_OUTCOME: ${{ steps.acquisition.outcome }}
         # yamllint disable-line rule:line-length
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -213,12 +208,15 @@ jobs:
           path: build/spike/results/*.json
           if-no-files-found: error
           retention-days: 30
-      - name: Preserve upload outcome in log and summary
+      - name: Retain upload outcome (${{ steps.evidence.outcome }}) in log and summary
         id: retention
-        if: always()
+        # Without either checkout, the upload action still logs its own failure.
+        # yamllint disable-line rule:line-length
+        if: ${{ always() && (steps.helper.outcome == 'success' || steps.checkout.outcome == 'success') }}
         env:
           SPIKE_UPLOAD_OUTCOME: ${{ steps.evidence.outcome }}
-        # No checkout dependency; acquisition JSON is already in log/summary.
-        run: |
-          printf 'Artifact upload outcome: %s; acquisition remains unverified.\n' \
-            "$SPIKE_UPLOAD_OUTCOME" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: >-
+          python3 -I -B
+          "${{ steps.helper.outcome == 'success' && '.spike-evidence-helper'
+          || '.' }}/research/install-plane-spike/scripts/retain-ci.py"
+          upload
