@@ -57,7 +57,7 @@ vendors:
           - claude-api
   - id: anthropics-claude-code
     repo: anthropics/claude-code
-    sha: "ab9b2cf7bb9e4f98ff264c07a22e46d83c29c558"
+    sha: "80c6959d28c4c30ecd14fc1cdf172f19d9adad81"
     branch: main
     displayRef: latest
     skillRoots:
