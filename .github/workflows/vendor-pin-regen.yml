@@ -16,6 +16,7 @@ concurrency:
 jobs:
   regenerate:
     name: Regenerate vendor catalog
+    # Deliberately duplicated in publish: keep both author/actor gates aligned.
     if: >-
       startsWith(github.head_ref, 'renovate/')
       && github.event.pull_request.head.repo.full_name == github.repository
@@ -70,6 +71,7 @@ jobs:
 
       - name: Regenerate and summarize selected pins
         env:
+          # Read-only job token; release App credentials exist only in publish.
           GITHUB_TOKEN: ${{ github.token }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           SUMMARY_PATH: ${{ runner.temp }}/vendor-pin-summary.md
@@ -88,6 +90,7 @@ jobs:
   publish:
     name: Publish vendor catalog from trusted base
     needs: regenerate
+    # Match regenerate's author/actor gate, including rerun actors.
     if: >-
       startsWith(github.head_ref, 'renovate/')
       && github.event.pull_request.head.repo.full_name == github.repository

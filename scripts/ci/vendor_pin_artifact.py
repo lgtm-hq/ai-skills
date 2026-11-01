@@ -9,14 +9,18 @@ import json
 import os
 import subprocess  # nosec B404 - fixed read-only git argv, no shell
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
 GENERATED_FILES = frozenset({"NOTICE.md", "npm/ai-skills/NOTICE.md"})
 GENERATED_DIRS = ("vendor-indexes/", "npm/ai-skills/data/")
-# Conservative application limit for the combined base64 contents, before HTTP.
+# Conservative local budget, not a measured GitHub API limit.
 MAX_BASE64_BYTES = 20 * 1024 * 1024
+# Separate allowance for summary, paths, and JSON overhead.
 MAX_ARTIFACT_BYTES = MAX_BASE64_BYTES + 1024 * 1024
+MAX_COMMENT_CHARS = 65_536
+SUMMARY_MARKER = "<!-- vendor-pin-regen -->"
 ARTIFACT_NAME = "publication.json"
 
 
@@ -128,7 +132,10 @@ def read_artifact(*, directory: Path, expected_head: str) -> dict[str, Any]:
         )
     if path.stat().st_size > MAX_ARTIFACT_BYTES:
         raise ValueError(f"Artifact exceeds {MAX_ARTIFACT_BYTES} bytes")
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except RecursionError as error:
+        raise ValueError("Artifact JSON nesting exceeds parser limit") from error
     if (
         not isinstance(payload, dict)
         or set(payload) != {"head", "summary", "status", "fileChanges"}
@@ -139,6 +146,8 @@ def read_artifact(*, directory: Path, expected_head: str) -> dict[str, Any]:
         or payload["status"] not in {0, 1}
     ):
         raise ValueError("Invalid artifact metadata or expected PR head")
+    if len(SUMMARY_MARKER) + 1 + len(payload["summary"]) > MAX_COMMENT_CHARS:
+        raise ValueError(f"Summary comment exceeds {MAX_COMMENT_CHARS} characters")
     changes = validate_changes(payload["fileChanges"])
     if payload["status"] and any(changes.values()):
         raise ValueError("A collision report must not contain file changes")
@@ -170,8 +179,18 @@ def main() -> None:
     }
     directory = Path(os.environ["ARTIFACT_DIR"])
     path = directory / ARTIFACT_NAME
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    read_artifact(directory=directory, expected_head=head)
+    reject_symlinks(root=directory, path=path)
+    entries = set(directory.iterdir())
+    if entries and (entries != {path} or not path.is_file()):
+        raise ValueError(
+            "Artifact destination must contain only publication.json as a regular file"
+        )
+    with tempfile.TemporaryDirectory(dir=directory) as temporary:
+        staging = Path(temporary)
+        staged_path = staging / ARTIFACT_NAME
+        staged_path.write_text(json.dumps(payload), encoding="utf-8")
+        read_artifact(directory=staging, expected_head=head)
+        staged_path.replace(path)
 
 
 if __name__ == "__main__":
