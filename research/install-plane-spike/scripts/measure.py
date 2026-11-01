@@ -145,6 +145,24 @@ def main() -> None:
 
     persist()
     try:
+        expected = metadata["expected_source_head"]
+        if (
+            head["exit"] != 0
+            or status["exit"] != 0
+            or not metadata["source_head"]
+            or (expected is not None and metadata["source_head"] != expected)
+        ):
+            for item in evidence.values():
+                item.update(
+                    status="invalid",
+                    reason=(
+                        "source head unavailable or differs from expected_source_head"
+                    ),
+                )
+            persist()
+            raise ValueError(
+                "source head unavailable or differs from expected_source_head"
+            )
         with tempfile.TemporaryDirectory(prefix="spike-measure-") as temporary:
             work = Path(temporary)
             offline_work = work / "offline"

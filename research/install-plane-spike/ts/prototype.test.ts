@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test, spyOn } from "bun:test";
 import { cp, mkdtemp, readFile, rm, writeFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { install } from "./prototype";
 import { createHash } from "node:crypto";
+import * as fs from "node:fs/promises";
 
 let root: string;
 let fixture: string;
@@ -12,6 +13,52 @@ beforeEach(async () => {
   fixture = join(root, "fixture");
   await cp(join(import.meta.dir, "../fixtures"), fixture, { recursive: true });
 });
+
+test.each(["index.json", "artifact.tar"])(
+  "%s reads only its fixed budget before validation",
+  async (filename) => {
+    const limit = 1024 * 1024;
+    const path = join(fixture, filename);
+    const handle = await fs.open(path, "w");
+    await handle.truncate(64 * limit);
+    await handle.close();
+    const originalOpen = fs.open;
+    const verifyReads: (() => void)[] = [];
+    const opened = spyOn(fs, "open").mockImplementation(
+      async (...args: Parameters<typeof fs.open>) => {
+        const input = await originalOpen(...args);
+        if (args[0] === path) {
+          const read = spyOn(input, "read");
+          const closed = spyOn(input, "close");
+          verifyReads.push(() => {
+            expect(read).toHaveBeenCalledTimes(1);
+            // FileHandle.read is overloaded; inspect the actual positional call.
+            const [buffer, offset, length] = read.mock.calls[0] as unknown as [
+              Uint8Array,
+              number,
+              number,
+            ];
+            expect(buffer.byteLength).toBe(limit + 1);
+            expect(offset).toBe(0);
+            expect(length).toBe(limit + 1);
+            expect(closed).toHaveBeenCalledTimes(1);
+          });
+        }
+        return input;
+      },
+    );
+    try {
+      await expect(install({ fixture, home: root, exclude: "fixture:drop" })).rejects.toThrow(
+        "fixture too large",
+      );
+      expect(verifyReads).toHaveLength(1);
+      for (const verify of verifyReads) verify();
+      await expect(access(join(root, ".spike-target"))).rejects.toThrow();
+    } finally {
+      opened.mockRestore();
+    }
+  },
+);
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });

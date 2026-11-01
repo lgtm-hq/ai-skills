@@ -16,6 +16,7 @@ from typing import Any
 
 from common import SETTINGS, SPIKE, command, registry_setup_environment, write_json
 from packages import client_env, install_client, prepare_packages
+from process_tree import process_tree_options, stop_process_tree
 
 
 def redact(*, value: object, sensitive: list[str]) -> Any:
@@ -206,6 +207,7 @@ def measure_registry(*, build: Path, work: Path) -> dict[str, Any]:
                 env=server_env,
                 stdout=stdout,
                 stderr=stderr,
+                **process_tree_options(),
             )
         ready = False
         readiness: dict[str, Any] = {"operation": "registry readiness"}
@@ -220,6 +222,8 @@ def measure_registry(*, build: Path, work: Path) -> dict[str, Any]:
                     response.read()
                     readiness["status"] = response.status
                     ready = response.status == 200
+                    if ready:
+                        readiness.pop("error", None)
             except (OSError, http.client.HTTPException) as error:
                 readiness["error"] = type(error).__name__
             if ready or server.poll() is not None:
@@ -227,6 +231,19 @@ def measure_registry(*, build: Path, work: Path) -> dict[str, Any]:
             time.sleep(0.1)
         if not ready:
             raise ValueError("cached registry readiness failed or timed out")
+        records.append(
+            {
+                "operation": "server runtime scope",
+                "launcher": bun,
+                "pid": server.pid,
+                "runtime": "unverified: launcher flag alone is not runtime proof",
+            }
+        )
+        if shutil.which("ps"):
+            command(
+                argv=["ps", "-p", str(server.pid), "-o", "pid=,ppid=,comm="],
+                records=records,
+            )
         token = account(
             port=port, password=sensitive[0], records=records, sensitive=sensitive
         )
@@ -290,20 +307,19 @@ def measure_registry(*, build: Path, work: Path) -> dict[str, Any]:
             }
         )
     finally:
-        termination = "intentional server shutdown"
+        termination: dict[str, Any] = {"status": "not launched"}
         if server is not None:
-            try:
-                server.terminate()
-                server.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                termination = "terminate timeout; killed"
-                try:
-                    server.kill()
-                    server.wait(timeout=10)
-                except (subprocess.TimeoutExpired, OSError) as error:
-                    termination = f"kill/reap failed: {type(error).__name__}"
-            except OSError as error:
-                termination = f"terminate failed: {type(error).__name__}"
+            termination = stop_process_tree(server)
+            if termination["status"] != "pass":
+                for variant in ("ts", "py"):
+                    results[variant].update(
+                        status=(
+                            "fail"
+                            if results[variant]["status"] == "fail"
+                            else "unverified"
+                        ),
+                        cleanup_error="registry process-tree shutdown not verified",
+                    )
         server_record = {
             "argv": argv,
             "exit": server.returncode if server else None,

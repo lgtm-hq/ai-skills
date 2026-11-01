@@ -9,10 +9,10 @@ import os
 import platform
 import shutil
 import uuid
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
-from common import SPIKE, command, isolated_env, runtime, write_json
+from common import SETTINGS, SPIKE, command, isolated_env, runtime, write_json
 from network_control import proven_denial
 from packages import client_env, install_client, prepare_packages
 
@@ -92,7 +92,11 @@ def worker(
                 build=build, work=packages, variant=variant, local=True
             )
         )
-        packed = True
+        required_archives = [
+            packages / f"{variant}-{platform_target}.tgz"
+            for platform_target in SETTINGS["targets"]
+        ] + [packages / f"wrapper-{variant}.tgz"]
+        packed = not packages_from or all(path.is_file() for path in required_archives)
         for directory in directories:
             archive = packages / f"{directory.name}.tgz"
             result = command(
@@ -134,10 +138,13 @@ def worker(
                 "pass"
                 if clients
                 and all(item["status"] == "pass" for item in clients.values())
-                else "fail"
+                else "fail" if packed else "unverified"
             ),
             "clients": clients,
             "packing_commands": entries,
+            "missing_archives": [
+                str(path) for path in required_archives if not path.is_file()
+            ],
             "installation": (
                 "local npm wrapper with optional os/cpu tarball dependencies; "
                 "fresh caches; ignore-scripts"
@@ -145,6 +152,64 @@ def worker(
         }
         write_json(path=work / f"worker-{variant}.json", value=results[variant])
     return results
+
+
+def firewall_program(path: Path) -> dict[str, Any]:
+    """Resolve existing long-path identity before appending future install paths.
+
+    Args:
+        path: Explicit probe, client or future payload executable only.
+
+    Returns:
+        Requested and resolved identities for public command evidence.
+
+    Raises:
+        OSError: If an existing ancestor cannot be resolved.
+        ValueError: For UNC, device, short-alias or non-executable identities.
+    """
+    ancestor = path
+    suffix: list[str] = []
+    while not ancestor.exists():
+        if ancestor.parent == ancestor:
+            raise ValueError(f"no existing program ancestor: {path}")
+        suffix.insert(0, ancestor.name)
+        ancestor = ancestor.parent
+    # On Windows resolve(strict=True) uses a handle to expand RUNNER~1 and other
+    # 8.3 aliases. Resolve the existing ancestor, not a not-yet-installed file.
+    full = ancestor.resolve(strict=True).joinpath(*suffix)
+    program = str(full)
+    parsed = PureWindowsPath(program)
+    if (
+        not parsed.is_absolute()
+        or not is_local_windows_drive(parsed.drive)
+        or parsed.suffix.lower() != ".exe"
+        or any(c in program for c in ("~", "*", "?", "\x00", "\r", "\n"))
+    ):
+        raise ValueError(f"unsafe firewall program identity: {program}")
+    return {
+        "requested": str(path),
+        "program": program,
+        "existing_ancestor": str(ancestor.resolve(strict=True)),
+        "future_suffix": suffix,
+        "exists": path.is_file(),
+    }
+
+
+def is_local_windows_drive(drive: str) -> bool:
+    """Accept only an absolute local Windows drive, never UNC/device scopes.
+
+    Args:
+        drive: PureWindowsPath drive component.
+
+    Returns:
+        Whether the drive is a single ASCII letter and colon.
+    """
+    return (
+        len(drive) == 2
+        and drive[0].isascii()
+        and drive[0].isalpha()
+        and drive[1] == ":"
+    )
 
 
 def measure_offline(
@@ -279,15 +344,28 @@ def measure_offline(
                             / "payload"
                         )
                         programs.add(runtime(root=payload, variant=variant)[0])
+                try:
+                    identities = [firewall_program(Path(p)) for p in sorted(programs)]
+                except (OSError, ValueError) as error:
+                    for result in results.values():
+                        result["reason"] = (
+                            f"firewall program normalization failed: {error}"
+                        )
+                    return results
+                for result in results.values():
+                    result["firewall_programs"] = identities
                 literals = ",".join(
-                    "'" + p.replace("'", "''") + "'" for p in sorted(programs)
+                    "'" + item["program"].replace("'", "''") + "'"
+                    for item in identities
                 )
                 created = command(
                     argv=[
                         *firewall,
                         (
                             "$ErrorActionPreference='Stop'; "
-                            f"@({literals}) | ForEach-Object {{ New-NetFirewallRule "
+                            f"@({literals}) | ForEach-Object {{ "
+                            "Write-Output ('firewall program: ' + $_); "
+                            "New-NetFirewallRule "
                             f"-DisplayName '{name}' -Direction Outbound "
                             "-Action Block -Profile Any -Program $_ "
                             "-ErrorAction Stop }; "
@@ -299,6 +377,20 @@ def measure_offline(
                 )
                 if created["exit"] == 0:
                     prefixes = [[]]
+                else:
+                    for result in results.values():
+                        result["reason"] = (
+                            f"firewall setup failed (exit {created['exit']}): "
+                            + (
+                                created.get("stderr", "").strip()
+                                or created.get("error", "no diagnostic")
+                            )
+                        )
+            else:
+                for result in results.values():
+                    result["reason"] = (
+                        "PowerShell unavailable for scoped firewall setup"
+                    )
         chosen = None
         proved = False
         for prefix in prefixes:
@@ -395,7 +487,9 @@ def measure_offline(
             if removed["exit"] != 0:
                 for result in results.values():
                     result.update(
-                        status="unverified", reason="firewall cleanup not verified"
+                        status="unverified",
+                        reason=f"{result.get('reason') or 'restriction measured'}; "
+                        "firewall cleanup not verified",
                     )
     return results
 

@@ -58,10 +58,8 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
         ValueError: On digest, inventory, path, or closure violations.
         OSError: If inputs or the destination cannot be used.
     """
-    index_bytes = (fixture / "index.json").read_bytes()
-    archive = (fixture / "artifact.tar").read_bytes()
-    if len(index_bytes) > LIMIT or len(archive) > LIMIT:
-        raise ValueError("fixture too large")
+    index_bytes = read_fixture(fixture / "index.json")
+    archive = read_fixture(fixture / "artifact.tar")
     index = json.loads(index_bytes.decode("utf-8"))
     if not isinstance(index, dict) or set(index) != {"sha256", "capabilities"}:
         raise ValueError("invalid index")
@@ -132,6 +130,10 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
             name = safe_path(member.name)
             if (
                 member.type not in {tarfile.REGTYPE, tarfile.AREGTYPE}
+                or any(
+                    byte >= 0x80
+                    for byte in archive[member.offset : member.offset + 512]
+                )
                 or member.pax_headers
                 or name not in files
                 or name in contents
@@ -159,6 +161,26 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(content.encode("utf-8"))
     return output
+
+
+def read_fixture(path: Path) -> bytes:
+    """Bound allocation before parsing or hashing even growing input files.
+
+    Args:
+        path: Untrusted local fixture input.
+
+    Returns:
+        At most LIMIT bytes.
+
+    Raises:
+        ValueError: If the input exceeds the fixture budget.
+        OSError: If the input cannot be read.
+    """
+    with path.open("rb") as stream:
+        data = stream.read(LIMIT + 1)
+    if len(data) > LIMIT:
+        raise ValueError("fixture too large")
+    return data
 
 
 def main() -> int:

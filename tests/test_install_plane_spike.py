@@ -11,6 +11,8 @@ import shutil
 import subprocess  # nosec B404 - fixed local prototypes, no shell or network
 import sys
 import tarfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
 
@@ -209,7 +211,15 @@ def test_spike_runtime_parity(spike_fixture: Path, tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "mutation", ["bom-index", "bad-trailer", "extra-member", "pax-header", "gnu-header"]
+    "mutation",
+    [
+        "bom-index",
+        "bad-trailer",
+        "extra-member",
+        "pax-header",
+        "gnu-header",
+        "high-bit-header",
+    ],
 )
 def test_shared_malformed_inputs_fail_closed(
     spike_fixture: Path, tmp_path: Path, mutation: str
@@ -223,6 +233,12 @@ def test_shared_malformed_inputs_fail_closed(
         archive = archive_path.read_bytes()
         if mutation == "bad-trailer":
             archive = archive[:-1] + b"x"
+        elif mutation == "high-bit-header":
+            header = bytearray(archive[:512])
+            header[0] |= 0x80
+            header[148:156] = b" " * 8
+            header[148:156] = f"{sum(header):06o}\0 ".encode()
+            archive = bytes(header) + archive[512:]
         else:
             buffer = io.BytesIO()
             with tarfile.open(
@@ -271,12 +287,16 @@ def test_shared_malformed_inputs_fail_closed(
 
 
 @pytest.fixture
-def measurement() -> ModuleType:
+def measurement(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     """Import measurement helpers directly from this checkout.
+
+    Args:
+        monkeypatch: Reversible local helper import path.
 
     Returns:
         The spike's stdlib-only command and observation helpers.
     """
+    monkeypatch.syspath_prepend(str(SPIKE / "scripts"))
     spec = importlib.util.spec_from_file_location(
         "spike_measurement",
         SPIKE / "scripts/common.py",
@@ -350,3 +370,90 @@ def test_spike_fixture_drift_gate() -> None:
         timeout=10,
     )
     assert_that(result.returncode).described_as(result.stdout + result.stderr).is_zero()
+
+
+@pytest.mark.parametrize("filename", ["index.json", "artifact.tar"])
+def test_fixture_read_is_bounded_before_parse_or_hash(
+    prototype: ModuleType,
+    spike_fixture: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    filename: str,
+) -> None:
+    """A sparse oversized input consumes only LIMIT+1 bytes and performs no parsing."""
+    path = spike_fixture / filename
+    with path.open("wb") as stream:
+        stream.truncate(64 * prototype.LIMIT)
+    original_open = Path.open
+    reads: list[tuple[int, int]] = []
+
+    @contextmanager
+    def opened(
+        file: Path,
+        mode: str = "r",
+        buffering: int = -1,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> Iterator[object]:
+        """Observe real file reads without allocating the full sparse input.
+
+        Args:
+            file: File opened by the installer.
+            mode: Original open mode.
+            buffering: Original buffering option.
+            encoding: Original encoding.
+            errors: Original decoder error handling.
+            newline: Original newline handling.
+
+        Yields:
+            Real stream or a size-observing read boundary.
+        """
+        with original_open(
+            file,
+            mode=mode,
+            buffering=buffering,
+            encoding=encoding,
+            errors=errors,
+            newline=newline,
+        ) as stream:
+            if file != path:
+                yield stream
+                return
+
+            def read(size: int = -1) -> bytes:
+                """Check the bound before allowing any allocation.
+
+                Args:
+                    size: Requested read budget.
+
+                Returns:
+                    Real bounded file bytes.
+                """
+                assert_that(size).is_between(0, prototype.LIMIT + 1)
+                data = stream.read(size)
+                if not isinstance(data, bytes):
+                    pytest.fail("fixture stream was not binary")
+                reads.append((size, len(data)))
+                return data
+
+            from types import SimpleNamespace
+
+            yield SimpleNamespace(read=read)
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        """Reject parsing/hashing before input bounds are checked.
+
+        Args:
+            args: Ignored parser input.
+            kwargs: Ignored parser options.
+        """
+        pytest.fail("oversized fixture reached parsing or hashing")
+
+    monkeypatch.setattr(Path, "open", opened)
+    monkeypatch.setattr(prototype.json, "loads", forbidden)
+    monkeypatch.setattr(prototype.hashlib, "sha256", forbidden)
+    with pytest.raises(ValueError, match="fixture too large"):
+        prototype.install(fixture=spike_fixture, home=tmp_path, exclude="fixture:drop")
+    assert_that(reads).is_equal_to([(prototype.LIMIT + 1, prototype.LIMIT + 1)])
+    assert_that((tmp_path / ".spike-target").exists()).is_false()

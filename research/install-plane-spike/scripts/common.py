@@ -7,12 +7,13 @@ import hashlib
 import json
 import os
 import platform
-import signal
 import subprocess  # nosec B404 - experiment commands use explicit argv, never a shell
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
+
+from process_tree import process_tree_options, stop_process_tree
 
 SPIKE = Path(__file__).resolve().parents[1]
 REPO = SPIKE.parents[1]
@@ -88,35 +89,12 @@ def command(
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            start_new_session=os.name != "nt",
-            creationflags=(
-                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                if os.name == "nt"
-                else 0
-            ),
+            **process_tree_options(),
         )
         try:
             stdout, stderr = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            # Kill descendants too: npm.cmd/Node may otherwise retain pipe handles.
-            if os.name == "nt":
-                try:
-                    killed = subprocess.run(  # nosec B603 - fixed Windows tree cleanup
-                        args=["taskkill.exe", "/PID", str(process.pid), "/T", "/F"],
-                        capture_output=True,
-                        timeout=10,
-                        check=False,
-                    )
-                    result["tree_termination_exit"] = killed.returncode
-                except (subprocess.TimeoutExpired, OSError) as error:
-                    result["tree_termination_error"] = type(error).__name__
-                finally:
-                    process.kill()
-            else:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+            result["tree_termination"] = stop_process_tree(process)
             try:
                 stdout, stderr = process.communicate(timeout=10)
             except subprocess.TimeoutExpired:
@@ -312,6 +290,36 @@ def run_payload(
     cache.write_text("cache directory intentionally unavailable", encoding="utf-8")
     env = isolated_env(home)
     env.update(XDG_CACHE_HOME=str(cache), BUN_INSTALL_CACHE_DIR=str(cache))
+    # cwd=HOME below: check Windows current-directory search there too, never in
+    # the collector cwd. Use PATHEXT from the explicit consumer environment.
+    names = {"node", "bun"}
+    if os.name == "nt":
+        names.update(
+            tool + suffix.strip().lower()
+            for tool in ("node", "bun")
+            for suffix in env.get("PATHEXT", ".EXE;.CMD;.BAT;.COM").split(";")
+        )
+    directories = [home] if os.name == "nt" else []
+    for directory in env["PATH"].split(os.pathsep):
+        path = Path(directory.strip('"')) if directory else home
+        directories.append(path if path.is_absolute() else home / path)
+    resolved_tools = {}
+    for name in sorted(names):
+        resolved_tools[name] = next(
+            (
+                str(directory / name)
+                for directory in directories
+                if (directory / name).is_file()
+                and (os.name == "nt" or os.access(directory / name, os.X_OK))
+            ),
+            None,
+        )
+    if any(resolved_tools.values()):
+        return {
+            "status": "fail",
+            "reason": "Node/Bun still resolvable",
+            "resolved_tools": resolved_tools,
+        }
     result = command(
         argv=[
             *runtime(root=root, variant=variant),
@@ -344,6 +352,7 @@ def run_payload(
         "seconds": result["seconds"],
         "exit": result["exit"],
         "PATH": env["PATH"],
+        "resolved_tools": resolved_tools,
         "cache_directory_blocked": True,
         "other_HOME_files": [
             p.relative_to(home).as_posix()

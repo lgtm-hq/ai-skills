@@ -79,11 +79,26 @@ provisional until that spike concludes.
 The throwaway prototypes and collector live under
 `research/install-plane-spike/`; the distribution report in
 `docs/research/install-plane-distribution.md` records methods, actual observations,
-limitations and the outstanding checklist.
-The first hosted [PR-triggered run](https://github.com/lgtm-hq/ai-skills/actions/runs/41284689759)
-failed. It produced Linux/macOS JSON, but Windows tests stopped collection.
-Registry setup and Linux cleanup defects invalidate those portions as runtime
-comparisons. Revision 2 repairs the collector; it makes no runtime decision.
+limitations and concrete remaining experiments.
+The inspected R2 [PR-triggered run](https://github.com/lgtm-hq/ai-skills/actions/runs/41288233178)
+succeeded at `1e5bdc76acf9e5667c19b2425a0c5c4676b90f11`, producing ten native
+JSONs plus two dedicated Linux offline JSONs. Registry and no-Node pass on all five
+targets for both variants and both registry clients. Linux/macOS offline fails
+for both variants: Bun selects incompatible platform packages, while npm passes.
+The network-unrestricted control uses the same tarballs and the same `--offline`
+flags and reproduces the failure. Windows firewall setup fails with Error 87;
+cleanup is verified but restricted installation is unverified. The dedicated
+Harden Runner result also remains unverified. Exact security/signature outputs
+and footprint are in the report. None of this establishes equal deployability.
+
+The workflow is already registered; the parent's genuine
+[workflow_dispatch run](https://github.com/lgtm-hq/ai-skills/actions/runs/41290059704)
+at the same R2 head disproves the prior default-branch-registration blocker.
+Inspection confirms it completed successfully with twelve retained JSONs, matching
+heads and a clean tree. Its scenario outcomes reproduce the PR run, including the
+Windows setup failure and offline limitations. It does not validate the later R3
+source fixes. No bootstrap PR is needed; dispatch collection acceptance is met at
+R2, while scenario and decision gaps remain.
 
 The existing escape hatch names these decision-bearing restrictions, evaluated
 for **both variants on all five supported targets**:
@@ -95,7 +110,8 @@ for **both variants on all five supported targets**:
   removed from PATH and no consumer Python/uv/pip/runtime fetch.
 - **Offline:** Bun and npm separately install the same local tarballs using fresh
   caches and identical flags, with verified egress denial, then execute verified
-  payloads. The unrestricted installer control distinguishes package-manager
+  payloads. A network-unrestricted control with identical `--offline` flags
+  distinguishes package-manager
   selection failures from failures introduced by the restriction. Both count as
   observations; a failed control never turns a restricted failure into a pass.
 
@@ -133,7 +149,8 @@ Proposed remains until fresh hosted JSON for every supported target/client has
 been inspected, a true green **workflow_dispatch** run at the reviewed ref and raw
 evidence are linked, and owner criteria permit applying the rule above. A green
 collection job may contain truthful scenario failures. PR-triggered collection
-cannot satisfy dispatch acceptance. Reviewed default-branch registration and the
-subsequent dispatch belong to the parent. Update this ADR and its index together
+cannot satisfy dispatch acceptance. Dispatch is already possible; inspected final
+status and artifacts, rather than registration assumptions, establish that gate.
+Update this ADR and its index together
 only when the evidence supports a decision, then reconcile #566/#567/#578/#386.
 No production runtime changes in this spike.

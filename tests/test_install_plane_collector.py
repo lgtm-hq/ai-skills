@@ -37,6 +37,7 @@ def collector(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ModuleType]
         "quarantine",
         "measure",
         "pins",
+        "process_tree",
     )
     saved = {name: sys.modules.pop(name) for name in names if name in sys.modules}
     try:
@@ -49,6 +50,7 @@ def collector(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ModuleType]
             "quarantine": importlib.import_module("quarantine"),
             "measure": importlib.import_module("measure"),
             "pins": importlib.import_module("pins"),
+            "process_tree": importlib.import_module("process_tree"),
         }
         for module in modules.values():
             if module.__file__ is None:
@@ -255,6 +257,8 @@ def test_registry_account_failure_is_sanitized_evidence(
                 TimeoutError: If the selected account read times out.
             """
             if ping and stage != "readiness":
+                if requests.count("GET") == 1:
+                    raise ConnectionRefusedError("startup pending")
                 return b"{}"
             if isinstance(body, TimeoutError):
                 raise body
@@ -292,6 +296,15 @@ def test_registry_account_failure_is_sanitized_evidence(
         ),
     )
     monkeypatch.setattr(registry.shutil, "which", lambda _: "/fake/bun")
+    monkeypatch.setattr(registry, "command", lambda **_: {"exit": 0})
+    monkeypatch.setattr(
+        registry,
+        "stop_process_tree",
+        lambda _: {
+            "status": "unverified" if stage == "kill-timeout" else "pass",
+            "error": "TimeoutExpired" if stage == "kill-timeout" else None,
+        },
+    )
 
     def wait(**kwargs: Any) -> None:
         """Model a server that can fail both bounded shutdown waits.
@@ -315,10 +328,17 @@ def test_registry_account_failure_is_sanitized_evidence(
             Fake server process.
         """
         env = kwargs["env"]
+        assert_that(kwargs["start_new_session"]).is_equal_to(sys.platform != "win32")
+        assert_that(kwargs["creationflags"]).is_equal_to(
+            getattr(registry.subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            if sys.platform == "win32"
+            else 0
+        )
         for key in ("TMPDIR", "TEMP", "TMP"):
             assert_that(env[key]).is_equal_to(str(setup_temp))
         assert_that(env["NPM_CONFIG_CACHE"]).starts_with(str(tmp_path / "server-env"))
         return SimpleNamespace(
+            pid=99999999,
             returncode=0,
             poll=lambda: None,
             terminate=lambda: None,
@@ -328,13 +348,22 @@ def test_registry_account_failure_is_sanitized_evidence(
 
     monkeypatch.setattr(registry.subprocess, "Popen", popen)
     result = registry.measure_registry(build=tmp_path / "build", work=tmp_path)
-    assert_that(result["ts"]["status"]).is_equal_to("fail")
-    assert_that(result["py"]["status"]).is_equal_to("fail")
+    for variant in ("ts", "py"):
+        assert_that(result[variant]["status"]).is_equal_to("fail")
     assert_that(result["server"]).is_not_empty()
     assert_that(json.dumps(result)).does_not_contain(password)
     assert_that((tmp_path / "registry-evidence.json").is_file()).is_true()
+    if stage != "readiness":
+        ready = next(
+            item
+            for item in result["server"]
+            if item.get("operation") == "registry readiness"
+        )
+        assert_that(ready).does_not_contain_key("error")
     if stage == "kill-timeout":
-        assert_that(result["server"][-1]["termination"]).contains("TimeoutExpired")
+        assert_that(result["server"][-1]["termination"]["error"]).is_equal_to(
+            "TimeoutExpired"
+        )
 
 
 @pytest.mark.parametrize(
@@ -390,6 +419,7 @@ def test_collector_failure_does_not_erase_other_scenarios(
 ) -> None:
     """Even an unexpected registry error preserves completed offline/security JSON."""
     measure = collector["measure"]
+    monkeypatch.setenv("SPIKE_SOURCE_SHA", "test-head")
     build, results = tmp_path / "build", tmp_path / "results"
     for variant in ("ts", "py"):
         (build / variant).mkdir(parents=True)
@@ -435,11 +465,13 @@ def test_collector_failure_does_not_erase_other_scenarios(
 
 
 @pytest.mark.parametrize("cleanup_exit", [0, 1])
+@pytest.mark.parametrize("setup_exit", [0, 1])
 def test_firewall_is_scoped_and_cleanup_verified(
     collector: dict[str, ModuleType],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     cleanup_exit: int,
+    setup_exit: int,
 ) -> None:
     """Windows rules cannot block the runner and removal failures remain visible."""
     offline = collector["offline"]
@@ -448,6 +480,9 @@ def test_firewall_is_scoped_and_cleanup_verified(
     )
     monkeypatch.setattr(offline.platform, "system", lambda: "Windows")
     monkeypatch.setattr(offline.shutil, "which", lambda name: f"C:/{name}.exe")
+    monkeypatch.setattr(
+        offline, "firewall_program", lambda path: {"program": str(path)}
+    )
     calls: list[list[str]] = []
 
     def fake_command(**kwargs: Any) -> dict[str, Any]:
@@ -469,6 +504,14 @@ def test_firewall_is_scoped_and_cleanup_verified(
                 "stdout": "rules absent" if cleanup_exit == 0 else "",
                 "stderr": "",
             }
+        elif "New-NetFirewallRule" in argv[-1]:
+            record = {
+                "exit": setup_exit,
+                "stdout": "one rule created",
+                "stderr": (
+                    "Windows System Error 87,New-NetFirewallRule" if setup_exit else ""
+                ),
+            }
         else:
             record = {"exit": 0, "stdout": "", "stderr": ""}
         kwargs["records"].append(record)
@@ -482,7 +525,15 @@ def test_firewall_is_scoped_and_cleanup_verified(
     assert_that(observed["ts"]["cleanup"]["status"]).is_equal_to(
         "verified removed" if cleanup_exit == 0 else "unverified removal"
     )
-    assert_that(observed["ts"]["denial_proven"]).is_true()
+    assert_that(observed["ts"]["denial_proven"]).is_equal_to(setup_exit == 0)
+    if setup_exit:
+        assert_that(observed["ts"]["status"]).is_equal_to("unverified")
+        assert_that(any("--worker" in argv for argv in calls)).is_false()
+        assert_that(observed["ts"]).does_not_contain_key("restricted_probe")
+        if cleanup_exit == 0:
+            assert_that(observed["ts"]["reason"]).contains(
+                "Windows System Error 87", "exit 1"
+            )
     if cleanup_exit:
         assert_that(observed["ts"]["status"]).is_equal_to("unverified")
 
@@ -831,6 +882,7 @@ def test_cleanup_failure_still_exports_evidence(
     import contextlib
 
     measure = collector["measure"]
+    monkeypatch.setenv("SPIKE_SOURCE_SHA", "head")
     summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     work = tmp_path / "work"
@@ -891,3 +943,309 @@ def test_json_evidence_has_utf8_and_lf_bytes(
     collector["common"].write_json(path=path, value={"text": "\ufeffkeep"})
     assert_that(path.read_bytes()).does_not_contain(b"\r")
     assert_that(json.loads(path.read_bytes())["text"]).is_equal_to("\ufeffkeep")
+
+
+@pytest.mark.parametrize("force_fails", [False, True])
+def test_posix_tree_shutdown_records_force_and_reap(
+    collector: dict[str, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    force_fails: bool,
+) -> None:
+    """A parent wait alone cannot certify live descendants, including reap errors."""
+    tree = collector["process_tree"]
+    monkeypatch.setattr(tree, "os", SimpleNamespace(name="posix"))
+    monkeypatch.setattr(tree, "signal", SimpleNamespace(SIGTERM=15, SIGKILL=9))
+    signals: list[int] = []
+    state = {"present": True, "waits": 0}
+
+    def killpg(pid: int, sig: int) -> None:
+        """Model the owned group surviving TERM and optionally surviving KILL.
+
+        Args:
+            pid: Explicit owned process group.
+            sig: Requested signal, zero for observation.
+
+        Raises:
+            ProcessLookupError: Once the group disappears.
+        """
+        assert_that(pid).is_equal_to(31415)
+        if sig:
+            signals.append(sig)
+            if sig == tree.signal.SIGKILL and not force_fails:
+                state["present"] = False
+        if not state["present"]:
+            raise ProcessLookupError
+
+    def wait(*, timeout: float) -> None:
+        """Model bounded parent reap, independent of group survival.
+
+        Args:
+            timeout: Bounded wait.
+
+        Raises:
+            TimeoutExpired: During the failed forced-reap case.
+        """
+        state["waits"] += 1
+        if force_fails:
+            raise tree.subprocess.TimeoutExpired("fake", timeout)
+
+    monkeypatch.setattr(tree.os, "killpg", killpg, raising=False)
+    result = tree.stop_process_tree(
+        SimpleNamespace(pid=31415, returncode=None if force_fails else 0, wait=wait),
+        grace=0,
+        forced=0,
+    )
+    assert_that(signals).is_equal_to([tree.signal.SIGTERM, tree.signal.SIGKILL])
+    assert_that(result["status"]).is_equal_to("unverified" if force_fails else "pass")
+    assert_that(result["parent_reaped"]).is_equal_to(not force_fails)
+    assert_that(state["waits"]).is_equal_to(2)
+
+
+@pytest.mark.parametrize("force_fails", [False, True])
+def test_windows_tree_shutdown_is_pid_scoped(
+    collector: dict[str, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    force_fails: bool,
+) -> None:
+    """Windows escalation uses taskkill /T and records rejected/failed cleanup."""
+    tree = collector["process_tree"]
+    # Patch only the helper module's OS view; pathlib/pytest keep their real OS.
+    monkeypatch.setattr(tree, "os", SimpleNamespace(name="nt"))
+    calls = []
+
+    def run(**kwargs: Any) -> SimpleNamespace:
+        """Reject graceful cleanup, then optionally accept forced tree kill.
+
+        Args:
+            kwargs: Fixed taskkill invocation.
+
+        Returns:
+            Exact cleanup command outcome.
+        """
+        calls.append(kwargs["args"])
+        return SimpleNamespace(
+            returncode=1 if force_fails or "/F" not in kwargs["args"] else 0,
+            stdout=b"cleanup",
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(tree.subprocess, "run", run)
+    result = tree.stop_process_tree(
+        SimpleNamespace(pid=31415, returncode=0, wait=lambda **_: None),
+        grace=0,
+        forced=0,
+    )
+    assert_that(calls).is_equal_to(
+        [
+            ["taskkill.exe", "/PID", "31415", "/T"],
+            ["taskkill.exe", "/PID", "31415", "/T", "/F"],
+        ]
+    )
+    assert_that(result["status"]).is_equal_to("unverified" if force_fails else "pass")
+    assert_that(result["actions"][-1]["stdout"]).is_equal_to("cleanup")
+
+
+def test_local_server_tree_shutdown_reaps_child(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+) -> None:
+    """A harmless local server stand-in launches a child and shuts down as a tree."""
+    import subprocess  # nosec B404 - fixed local Python process-tree probe
+
+    tree = collector["process_tree"]
+    code = (
+        "import subprocess,sys,signal,time\n"
+        "child=subprocess.Popen([sys.executable,'-I','-c',"
+        "'import time; time.sleep(30)'])\n"
+        "def stop(*_):\n"
+        " child.wait(timeout=2)\n"
+        " sys.exit(0)\n"
+        "signal.signal(signal.SIGTERM,stop)\n"
+        "print(child.pid,flush=True)\n"
+        "time.sleep(30)\n"
+    )
+    with subprocess.Popen(  # nosec B603 - fixed local Python, no dependencies/network
+        args=[sys.executable, "-I", "-c", code],
+        cwd=tmp_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        **tree.process_tree_options(),
+    ) as process:
+        try:
+            if process.stdout is None:
+                pytest.fail("missing child readiness pipe")
+            child = int(process.stdout.readline())
+            result = tree.stop_process_tree(process)
+            assert_that(result["parent_reaped"]).is_true()
+            assert_that(result["status"]).described_as(str(result)).is_equal_to("pass")
+            if sys.platform != "win32":
+                import os
+
+                with pytest.raises(ProcessLookupError):
+                    os.kill(child, 0)
+        finally:
+            if process.poll() is None:
+                tree.stop_process_tree(process, grace=0, forced=1)
+
+
+def test_missing_reused_tarballs_do_not_start_installers(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed control's absent archives leave restricted installation unverified."""
+    offline = collector["offline"]
+    monkeypatch.setattr(offline, "identity", lambda: {"effective_uid": 123})
+    monkeypatch.setattr(offline.shutil, "which", lambda _: "/fake/bun")
+    monkeypatch.setattr(
+        offline,
+        "install_client",
+        lambda **_: pytest.fail("missing tarballs reached installer"),
+    )
+    result = offline.worker(
+        build=tmp_path, work=tmp_path / "restricted", packages_from=tmp_path / "control"
+    )
+    for item in result.values():
+        assert_that(item["status"]).is_equal_to("unverified")
+        assert_that(item["missing_archives"]).is_length(6)
+        assert_that(item["clients"]).is_empty()
+
+
+@pytest.mark.parametrize(
+    "full_parent",
+    ["C:/Users/runneradmin/Temp", "C:/Users/RUNNER~1/Temp", "//server/share/Temp"],
+)
+def test_firewall_resolves_existing_ancestor_before_future_suffix(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    full_parent: str,
+) -> None:
+    """Resolve an existing ancestor; reject remaining short aliases and UNC paths."""
+    from pathlib import PureWindowsPath
+
+    monkeypatch.setattr(
+        Path, "resolve", lambda path, *, strict: PureWindowsPath(full_parent)
+    )
+    path = (
+        tmp_path
+        / "installs/client/node_modules/@spike/ts-windows-x64/payload/spike.exe"
+    )
+    if "~" in full_parent or full_parent.startswith("//"):
+        with pytest.raises(ValueError, match="unsafe firewall program"):
+            collector["offline"].firewall_program(path)
+    else:
+        result = collector["offline"].firewall_program(path)
+        assert_that(result["program"]).is_equal_to(
+            str(PureWindowsPath(full_parent) / path.relative_to(tmp_path))
+        )
+        assert_that(result["exists"]).is_false()
+        assert_that(result["future_suffix"][0]).is_equal_to("installs")
+
+
+def test_source_head_mismatch_exports_invalid_evidence_without_scenarios(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A wrong checkout fails closed before starting any measurement."""
+    measure = collector["measure"]
+    monkeypatch.setenv("SPIKE_SOURCE_SHA", "expected-head")
+    monkeypatch.setattr(
+        measure, "command", lambda **_: {"exit": 0, "stdout": "wrong-head"}
+    )
+    monkeypatch.setattr(
+        measure, "measure_offline", lambda **_: pytest.fail("invalid checkout measured")
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "measure.py",
+            "--build",
+            str(tmp_path / "build"),
+            "--results",
+            str(tmp_path / "results"),
+        ],
+    )
+    with pytest.raises(ValueError, match="source head"):
+        measure.main()
+    for path in (tmp_path / "results").glob("*.json"):
+        result = json.loads(path.read_bytes())
+        assert_that(result["status"]).is_equal_to("invalid")
+        assert_that(result).does_not_contain_key("offline")
+
+
+def test_no_node_gate_rejects_resolvable_tool_before_execution(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No-Node evidence cannot pass if environment filtering leaves an executable."""
+    common = collector["common"]
+    node = tmp_path / ("node.exe" if sys.platform == "win32" else "node")
+    node.write_bytes(b"not executed")
+    node.chmod(0o755)
+    monkeypatch.setattr(
+        common,
+        "isolated_env",
+        lambda _: {"PATH": str(tmp_path), "PATHEXT": ".EXE;.CMD"},
+    )
+    monkeypatch.setattr(
+        common, "command", lambda **_: pytest.fail("resolvable tool reached payload")
+    )
+    result = common.run_payload(
+        root=tmp_path, variant="ts", home=tmp_path / "home", records=[]
+    )
+    assert_that(result["status"]).is_equal_to("fail")
+    assert_that(result["reason"]).contains("still resolvable")
+
+
+@pytest.mark.parametrize(
+    "scan_exit,output,expected",
+    [
+        (0, "Scan found no threats.", "measured"),
+        (2, "Threat detected", "fail"),
+        (5, "engine error", "unverified"),
+    ],
+)
+def test_windows_quarantine_summary_reflects_scan(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scan_exit: int,
+    output: str,
+    expected: str,
+) -> None:
+    """Direct execution success cannot hide a Defender threat or unknown scan."""
+    quarantine = collector["quarantine"]
+    monkeypatch.setattr(quarantine, "os", SimpleNamespace(name="nt", environ={}))
+    monkeypatch.setattr(quarantine.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(quarantine.shutil, "which", lambda _: "powershell.exe")
+    monkeypatch.setattr(Path, "is_file", lambda p: p.name == "MpCmdRun.exe")
+    monkeypatch.setattr(quarantine, "run_payload", lambda **_: {"status": "pass"})
+
+    def command(**kwargs: Any) -> dict[str, Any]:
+        """Supply engine, marking and scan output without a Windows invocation.
+
+        Args:
+            kwargs: Measured native command arguments.
+
+        Returns:
+            Explicit engine and selected scan outcome.
+        """
+        argv = kwargs["argv"]
+        if "-Scan" in argv:
+            return {"exit": scan_exit, "stdout": output, "stderr": ""}
+        return {
+            "exit": 0,
+            "stdout": json.dumps({"AMServiceEnabled": True, "AntivirusEnabled": True}),
+        }
+
+    monkeypatch.setattr(quarantine, "command", command)
+    result = quarantine.measure_quarantine(
+        root=tmp_path, variant="ts", home=tmp_path / "home"
+    )
+    assert_that(result["status"]).is_equal_to(expected)
+    assert_that(result["execution_status"]).is_equal_to("pass")
+    assert_that(result["security_enforcement"]).starts_with("unverified")

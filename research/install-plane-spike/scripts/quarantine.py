@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 import shutil
@@ -22,8 +23,6 @@ def defender_status(*, scan: dict[str, Any], engine: dict[str, Any]) -> str:
     Returns:
         clean, threat or unverified. Exit 2 alone can also mean remediation failure.
     """
-    import json
-
     try:
         health = json.loads(engine["stdout"])
         enabled = engine["exit"] == 0 and all(
@@ -210,7 +209,11 @@ def measure_quarantine(*, root: Path, variant: str, home: Path) -> dict[str, Any
             result["reason"] = "Mark-of-the-Web write/read failed (see exact output)"
             return result
         result.update(
-            status="measured",
+            status=(
+                "measured"
+                if result["defender"] == "clean"
+                else "fail" if result["defender"] == "threat" else "unverified"
+            ),
             execution=run_payload(
                 root=root, variant=variant, home=home, records=records
             ),

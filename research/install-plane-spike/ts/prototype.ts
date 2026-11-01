@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, open, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const LIMIT = 1024 * 1024;
@@ -54,6 +54,7 @@ function untar(archive: Buffer): Map<string, Buffer> {
       }
       return output;
     }
+    if (header.some((byte) => byte >= 0x80)) throw new Error("non-ASCII archive header");
     const field = (start: number, end: number): string =>
       header.subarray(start, end).toString("ascii").replace(/\0.*$/s, "");
     const sizeText = field(124, 136).trim();
@@ -92,9 +93,8 @@ export async function install({
   home: string;
   exclude: string;
 }): Promise<Record<string, string>> {
-  const indexBytes = await readFile(join(fixture, "index.json"));
-  const archive = await readFile(join(fixture, "artifact.tar"));
-  if (indexBytes.length > LIMIT || archive.length > LIMIT) throw new Error("fixture too large");
+  const indexBytes = await readFixture(join(fixture, "index.json"));
+  const archive = await readFixture(join(fixture, "artifact.tar"));
   const index = record(JSON.parse(indexBytes.toString("utf8")) as unknown);
   keys(index, ["sha256", "capabilities"]);
   if (digest(archive) !== index.sha256) throw new Error("archive digest mismatch");
@@ -171,6 +171,23 @@ export async function install({
     await writeFile(destination, content);
   }
   return output;
+}
+
+async function readFixture(path: string): Promise<Buffer> {
+  const handle = await open(path, "r");
+  try {
+    const buffer = Buffer.alloc(LIMIT + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, null);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset > LIMIT) throw new Error("fixture too large");
+    return buffer.subarray(0, offset);
+  } finally {
+    await handle.close();
+  }
 }
 
 if (import.meta.main) {
