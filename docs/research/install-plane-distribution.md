@@ -246,6 +246,30 @@ check stdout **and installed bytes**. Portable paths, excluded inventory, closur
 BOM rejection on the index and malformed archives fail before destination writes.
 The co-located index is not authenticated; production contracts remain M6/M7 work.
 
+Per the 2026-11-01 owner decision, the large harness moved from root `tests/` to
+`research/install-plane-spike/tests/`. The dedicated
+`.github/workflows/install-plane-spike.yml` runs it through
+`research/install-plane-spike/scripts/test-ci.sh` on every OS in its native matrix,
+including the shared golden-fixture and cross-runtime parity checks. Those two
+test bodies live only in `tests/test_install_plane_parity.py`, which also runs in
+normal main CI; runtime parity skips cleanly when Bun is absent. Both suites import
+shared fixture helpers from `research/install-plane-spike/tests/spike_helpers.py`.
+Root pytest discovery is restricted to `tests/`, so ordinary PRs do not collect
+the research harness. Prototypes, fixtures, scripts, this report and ADR 0008
+remain in the repository.
+
+The workflow's `changes` job compares every changed PR file, including deletions
+and both sides of renames, against the committed glob list
+`research/install-plane-spike/harness-inputs.txt`. This covers the entire harness
+input closure, including local modules, conftests, shared helpers, scripts,
+fixtures, settings, `.gitattributes`, `pyproject.toml` and dependency/tool pins.
+The small root `tests/test_install_plane_inputs.py` guard resolves local imports
+and literal file references statically and rejects inputs missing from that list.
+The same native matrix and artifact uploads run nightly at 03:17 UTC, on manual
+dispatch and for every PR with a `release/` head branch regardless of its diff.
+A release PR is mergeable only with a green spike run on its current head; the
+orchestrator enforces this at merge time.
+
 The inspected R3 [PR run 41292001121][pr] and genuine
 [workflow_dispatch run 41292078852][dispatch] both completed **successfully** at
 `ca2db52669b8611a7d9cd24733c80572516ff94a`. Each contains **12 unique result

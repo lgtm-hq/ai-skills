@@ -1,0 +1,11 @@
+# Repository-relative fnmatch globs; shared by the change detector and closure guard.
+research/install-plane-spike/**
+tests/test_install_plane_parity.py
+tests/test_install_plane_inputs.py
+tests/conftest.py
+scripts/ci/install_plane_*.py
+scripts/tool-versions.sh
+.github/workflows/install-plane-spike.yml
+.gitattributes
+pyproject.toml
+uv.lock

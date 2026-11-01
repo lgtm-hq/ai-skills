@@ -15,8 +15,7 @@ from typing import Any, Self
 
 import pytest
 from assertpy import assert_that
-
-SPIKE = Path(__file__).resolve().parents[1] / "research/install-plane-spike"
+from spike_helpers import SPIKE
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])

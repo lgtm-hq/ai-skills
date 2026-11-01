@@ -17,9 +17,13 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import spike_helpers
 from assertpy import assert_that
+from spike_helpers import SPIKE
 
-SPIKE = Path(__file__).resolve().parents[1] / "research" / "install-plane-spike"
+non_utf8_locale = spike_helpers.non_utf8_locale
+prototype = spike_helpers.prototype
+spike_fixture = spike_helpers.spike_fixture
 
 
 @pytest.mark.parametrize("variant", ["py", "ts"])
@@ -289,96 +293,6 @@ def test_prepublication_failures_retain_evidence_and_cli_status(
         )
 
 
-@pytest.fixture
-def prototype() -> ModuleType:
-    """Import this checkout's prototype explicitly, independent of PYTHONPATH.
-
-    Returns:
-        Local Python installer module.
-    """
-    path = SPIKE / "py" / "prototype.py"
-    spec = importlib.util.spec_from_file_location("spike_prototype", path)
-    if spec is None or spec.loader is None:
-        raise ValueError("cannot load local prototype")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    assert_that(module.__file__).is_equal_to(str(path))
-    return module
-
-
-@pytest.fixture
-def spike_fixture(tmp_path: Path) -> Path:
-    """Copy the shared golden fixture for isolated mutations.
-
-    Args:
-        tmp_path: Pytest temporary directory.
-
-    Returns:
-        Writable fixture copy.
-    """
-    return Path(shutil.copytree(src=SPIKE / "fixtures", dst=tmp_path / "fixture"))
-
-
-@pytest.fixture(autouse=True)
-def non_utf8_locale(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Model Windows locale defaults without changing explicit UTF-8 reads.
-
-    Args:
-        monkeypatch: Reversible pathlib boundary change.
-    """
-    read_text = Path.read_text
-
-    def locale_read(
-        path: Path,
-        encoding: str | None = None,
-        errors: str | None = None,
-        newline: str | None = None,
-    ) -> str:
-        """Use cp1252 when the caller omits its encoding.
-
-        Args:
-            path: File to read.
-            encoding: Explicit encoding or locale default.
-            errors: Decoder error handling.
-            newline: Newline translation option.
-
-        Returns:
-            Text decoded with the specified encoding.
-        """
-        return read_text(
-            path, encoding=encoding or "cp1252", errors=errors, newline=newline
-        )
-
-    monkeypatch.setattr(Path, "read_text", locale_read)
-
-
-def test_spike_golden(
-    prototype: ModuleType, spike_fixture: Path, tmp_path: Path
-) -> None:
-    """Python materializes only the expected retained capability."""
-    expected = json.loads(
-        (spike_fixture / "expected-output.json").read_text(encoding="utf-8")
-    )
-    output = prototype.install(
-        fixture=spike_fixture, home=tmp_path, exclude="fixture:drop"
-    )
-    assert_that(output).is_equal_to(expected)
-    target = tmp_path / ".spike-target"
-    actual = {
-        p.relative_to(target).as_posix(): p.read_text(encoding="utf-8")
-        for p in target.rglob("*")
-        if p.is_file()
-    }
-    assert_that(actual).is_equal_to(expected)
-    index = json.loads((spike_fixture / "index.json").read_text(encoding="utf-8"))
-    digest = next(c for c in index["capabilities"] if c["id"] == "fixture:keep")[
-        "files"
-    ]["keep/SKILL.md"]
-    installed = (target / "keep/SKILL.md").read_bytes()
-    assert_that(installed.startswith(b"\xef\xbb\xbf")).is_true()
-    assert_that(hashlib.sha256(installed).hexdigest()).is_equal_to(digest)
-
-
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -434,47 +348,6 @@ def test_spike_rejects_before_writing(
     with pytest.raises(ValueError):
         prototype.install(fixture=spike_fixture, home=tmp_path, exclude="fixture:drop")
     assert_that((tmp_path / ".spike-target").exists()).is_false()
-
-
-def test_spike_runtime_parity(spike_fixture: Path, tmp_path: Path) -> None:
-    """Both CLIs emit and write the same golden fixture, with isolated HOME."""
-    bun = shutil.which("bun")
-    if bun is None:
-        if os.environ.get("SPIKE_REQUIRE_BUN") == "1":
-            pytest.fail("Bun required for spike CI parity")
-        pytest.skip("Bun not installed; dispatch workflow requires the parity check")
-    expected = json.loads(
-        (spike_fixture / "expected-output.json").read_text(encoding="utf-8")
-    )
-    for variant, command in {
-        "py": [sys.executable, "-I", "-B", str(SPIKE / "py/prototype.py")],
-        "ts": [bun, "run", str(SPIKE / "ts/prototype.ts")],
-    }.items():
-        home = tmp_path / variant
-        home.mkdir()
-        env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
-        env["HOME"] = str(home)
-        result = subprocess.run(  # nosec B603 - trusted local prototypes, fixed argv
-            args=[*command, str(spike_fixture), "fixture:drop"],
-            env=env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=False,
-            timeout=30,
-        )
-        assert_that(result.returncode).described_as(result.stderr).is_zero()
-        assert_that(json.loads(result.stdout)).is_equal_to(expected)
-        target = home / ".spike-target"
-        actual = {
-            p.relative_to(target).as_posix(): p.read_text(encoding="utf-8")
-            for p in target.rglob("*")
-            if p.is_file()
-        }
-        assert_that(actual).is_equal_to(expected)
-        assert_that((target / "keep/SKILL.md").read_bytes()).is_equal_to(
-            expected["keep/SKILL.md"].encode("utf-8")
-        )
 
 
 @pytest.mark.parametrize("variant", ["py", "ts"])

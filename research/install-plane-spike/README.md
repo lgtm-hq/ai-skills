@@ -42,7 +42,7 @@ unset PYTHONPATH
 export UV_NO_SYNC=1
 bun install --cwd research/install-plane-spike/ts --frozen-lockfile
 uv run python research/install-plane-spike/scripts/fixture.py --check
-uv run pytest tests/test_install_plane_spike.py tests/test_install_plane_collector.py
+uv run pytest research/install-plane-spike/tests/ tests/test_install_plane_parity.py
 spike_output="${TMPDIR:-/tmp}/install-plane-562-build"
 # Choose a new, absent output directory; build refuses to overwrite one.
 uv run python research/install-plane-spike/scripts/build.py \
@@ -92,8 +92,26 @@ Python-only pytest runs skip TypeScript cases when Bun is absent; setting
 
 ## CI and raw evidence
 
-The workflow runs on narrow PR paths and workflow dispatch, checks out the exact
-PR head, and tests source parity with Bun required. `scripts/test-ci.sh` resolves only
+The workflow's `changes` job compares the complete PR diff (including deleted
+and renamed files) with the globs in `harness-inputs.txt`. It triggers the native
+matrix whenever any harness input changes, including local imports, conftests,
+shared helpers, fixtures, settings and tool/dependency pins outside the spike
+directory. A small root guard test statically follows the local import and literal
+file-reference closure and fails if an input lacks a trigger pattern.
+
+The same matrix also runs nightly at 03:17 UTC, on workflow dispatch, and on every
+PR whose head branch starts with `release/`, regardless of changed files. A release
+PR is mergeable only with a green spike run on its current head; the orchestrator
+enforces this at merge time. These runs retain the same evidence artifacts.
+
+The workflow checks out the exact PR head (the default branch for scheduled runs)
+and runs the full harness in `research/install-plane-spike/tests/` plus
+`tests/test_install_plane_parity.py` on every native matrix OS with Bun required.
+The normal CI pytest job collects only root `tests/`, including the two small
+golden-fixture and cross-runtime parity tests; runtime parity skips cleanly when
+Bun is absent. Shared fixtures live in
+`research/install-plane-spike/tests/spike_helpers.py`, without duplicated test bodies.
+`scripts/test-ci.sh` resolves only
 pytest, assertpy and PyYAML at exact repository-lock versions and uses
 `uv --no-project --isolated`, so a local `.venv` cannot supply undeclared test
 dependencies. Set `SPIKE_PYTHON` to the settings pin when invoking it. Build also

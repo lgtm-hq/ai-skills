@@ -9,4 +9,5 @@ while IFS= read -r requirement; do
 done <<<"$requirements"
 uv run --no-project --isolated --python "$SPIKE_PYTHON" \
   "${dependency_args[@]}" \
-  pytest -o addopts='' tests/test_install_plane_spike.py tests/test_install_plane_collector.py
+  pytest -o addopts='' research/install-plane-spike/tests/ \
+  tests/test_install_plane_parity.py

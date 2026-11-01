@@ -4,12 +4,8 @@ name: Install plane distribution spike
 'on':
   workflow_dispatch:
   pull_request:
-    paths:
-      - '.github/workflows/install-plane-spike.yml'
-      - 'research/install-plane-spike/**'
-      - 'tests/test_install_plane_spike.py'
-      - 'tests/test_install_plane_collector.py'
-      - '.gitattributes'
+  schedule:
+    - cron: '17 3 * * *'
 
 permissions:
   contents: read
@@ -19,8 +15,37 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  changes:
+    name: Check harness inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.inputs.outputs.changed }}
+    steps:
+      - name: Harden runner
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - name: Checkout experiment and comparison history
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Compare changed files with harness inputs
+        id: inputs
+        run: python3 scripts/ci/install_plane_changes.py
+
   native:
     name: Native evidence (${{ matrix.runner }})
+    needs: changes
+    if: >-
+      needs.changes.outputs.changed == 'true' ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.head_ref, 'release/')
     strategy:
       fail-fast: false
       matrix:
@@ -112,7 +137,7 @@ jobs:
   offline-linux:
     name: Linux empty-allowlist offline evidence
     needs: native
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.native.result != 'skipped' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
