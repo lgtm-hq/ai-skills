@@ -808,12 +808,15 @@ def test_firewall_is_scoped_and_cleanup_verified(
     controlled: bool,
     launcher_matches: bool,
 ) -> None:
-    """Python-only denial cannot certify either successful installer as offline."""
+    """Offline passes require matched controls and cleanup; retain raw observations."""
     offline = collector["offline"]
     installs = {
         v: {
             "status": bun_status,
             "direct_execution": {"status": "pass"},
+            "direct_commands": [
+                {"argv": [f"C:/spike/{v}.exe"], "exit": 0, "stdout": v}
+            ],
             "clients": {
                 "bun": {"status": bun_status},
                 "npm": {
@@ -837,7 +840,16 @@ def test_firewall_is_scoped_and_cleanup_verified(
         for v in ("ts", "py")
     }
     monkeypatch.setattr(offline, "worker", lambda **_: installs)
-    controls = {"npm-node": {"npm_launcher": ["C:/node.exe", "C:/npm-cli.js"]}}
+    controls = {
+        name: {
+            "control": probe_record("connected"),
+            "restricted": probe_record("explicit-denial"),
+            "denial_proven": True,
+        }
+        for name in ("direct-ts", "direct-py", "npm-ts", "npm-py", "npm-node")
+    }
+    controls["npm-node"]["npm_launcher"] = ["C:/node.exe", "C:/npm-cli.js"]
+    expected_controls = json.loads(json.dumps(controls))
     monkeypatch.setattr(
         offline, "prepare_windows_controls", lambda **_: controls if controlled else {}
     )
@@ -876,7 +888,7 @@ def test_firewall_is_scoped_and_cleanup_verified(
             record = {
                 "exit": cleanup_exit,
                 "stdout": "rules absent" if cleanup_exit == 0 else "",
-                "stderr": "",
+                "stderr": "injected rule removal failure" if cleanup_exit else "",
             }
         elif "New-NetFirewallRule" in argv[-1]:
             record = {
@@ -911,18 +923,42 @@ def test_firewall_is_scoped_and_cleanup_verified(
         proven = controlled and launcher_matches and setup_exit == 0
         assert_that(observed[variant]["installer_denial_proven"]).is_equal_to(proven)
         assert_that(observed[variant]["direct_execution"]["status"]).is_equal_to(
-            "pass" if proven else "unverified"
+            "pass" if proven and cleanup_exit == 0 else "unverified"
         )
         assert_that(observed[variant]["status"]).is_equal_to(
             "pass" if proven and cleanup_exit == 0 else "unverified"
         )
         assert_that(observed[variant]).does_not_contain_key("denial_proven")
         if setup_exit == 0:
+            direct = observed[variant]["direct_execution"]
+            assert_that(direct["denial_proven"]).is_equal_to(
+                proven and cleanup_exit == 0
+            )
+            assert_that(direct["execution"]).is_equal_to(
+                installs[variant]["direct_execution"]
+            )
+            assert_that(direct["commands"]).is_equal_to(
+                installs[variant]["direct_commands"]
+            )
+            if controlled:
+                assert_that(observed[variant]["program_controls"]).is_equal_to(
+                    expected_controls
+                )
             assert_that(observed[variant]["denial_scope"]).contains(
                 "actual npm Node launcher" if controlled else "Python probe only"
             )
             assert_that(observed[variant]["installation_observation"]).is_equal_to(
                 installs[variant]
+            )
+        if cleanup_exit:
+            assert_that(observed[variant]["reason"]).contains(
+                "firewall cleanup not verified"
+            )
+            assert_that(observed[variant]["direct_execution"]["reason"]).contains(
+                "firewall cleanup not verified"
+            )
+            assert_that(observed[variant]["cleanup"]["command"]).contains_entry(
+                {"exit": cleanup_exit}, {"stderr": "injected rule removal failure"}
             )
     assert_that(create).contains(str(Path("C:/bun.exe")), str(Path("C:/node.exe")))
     assert_that(create).does_not_contain("Runner.Worker", "0.0.0.0/0")

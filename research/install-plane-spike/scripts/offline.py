@@ -594,6 +594,11 @@ def measure_offline(
             )
             if removed["exit"] != 0:
                 for result in results.values():
+                    result["direct_execution"].update(
+                        status="unverified",
+                        denial_proven=False,
+                        reason="firewall cleanup not verified",
+                    )
                     result.update(
                         status="unverified",
                         reason=f"{result.get('reason') or 'restriction measured'}; "
