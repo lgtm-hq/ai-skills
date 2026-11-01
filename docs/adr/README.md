@@ -8,14 +8,18 @@ Consequences sections. Accepted decisions guide implementation; proposed
 decisions remain subject to their stated follow-up. Engine v2 work is
 tracked in epic [#596](https://github.com/lgtm-hq/ai-skills/issues/596).
 
-ADR 0008 remains Proposed pending comparable restricted **direct-runtime** and
-npm local-file evidence under #562's resolved owner policy. Inspected R6 PR/green
-dispatch evidence applies only to `10205e3`; R7 native CI stopped before measuring,
-and R8 exposed six Windows test failures at `623c098`. R9 corrections have no
-hosted verification yet. Bun local-file failure is informational;
-registry still requires both clients. Signed Mac verification is tracked in #619,
-not required to close #562. Windows scope, Harden Runner baseline and payload
-provenance remain explicit measurement limits; see the ADR and distribution report.
+ADR 0008 remains Proposed for #562's missing matched **Windows executable**
+control. Inspected R10 PR [41315907240](https://github.com/lgtm-hq/ai-skills/actions/runs/41315907240)
+and green dispatch [41316038552](https://github.com/lgtm-hq/ai-skills/actions/runs/41316038552)
+apply to exact source `80f328cb263c36c505ae1113224b7b36c36f85f6`: both variants pass
+registry/no-Node on five targets and direct-plus-npm offline on four POSIX targets.
+Windows actually executes both transports but denial remains unverified, so the
+Python-first tie cannot yet be extended to it. The minimal new Windows controls
+need fresh hosted results. Harden Runner's missing baseline, independent payload
+provenance and fleet enforcement stay explicit unknowns, not a universal-green
+requirement. Bun local-file failure is informational; registry requires both
+clients. Owner policy is answered: unsigned observations/documented signing needs
+suffice; signed Mac verification is #619 and Authenticode is #618.
 
 | ID                                                        | Title                                                              | Status   |
 | --------------------------------------------------------- | ------------------------------------------------------------------ | -------- |

@@ -23,6 +23,8 @@ from common import (
 )
 from network_control import proven_denial
 from packages import client_env, install_client, prepare_packages
+from windows_control import finish as finish_windows_controls
+from windows_control import prepare as prepare_windows_controls
 
 
 def identity() -> dict[str, Any]:
@@ -346,6 +348,7 @@ def measure_offline(
         }
         for variant in ("ts", "py")
     }
+    program_controls: dict[str, Any] = {}
     try:
         if not harden_block and platform.system() == "Windows":
             shell = shutil.which("powershell") or shutil.which("pwsh")
@@ -353,6 +356,11 @@ def measure_offline(
             for result in results.values():
                 result["mechanism"] = mechanism
             if shell:
+                try:
+                    program_controls = prepare_windows_controls(build=build, work=work)
+                except OSError as error:
+                    for result in results.values():
+                        result["program_control_error"] = str(error)
                 firewall = [shell, "-NoProfile", "-NonInteractive", "-Command"]
                 command(
                     argv=[
@@ -496,6 +504,36 @@ def measure_offline(
             )
             if run["exit"] == 0 and result_path.is_file():
                 observed = json.loads(result_path.read_text(encoding="utf-8"))
+                if program_controls:
+                    denials = finish_windows_controls(
+                        controls=program_controls, work=work
+                    )
+                    for variant in ("ts", "py"):
+                        npm_commands = (
+                            observed[variant]
+                            .get("clients", {})
+                            .get("npm", {})
+                            .get("commands", [])
+                        )
+                        launcher = program_controls["npm-node"]["npm_launcher"]
+                        same_launcher = bool(
+                            len(launcher) == 2
+                            and npm_commands
+                            and npm_commands[0].get("argv", [])[:2] == launcher
+                        )
+                        results[variant].update(
+                            program_controls=program_controls,
+                            npm_launcher_matches_control=same_launcher,
+                            installer_denial_proven=(
+                                denials[variant] and same_launcher
+                            ),
+                            denial_scope=(
+                                "matched executable path/bytes and IPv4 controls for "
+                                "direct runtime, actual npm Node launcher and "
+                                "installed npm payload only; informational Bun "
+                                "remains unverified"
+                            ),
+                        )
                 for variant in ("ts", "py"):
                     results[variant]["installation_observation"] = observed[variant]
                     execution = observed[variant].get("direct_execution", {})

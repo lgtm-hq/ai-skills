@@ -1,6 +1,6 @@
 # ADR 0008: Engine runtime: Python build plane, TypeScript install plane
 
-- Status: Proposed (#562 restricted direct-runtime measurements pending)
+- Status: Proposed (#562 matched Windows executable controls pending)
 - Date: 2026-11-01
 - Scope: [#561](https://github.com/lgtm-hq/ai-skills/issues/561), part of
   [engine v2 (#596)](https://github.com/lgtm-hq/ai-skills/issues/596)
@@ -109,67 +109,80 @@ policy. Their raw JSON is unchanged. They are neither new-policy failures nor
 proof of direct-runtime success. Owner policy is resolved; missing measurements
 remain missing measurements.
 
-### Inspected evidence and outstanding experiment
+### Inspected R10 evidence and decision application
 
-R3 (`ca2db52`), R4 (`d77da01`) and R5 (`6d2d86b`) run identities remain in the
-report. The retained complete R6 [PR run 41303888697](https://github.com/lgtm-hq/ai-skills/actions/runs/41303888697)
-and green [workflow_dispatch run 41304035426](https://github.com/lgtm-hq/ai-skills/actions/runs/41304035426)
-apply **only to `10205e3519ab610c97fd2a846bfc54e9ecbe3048`**. Each has twelve
-unique schema-3 scenario JSONs (ten native and two dedicated Linux offline),
-matching source/expected heads, clean source, event/run identity and attempt 1.
-Both variants pass registry (both clients, overall including owned-job cleanup)
-and no-Node on all five targets. npm local-file installation/execution passes
-before and during restriction; Bun's platform-selection failures are retained.
-Linux/macOS prove shared namespace/sandbox denial. Windows proves only bundled
-Python probe denial, not every installer/runtime program, and verifies rule removal.
-Dedicated Harden Runner lacks a same-host unrestricted baseline. Payload/build
-source binding remains unverified. No R6 document contains the independent
-**original standalone payload executed under restriction, without installation**
-cell needed by the owner's primary transport rule.
+The report preserves R3–R9 history separately. Current inspected evidence is the
+R10 [PR run 41315907240](https://github.com/lgtm-hq/ai-skills/actions/runs/41315907240)
+and genuine green [workflow_dispatch run 41316038552](https://github.com/lgtm-hq/ai-skills/actions/runs/41316038552),
+both at exact clean source **80f328cb263c36c505ae1113224b7b36c36f85f6**.
+Each has twelve unique schema-3 results: ten native (five targets × two variants)
+and two dedicated Linux offline observations. All 24 have matching source and
+expected head, empty source status, exact event/run identity and attempt 1.
+The report links exact artifacts and records R10 commands, unsigned assessment
+outputs, footprint and recommendation. These results are not R9 measurements.
 
-The actual R7 [PR run 41307370871](https://github.com/lgtm-hq/ai-skills/actions/runs/41307370871)
-at `774ba560bcb0fdffa21b41c6e9127a11d26a02eb` failed all five native test jobs
-before build/measurement because isolated tests lacked PyYAML. It supplies no
-native scenario evidence. R8 corrects that isolated command, adds independent
-restricted direct-runtime cells, and applies direct-plus-npm offline rollups;
-Bun evidence is retained and registry requirements are unchanged. The actual
-[R8 PR run 41310148490](https://github.com/lgtm-hq/ai-skills/actions/runs/41310148490)
-at `623c0988fb486a28a0fc8a9c0e8049d0a08da09d` then exposed missing synthetic
-`SIGKILL` and LF/CRLF assumptions in Windows tests: 6 failed, 292 passed, 2 skipped,
-before build/measurement. R9 fixes those tests, publication cleanup semantics and
-the dedicated acquisition/upload helper layout locally; hosted verification is
-pending. Earlier green runs cannot validate R9.
+For both A and B in both runs:
 
-**Proposed remains for a measured criterion:** inspect fresh comparable hosted
-JSON for the original standalone A and B payloads under restriction on all five
-targets, plus npm local-file fallback, at the reviewed source. Windows program
-rules alone cannot certify runtime/installer denial without matched same-program
-positive/restricted controls. The first-step empty-allowlist Harden Runner job
-still needs a valid same-host baseline, and transferred payload provenance must
-be bound before claiming it verified. Keep these limitations explicit; namespace
-or sandbox evidence is not Harden Runner-only proof. Link a genuine green dispatch
-and inspect source/build identities when reconciling the new collector. No current
-head hosted validation or final acceptance is claimed.
+- Private registry passes with **both Bun and npm**, exact platform selection,
+  verified installed bytes/golden execution and owned-server cleanup on all five
+  targets. No-Node passes everywhere.
+- Linux x64/arm64 and macOS x64/arm64 pass independent original standalone
+  execution plus npm local-file fallback under shared namespace/sandbox denial.
+- Windows actually executes both transports successfully, but bundled-Python
+  probe denial is true and installer denial false. Separately scoped Node and
+  direct/installed runtime executables have no matched controls. Direct and
+  overall offline remain **unverified**, not passes or proven equality.
+- Dedicated first-step empty-allowlist Harden Runner executes both transports
+  but lacks a same-host unrestricted baseline; its denial remains unverified.
+  Native Linux namespace proof is not credited to Harden Runner.
+- All 24 payload-source identity records are unverified: native source hashes
+  lack independent verification and transferred archive hashes are not bound to
+  expected source/build metadata. Collector identity does not establish payload
+  provenance. No production attestation pipeline or fleet approval is claimed.
+- Unsigned macOS assessments reject both variants; direct marked CLI execution
+  succeeds. A's inherited/ad-hoc signature fails verification; B arm64 verifies
+  ad-hoc, B x64 is unsigned. Windows MotW readback and Defender custom scans
+  succeed; both entries are NotSigned, real-time protection is disabled, and
+  shell/SmartScreen enforcement is unverified. The report documents each
+  variant's signing/notarization needs. This meets the owner's unsigned evidence
+  scope without inventing a paid signing or third-party EDR gate.
 
-### Decision rule
+### Decision rule and specific remaining measurement
 
-Apply the issue's **Python-first tie rule** after comparable evidence supports
-all restricted criteria: private registry (both clients), no Node, offline
-(direct primary plus npm local-file fallback), and the owner-required unsigned
-security observations and documented signing needs. Revise to a Python engine
-behind a thin TypeScript npm launcher if B is equally deployable. Otherwise accept
-A only if it is no worse on every restricted criterion on every supported target.
-Unknown measurements prove neither equality nor superiority. Bun local-file
-failure, unsigned assessment rejection, missing paid signing and third-party EDR
-cannot be reintroduced as owner-policy blockers.
+The issue's **Python-first tie rule** takes precedence when B is equally
+deployable: revise to a single Python engine behind a thin TypeScript npm
+launcher. Otherwise accept A only if A is no worse on every required restricted
+criterion across the supported targets. Footprint records costs, not a new
+threshold: no size/file-count or timing budget is specified. A is smaller on
+POSIX; B is smaller on Windows. Those numbers do not override the tie rule.
 
-Footprint records costs, not a new threshold: #562 supplies no size/file-count or
-timing budget. Numeric differences alone do not override the Python-first rule.
-Finder/SmartScreen enforcement and real fleet policy remain separately unverified;
-CLI execution and Defender custom scans do not establish those claims.
+R10 supports a tie for registry/no-Node everywhere and offline on four POSIX
+targets. **The Windows offline comparison is still unproven**, so neither branch
+of the rule is justified across all five targets. Two unknown outcomes do not
+establish equal deployability. This is a missing runner-observable control, not
+an unanswered owner policy question, a demand for every field to be green, or
+an extra signing/provenance/fleet gate on #562. Runner-unobservable limits may
+remain explicitly unverified as the issue permits; free production attestation
+obligations remain binding before trusted distribution is claimed.
 
-Complete comparable direct-offline measurements are still needed before either
-branch of the rule is justified. Keep the ADR, index and spike README consistent,
-then reconcile #566/#567/#578/#386 when evidence permits a final decision. Optional
-M5 NITs stay on #614; measured acceptance remains on #562. This spike changes no
-production runtime.
+The minimal follow-up in this revision adds matched Windows program controls:
+A's compiled diagnostic, B's existing interpreter probe, npm's explicitly selected
+Node launcher, and exact future npm-installed payload paths. Baseline copies are
+removed before fresh real installations. Connected-before/explicit-denial-after,
+identical argv/executable path/SHA-256, actual npm launcher match and exact rule
+cleanup are required. Offline tests inject socket/process boundaries and do not
+supply native proof. Informational Bun local-file execution is outside this
+required denial scope; its existing failure remains recorded.
+
+**ADR 0008 and its index remain Proposed until fresh hosted results validate this
+executable change.** R10 cannot certify the new controls. Inspect the new
+native/dispatch JSON, apply the rule, and update ADR/index/spike README together.
+Documentation-only edits may continue citing the exact executed source when
+source/workflow/test/package hashes are unchanged; they do not require an endless
+rerun of unchanged executables. This revision changes executable bytes, so that
+exception does not apply.
+
+Before future implementation, reconcile #566/#567/#578/#386 with whichever
+runtime is selected. The local parent handoff records the pending Windows gate
+and conditional implications; no downstream issue or remote metadata is changed
+here. Optional M5 NITs stay #614. No production runtime changes in this spike.

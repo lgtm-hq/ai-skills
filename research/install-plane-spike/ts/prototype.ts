@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, open, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import "./network-control";
 
 const LIMIT = 1024 * 1024;
 const PATH_LIMIT = 100; // ASCII bytes/characters; tiny USTAR name field.
@@ -289,7 +290,10 @@ async function readFixture(path: string): Promise<Buffer> {
   }
 }
 
-if (import.meta.main) {
+if (
+  import.meta.main &&
+  !(process.argv.length === 3 && process.argv[2] === "--spike-network-control")
+) {
   try {
     const [, , fixture, exclude] = process.argv;
     const home = process.env.HOME;

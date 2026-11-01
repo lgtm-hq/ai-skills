@@ -285,6 +285,7 @@ def collector(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ModuleType]
         "pins",
         "process_tree",
         "windows_job",
+        "windows_control",
     )
     saved = {name: sys.modules.pop(name) for name in names if name in sys.modules}
     try:
@@ -299,6 +300,7 @@ def collector(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ModuleType]
             "pins": importlib.import_module("pins"),
             "process_tree": importlib.import_module("process_tree"),
             "windows_job": importlib.import_module("windows_job"),
+            "windows_control": importlib.import_module("windows_control"),
         }
         for module in modules.values():
             if module.__file__ is None:
@@ -794,6 +796,8 @@ def test_collector_failure_does_not_erase_other_scenarios(
 @pytest.mark.parametrize("cleanup_exit", [0, 1])
 @pytest.mark.parametrize("setup_exit", [0, 1])
 @pytest.mark.parametrize("bun_status", ["pass", "fail"])
+@pytest.mark.parametrize("controlled", [False, True])
+@pytest.mark.parametrize("launcher_matches", [False, True])
 def test_firewall_is_scoped_and_cleanup_verified(
     collector: dict[str, ModuleType],
     tmp_path: Path,
@@ -801,17 +805,45 @@ def test_firewall_is_scoped_and_cleanup_verified(
     cleanup_exit: int,
     setup_exit: int,
     bun_status: str,
+    controlled: bool,
+    launcher_matches: bool,
 ) -> None:
     """Python-only denial cannot certify either successful installer as offline."""
     offline = collector["offline"]
     installs = {
         v: {
             "status": bun_status,
-            "clients": {"bun": {"status": bun_status}, "npm": {"status": "pass"}},
+            "direct_execution": {"status": "pass"},
+            "clients": {
+                "bun": {"status": bun_status},
+                "npm": {
+                    "status": "pass",
+                    "commands": [
+                        {
+                            "argv": [
+                                (
+                                    "C:/node.exe"
+                                    if launcher_matches
+                                    else "C:/other-node.exe"
+                                ),
+                                "C:/npm-cli.js",
+                                "install",
+                            ]
+                        }
+                    ],
+                },
+            },
         }
         for v in ("ts", "py")
     }
     monkeypatch.setattr(offline, "worker", lambda **_: installs)
+    controls = {"npm-node": {"npm_launcher": ["C:/node.exe", "C:/npm-cli.js"]}}
+    monkeypatch.setattr(
+        offline, "prepare_windows_controls", lambda **_: controls if controlled else {}
+    )
+    monkeypatch.setattr(
+        offline, "finish_windows_controls", lambda **_: {"ts": True, "py": True}
+    )
     monkeypatch.setattr(offline.platform, "system", lambda: "Windows")
     monkeypatch.setattr(offline.shutil, "which", lambda name: f"C:/{name}.exe")
     monkeypatch.setattr(
@@ -876,14 +908,19 @@ def test_firewall_is_scoped_and_cleanup_verified(
         assert_that(observed[variant]["probe_denial_proven"]).is_equal_to(
             setup_exit == 0
         )
-        assert_that(observed[variant]["installer_denial_proven"]).is_false()
+        proven = controlled and launcher_matches and setup_exit == 0
+        assert_that(observed[variant]["installer_denial_proven"]).is_equal_to(proven)
         assert_that(observed[variant]["direct_execution"]["status"]).is_equal_to(
-            "unverified"
+            "pass" if proven else "unverified"
         )
-        assert_that(observed[variant]["status"]).is_equal_to("unverified")
+        assert_that(observed[variant]["status"]).is_equal_to(
+            "pass" if proven and cleanup_exit == 0 else "unverified"
+        )
         assert_that(observed[variant]).does_not_contain_key("denial_proven")
         if setup_exit == 0:
-            assert_that(observed[variant]["denial_scope"]).contains("Python probe only")
+            assert_that(observed[variant]["denial_scope"]).contains(
+                "actual npm Node launcher" if controlled else "Python probe only"
+            )
             assert_that(observed[variant]["installation_observation"]).is_equal_to(
                 installs[variant]
             )
@@ -899,6 +936,159 @@ def test_firewall_is_scoped_and_cleanup_verified(
             )
     if cleanup_exit:
         assert_that(observed["ts"]["status"]).is_equal_to("unverified")
+
+
+@pytest.mark.parametrize("broken", [None, "direct-ts", "npm-ts", "npm-node", "npm-py"])
+@pytest.mark.parametrize("mutation", ["denial", "bytes", "path", "missing"])
+def test_windows_program_controls_require_every_matching_identity(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    broken: str | None,
+    mutation: str,
+) -> None:
+    """No runtime can borrow a different executable's denial or positive baseline."""
+    module = collector["windows_control"]
+    controls = {
+        name: {
+            "argv": [name],
+            "control": {
+                "program": name,
+                "sha256": name,
+                "command": probe_record("connected"),
+            },
+        }
+        for name in ("direct-ts", "direct-py", "npm-ts", "npm-py", "npm-node")
+    }
+
+    def observe(**kwargs: Any) -> dict[str, Any]:
+        """Inject identity/control failures without opening a socket or process."""
+        name = kwargs["argv"][0]
+        after = {
+            "program": name,
+            "sha256": name,
+            "command": probe_record("explicit-denial"),
+        }
+        if name == broken:
+            if mutation == "denial":
+                after["command"] = probe_record("inconclusive")
+            elif mutation == "missing":
+                return {"status": "unverified"}
+            else:
+                after["program" if mutation == "path" else "sha256"] = "changed"
+        return after
+
+    monkeypatch.setattr(module, "observe", observe)
+    result = module.finish(controls=controls, work=tmp_path)
+    assert_that(result["ts"]).is_equal_to(
+        broken not in {"direct-ts", "npm-ts", "npm-node"}
+    )
+    assert_that(result["py"]).is_equal_to(broken not in {"npm-py", "npm-node"})
+
+
+def test_windows_controls_seed_exact_future_paths_and_remove_owned_trees(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Baseline same-path runtime copies leave fresh install/cache locations."""
+    module, common = collector["windows_control"], collector["common"]
+    build, work = tmp_path / "build", tmp_path / "work"
+    for variant in ("ts", "py"):
+        entry = Path(common.runtime(root=build / variant, variant=variant)[0])
+        entry.parent.mkdir(parents=True)
+        entry.write_bytes(variant.encode())
+    monkeypatch.setattr(
+        module, "npm_launch", lambda: [str(tmp_path / "node"), "npm-cli"]
+    )
+    seen: dict[str, list[str]] = {}
+
+    def observe(**kwargs: Any) -> dict[str, Any]:
+        """Check actual seeded bytes at the exact future npm payload path."""
+        argv = kwargs["argv"]
+        name = kwargs["home"].name
+        seen[name] = argv
+        if name != "npm-node":
+            assert_that(Path(argv[0]).read_bytes()).is_equal_to(name[-2:].encode())
+        if name in {"npm-ts", "npm-py"}:
+            assert_that(Path(argv[0]).is_relative_to(work / "installs")).is_true()
+        return {"command": probe_record("connected")}
+
+    monkeypatch.setattr(module, "observe", observe)
+    controls = module.prepare(build=build, work=work)
+    assert_that(work.joinpath("installs").exists()).is_false()
+    assert_that(controls).contains_only(
+        "direct-ts", "direct-py", "npm-ts", "npm-py", "npm-node"
+    )
+    assert_that(seen["npm-ts"][-1]).is_equal_to("--spike-network-control")
+    assert_that(seen["npm-node"][1]).is_equal_to(str(build / "network-control.mjs"))
+    # An existing directory is never treated as owned scratch or removed.
+    (work / "installs").mkdir()
+    sentinel = work / "installs/sentinel"
+    sentinel.write_bytes(b"retain")
+    with pytest.raises(FileExistsError):
+        module.prepare(build=build, work=work)
+    assert_that(sentinel.read_bytes()).is_equal_to(b"retain")
+
+
+@pytest.mark.parametrize("available", [True, False])
+def test_windows_npm_launch_has_explicit_node_and_cli(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    available: bool,
+) -> None:
+    """A cmd shim cannot silently substitute another Node for the controlled one."""
+    module = collector["packages"]
+    cli = tmp_path / "node_modules/npm/bin/npm-cli.js"
+    if available:
+        cli.parent.mkdir(parents=True)
+        cli.touch()
+    monkeypatch.setattr(module, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        module.shutil, "which", lambda name: str(tmp_path / f"{name}.exe")
+    )
+    assert_that(module.npm_launch()).is_equal_to(
+        [str(tmp_path / "node.exe"), str(cli)] if available else []
+    )
+
+
+def test_windows_control_hashes_actual_program_and_retains_missing_identity(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise real digest/path collection with only process execution stubbed."""
+    import hashlib
+
+    module = collector["windows_control"]
+    executable = tmp_path / "program.exe"
+    executable.write_bytes(b"before")
+    calls: list[list[str]] = []
+
+    def command(**kwargs: Any) -> dict[str, Any]:
+        """Retain fixed argv and credential-free environment without execution."""
+        calls.append(kwargs["argv"])
+        assert_that(kwargs["env"]).does_not_contain_key("GITHUB_TOKEN")
+        return probe_record("connected")
+
+    monkeypatch.setenv("GITHUB_TOKEN", "unit-boundary")
+    monkeypatch.setattr(module, "command", command)
+    argv = [str(executable), "--spike-network-control"]
+    before = module.observe(argv=argv, home=tmp_path / "home")
+    executable.write_bytes(b"after")
+    after = module.observe(argv=argv, home=tmp_path / "home")
+    assert_that(before["program"]).is_equal_to(str(executable.resolve()))
+    assert_that(before["sha256"]).is_equal_to(hashlib.sha256(b"before").hexdigest())
+    assert_that(after["sha256"]).is_not_equal_to(before["sha256"])
+    executable.unlink()
+    assert_that(
+        module.observe(argv=argv, home=tmp_path / "home")["status"]
+    ).is_equal_to("unverified")
+    assert_that(module.observe(argv=[], home=tmp_path / "home")["status"]).is_equal_to(
+        "unverified"
+    )
+    assert_that(calls).is_equal_to([argv, argv])
 
 
 @pytest.mark.parametrize("mutation", ["none", "bytes", "platform"])
@@ -1694,6 +1884,7 @@ def test_npm_only_worker_reuses_complete_prepacked_archives(
     monkeypatch.setattr(
         offline.shutil, "which", lambda tool: "/unit/npm" if tool == "npm" else None
     )
+    monkeypatch.setattr(packages, "npm_launch", lambda: ["/unit/npm"])
     monkeypatch.setattr(
         offline, "prepare_packages", lambda **_: pytest.fail("reused archives repacked")
     )

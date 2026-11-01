@@ -60,6 +60,17 @@ def main() -> None:
             records=records,
             cwd=SPIKE / "ts",
         )
+        checked(
+            argv=[
+                "bun",
+                "build",
+                "--target=node",
+                str(SPIKE / "ts/network-control.ts"),
+                "--outfile",
+                str(output / "network-control.mjs"),
+            ],
+            records=records,
+        )
         if not args.installed_python:
             checked(
                 argv=["uv", "python", "install", SETTINGS["python"]], records=records

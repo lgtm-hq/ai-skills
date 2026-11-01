@@ -55,10 +55,18 @@ Use disposable machines for collection. Native isolation attempts namespaces,
 macOS sandboxing or Windows per-program firewall rules. A same-host successful
 IPv4 control is required before explicit denial proves the probe restriction;
 unavailable IPv6 is informational and timeouts remain unverified. Linux/macOS
-probe and installers share a namespace/sandbox. Windows program-specific rules
-prove denial only for bundled Python; Bun/Node/installed-runtime controls are
-absent, so installer denial and overall offline status stay unverified. Exact
-rule identities, setup, both installer observations and cleanup are retained.
+probe and installers share a namespace/sandbox. R10 Windows program-specific rules
+proved denial only for bundled Python; direct/npm execution succeeded but overall
+offline stayed unverified. The new Windows-only controls compare the same fixed
+IPv4 endpoint, argv, resolved executable path and SHA-256 before/during restriction
+for direct A/B, actual npm Node and installed npm payloads. Seeded baseline copies
+at future install paths are removed before real fresh installs. Windows npm uses
+an explicit Node/npm-cli pair; mismatched launchers, missing/changed programs,
+timeouts or failed cleanup cannot pass. A's `--spike-network-control` diagnostic
+and emitted TypeScript Node module open only the fixed probe socket; normal
+installation never calls them. Unit tests inject socket events and never connect.
+These executable changes require fresh hosted evidence. Informational Bun is
+outside this required denial scope. Exact rules, commands and cleanup are retained.
 No-Node control removes tool directories from PATH while preserving Windows loader
 necessities and using disposable AppData/HOME locations. Node, nodejs, Bun and
 bunx resolution or unexpected HOME files fail the runtime observation. Filtering
@@ -146,17 +154,16 @@ Windows direct CreateProcess does not test MotW shell/SmartScreen enforcement;
 macOS CLI execution does not establish Finder behavior. Defender engine failures,
 disabled Gatekeeper, third-party EDR, deliberate deep paths, unsigned fleet policy,
 non-AVX2 baseline, musl and older Linux compatibility remain unverified.
-The report links inspected R3 at ca2db52, R4 at d77da01, R5 at 6d2d86b and complete
-R6 PR/green dispatch evidence at **10205e3 only**. Historical dual-client offline
-rollups and raw JSON are retained under the superseded rule. R6 has no independent
-original-payload direct execution under restriction; R7 native CI failed before
-build/measurement. R8 run 41310148490 at `623c098` exposed six Windows test failures
-before build/measurement. R9 runs at `edc39a3` cannot certify the R10 Python
-publication and npm-only archive-reuse repairs; R10 awaits hosted verification.
-ADR 0008 stays Proposed for
-fresh comparable restricted direct-runtime plus npm evidence, with Windows scope,
-Harden Runner baseline and payload provenance still explicit limits. The
-[security policy](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942)
+The report preserves R3–R9 history separately and links inspected R10 PR
+41315907240 and green dispatch 41316038552 at exact clean source
+**80f328cb263c36c505ae1113224b7b36c36f85f6**. Their 24 schema-3 results establish
+registry/no-Node passes on all five targets and direct-plus-npm offline passes on
+four POSIX targets. Windows execution succeeds but denial remains unverified;
+the new matched controls are not validated by R10. ADR 0008 stays Proposed for
+this observable comparison gap; two unknowns cannot establish the Python-first
+tie. Harden Runner's absent same-host baseline, independent payload provenance
+and shell/fleet enforcement remain explicit limits, not universal-green gates.
+The [security policy](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942)
 is resolved: unsigned observations and documented signing needs suffice for #562;
 signed Mac work belongs to #619's human-secret gate, Authenticode is cost-gated
 in #618, and no paid or third-party EDR is required.

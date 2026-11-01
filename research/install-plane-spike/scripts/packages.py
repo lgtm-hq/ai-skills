@@ -13,6 +13,22 @@ from typing import Any
 from common import SETTINGS, command, payload_inventory, run_payload, target, write_json
 
 
+def npm_launch() -> list[str]:
+    """Select an explicit Node/npm-cli pair on Windows, avoiding cmd shim ambiguity.
+
+    Returns:
+        Exact launcher argv, or an empty list when its identity is unavailable.
+    """
+    npm = shutil.which("npm")
+    if npm is None:
+        return []
+    if os.name != "nt":
+        return [npm]
+    node = shutil.which("node")
+    cli = Path(npm).parent / "node_modules/npm/bin/npm-cli.js"
+    return [node, str(cli)] if node and cli.is_file() else []
+
+
 def prepare_packages(
     *, build: Path, work: Path, variant: str, local: bool = False
 ) -> list[Path]:
@@ -134,9 +150,10 @@ def install_client(
         value={"private": True, "dependencies": {f"@spike/{variant}": dependency}},
     )
     executable = shutil.which(tool)
-    if executable is None:
+    launcher = npm_launch() if tool == "npm" else ([executable] if executable else [])
+    if not launcher:
         return {"status": "unverified", "reason": f"{tool} absent from setup PATH"}
-    argv = [executable, "install", "--ignore-scripts"]
+    argv = [*launcher, "install", "--ignore-scripts"]
     if tool == "npm":
         argv += ["--no-audit", "--no-fund"]
     if offline:

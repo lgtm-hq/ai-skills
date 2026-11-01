@@ -6,10 +6,14 @@ from __future__ import annotations
 import errno
 import json
 import socket
+from pathlib import Path
 from typing import Any
 
-TARGET = "1.1.1.1"
-PORT = 443
+ENDPOINT = json.loads(
+    (Path(__file__).resolve().parents[1] / "network-control.json").read_bytes()
+)
+TARGET = ENDPOINT["address"]
+PORT = ENDPOINT["port"]
 
 
 def probe() -> list[dict[str, Any]]:
