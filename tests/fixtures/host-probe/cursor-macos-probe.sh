@@ -11,6 +11,8 @@
 #
 # Usage:  bash cursor-macos-probe.sh            (interactive, ~20-30 min)
 #         bash cursor-macos-probe.sh --keep     (keep the temp root for debugging)
+# Optional: CURSOR_PROBE_APP=/absolute/path/Cursor.app selects one app only;
+# an invalid override aborts without falling back to an installed app.
 # Output: ./cursor-probe-results-<timestamp>.json  -> send it back (Discord or #563).
 #
 # Compatible with macOS /bin/bash 3.2. Needs: Cursor.app, python3, shasum.
@@ -190,19 +192,38 @@ trap 'RUN_STATUS=incomplete; REPORT_REASON=interrupted-int; exit 130' INT
 trap 'RUN_STATUS=incomplete; REPORT_REASON=interrupted-term; exit 143' TERM
 
 # ---------------------------------------------------------------- preflight
-APP=""
-for c in "/Applications/Cursor.app" "$HOME/Applications/Cursor.app"; do
-  [ -d "$c" ] && APP="$c" && break
-done
-[ -n "$APP" ] || {
-  echo "Cursor.app not found in /Applications or ~/Applications" >&2
-  exit 1
+select_cursor_app() { # <global-candidate> <home-candidate>
+  local c
+  APP=""
+  if [ "${CURSOR_PROBE_APP+x}" = x ]; then
+    # Presence, including an empty override, disables all default discovery.
+    APP="$CURSOR_PROBE_APP"
+  else
+    for c in "$@"; do
+      if [ -d "$c" ]; then
+        APP="$c"
+        break
+      fi
+    done
+  fi
+  case "$APP" in
+  /*) ;;
+  *)
+    echo "Cursor app must be an absolute directory path (CURSOR_PROBE_APP if set)." >&2
+    return 1
+    ;;
+  esac
+  [ -d "$APP" ] || {
+    echo "Cursor app directory not found at $APP" >&2
+    return 1
+  }
+  CLI="$APP/Contents/Resources/app/bin/cursor"
+  [ -f "$CLI" ] && [ -x "$CLI" ] || {
+    echo "Cursor CLI launcher not found or not executable at $CLI" >&2
+    return 1
+  }
 }
-CLI="$APP/Contents/Resources/app/bin/cursor"
-[ -x "$CLI" ] || {
-  echo "Cursor CLI launcher not found at $CLI" >&2
-  exit 1
-}
+select_cursor_app "/Applications/Cursor.app" "$HOME/Applications/Cursor.app"
 if ! command -v python3 >/dev/null || ! python3 -c 'import json' 2>/dev/null; then
   echo "python3 is required (hook and MCP sentinels)." >&2
   exit 1

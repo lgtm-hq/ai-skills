@@ -19,6 +19,90 @@ type EmbeddedRunner = Callable[
 SCRIPT = Path(__file__).parent / "fixtures/host-probe/cursor-macos-probe.sh"
 
 
+@pytest.mark.parametrize(
+    ("override", "expected"),
+    [
+        (None, "global"),
+        ("isolated", "isolated"),
+        ("global", "global"),
+        ("", None),
+        ("relative", None),
+        ("missing", None),
+        ("no-launcher", None),
+        ("not-executable", None),
+        ("directory-launcher", None),
+    ],
+)
+def test_app_selection_never_falls_back_from_explicit_override(
+    tmp_path: Path,
+    override: str | None,
+    expected: str | None,
+) -> None:
+    """Use two fake installed apps; invalid overrides must never launch either."""
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("Bash is required for disposable app selection tests")
+    match = re.search(
+        r"^select_cursor_app\(\) \{.*?^\}",
+        SCRIPT.read_text(),
+        re.MULTILINE | re.DOTALL,
+    )
+    if match is None:
+        pytest.fail("Expected app selection function is missing")
+    apps = {
+        "global": tmp_path / "Applications/Cursor.app",
+        "isolated": tmp_path / "isolated home/Applications/Cursor.app",
+    }
+    for name, app in apps.items():
+        cli = app / "Contents/Resources/app/bin/cursor"
+        cli.parent.mkdir(parents=True)
+        cli.write_text(f"#!/bin/sh\nprintf '%s\\n' {name} >> launches\n")
+        cli.chmod(0o700)
+    environment = {"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"}
+    if override is not None:
+        selected = apps.get(override, tmp_path / override)
+        if override in {"no-launcher", "not-executable", "directory-launcher"}:
+            selected.mkdir()
+            cli = selected / "Contents/Resources/app/bin/cursor"
+            if override == "directory-launcher":
+                cli.mkdir(parents=True)
+            elif override == "not-executable":
+                cli.parent.mkdir(parents=True)
+                cli.write_text("#!/bin/sh\nexit 99\n")
+                cli.chmod(0o600)
+        environment["CURSOR_PROBE_APP"] = (
+            override if override in {"", "relative"} else str(selected)
+        )
+    # Supply synthetic default candidates to the exact selection boundary. Never
+    # inspect /Applications, and never execute a default or real host launcher.
+    result = subprocess.run(  # nosec B603 - extracted selector, disposable fake apps
+        [
+            bash,
+            "--noprofile",
+            "--norc",
+            "-euc",
+            match.group(0) + '\nselect_cursor_app "$@"\n"$CLI"',
+            "app-selection-test",
+            str(apps["global"]),
+            str(apps["isolated"]),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+    launches = tmp_path / "launches"
+    if expected is None:
+        assert_that(result.returncode).is_not_zero()
+        assert_that(result.stderr).contains("Cursor")
+        assert_that(launches.exists()).is_false()
+    else:
+        assert_that(result.returncode).described_as(result.stderr).is_zero()
+        assert_that(launches.read_text().splitlines()).is_equal_to([expected])
+
+
 @pytest.fixture
 def embedded_program(
     tmp_path: Path,

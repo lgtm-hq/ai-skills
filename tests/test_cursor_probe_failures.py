@@ -35,7 +35,8 @@ def driver(tmp_path: Path) -> DriverRunner:
     tools = tmp_path / "tools"
     tools.mkdir()
     (tools / "python3").symlink_to(sys.executable)
-    cli = home / "Applications/Cursor.app/Contents/Resources/app/bin/cursor"
+    app = home / "Applications/Cursor.app"
+    cli = app / "Contents/Resources/app/bin/cursor"
     cli.parent.mkdir(parents=True)
 
     def run(
@@ -141,6 +142,7 @@ def driver(tmp_path: Path) -> DriverRunner:
                 "HOME": str(home),
                 "TMPDIR": str(scratch),
                 "PATH": f"{tools}:/usr/bin:/bin",
+                "CURSOR_PROBE_APP": str(app),
             },
             timeout=60,
             check=False,
