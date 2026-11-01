@@ -20,7 +20,7 @@
         "/^vendors\\.yaml$/"
       ],
       "matchStrings": [
-        "repo:\\s*(?<depName>[^\\s]+)\\s+sha:\\s*[\"']?(?<currentDigest>[0-9a-f]{40})[\"']?\\s+branch:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?"
+        "repo:\\s*(?<depName>[^\\s]+)\\s+sha:\\s*[\"']?(?<currentDigest>[0-9a-f]{40})[\"']?\\s+branch:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?[ \t]*(?:\\r?\\n|$)"
       ],
       "datasourceTemplate": "git-refs",
       "packageNameTemplate": "https://github.com/{{{depName}}}"
@@ -49,7 +49,7 @@
         "oven-sh/bun"
       ],
       "prBodyNotes": [
-        "Update the matching installer SHA-256 in `scripts/tool-versions.sh` after reviewing the pinned upstream installer. Run `bash scripts/ci/check-tool-installers.sh` to measure and check the hashes (mismatches fail closed). See CONTRIBUTING.md for the refresh commands."
+        "Update the matching installer SHA-256 in `scripts/tool-versions.sh` after reviewing the pinned upstream installer. Run `bash scripts/ci/check-tool-installers.sh` to verify the hashes (mismatches fail closed). See CONTRIBUTING.md for the digest measurement and refresh commands."
       ]
     },
     {

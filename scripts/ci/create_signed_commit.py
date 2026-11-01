@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import base64
 import http.client
 import json
@@ -14,11 +15,19 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+# Direct CLI execution must import helpers from this checkout, never a .venv mirror.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from ci.vendor_pin_artifact import (
+    read_artifact,
+    reject_symlinks,
+    validate_changes,
+    validate_path,
+)
+
 RequestJson = Callable[..., Any]
 _MARKER = "<!-- vendor-pin-regen -->"
 _BOT_LOGIN = "lgtm-release-bot[bot]"
-_GENERATED_FILES = frozenset({"NOTICE.md", "npm/ai-skills/NOTICE.md"})
-_GENERATED_DIRS = ("vendor-indexes/", "npm/ai-skills/data/")
 _MUTATION = """
 mutation($input: CreateCommitOnBranchInput!) {
   createCommitOnBranch(input: $input) { commit { oid } }
@@ -66,13 +75,9 @@ def file_changes(*, repo_root: Path) -> dict[str, list[dict[str, str]]]:
         )
     changes: dict[str, list[dict[str, str]]] = {"additions": [], "deletions": []}
     for name in sorted(paths):
-        if name not in _GENERATED_FILES and not name.startswith(_GENERATED_DIRS):
-            msg = f"Refusing to commit a non-generated path: {name}"
-            raise ValueError(msg)
+        validate_path(name)
         path = repo_root / name
-        if any(item.is_symlink() for item in (path, *path.parents)):
-            msg = f"Refusing to commit a symlink: {name}"
-            raise ValueError(msg)
+        reject_symlinks(root=repo_root, path=path)
         if path.is_file():
             changes["additions"].append(
                 {
@@ -85,6 +90,7 @@ def file_changes(*, repo_root: Path) -> dict[str, list[dict[str, str]]]:
         else:
             msg = f"Expected a generated regular file: {name}"
             raise ValueError(msg)
+    validate_changes(changes)
     return changes
 
 
@@ -175,36 +181,35 @@ def upsert_summary(
 
 def publish(
     *,
-    repo_root: Path,
+    artifact_directory: Path,
     repository: str,
     branch: str,
     expected_head: str,
     pr_number: int,
-    summary: str,
     request: RequestJson,
 ) -> str:
     """Sign generated changes through GitHub and publish the bake summary.
 
     Args:
-        repo_root: Regenerated checkout of the exact PR head.
+        artifact_directory: Downloaded data, isolated from the trusted checkout.
         repository: Owner/repo slug.
         branch: Same-repository Renovate head branch.
         expected_head: PR event head SHA, used as the API compare-and-swap guard.
         pr_number: Pull request number.
-        summary: Markdown bake delta.
         request: Injectable JSON HTTP client.
 
     Returns:
         New commit OID, or the unchanged head when no generated files differ.
 
     Raises:
-        ValueError: If the checkout or remote PR no longer matches the event.
+        ValueError: If the artifact or remote PR no longer matches the event.
         RuntimeError: If GraphQL rejects the commit, including a head race.
     """
-    local_head = _git(repo_root=repo_root, args=["rev-parse", "HEAD"]).decode().strip()
-    if local_head != expected_head or not branch.startswith("renovate/"):
-        msg = "Checkout must match the expected Renovate PR head"
+    if not branch.startswith("renovate/"):
+        msg = "Expected a Renovate PR branch"
         raise ValueError(msg)
+    artifact = read_artifact(directory=artifact_directory, expected_head=expected_head)
+    changes = artifact["fileChanges"]
     pr = request(method="GET", path=f"/repos/{repository}/pulls/{pr_number}")
     if (
         pr["state"] != "open"
@@ -214,7 +219,6 @@ def publish(
     ):
         msg = "PR head has changed or is not an open same-repository PR"
         raise ValueError(msg)
-    changes = file_changes(repo_root=repo_root)
     oid = expected_head
     if any(changes.values()):
         result = request(
@@ -242,39 +246,62 @@ def publish(
         if result.get("errors") or not (result.get("data") or {}).get(
             "createCommitOnBranch",
         ):
-            msg = "GitHub rejected createCommitOnBranch; no retry against a newer head"
+            details = "; ".join(
+                str(error.get("message", "Unknown GraphQL error"))
+                for error in result.get("errors") or []
+            )
+            msg = (
+                "GitHub rejected createCommitOnBranch; no retry against a newer head"
+                f": {details or 'missing commit result'}"
+            )
             raise RuntimeError(msg)
         oid = result["data"]["createCommitOnBranch"]["commit"]["oid"]
     upsert_summary(
         repository=repository,
         pr_number=pr_number,
-        summary=summary,
+        summary=artifact["summary"],
         request=request,
     )
     return str(oid)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """Publish using workflow-provided inputs, failing closed on API errors.
+
+    Args:
+        argv: Optional command arguments for offline validation.
 
     Returns:
         Zero on success, one on failure or unresolved summary collisions.
     """
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--validate-only", action="store_true")
+    args = parser.parse_args(argv)
     try:
+        directory = Path(os.environ["ARTIFACT_DIR"])
+        # Even a misconfigured download destination cannot overlay trusted code.
+        if directory.resolve().is_relative_to(Path.cwd().resolve()):
+            raise ValueError("Artifact directory must be outside the trusted checkout")
+        artifact = read_artifact(
+            directory=directory,
+            expected_head=os.environ["PR_HEAD_SHA"],
+        )
+        if args.validate_only:
+            return 0
         oid = publish(
-            repo_root=Path.cwd(),
+            artifact_directory=directory,
             repository=os.environ["GITHUB_REPOSITORY"],
             branch=os.environ["PR_BRANCH"],
             expected_head=os.environ["PR_HEAD_SHA"],
             pr_number=int(os.environ["PR_NUMBER"]),
-            summary=Path(os.environ["SUMMARY_PATH"]).read_text(encoding="utf-8"),
             request=github_request,
         )
         print(f"Vendor catalog head: {oid}")
-        return int(os.environ.get("SUMMARY_STATUS", "0") != "0")
+        return int(artifact["status"])
     except (
         OSError,
         ValueError,
+        TypeError,
         KeyError,
         RuntimeError,
         http.client.HTTPException,

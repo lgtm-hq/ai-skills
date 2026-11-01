@@ -490,7 +490,20 @@ def test_renovate_extracts_both_pins_and_bun_release_prefix() -> None:
         for manager in config["customManagers"]
         if "/^scripts/tool-versions\\.sh$/" in manager["managerFilePatterns"]
     )
-    pattern = manager["matchStrings"][0].replace("(?<", "(?P<")
+    source = manager["matchStrings"][0]
+    # Python is a smoke test for this simple RE2 subset, not a general RE2 emulator.
+    # Reject lookarounds/backrefs rather than accepting syntax Renovate cannot run.
+    assert_that(source).does_not_contain(
+        "(?=",
+        "(?!",
+        "(?<=",
+        "(?<!",
+        "(?>",
+        r"\1",
+        r"\k",
+        r"\g",
+    )
+    pattern = re.sub(r"\(\?<([A-Za-z][A-Za-z0-9_]*)>", r"(?P<\1>", source)
     pins = (_ROOT / _PINS).read_text()
     matches = [match.groupdict() for match in re.finditer(pattern, pins)]
     assert_that(matches).is_length(2)
@@ -527,3 +540,30 @@ def test_ci_checks_pins_with_restricted_egress_and_pinned_actions() -> None:
         "raw.githubusercontent.com:443",
     )
     assert_that(steps[-1]["run"]).is_equal_to(f"bash {_CHECK}")
+
+
+@pytest.mark.parametrize("digest", ["", "a" * 63, "a" * 65, "A" * 64, "g" * 64])
+def test_fetch_rejects_invalid_digest_without_pipefail_or_download(
+    installer_repo: Path,
+    installer_env: dict[str, str],
+    digest: str,
+) -> None:
+    """Invalid and empty pins fail before download, even in permissive callers."""
+    result = _run(
+        repo=installer_repo,
+        env=installer_env,
+        args=[
+            "-c",
+            (
+                'source "$1/scripts/lib/fetch-verified.sh"; '
+                'fetch_verified https://astral.sh/uv/test/install.sh "$2" "$1/download"'
+            ),
+            "test-fetch",
+            str(installer_repo),
+            digest,
+        ],
+    )
+    assert_that(result.returncode).is_equal_to(1)
+    assert_that(result.stderr).contains("exactly 64 lowercase hex characters")
+    assert_that((installer_repo / "downloads").exists()).is_false()
+    assert_that((installer_repo / "download").exists()).is_false()

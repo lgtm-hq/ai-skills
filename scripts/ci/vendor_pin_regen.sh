@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
-# Refresh Renovate's selected pins and summarize them against the PR base.
-
+# Summarize selected pins against the merge base, then refresh without credentials.
 set -euo pipefail
 
 : "${SUMMARY_PATH:?SUMMARY_PATH is required}"
-rm -f "$SUMMARY_PATH"
-refresh_status=0
-uv run python scripts/manage_vendors.py refresh || refresh_status=$?
-
+: "${ARTIFACT_DIR:?ARTIFACT_DIR is required}"
+mkdir -p "$ARTIFACT_DIR"
+rm -f "$SUMMARY_PATH" "$ARTIFACT_DIR/publication.json"
+baseline=$(git merge-base "${BASE_SHA:?BASE_SHA is required}" HEAD)
 status=0
 uv run python scripts/repin_vendor.py \
   --all --keep-sha \
-  --baseline-ref "${BASE_SHA:?BASE_SHA is required}" \
-  --summary-path "${SUMMARY_PATH:?SUMMARY_PATH is required}" || status=$?
+  --baseline-ref "$baseline" \
+  --summary-path "$SUMMARY_PATH" || status=$?
 
-# A collision produces a reviewable summary; a hard failure does not.
+# Only collisions produce both a nonzero status and a complete summary.
+# Publish their report without committing any generated data.
 if [[ ! -s "$SUMMARY_PATH" ]]; then
   exit 1
 fi
 if [[ "$status" -eq 0 ]]; then
-  status=$refresh_status
+  # Never package partial refresh output, even when a summary already exists.
+  uv run python scripts/manage_vendors.py refresh
 fi
-echo "summary-status=${status}" >>"${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
+SUMMARY_STATUS="$status" uv run python scripts/ci/vendor_pin_artifact.py

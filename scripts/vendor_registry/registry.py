@@ -288,6 +288,9 @@ def _parse_branch(*, value: object, position: int) -> str:
     if _SHA_PATTERN.fullmatch(branch.lower()) is not None:
         msg = f"Vendor {position} branch must not be a commit SHA"
         raise ValueError(msg)
+    if any(char in branch for char in "\"'"):
+        msg = f"Vendor {position} branch quotes are unsupported by Renovate"
+        raise ValueError(msg)
     if (
         branch in {"@", "HEAD"}
         or branch.startswith("-")
