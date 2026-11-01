@@ -7,13 +7,15 @@ import hashlib
 import json
 import os
 import platform
+import stat
 import subprocess  # nosec B404 - experiment commands use explicit argv, never a shell
 import tempfile
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from process_tree import process_tree_options, stop_process_tree
+from process_tree import close_process, launch_process, stop_process_tree
 
 SPIKE = Path(__file__).resolve().parents[1]
 REPO = SPIKE.parents[1]
@@ -82,14 +84,14 @@ def command(
     """
     start = time.perf_counter()
     result: dict[str, Any] = {"argv": argv, "cwd": str(cwd)}
+    process = None
     try:
-        process = subprocess.Popen(  # nosec B603 - explicit experiment argv, no shell
+        process = launch_process(
             args=argv,
             cwd=cwd,
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            **process_tree_options(),
         )
         try:
             stdout, stderr = process.communicate(timeout=timeout)
@@ -117,6 +119,22 @@ def command(
         result.update(
             exit=None, stdout="", stderr=str(error), error=type(error).__name__
         )
+    finally:
+        if process is not None:
+            try:
+                if getattr(process, "job", None):
+                    result["tree_termination"] = stop_process_tree(process)
+                    if result["tree_termination"]["status"] != "pass":
+                        result.update(exit=None, error="job cleanup not verified")
+            finally:
+                try:
+                    close_process(process)
+                except OSError as error:
+                    result.update(
+                        exit=None,
+                        error="process handle cleanup failed",
+                        cleanup_error=str(error),
+                    )
     result["seconds"] = time.perf_counter() - start
     for key in ("stdout", "stderr"):
         for secret in redactions:
@@ -203,14 +221,7 @@ def isolated_env(home: Path) -> dict[str, str]:
             if directory
             and not any(
                 (Path(directory.strip('"')) / name).is_file()
-                for name in (
-                    "node",
-                    "node.exe",
-                    "node.cmd",
-                    "bun",
-                    "bun.exe",
-                    "bun.cmd",
-                )
+                for name in tool_names(os.environ)
             )
         ),
         LOCALAPPDATA=str(home / "AppData/Local"),
@@ -220,6 +231,23 @@ def isolated_env(home: Path) -> dict[str, str]:
         TMPDIR=str(home),
     )
     return env
+
+
+def tool_names(env: Mapping[str, str]) -> set[str]:
+    """Return the same runtime aliases and suffixes for filtering and detection.
+
+    Args:
+        env: Explicit environment supplying Windows executable extensions.
+
+    Returns:
+        Bare aliases plus PATHEXT names (also conservatively filtered on POSIX).
+    """
+    names = {"node", "nodejs", "bun", "bunx"}
+    return names | {
+        tool + suffix.strip().lower()
+        for tool in names
+        for suffix in env.get("PATHEXT", ".EXE;.CMD;.BAT;.COM").split(";")
+    }
 
 
 def write_json(*, path: Path, value: object) -> None:
@@ -287,18 +315,13 @@ def run_payload(
     """
     home.mkdir(parents=True, exist_ok=True)
     cache = home / ".cache"
-    cache.write_text("cache directory intentionally unavailable", encoding="utf-8")
+    blocker = b"cache directory intentionally unavailable"
+    cache.write_bytes(blocker)
     env = isolated_env(home)
     env.update(XDG_CACHE_HOME=str(cache), BUN_INSTALL_CACHE_DIR=str(cache))
     # cwd=HOME below: check Windows current-directory search there too, never in
     # the collector cwd. Use PATHEXT from the explicit consumer environment.
-    names = {"node", "nodejs", "bun", "bunx"}
-    if os.name == "nt":
-        names.update(
-            tool + suffix.strip().lower()
-            for tool in tuple(names)
-            for suffix in env.get("PATHEXT", ".EXE;.CMD;.BAT;.COM").split(";")
-        )
+    names = tool_names(env)
     directories = [home] if os.name == "nt" else []
     for directory in env["PATH"].split(os.pathsep):
         path = Path(directory.strip('"')) if directory else home
@@ -343,10 +366,20 @@ def run_payload(
         stdout_matches = json.loads(result["stdout"]) == expected
     except (ValueError, TypeError):
         stdout_matches = False
+    try:
+        # lstat short-circuits before reading a replacement symlink/directory.
+        cache_blocked = stat.S_ISREG(cache.lstat().st_mode)
+        if cache_blocked:
+            with cache.open("rb") as stream:
+                cache_blocked = stream.read(len(blocker) + 1) == blocker
+    except OSError:
+        cache_blocked = False
     other_home_files = [
         p.relative_to(home).as_posix()
         for p in home.rglob("*")
-        if p.is_file() and p != cache and destination not in p.parents
+        if p != cache
+        and destination not in p.parents
+        and (p.is_symlink() or p.is_file())
     ]
     return {
         "status": (
@@ -355,13 +388,14 @@ def run_payload(
             and stdout_matches
             and actual == expected
             and not other_home_files
+            and cache_blocked
             else "fail"
         ),
         "seconds": result["seconds"],
         "exit": result["exit"],
         "PATH": env["PATH"],
         "resolved_tools": resolved_tools,
-        "cache_directory_blocked": True,
+        "cache_directory_blocked": cache_blocked,
         "other_HOME_files": other_home_files,
         "cache_scope": (
             "HOME only; writes elsewhere and read-only runtime trees unverified"

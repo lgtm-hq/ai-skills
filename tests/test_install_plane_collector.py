@@ -47,6 +47,7 @@ def collector(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ModuleType]
         "measure",
         "pins",
         "process_tree",
+        "windows_job",
     )
     saved = {name: sys.modules.pop(name) for name in names if name in sys.modules}
     try:
@@ -60,6 +61,7 @@ def collector(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ModuleType]
             "measure": importlib.import_module("measure"),
             "pins": importlib.import_module("pins"),
             "process_tree": importlib.import_module("process_tree"),
+            "windows_job": importlib.import_module("windows_job"),
         }
         for module in modules.values():
             if module.__file__ is None:
@@ -326,7 +328,9 @@ def test_registry_account_failure_is_sanitized_evidence(
             TimeoutExpired: For the selected kill-timeout case.
         """
         if stage == "kill-timeout":
-            raise registry.subprocess.TimeoutExpired("server", kwargs["timeout"])
+            raise collector["process_tree"].subprocess.TimeoutExpired(
+                "server", kwargs["timeout"]
+            )
 
     def popen(**kwargs: Any) -> SimpleNamespace:
         """Check server cache boundaries without treating this fake as startup proof.
@@ -338,12 +342,6 @@ def test_registry_account_failure_is_sanitized_evidence(
             Fake server process.
         """
         env = kwargs["env"]
-        assert_that(kwargs["start_new_session"]).is_equal_to(sys.platform != "win32")
-        assert_that(kwargs["creationflags"]).is_equal_to(
-            getattr(registry.subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            if sys.platform == "win32"
-            else 0
-        )
         for key in ("TMPDIR", "TEMP", "TMP"):
             assert_that(env[key]).is_equal_to(str(setup_temp))
         assert_that(env["NPM_CONFIG_CACHE"]).starts_with(str(tmp_path / "server-env"))
@@ -356,7 +354,7 @@ def test_registry_account_failure_is_sanitized_evidence(
             wait=wait,
         )
 
-    monkeypatch.setattr(registry.subprocess, "Popen", popen)
+    monkeypatch.setattr(registry, "launch_process", popen)
     result = registry.measure_registry(build=tmp_path / "build", work=tmp_path)
     for variant in ("ts", "py"):
         assert_that(result[variant]["status"]).is_equal_to("fail")
@@ -798,7 +796,7 @@ def test_timeout_output_is_retained(
         """
         raise common.subprocess.TimeoutExpired("fake", 1, output=output, stderr=output)
 
-    monkeypatch.setattr(common.subprocess, "Popen", timeout)
+    monkeypatch.setattr(common, "launch_process", timeout)
     observed = common.command(argv=["fake"], cwd=tmp_path, records=[])
     assert_that(observed["exit"]).is_none()
     assert_that(observed["error"]).is_equal_to("timeout")
@@ -829,6 +827,310 @@ def test_command_timeout_terminates_descendants(
     assert_that(result["error"]).is_equal_to("timeout")
     assert_that(result["stdout"]).contains("started")
     assert_that(result["seconds"]).is_less_than(15)
+
+
+def test_exited_parent_with_inherited_pipes_is_cleaned(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+) -> None:
+    """Hosted Windows smoke: an exited root cannot orphan a pipe-holding child."""
+    result = collector["common"].command(
+        argv=[
+            sys.executable,
+            "-I",
+            "-c",
+            (
+                "import subprocess,sys; "
+                "subprocess.Popen([sys.executable,'-I','-c',"
+                "'import time; print(\"child ready\",flush=True); time.sleep(30)']); "
+                "print('parent exiting',flush=True)"
+            ),
+        ],
+        cwd=tmp_path,
+        records=[],
+        timeout=2,
+    )
+    assert_that(result["error"]).is_equal_to("timeout")
+    assert_that(result["stdout"]).contains("parent exiting", "child ready")
+    assert_that(result).does_not_contain_key("termination_error")
+    assert_that(result["seconds"]).is_less_than(10)
+    if sys.platform == "win32":
+        cleanup = result["tree_termination"]
+        assert_that(cleanup["status"]).described_as(str(cleanup)).is_equal_to("pass")
+        assert_that(cleanup["active_processes"]).is_zero()
+        assert_that(cleanup["exit"]).is_zero()  # Root exited before job termination.
+        assert_that(cleanup["job_handle_closed"]).is_true()
+
+
+@pytest.mark.parametrize("stage", ["success", "create", "assign", "resume"])
+def test_windows_suspended_launch_lifecycle(
+    collector: dict[str, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+) -> None:
+    """Assignment precedes execution; failures terminate/reap the suspended root."""
+    module = collector["windows_job"]
+    calls: list[str] = []
+
+    def create(*args: Any) -> tuple[int, int, int, int]:
+        """Return retained handles for a suspended root, without executing code."""
+        assert_that(args[5]).is_equal_to(4)
+        assert_that(args[4]).is_true()
+        assert_that(args[-1].lpAttributeList["handle_list"]).is_equal_to([11, 12, 13])
+        calls.append("create suspended")
+        if stage == "create":
+            raise OSError("create rejected")
+        return 101, 102, 103, 104
+
+    def operation(name: str, *args: Any) -> None:
+        """Record a handle operation, optionally rejecting ownership or resume."""
+        calls.append(name)
+        if name == stage:
+            raise OSError(name + " rejected")
+
+    def wait_root(*args: Any) -> int:
+        """Observe bounded reap through the retained root handle."""
+        calls.append("wait root")
+        return 0
+
+    native = SimpleNamespace(
+        STARTF_USESTDHANDLES=256,
+        WAIT_OBJECT_0=0,
+        CreateProcess=create,
+        TerminateProcess=lambda *args: operation("terminate root", *args),
+        WaitForSingleObject=wait_root,
+        CloseHandle=lambda handle: calls.append("close " + str(handle)),
+    )
+    monkeypatch.setitem(sys.modules, "_winapi", native)
+    monkeypatch.setattr(
+        module.subprocess,
+        "STARTUPINFO",
+        lambda: SimpleNamespace(dwFlags=0),
+        raising=False,
+    )
+    monkeypatch.setattr(module.subprocess, "Handle", lambda hp: hp, raising=False)
+    root = SimpleNamespace(
+        job=SimpleNamespace(
+            assign=lambda hp: operation("assign", hp),
+            resume=lambda ht: operation("resume", ht),
+        ),
+        _filter_handle_list=lambda handles: handles,
+        _close_pipe_fds=lambda *args: calls.append("close child pipes"),
+    )
+
+    def launch() -> None:
+        """Exercise the real adapter with mocked native OS calls."""
+        module.JobPopen._execute_child(
+            root,
+            ["owned.exe"],
+            None,
+            None,
+            True,
+            (),
+            None,
+            {},
+            None,
+            0,
+            False,
+            11,
+            21,
+            22,
+            12,
+            23,
+            13,
+        )
+
+    if stage == "success":
+        launch()
+        assert_that(root._child_created).is_true()
+        assert_that(root._handle).is_equal_to(101)
+        assert_that(calls).is_equal_to(
+            ["create suspended", "close child pipes", "assign", "resume", "close 102"]
+        )
+    else:
+        with pytest.raises(OSError, match=stage + " rejected"):
+            launch()
+        assert_that(calls).does_not_contain(
+            "resume" if stage == "assign" else "target code"
+        )
+        if stage != "create":
+            assert_that(calls[-4:]).is_equal_to(
+                ["terminate root", "wait root", "close 101", "close 102"]
+            )
+        assert_that(getattr(root, "_child_created", False)).is_false()
+
+
+@pytest.mark.parametrize(
+    "stage", ["success", "terminate", "query", "reap", "active", "close"]
+)
+def test_windows_job_cleanup_independent_of_root(
+    collector: dict[str, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+) -> None:
+    """A reaped root never prevents job termination, query, bounded wait or close."""
+    tree = collector["process_tree"]
+    monkeypatch.setattr(tree, "os", SimpleNamespace(name="nt"))
+    calls: list[str] = []
+
+    def operation(name: str) -> None:
+        """Model precise native operation failures without touching any PID."""
+        calls.append(name)
+        if stage == name:
+            raise OSError(name + " rejected")
+
+    def active() -> int:
+        """Model an empty job or failed/nonempty membership observation."""
+        operation("query")
+        return 1 if stage == "active" else 0
+
+    root = SimpleNamespace(
+        pid=103,
+        returncode=0,
+        job=SimpleNamespace(
+            terminate=lambda: operation("terminate"),
+            active=active,
+            close=lambda: operation("close"),
+        ),
+        wait=lambda **kwargs: operation("reap"),
+    )
+    result = tree.stop_process_tree(root, grace=0, forced=0)
+    assert_that(calls[0]).is_equal_to("terminate")
+    assert_that(calls[-1]).is_equal_to("close")
+    assert_that(result["status"]).is_equal_to(
+        "pass" if stage == "success" else "unverified"
+    )
+    count = len(calls)
+    assert_that(tree.stop_process_tree(root)).is_equal_to(result)
+    assert_that(calls).is_length(count)  # No repeat action against an exited PID.
+
+
+@pytest.mark.parametrize("stage", ["setup", "launch", "success"])
+def test_windows_job_factory_fail_closed(
+    collector: dict[str, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+) -> None:
+    """Job configuration failure prevents launch; launch failure closes ownership."""
+    tree = collector["process_tree"]
+    monkeypatch.setattr(tree, "os", SimpleNamespace(name="nt"))
+    calls: list[str] = []
+    job = SimpleNamespace(close=lambda: calls.append("close job"))
+
+    def setup() -> SimpleNamespace:
+        """Create ownership or reject setup before launch."""
+        calls.append("setup")
+        if stage == "setup":
+            raise OSError("setup rejected")
+        return job
+
+    def launch(**kwargs: Any) -> SimpleNamespace:
+        """Check the configured job is supplied to the suspended launch adapter."""
+        calls.append("launch")
+        assert_that(kwargs["job"]).is_same_as(job)
+        if stage == "launch":
+            raise OSError("launch rejected")
+        return SimpleNamespace(job=job)
+
+    monkeypatch.setattr(tree, "WindowsJob", setup)
+    monkeypatch.setattr(tree, "JobPopen", launch)
+    if stage == "success":
+        root = tree.launch_process(args=["owned.exe"])
+        tree.close_process(root)
+        assert_that(calls).is_equal_to(["setup", "launch", "close job"])
+    else:
+        with pytest.raises(OSError, match=stage + " rejected"):
+            tree.launch_process(args=["owned.exe"])
+        assert_that(calls).is_equal_to(
+            ["setup"] if stage == "setup" else ["setup", "launch", "close job"]
+        )
+
+
+@pytest.mark.parametrize(
+    "stage",
+    ["success", "create", "limits", "assign", "resume", "query", "terminate", "close"],
+)
+def test_windows_native_job_api_lifecycle(
+    collector: dict[str, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+) -> None:
+    """Real ctypes adapter checks every API failure and closes configured handles."""
+    module = collector["windows_job"]
+    calls: list[str] = []
+    names = {
+        "CreateJobObjectW": "create",
+        "SetInformationJobObject": "limits",
+        "AssignProcessToJobObject": "assign",
+        "ResumeThread": "resume",
+        "QueryInformationJobObject": "query",
+        "TerminateJobObject": "terminate",
+        "CloseHandle": "close",
+    }
+
+    def function(name: str) -> Any:
+        """Build a mock Win32 function with real ctypes argument binding slots."""
+
+        def invoke(*args: Any) -> int:
+            """Validate the job's scope and return the selected native outcome."""
+            operation = names[name]
+            calls.append(operation)
+            if name == "CreateJobObjectW":
+                assert_that(args).is_equal_to((None, None))
+            elif name == "SetInformationJobObject":
+                assert_that(args[2]._obj.BasicLimitInformation.LimitFlags).is_equal_to(
+                    0x2000
+                )
+            elif name == "QueryInformationJobObject":
+                args[2]._obj.ActiveProcesses = 0
+            if stage == operation:
+                return 0xFFFFFFFF if operation == "resume" else 0
+            return 99 if operation == "create" else 1
+
+        return invoke
+
+    api = SimpleNamespace(**{name: function(name) for name in names})
+    monkeypatch.setattr(
+        module.ctypes, "WinDLL", lambda *args, **kwargs: api, raising=False
+    )
+    monkeypatch.setattr(
+        module.ctypes,
+        "WinError",
+        lambda error: OSError("native failure"),
+        raising=False,
+    )
+    monkeypatch.setattr(module.ctypes, "get_last_error", lambda: 5, raising=False)
+
+    def exercise() -> None:
+        """Exercise setup and a complete launch/cleanup API sequence."""
+        job = module.WindowsJob()
+        try:
+            job.assign(101)
+            job.resume(102)
+            assert_that(job.active()).is_zero()
+            job.terminate()
+        finally:
+            job.close()
+        job.close()  # Successful close is idempotent.
+
+    if stage == "success":
+        exercise()
+        assert_that(calls).is_equal_to(
+            ["create", "limits", "assign", "resume", "query", "terminate", "close"]
+        )
+    else:
+        with pytest.raises(OSError):
+            exercise()
+        assert_that(calls[-1]).is_equal_to("create" if stage == "create" else "close")
+
+
+def test_windows_job_abi_sizes(collector: dict[str, ModuleType]) -> None:
+    """Hosted Windows verifies the native 64-bit structure layouts used by Win32."""
+    if sys.platform == "win32":
+        module = collector["windows_job"]
+        assert_that(module.ctypes.sizeof(module.BasicLimits)).is_equal_to(64)
+        assert_that(module.ctypes.sizeof(module.ExtendedLimits)).is_equal_to(144)
+        assert_that(module.ctypes.sizeof(module.Accounting)).is_equal_to(48)
 
 
 def test_namespace_fallback_restores_environment_after_dropping_identity(
@@ -1046,68 +1348,6 @@ def test_posix_tree_shutdown_records_force_and_reap(
     assert_that(state["waits"]).is_equal_to(2)
 
 
-@pytest.mark.parametrize("force_fails", [False, True])
-@pytest.mark.parametrize("graceful_success", [False, True])
-def test_windows_tree_shutdown_is_pid_scoped(
-    collector: dict[str, ModuleType],
-    monkeypatch: pytest.MonkeyPatch,
-    force_fails: bool,
-    graceful_success: bool,
-) -> None:
-    """Windows escalation uses taskkill /T and records rejected/failed cleanup."""
-    tree = collector["process_tree"]
-    # Patch only the helper module's OS view; pathlib/pytest keep their real OS.
-    monkeypatch.setattr(tree, "os", SimpleNamespace(name="nt"))
-    calls = []
-
-    def run(**kwargs: Any) -> SimpleNamespace:
-        """Reject graceful cleanup, then optionally accept forced tree kill.
-
-        Args:
-            kwargs: Fixed taskkill invocation.
-
-        Returns:
-            Exact cleanup command outcome.
-        """
-        calls.append(kwargs["args"])
-        return SimpleNamespace(
-            returncode=(
-                0
-                if graceful_success or ("/F" in kwargs["args"] and not force_fails)
-                else 1
-            ),
-            stdout=b"cleanup",
-            stderr=b"",
-        )
-
-    monkeypatch.setattr(tree.subprocess, "run", run)
-
-    def wait(*, timeout: float) -> None:
-        """Reap only after a successful command; children remain unknown.
-
-        Args:
-            timeout: Bounded parent wait.
-
-        Raises:
-            TimeoutExpired: While the modeled parent is still alive.
-        """
-        if not graceful_success and (len(calls) == 1 or force_fails):
-            raise tree.subprocess.TimeoutExpired("fake", timeout)
-
-    result = tree.stop_process_tree(
-        SimpleNamespace(pid=31415, returncode=0, wait=wait),
-        grace=0,
-        forced=0,
-    )
-    assert_that(calls).is_equal_to(
-        [["taskkill.exe", "/PID", "31415", "/T"]]
-        + ([] if graceful_success else [["taskkill.exe", "/PID", "31415", "/T", "/F"]])
-    )
-    assert_that(result["status"]).is_equal_to("unverified")
-    assert_that(result["descendants"]).contains("absence not enumerated")
-    assert_that(result["actions"][-1]["stdout"]).is_equal_to("cleanup")
-
-
 def test_local_server_tree_shutdown_reaps_child(
     collector: dict[str, ModuleType],
     tmp_path: Path,
@@ -1130,12 +1370,11 @@ def test_local_server_tree_shutdown_reaps_child(
         "ready.with_suffix('.tmp').replace(ready)\n"
         "time.sleep(30)\n"
     )
-    with subprocess.Popen(  # nosec B603 - fixed local Python, no dependencies/network
+    with tree.launch_process(
         args=[sys.executable, "-I", "-c", code, str(tmp_path / "ready")],
         cwd=tmp_path,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        **tree.process_tree_options(),
     ) as process:
         stopped = False
         try:
@@ -1153,9 +1392,7 @@ def test_local_server_tree_shutdown_reaps_child(
             result = tree.stop_process_tree(process)
             stopped = True
             assert_that(result["parent_reaped"]).is_true()
-            assert_that(result["status"]).described_as(str(result)).is_equal_to(
-                "unverified" if sys.platform == "win32" else "pass"
-            )
+            assert_that(result["status"]).described_as(str(result)).is_equal_to("pass")
             if sys.platform != "win32":
                 import os
 
@@ -1331,12 +1568,16 @@ def test_collection_scope_and_unbound_downloads_are_explicit(
         assert_that(item["payload_source_identity"]["reason"]).contains("not bound")
 
 
-@pytest.mark.parametrize("unexpected_write", [False, True])
+@pytest.mark.parametrize("unexpected_write", ["none", "file", "symlink"])
+@pytest.mark.parametrize(
+    "cache_mutation", ["unchanged", "deleted", "overwritten", "directory", "symlink"]
+)
 def test_payload_home_write_affects_status(
     collector: dict[str, ModuleType],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    unexpected_write: bool,
+    unexpected_write: str,
+    cache_mutation: str,
 ) -> None:
     """Correct output cannot hide an unexpected runtime cache write under HOME."""
     common = collector["common"]
@@ -1357,16 +1598,59 @@ def test_payload_home_write_affects_status(
             path = home / ".spike-target" / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(content.encode("utf-8"))
-        if unexpected_write:
+        if unexpected_write == "file":
             (home / "runtime-cache").write_bytes(b"unexpected")
+        elif unexpected_write == "symlink":
+            outside = tmp_path / "outside"
+            outside.mkdir()
+            (outside / "private-file").write_bytes(b"never read")
+            (home / "runtime-cache").symlink_to(outside, target_is_directory=True)
+        cache = home / ".cache"
+        if cache_mutation == "overwritten":
+            cache.write_bytes(b"overwritten")
+        elif cache_mutation != "unchanged":
+            cache.unlink()
+            if cache_mutation == "directory":
+                cache.mkdir()
+            elif cache_mutation == "symlink":
+                unrelated = tmp_path / "unrelated"
+                unrelated.mkdir()
+                (unrelated / "secret").write_bytes(b"never traverse")
+                cache.symlink_to(unrelated, target_is_directory=True)
         return {"exit": 0, "seconds": 0.01, "stdout": json.dumps(expected)}
 
     monkeypatch.setattr(common, "command", command)
     result = common.run_payload(root=SPIKE, variant="ts", home=home, records=[])
-    assert_that(result["status"]).is_equal_to("fail" if unexpected_write else "pass")
-    assert_that(result["other_HOME_files"]).is_equal_to(
-        ["runtime-cache"] if unexpected_write else []
+    assert_that(result["status"]).is_equal_to(
+        "pass"
+        if unexpected_write == "none" and cache_mutation == "unchanged"
+        else "fail"
     )
+    assert_that(result["cache_directory_blocked"]).is_equal_to(
+        cache_mutation == "unchanged"
+    )
+    assert_that(result["other_HOME_files"]).is_equal_to(
+        ["runtime-cache"] if unexpected_write != "none" else []
+    )
+
+
+@pytest.mark.parametrize("tool", ["node", "nodejs", "bun", "bunx"])
+@pytest.mark.parametrize("suffix", ["", ".exe", ".cmd", ".custom"])
+def test_isolation_filters_alias_only_directories(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tool: str,
+    suffix: str,
+) -> None:
+    """Alias-only PATH directories and every explicit PATHEXT suffix are removed."""
+    common = collector["common"]
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    (tools / (tool + suffix)).write_bytes(b"not run")
+    monkeypatch.setenv("PATH", str(tools))
+    monkeypatch.setenv("PATHEXT", ".EXE;.CMD;.CUSTOM")
+    assert_that(common.isolated_env(tmp_path / "home")["PATH"]).is_empty()
 
 
 @pytest.mark.parametrize("tool", ["node", "nodejs", "bun", "bunx"])

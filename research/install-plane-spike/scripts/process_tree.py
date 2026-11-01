@@ -8,19 +8,100 @@ import subprocess  # nosec B404 - explicit owned PID cleanup, never a shell
 import time
 from typing import Any
 
+from windows_job import JobPopen, WindowsJob
 
-def process_tree_options() -> dict[str, Any]:
-    """Create a separate ownership boundary for a command or long-lived server.
+
+def launch_process(**kwargs: Any) -> subprocess.Popen[Any]:
+    """Launch with durable ownership before executing target code.
+
+    Args:
+        kwargs: Explicit Popen arguments, without ownership flags.
 
     Returns:
-        Popen options for a POSIX session or Windows process group.
+        Owned child; Windows refuses launch if job setup/assignment fails.
     """
-    return {
-        "start_new_session": os.name != "nt",
-        "creationflags": (
-            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
-        ),
+    if os.name != "nt":
+        return subprocess.Popen(
+            **kwargs, start_new_session=True
+        )  # nosec B603 - explicit argv
+    job = WindowsJob()
+    try:
+        return JobPopen(job=job, **kwargs)
+    except BaseException:
+        job.close()
+        raise
+
+
+def close_process(process: subprocess.Popen[Any]) -> None:
+    """Release child streams and Windows handles on normal and failure paths.
+
+    Args:
+        process: Owned process after bounded shutdown/reap.
+    """
+    try:
+        if job := getattr(process, "job", None):
+            job.close()
+    finally:
+        if handle := getattr(process, "_handle", None):
+            handle.Close()
+        for name in ("stdin", "stdout", "stderr"):
+            thread = getattr(process, name + "_thread", None)
+            if thread is not None and thread.is_alive():
+                raise OSError(f"{name} reader still active after bounded cleanup")
+            if stream := getattr(process, name, None):
+                stream.close()
+
+
+def stop_windows_job(
+    process: subprocess.Popen[Any], *, budget: float
+) -> dict[str, Any]:
+    """Terminate and observe only the retained job, even after the root exits.
+
+    Args:
+        process: Root retaining its job, not an arbitrary process/PID.
+        budget: Maximum termination observation and reap time in seconds.
+
+    Returns:
+        Exact termination, membership and reap evidence; errors never pass.
+    """
+    previous: dict[str, Any] | None = getattr(process, "_tree_termination", None)
+    if previous:
+        return previous
+    result: dict[str, Any] = {
+        "status": "unverified",
+        "actions": [],
+        "parent_reaped": False,
+        "scope": "owned non-breakaway Windows Job Object",
     }
+    job = getattr(process, "job", None)
+    if job is None:
+        result["error"] = "Windows process has no owned job; refusing PID cleanup"
+        return result
+    deadline = time.monotonic() + budget
+    try:
+        job.terminate()
+        result["actions"].append({"operation": "TerminateJobObject", "success": True})
+        while (active := job.active()) and time.monotonic() < deadline:
+            time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+        result["active_processes"] = active
+        result["descendants"] = (
+            "owned job empty" if active == 0 else "owned job still active"
+        )
+        process.wait(timeout=max(0, deadline - time.monotonic()))
+        result["parent_reaped"] = True
+        if active == 0:
+            result["status"] = "pass"
+    except (OSError, subprocess.TimeoutExpired) as error:
+        result["error"] = f"{type(error).__name__}: {error}"
+    finally:
+        try:
+            job.close()  # KILL_ON_JOB_CLOSE backstop, even if termination/query fails.
+            result["job_handle_closed"] = True
+        except OSError as error:
+            result.update(status="unverified", close_error=str(error))
+    result["exit"] = process.returncode
+    process.__dict__["_tree_termination"] = result
+    return result
 
 
 def stop_process_tree(
@@ -29,7 +110,7 @@ def stop_process_tree(
     """Try graceful then forced tree termination and report bounded reap failures.
 
     Args:
-        process: Child launched with process_tree_options, never an arbitrary PID.
+        process: Child returned by launch_process, never an arbitrary PID.
         grace: Maximum graceful wait in seconds.
         forced: Maximum forced wait in seconds.
 
@@ -37,6 +118,8 @@ def stop_process_tree(
         Exact cleanup actions, parent reap and descendant observation. Escaped
         sessions (notably sudo's PTY worker) cannot be certified by this boundary.
     """
+    if os.name == "nt":
+        return stop_windows_job(process, budget=grace + forced)
     result: dict[str, Any] = {
         "status": "unverified",
         "actions": [],
@@ -59,27 +142,8 @@ def stop_process_tree(
         action: dict[str, Any] = {"force": force}
         result["actions"].append(action)
         try:
-            if os.name == "nt":
-                argv = ["taskkill.exe", "/PID", str(process.pid), "/T"]
-                if force:
-                    argv.append("/F")
-                killed = (
-                    subprocess.run(  # nosec B603 - fixed taskkill for owned PID only
-                        args=argv,
-                        capture_output=True,
-                        timeout=max(budget, 1),
-                        check=False,
-                    )
-                )
-                action.update(
-                    argv=argv,
-                    exit=killed.returncode,
-                    stdout=killed.stdout.decode("utf-8", errors="replace"),
-                    stderr=killed.stderr.decode("utf-8", errors="replace"),
-                )
-            else:
-                os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
-                action["signal"] = "SIGKILL" if force else "SIGTERM"
+            os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
+            action["signal"] = "SIGKILL" if force else "SIGTERM"
         except ProcessLookupError:
             action["group_absent"] = True
         except (OSError, subprocess.TimeoutExpired) as error:
@@ -89,32 +153,21 @@ def stop_process_tree(
             result["parent_reaped"] = True
         except (OSError, subprocess.TimeoutExpired) as error:
             action["reap_error"] = f"{type(error).__name__}: {error}"
-        if os.name == "nt":
-            absent = False
+        try:
+            deadline = time.monotonic() + budget
+            while group_present() and time.monotonic() < deadline:
+                time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+            absent = not group_present()
             result["descendants"] = (
-                "unverified: taskkill command outcomes retained; "
-                "descendant absence not enumerated"
+                "owned process group absent"
+                if absent
+                else "unverified: group remains (possibly unreaped zombies)"
             )
-        else:
-            try:
-                deadline = time.monotonic() + budget
-                while group_present() and time.monotonic() < deadline:
-                    time.sleep(min(0.05, max(0, deadline - time.monotonic())))
-                absent = not group_present()
-                result["descendants"] = (
-                    "owned process group absent"
-                    if absent
-                    else "unverified: group remains (possibly unreaped zombies)"
-                )
-            except OSError as error:
-                absent = False
-                result["descendants"] = f"unverified: {type(error).__name__}: {error}"
+        except OSError as error:
+            absent = False
+            result["descendants"] = f"unverified: {type(error).__name__}: {error}"
         if absent and result["parent_reaped"]:
             result["status"] = "pass"
-            break
-        if os.name == "nt" and result["parent_reaped"]:
-            # The parent PID may now be reused; do not issue a second taskkill
-            # against it. Reaping the parent still says nothing about its children.
             break
     result["exit"] = process.returncode
     result["scope"] = (

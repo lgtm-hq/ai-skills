@@ -210,6 +210,75 @@ def test_spike_runtime_parity(spike_fixture: Path, tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize("variant", ["py", "ts"])
+@pytest.mark.parametrize(
+    "mutation", ["nested", "long", "deep", "depth-boundary", "length-boundary"]
+)
+def test_adversarial_index_cli(
+    spike_fixture: Path, tmp_path: Path, variant: str, mutation: str
+) -> None:
+    """Bounded adversarial indexes fail for the intended reason before writes."""
+    index_path = spike_fixture / "index.json"
+    if mutation == "nested":
+        # 200001 bytes triggers the actual 3.14 C parser's stack guard, while
+        # older CPython reaches its recursion guard substantially earlier.
+        raw = "[" * 100000 + "0" + "]" * 100000
+        reason = "index nesting too deep" if variant == "py" else "invalid object"
+    else:
+        name = {
+            "long": "a/" + "b" * 9999,
+            "deep": "a/" * 5000 + "b",
+            "depth-boundary": "a/" * 16 + "b",
+            "length-boundary": "a/" + "b" * 99,
+        }[mutation]
+        index = json.loads(index_path.read_bytes())
+        index["capabilities"][0]["files"] = {name: "0" * 64}
+        raw = json.dumps(index)
+        reason = (
+            "path depth limit" if mutation == "depth-boundary" else "path length limit"
+        )
+    assert_that(len(raw.encode())).is_less_than(1024 * 1024)
+    index_path.write_text(raw, encoding="utf-8")
+    bun = shutil.which("bun")
+    if variant == "ts" and bun is None:
+        pytest.fail("Bun required for adversarial CLI parity")
+    argv = (
+        [sys.executable, "-I", "-B", str(SPIKE / "py/prototype.py")]
+        if variant == "py"
+        else [str(bun), "run", str(SPIKE / "ts/prototype.ts")]
+    )
+
+    def limit_parser() -> None:
+        """Cap the actual Python CLI's address space/CPU on Linux hosts."""
+        import resource
+
+        resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
+        resource.setrlimit(resource.RLIMIT_CPU, (5, 5))
+
+    result = subprocess.run(  # nosec B603 - fixed local CLI; small bounded inputs
+        args=[*argv, str(spike_fixture), "fixture:drop"],
+        env={**os.environ, "HOME": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+        check=False,
+        preexec_fn=(
+            limit_parser if sys.platform == "linux" and variant == "py" else None
+        ),
+    )
+    assert_that(result.returncode).is_equal_to(1)
+    assert_that(result.stderr).contains(reason).does_not_contain("Traceback")
+    assert_that(result.stdout).is_empty()
+    assert_that((tmp_path / ".spike-target").exists()).is_false()
+
+
+@pytest.mark.parametrize("name", ["a/" + "b" * 98, "a/" * 15 + "b"])
+def test_path_profile_inclusive_boundaries(prototype: ModuleType, name: str) -> None:
+    """The tiny USTAR profile accepts exactly 100 ASCII bytes and 16 components."""
+    assert_that(prototype.safe_path(name)).is_equal_to(name)
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -344,6 +413,36 @@ def test_shared_malformed_inputs_fail_closed(
         assert_that(result.returncode).described_as(
             variant + result.stdout
         ).is_not_zero()
+        common_reasons = {
+            "bad-trailer": "invalid archive trailer",
+            "short-zero-tail": "invalid archive length",
+            "nul-name-suffix": "nonzero bytes after archive string terminator",
+            "nul-prefix-suffix": "invalid archive inventory",
+            "nul-number-suffix": "invalid archive number",
+            "empty-size": "invalid archive number",
+        }
+        runtime_reasons = {
+            "py": {
+                "bom-index": "UTF-8 BOM",
+                "extra-member": "invalid archive inventory",
+                "pax-header": "invalid archive trailer",
+                "gnu-header": "end of file header",
+                "high-bit-header": "invalid path",
+            },
+            "ts": {
+                "bom-index": "JSON Parse error",
+                "extra-member": "incomplete archive",
+                "pax-header": "invalid archive inventory",
+                "gnu-header": "invalid archive inventory",
+                "high-bit-header": "non-ASCII archive header",
+            },
+        }
+        reason = common_reasons.get(mutation) or runtime_reasons[variant].get(mutation)
+        if reason is None:
+            reason = "invalid header" if variant == "py" else "invalid archive number"
+        assert_that(result.stderr).described_as(variant + ":" + mutation).contains(
+            reason
+        ).does_not_contain("Traceback")
         assert_that((home / ".spike-target").exists()).is_false()
 
 

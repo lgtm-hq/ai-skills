@@ -63,6 +63,27 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+test.each([
+  { name: "a/" + "b".repeat(99), reason: "path length limit" },
+  { name: "a/".repeat(16) + "b", reason: "path depth limit" },
+  { name: "a/".repeat(5000) + "b", reason: "path length limit" },
+  // Inclusive boundaries reach inventory checking, rather than path rejection.
+  { name: "a/" + "b".repeat(98), reason: "incomplete archive" },
+  { name: "a/".repeat(15) + "b", reason: "incomplete archive" },
+])("path profile: $reason ($name)", async ({ name, reason }) => {
+  const index = JSON.parse(await readFile(join(fixture, "index.json"), "utf8")) as {
+    capabilities: { files: Record<string, string> }[];
+  };
+  const capability = index.capabilities[0];
+  if (!capability) throw new Error("missing capability");
+  capability.files[name] = "0".repeat(64);
+  const raw = JSON.stringify(index);
+  expect(Buffer.byteLength(raw)).toBeLessThan(1024 * 1024);
+  await writeFile(join(fixture, "index.json"), raw);
+  await expect(install({ fixture, home: root, exclude: "fixture:drop" })).rejects.toThrow(reason);
+  await expect(access(join(root, ".spike-target"))).rejects.toThrow();
+});
+
 test("shared golden fixture is materialized after set subtraction", async () => {
   const expected = JSON.parse(
     await readFile(join(fixture, "expected-output.json"), "utf8"),

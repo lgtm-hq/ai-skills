@@ -3,6 +3,8 @@ import { mkdir, open, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const LIMIT = 1024 * 1024;
+const PATH_LIMIT = 100; // ASCII bytes/characters; tiny USTAR name field.
+const PATH_DEPTH = 16;
 interface Capability {
   id: string;
   closure: string[];
@@ -23,6 +25,12 @@ function keys(value: Record<string, unknown>, expected: string[]): void {
 }
 
 function safePath(value: string): string {
+  // Bound work before regex, split, or retaining directory prefixes.
+  if (value.length > PATH_LIMIT) throw new Error("path length limit");
+  let separators = 0;
+  for (const character of value) {
+    if (character === "/" && ++separators >= PATH_DEPTH) throw new Error("path depth limit");
+  }
   if (
     !/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_.-]+)+$/.test(value) ||
     value

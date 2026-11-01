@@ -12,6 +12,8 @@ import tarfile
 from pathlib import Path
 
 LIMIT = 1024 * 1024
+PATH_LIMIT = 100  # ASCII bytes/characters; fits the tiny USTAR name field.
+PATH_DEPTH = 16
 PATH_PATTERN = re.compile(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)+")
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
 DEVICE_PATTERN = re.compile(
@@ -57,13 +59,16 @@ def safe_path(value: object) -> str:
     Raises:
         ValueError: If the path is outside the spike profile.
     """
-    if (
-        not isinstance(value, str)
-        or not PATH_PATTERN.fullmatch(value)
-        or any(
-            part in {".", ".."} or part.endswith(".") or DEVICE_PATTERN.fullmatch(part)
-            for part in value.split("/")
-        )
+    if not isinstance(value, str) or not value:
+        raise ValueError("invalid path")
+    # Check budgets before regex, split, or allocating any directory prefixes.
+    if len(value) > PATH_LIMIT:
+        raise ValueError("path length limit")
+    if value.count("/") >= PATH_DEPTH:
+        raise ValueError("path depth limit")
+    if not PATH_PATTERN.fullmatch(value) or any(
+        part in {".", ".."} or part.endswith(".") or DEVICE_PATTERN.fullmatch(part)
+        for part in value.split("/")
     ):
         raise ValueError("invalid path")
     return value
@@ -86,7 +91,10 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
     """
     index_bytes = read_fixture(fixture / "index.json")
     archive = read_fixture(fixture / "artifact.tar")
-    index = json.loads(index_bytes.decode("utf-8"))
+    try:
+        index = json.loads(index_bytes.decode("utf-8"))
+    except RecursionError as error:
+        raise ValueError("index nesting too deep") from error
     if not isinstance(index, dict) or set(index) != {"sha256", "capabilities"}:
         raise ValueError("invalid index")
     if hashlib.sha256(archive).hexdigest() != index["sha256"]:

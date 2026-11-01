@@ -8,7 +8,6 @@ import json
 import secrets
 import shutil
 import socket
-import subprocess  # nosec B404 - pinned local test server, explicit argv
 import time
 from contextlib import closing
 from pathlib import Path
@@ -16,7 +15,7 @@ from typing import Any
 
 from common import SETTINGS, SPIKE, command, registry_setup_environment, write_json
 from packages import client_env, install_client, prepare_packages
-from process_tree import process_tree_options, stop_process_tree
+from process_tree import close_process, launch_process, stop_process_tree
 
 
 def redact(*, value: object, sensitive: list[str]) -> Any:
@@ -201,13 +200,12 @@ def measure_registry(*, build: Path, work: Path) -> dict[str, Any]:
             stdout_path.open("w", encoding="utf-8") as stdout,
             stderr_path.open("w", encoding="utf-8") as stderr,
         ):
-            server = subprocess.Popen(  # nosec B603 - pinned cached Verdaccio, no shell
+            server = launch_process(
                 args=argv,
                 cwd=SPIKE / "ts",
                 env=server_env,
                 stdout=stdout,
                 stderr=stderr,
-                **process_tree_options(),
             )
         ready = False
         readiness: dict[str, Any] = {"operation": "registry readiness"}
@@ -309,7 +307,10 @@ def measure_registry(*, build: Path, work: Path) -> dict[str, Any]:
     finally:
         termination: dict[str, Any] = {"status": "not launched"}
         if server is not None:
-            termination = stop_process_tree(server)
+            try:
+                termination = stop_process_tree(server)
+            finally:
+                close_process(server)
             if termination["status"] != "pass":
                 for variant in ("ts", "py"):
                     results[variant].update(

@@ -87,24 +87,38 @@ Each retains twelve result JSONs in six evidence artifacts: ten native plus two
 dedicated Linux offline observations. All 24 record matching source/expected
 heads, clean status and exact event/run identity. The report links both artifact
 lists, exact R3 footprint and security outputs. Dispatch collection acceptance is
-met; collection success does not establish scenario acceptance or validate R4.
+met at ca2db52; collection success does not establish scenario acceptance.
 
-Registry clients and no-Node execution pass for both variants on all five targets.
-Local-file Bun installs select all five platform packages while npm selects only
-its target, both before and during restriction. Equal failures do not establish
-deployability. Windows R3 now creates normalized per-program rules, observes
-bundled Python IPv4 denial, runs both installers and verifies rule removal.
-It has no same-program control for Bun, Node or installed runtimes: schema-2
-`denial_proven=true` covers the Python probe only. Windows installer denial remains
-unverified; R4 separates probe and installer proof without rewriting historical
-JSON. POSIX shared namespace/sandbox proof remains valid. Windows registry tree
-shutdown records graceful taskkill exit 255, forced exit 0 and parent reap,
-not enumerated descendant absence; R4 reports that limitation as unverified.
-Dedicated Harden Runner denial still lacks a same-host baseline.
+The inspected R4 [PR run 41295866082](https://github.com/lgtm-hq/ai-skills/actions/runs/41295866082)
+and genuine [workflow_dispatch run 41295968562](https://github.com/lgtm-hq/ai-skills/actions/runs/41295968562)
+both succeeded at exact clean `d77da0126b9956bc1b4205416345d16c5a344228`.
+Each contains twelve unique schema-3 result JSONs (ten native plus two dedicated),
+with matching source/expected heads, exact event/run identity and attempt 1.
+Build logs are not extra result cells. Green dispatch satisfies the collection/link
+criterion at **d77da01**, not final current-head acceptance. Neither R3 nor R4
+validates the later R5 source, including its Windows Job Object launch/cleanup.
+
+In both R4 runs, registry **client installations** and no-Node execution pass
+for both variants on all five targets. Registry **overall** is pass on Linux/macOS
+but unverified on Windows because descendant cleanup was not proven. Local-file
+Bun installs select all five platform packages while npm selects its target,
+both before and during restriction. Equal failures do not establish deployability.
+Linux/macOS prove shared probe/installer denial; overall offline remains fail.
+Windows proves only bundled Python probe denial, records installer denial false,
+and verifies exact firewall rule removal; overall offline remains unverified.
+Dedicated Harden Runner denial still lacks a same-host baseline and is unverified.
+The report keeps detailed numeric/quarantine tables explicitly bound to R3;
+no R3 numbers or raw artifacts have been relabeled as R4.
 
 R4 requires clean, matching expected source identity in hosted collection and
 records the run attempt. Downloaded payload/build identity remains explicitly
 unverified: archive hashes alone do not bind payloads to the expected source.
+
+All remaining required signing/security, offline/control, provenance and ADR
+acceptance remains tracked on **#562**, under the unanswered
+[owner-policy gate](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6556223222).
+No waiver is inferred; both clients remain required. #614 holds optional M5 NITs
+only. This proposal remains **Part of #562**.
 
 The existing escape hatch names these decision-bearing restrictions, evaluated
 for **both variants on all five supported targets**:

@@ -12,9 +12,16 @@ complete portable inventories and retained closures are validated before writes.
 The shared data-only USTAR fixture includes a BOM-prefixed retained Markdown file;
 actual installed bytes must match its verified hash. Windows reserved basenames,
 case aliases and file/directory collisions are rejected, even for excluded files.
-This tiny regular-file UTF-8 profile is not the production v2 schema.
+This tiny regular-file UTF-8 profile is not the production v2 schema. Paths
+are ASCII, at most **100 bytes/characters** (the USTAR name slot), and at most
+**16 components**, checked before splitting or constructing directory prefixes.
+Inputs are each capped at 1 MiB before parsing; Python JSON recursion errors are
+controlled validation failures.
 Both runtimes reject non-512-byte archive lengths, nonzero string suffixes after
 NUL, nonzero prefix bytes and invalid or empty mode/uid/gid/size/mtime octal fields.
+Device-number slots (devmajor/devminor) are ignored for regular files; device
+entries themselves are forbidden. This is a narrow profile, not validation of
+every USTAR metadata field.
 
 Generate fixture bytes with `scripts/fixture.py`; `--check` is its byte-drift gate.
 Scoped Git attributes preserve fixture bytes and LF script lines on Windows.
@@ -52,7 +59,10 @@ absent, so installer denial and overall offline status stay unverified. Exact
 rule identities, setup, both installer observations and cleanup are retained.
 No-Node control removes tool directories from PATH while preserving Windows loader
 necessities and using disposable AppData/HOME locations. Node, nodejs, Bun and
-bunx resolution or unexpected HOME files fail the runtime observation.
+bunx resolution or unexpected HOME files fail the runtime observation. Filtering
+and detection share aliases and PATHEXT suffixes. The cache blocker must remain
+an unchanged nonsymlink regular file after execution; deletion, overwrite or
+replacement makes the observation fail.
 
 ## CI and raw evidence
 
@@ -74,8 +84,13 @@ Build records the setup temp/cache identity used to prime Verdaccio. Only the
 server reuses it with `--no-install`; measured clients retain isolated fresh
 config, temp and caches. Registry readiness has a bounded retry window, and both
 shutdown waits retain errors without losing other evidence.
-POSIX verifies owned-group absence. Windows taskkill exits and parent reap are
-command evidence; descendant absence remains unverified and downgrades summaries.
+POSIX verifies owned-group absence. Windows launches suspended roots, assigns a
+non-breakaway, kill-on-close Job Object, then resumes the retained primary thread.
+Ownership survives root exit. Timeout/server cleanup terminates the job, queries
+active membership and reaps within bounded waits; only observed empty membership
+and successful reap/handle cleanup pass. Setup/assignment failures execute no
+target code. Native CI includes an exited-parent/pipe-holding-child smoke; live
+R5 Windows behavior remains unverified until that hosted run is inspected.
 
 Before native isolation, both clients install the **same local tarballs** with
 identical flags and fresh caches as a package-manager control. Per-client control
@@ -109,6 +124,8 @@ Windows direct CreateProcess does not test MotW shell/SmartScreen enforcement;
 macOS CLI execution does not establish Finder behavior. Defender engine failures,
 disabled Gatekeeper, third-party EDR, deliberate deep paths, unsigned fleet policy,
 non-AVX2 baseline, musl and older Linux compatibility remain unverified.
-The report links inspected R3 PR and green workflow_dispatch evidence at ca2db52.
-Those runs predate R4 and do not validate its changes. ADR 0008 stays Proposed
+The report links inspected R3 PR/dispatch evidence at ca2db52 and complete R4
+PR/green workflow_dispatch evidence at d77da01. Those runs do not validate R5.
+Windows R4 registry overall remains unverified despite passing client installs.
+ADR 0008 stays Proposed
 pending scenario and owner dispositions, including required quarantine/security.

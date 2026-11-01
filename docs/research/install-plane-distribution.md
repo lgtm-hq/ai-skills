@@ -47,6 +47,61 @@ fingerprints. Pins are Bun **1.4.0**, uv **0.11.26**, CPython **3.14.6** and
 Verdaccio **6.2.0**. Verdaccio's transitive setup tree is not locked; launcher
 `--bun` flags or Node-style warnings do not certify its entire runtime tree.
 
+## Inspected R4 evidence (not R5 validation)
+
+The R4 [PR run 41295866082][r4-pr] and genuine
+[workflow_dispatch run 41295968562][r4-dispatch] both completed **successfully**
+at exact clean head `d77da0126b9956bc1b4205416345d16c5a344228`.
+Each [PR artifact list][r4-pr-artifacts] / [dispatch artifact list][r4-artifacts]
+contains twelve unique schema-3 result JSONs: ten native (five targets × two
+variants) and two dedicated offline observations. All 24 have matching
+source/expected heads, empty source status, exact event/run identity and run
+attempt **1**. The five `build.json` files per run are setup logs, not additional
+result cells. Artifact names follow the runner table above.
+
+Both runs agree on these outcomes for **both variants**. Client pairs below are
+**Bun / npm**; U means unverified. Client installation success and registry server
+cleanup are separate observations.
+
+| Target       | Registry clients | Registry overall | No Node | Local-file control / restricted clients | Offline overall |
+| ------------ | ---------------- | ---------------- | ------- | --------------------------------------- | --------------- |
+| linux-x64    | Pass / pass      | Pass             | Pass    | Fail / pass in both                     | Fail            |
+| linux-arm64  | Pass / pass      | Pass             | Pass    | Fail / pass in both                     | Fail            |
+| darwin-arm64 | Pass / pass      | Pass             | Pass    | Fail / pass in both                     | Fail            |
+| darwin-x64   | Pass / pass      | Pass             | Pass    | Fail / pass in both                     | Fail            |
+| windows-x64  | Pass / pass      | U (cleanup)      | Pass    | Fail / pass in both                     | U (probe only)  |
+
+Every Bun local-file wrapper install still selects all five platform packages;
+npm selects the target. The same tarballs and `--offline --ignore-scripts` flags
+are used before/during restriction. Linux/macOS record both
+`probe_denial_proven=true` and `installer_denial_proven=true` under shared
+namespace/sandbox restrictions; Bun's transport failure keeps overall offline
+status fail. Windows records probe true but installer false: its bundled Python
+IPv4 baseline connects and its restricted probe gets WinError 10013. Exact scoped
+firewall cleanup records `verified removed`, exit 0 and `rules absent`.
+There are still no same-program positive/restricted controls for Bun, Node or
+installed runtimes. Passing npm observations do not establish offline acceptance.
+
+Windows registry termination records `taskkill /PID <owned-root> /T` exit 255,
+forced `/T /F` exit 0 and parent reap, with descendant absence explicitly
+unverified. Thus its **client installations pass but registry overall is U**.
+POSIX registry owned-group absence is verified. The R5 source replaces Windows
+PID-tree cleanup with suspended launch into a non-breakaway Job Object, shared
+by commands and registry startup. Its failure/success lifecycle tests and
+parent-exits/child-keeps-pipes smoke are wired into the native CI test step;
+**no R5 hosted Windows outcome is claimed**.
+
+Both dedicated R4 observations per run remain U: Harden Runner alone has no
+same-host unrestricted baseline, and probe/installer denial are false. Their
+installer observations remain Bun fail / npm pass. Downloaded payload hashes
+still do not bind them to expected source/build metadata. Green dispatch meets
+the collection/link criterion at **d77da01 only**; final acceptance needs evidence
+for the reviewed head plus disposition of every required failure/unknown.
+
+The footprint timings and detailed quarantine command/output tables below remain
+**R3-only historical measurements** at ca2db52. They are not R4 or R5 timings.
+Neither earlier artifact set has been modified or relabeled.
+
 ## R3 restricted-scenario comparison
 
 Each client gets fresh HOME, temp, config and caches. The private registry has no
@@ -223,7 +278,7 @@ macOS/Windows security observation; it remains unverified for third-party EDR to
 The R2 runs [41288233178][r2] and [41290059704][r2-dispatch] predate these R3
 observations; R2 Windows stopped at firewall Error 87 without restricted installs.
 The R3 green dispatch now satisfies the dispatch collection/link criterion at
-`ca2db52`. It supplies no hosted evidence for this later R4 code.
+`ca2db52`. R4 collection is separately inspected above; neither run validates R5.
 
 R4's schema **3** enforces a clean checkout and required matching expected head in
 hosted mode, records `GITHUB_RUN_ATTEMPT`, and labels local runs as local
@@ -243,13 +298,15 @@ Harden Runner/Windows denial and fleet security scope establish no equality.
 Identical Bun failures need owner disposition; footprint without a specified
 threshold cannot choose the runtime. No runtime choice or waiver is inferred.
 
-The parent retains these concrete steps in existing M5 batch **#614**:
+These required acceptance steps remain tracked on **[#562][owner-policy]**.
+The [public owner-policy gate][owner-policy] remains unanswered: both clients and
+all required signing/security/offline/control criteria remain required, with no
+waiver inferred. This work is **Part of #562** and does not close it.
 
-1. Review/push R4 and inspect the next existing collection tick's raw JSON. Windows
-   installer denial stays unverified until each relevant executable has matched
-   same-program controls, or the owner disposes of that unmet criterion.
-   Windows process-tree enumeration is deferred: bounded taskkill/reap evidence
-   alone cannot establish absence, so R4 makes no such claim.
+1. Inspect hosted evidence for the final reviewed source, including the R5
+   Windows owned-job launch/cleanup smoke. Windows installer denial remains
+   unverified until each relevant executable has matched same-program controls,
+   or the owner explicitly disposes of the unmet criterion.
 2. Isolate the Bun local-file wrapper selection failure and obtain an explicit
    disposition against deployment requirements. A direct platform-tarball control
    may diagnose transport, but cannot replace the required wrapper/client cell.
@@ -259,16 +316,22 @@ The parent retains these concrete steps in existing M5 batch **#614**:
    observed assessment failures/unsigned artifacts. Test appropriately signed
    artifacts and the required security route before accepting that route.
 5. Bind transferred payload hashes/build metadata to expected source identity
-   before claiming verified provenance. This is explicitly unverified in R4;
-   no extra distribution experiment or dependency install is added here.
-   Verdaccio transitive locking/runtime-tree attribution and broader cache,
-   CPU/OS compatibility tests remain outside this small spike's proof.
-   Conservative tilde rejection remains: legitimate tilde paths can produce U,
-   but unverified program identities are not broadened.
+   before claiming verified provenance. This remains explicitly unverified in R4.
 6. Apply the existing Python-first decision rule only after these failures and
    owner requirements have dispositions. Update ADR/index together and reconcile
    #566/#567/#578/#386 then. ADR acceptance and #562 completion remain open.
 
+Only optional M5 NITs belong in **#614**: locking Verdaccio's transitive setup
+runtime tree and attributing that tree, broader cache/read-only-runtime and CPU/OS
+compatibility coverage, and support for legitimate tilde paths currently rejected
+conservatively. These do not replace #562 acceptance. Required process ownership,
+security, controls, provenance and ADR finalization are not deferred to #614.
+
+[owner-policy]: https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6556223222
+[r4-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41295866082
+[r4-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41295968562
+[r4-pr-artifacts]: https://github.com/lgtm-hq/ai-skills/actions/runs/41295866082#artifacts
+[r4-artifacts]: https://github.com/lgtm-hq/ai-skills/actions/runs/41295968562#artifacts
 [pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41292001121
 [dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41292078852
 [pr-artifacts]: https://github.com/lgtm-hq/ai-skills/actions/runs/41292001121#artifacts
