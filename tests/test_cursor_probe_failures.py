@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from assertpy import assert_that
 
-SCRIPT = Path(__file__).parent / "fixtures/host-probe/cursor-macos-probe.sh"
+SCRIPT = Path(__file__).parent / "fixtures/host-probe/cursor-macos-probe-driver.sh"
 type DriverRunner = Callable[
     [str, bool], tuple[subprocess.CompletedProcess[str], dict[str, Any], Path]
 ]
@@ -60,6 +60,23 @@ def driver(tmp_path: Path) -> DriverRunner:
             "    print('Darwin' if sys.argv[1] == '-s' else 'synthetic')\n"
             "elif name == 'sw_vers':\n"
             "    print('synthetic-os')\n"
+            "elif name == 'security':\n"
+            "    state = base / 'keychains.json'\n"
+            "    original = [] if failure == 'empty-keychains' else [\n"
+            "        '/synthetic/login keychain-db', '/synthetic/other.keychain-db']\n"
+            "    chains = (json.loads(state.read_text())\n"
+            "              if state.exists() else original)\n"
+            "    if sys.argv[1] == 'list-keychains':\n"
+            "        if '-s' in sys.argv:\n"
+            "            chains = sys.argv[sys.argv.index('-s') + 1:]\n"
+            "        else:\n"
+            "            for chain in chains:\n"
+            "                print('    ' + json.dumps(chain))\n"
+            "    elif sys.argv[1] == 'create-keychain':\n"
+            "        chains.append(sys.argv[-1])\n"
+            "    elif sys.argv[1] == 'delete-keychain':\n"
+            "        chains = [chain for chain in chains if chain != sys.argv[-1]]\n"
+            "    state.write_text(json.dumps(chains))\n"
             "elif name == 'pgrep':\n"
             "    remaining = int(marker.read_text()) if marker.exists() else 0\n"
             "    if remaining:\n"
@@ -119,6 +136,7 @@ def driver(tmp_path: Path) -> DriverRunner:
         for name in (
             "uname",
             "sw_vers",
+            "security",
             "pgrep",
             "pkill",
             "find",
@@ -159,6 +177,28 @@ def driver(tmp_path: Path) -> DriverRunner:
         return result, json.loads(text), scratch
 
     return run
+
+
+@pytest.mark.parametrize("failure", ["none", "empty-keychains"])
+def test_driver_restores_exact_keychain_search_list(
+    driver: DriverRunner,
+    failure: str,
+) -> None:
+    """Keychain restoration preserves an empty list and paths containing spaces."""
+    result, report, scratch = driver(failure, False)
+    assert_that(result.returncode).described_as(result.stderr).is_zero()
+    expected = (
+        []
+        if failure == "empty-keychains"
+        else ["/synthetic/login keychain-db", "/synthetic/other.keychain-db"]
+    )
+    assert_that(
+        json.loads((scratch.parent / "keychains.json").read_text())
+    ).is_equal_to(
+        expected,
+    )
+    assert_that(report["cleanup"]["status"]).is_equal_to("purged")
+    assert_that(list(scratch.iterdir())).is_empty()
 
 
 @pytest.mark.parametrize(

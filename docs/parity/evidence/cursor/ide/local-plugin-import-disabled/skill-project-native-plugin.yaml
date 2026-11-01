@@ -12,7 +12,7 @@ observed: not-measured
 policyMarkers:
   - Allow Local Plugin Imports
 checkedOn: '2026-11-01'
-recheckBy: '2027-02-01'
+recheckBy: '2027-05-01'
 steps: []
 notes: |-
   Native-plugin loading under policy is blocked by owner attestation

@@ -31,8 +31,13 @@ needed for either fixture. Run them only from a copied disposable tree.
 
 ## Personal Cursor source kit
 
-[`cursor-macos-probe.sh`](cursor-macos-probe.sh) is the supplied interactive
-macOS Bash 3.2 kit, reviewed and hardened before committing. It uses a fresh
+[`cursor-macos-probe.sh`](cursor-macos-probe.sh) preserves the exact supplied
+personal-Mac script as an archival fixture; do not use it for new runs. Its
+narrow lint exception is documented in [CONTRIBUTING.md](../../../CONTRIBUTING.md).
+[`cursor-macos-probe-driver.sh`](cursor-macos-probe-driver.sh) is the maintained
+macOS Bash 3.2 kit, preserving R6's controls and adding the canonical physical
+path, isolated keychain with exact search-list restoration, and **This Mac**
+local-agent prompt. It uses a fresh
 HOME/project, TMPDIR/XDG roots, user-data and extensions directories, phased
 six-role checks, restart/removal observations, private config fingerprints
 (paths and SHA-256 only), sanitized JSON and an EXIT cleanup trap. The embedded
@@ -42,7 +47,8 @@ extract and execute these actual embedded programs with synthetic inputs and
 run the full driver using fake OS/IDE commands in a disposable HOME.
 
 Follow the [personal-Mac checklist](../../../docs/parity/cursor-probe-checklist.md)
-and [owner decision](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548).
+and [owner
+decision](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548).
 No employer-managed machine or organization policy data is used. Native-plugin
 policy cells are owner-attested definitions; file-policy cells derive from the
 matching personal results. The public setting is **Allow Local Plugin Imports**
@@ -57,10 +63,14 @@ explicit reason and null change count; errors still exit nonzero. Hook removal
 records a boundary before each restart and checks the exact removed tag after
 a fresh prompt. The JSON cleanup status describes owned scratch only, not host
 caches; `--keep` retains private scratch state. Review JSON before sharing.
-No IDE was run here and no personal results have arrived: the source kit is
-complete, while #563 remains
-open pending the owner's JSON evidence and required merge order. Neither this
-script nor its offline tests upgrades historical host support or cleanup claims.
+The maintainer's personal Cursor IDE 3.27.22 run is recorded in the
+[WRITE-ONCE raw
+snapshot](../../../docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json).
+It was resumed manually in the same record format; its removal observations
+are not the maintained driver's automatic hook-boundary evidence. The raw
+snapshot and digest index must never be rewritten. The parent's publication,
+review and required merge order after #562 still apply. Offline tests do not
+upgrade the historical Codex/Claude evidence or certify a new IDE run.
 
 ## Prepare an isolated case
 
@@ -187,7 +197,8 @@ For the original Claude file-mode registrations, the driver copied `mcp/`
 after R059/R062, then replaced the checkout path in isolated
 `claude/.claude.json` or `project/.mcp.json` with the copied server path before
 R060/R063. Exact recovered driver operations and subsequent health results
-are [D002/D003](../../../docs/parity/probe-log.md#d002d003-copied-mcp-path-replacement-after-r059r062).
+are
+[D002/D003](../../../docs/parity/probe-log.md#d002d003-copied-mcp-path-replacement-after-r059r062).
 These edits are driver steps, separate from the 112 process attempts. For a
 future run, register the isolated copy directly as shown below.
 

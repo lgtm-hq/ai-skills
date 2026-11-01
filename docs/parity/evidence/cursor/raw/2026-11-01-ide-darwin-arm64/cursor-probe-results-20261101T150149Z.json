@@ -1,0 +1,459 @@
+{
+  "issue": "lgtm-hq/ai-skills#563",
+  "host": "cursor",
+  "interface": "ide",
+  "version": "3.27.22",
+  "os": "darwin-arm64",
+  "osVersion": "27.2",
+  "policy": "none (personal install; owner-attested equivalence for file modes)",
+  "checkedOn": "2026-11-01",
+  "agentLocation": "This Mac (local agent); Cloud agent cannot see local files",
+  "isolation": "throwaway HOME, --user-data-dir, --extensions-dir under a temp root; isolated empty keychain in the throwaway HOME",
+  "realConfigChangedEntries": 29,
+  "realConfigNote": "no probe-named or PROBE-7f3a residue in real ~/.cursor, ~/.claude, ~/.agents; changes came from the normal Cursor (built-in skills sync, chats, statsig cache) opened by mistake mid-run and from a concurrent Claude Code session",
+  "runNotes": [
+    "Script was resumed manually after the driving shell was interrupted; remaining checks recorded with the same record format.",
+    "macOS needs a keychain under the throwaway HOME; without it Cursor shows 'Keychain Not Found' (do not click Reset To Defaults).",
+    "Opening the project via /var vs /private/var produced an empty window or unrunnable project items; using the real path fixed it."
+  ],
+  "hookLog": [
+    "PROBE-7f3a-lifecycle-ue sessionStart",
+    "PROBE-7f3a-lifecycle-ue sessionStart",
+    "PROBE-7f3a-lifecycle-ue beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-ue sessionStart",
+    "PROBE-7f3a-lifecycle-ue beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-ue sessionStart",
+    "PROBE-7f3a-lifecycle-ue beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-ue sessionStart",
+    "PROBE-7f3a-lifecycle-ue sessionStart",
+    "PROBE-7f3a-lifecycle-ue beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-ue sessionStart",
+    "PROBE-7f3a-lifecycle-ue beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-ue sessionStart",
+    "PROBE-7f3a-lifecycle-ue sessionStart",
+    "PROBE-7f3a-lifecycle-ue beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-ue sessionStart",
+    "PROBE-7f3a-lifecycle-ue beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-ue sessionStart",
+    "PROBE-7f3a-lifecycle-ue beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-rm beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-rm sessionStart",
+    "PROBE-7f3a-lifecycle-rm beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-rm sessionStart",
+    "PROBE-7f3a-lifecycle-rm beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-rm sessionStart",
+    "PROBE-7f3a-lifecycle-rm beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-rm sessionStart",
+    "PROBE-7f3a-lifecycle-rm beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-rm sessionStart",
+    "PROBE-7f3a-lifecycle-rm beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-rm sessionStart",
+    "PROBE-7f3a-lifecycle-rm beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-np sessionStart",
+    "PROBE-7f3a-lifecycle-np sessionStart",
+    "PROBE-7f3a-lifecycle-np beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-np sessionStart",
+    "PROBE-7f3a-lifecycle-np beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-np sessionStart",
+    "PROBE-7f3a-lifecycle-np sessionStart",
+    "PROBE-7f3a-lifecycle-np beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-np sessionStart",
+    "PROBE-7f3a-lifecycle-np sessionStart",
+    "PROBE-7f3a-lifecycle-np beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-np sessionStart",
+    "PROBE-7f3a-lifecycle-np sessionStart",
+    "PROBE-7f3a-lifecycle-np beforeSubmitPrompt",
+    "PROBE-7f3a-lifecycle-np sessionStart",
+    "PROBE-7f3a-lifecycle-np sessionStart",
+    "PROBE-7f3a-lifecycle-np beforeSubmitPrompt"
+  ],
+  "mcpLog": [
+    "ue started",
+    "ue listed",
+    "ue started",
+    "ue started",
+    "ue listed",
+    "ue started",
+    "ue called",
+    "ue called",
+    "rm started",
+    "rm listed",
+    "rm called",
+    "np started",
+    "np listed",
+    "np started",
+    "np listed",
+    "np called"
+  ],
+  "checks": [
+    {
+      "check": "ue-skill",
+      "role": "skill",
+      "scope": "user",
+      "mode": "user-explode",
+      "question": "Type /probe-skill-ue in agent chat and send. Does it reply PROBE-7f3a-skill-ue? (Also: is it listed under Customize/Settings -> Skills? if listed but not invocable answer d)",
+      "answer": "y",
+      "note": "listed under Settings Skills and returns token via slash with agent location 'This Mac' (first attempt used Cloud agent by mistake)"
+    },
+    {
+      "check": "ue-instruction",
+      "role": "instruction",
+      "scope": "user",
+      "mode": "user-explode",
+      "question": "Ask exactly: Return the instruction sentinel.  Does it reply PROBE-7f3a-instruction-ue? (Rules listed but not applied = d)",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "ue-specialist",
+      "role": "specialist",
+      "scope": "user",
+      "mode": "user-explode",
+      "question": "Ask: Use the probe-specialist-ue subagent and return its answer.  Does it reply PROBE-7f3a-specialist-ue? (Listed under subagents but not run = d)",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "ue-workflow",
+      "role": "workflow",
+      "scope": "user",
+      "mode": "user-explode",
+      "question": "Type /probe-workflow-ue and send. Does it reply PROBE-7f3a-workflow-ue? (Shown in / menu but not run = d)",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "ue-lifecycle",
+      "role": "lifecycle",
+      "scope": "user",
+      "mode": "user-explode",
+      "question": "hook log contains PROBE-7f3a-lifecycle-ue (after the prompts above)",
+      "answer": "y",
+      "note": "automatic file check"
+    },
+    {
+      "check": "ue-integration",
+      "role": "integration",
+      "scope": "user",
+      "mode": "user-explode",
+      "question": "Open Cursor Settings -> MCP (Tools & MCP). Is server probe-ue listed and enabled/green? If so, ask the agent: Call the probe_integration_ue tool. Did it return PROBE-7f3a-integration-ue? (y = tool returned token, d = listed only, n = not listed)",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "ue-integration-proc",
+      "role": "integration",
+      "scope": "user",
+      "mode": "user-explode",
+      "question": "MCP sentinel process probe-ue was started by Cursor",
+      "answer": "y",
+      "note": "automatic file check"
+    },
+    {
+      "check": "ue-skill-autoinvoke",
+      "role": "skill",
+      "scope": "user",
+      "mode": "user-explode",
+      "question": "disable-model-invocation check: NEW chat, ask (do not name the skill): What is the ai-skills probe skill sentinel token? Did it return PROBE-7f3a-skill-ue on its own? (y = auto-invoked despite disable-model-invocation: true, n = it did not)",
+      "answer": "y",
+      "note": "returned token without naming the skill; not confirmed whether via skill invocation or file search"
+    },
+    {
+      "check": "ue-removed",
+      "role": "all",
+      "scope": "user",
+      "mode": "user-explode",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": "all ue items gone after real restart; only phase-2 rm items listed"
+    },
+    {
+      "check": "rm-skill",
+      "role": "skill",
+      "scope": "project",
+      "mode": "repo-materialize",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": "first attempt failed while the window had /var vs /private/var path ambiguity / empty window; passed once the project folder was opened via its real path"
+    },
+    {
+      "check": "rm-instruction",
+      "role": "instruction",
+      "scope": "project",
+      "mode": "repo-materialize",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": "first attempt failed while the window had /var vs /private/var path ambiguity / empty window; passed once the project folder was opened via its real path"
+    },
+    {
+      "check": "rm-specialist",
+      "role": "specialist",
+      "scope": "project",
+      "mode": "repo-materialize",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": "first attempt failed while the window had /var vs /private/var path ambiguity / empty window; passed once the project folder was opened via its real path"
+    },
+    {
+      "check": "rm-workflow",
+      "role": "workflow",
+      "scope": "project",
+      "mode": "repo-materialize",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": "first attempt failed while the window had /var vs /private/var path ambiguity / empty window; passed once the project folder was opened via its real path"
+    },
+    {
+      "check": "rm-lifecycle",
+      "role": "lifecycle",
+      "scope": "project",
+      "mode": "repo-materialize",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": "automatic hook log check"
+    },
+    {
+      "check": "rm-integration",
+      "role": "integration",
+      "scope": "project",
+      "mode": "repo-materialize",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": "tool returned token; whether project MCP was off by default not confirmed"
+    },
+    {
+      "check": "rm-integration-proc",
+      "role": "integration",
+      "scope": "project",
+      "mode": "repo-materialize",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": "automatic MCP process check"
+    },
+    {
+      "check": "rm-agentsmd",
+      "role": "instruction",
+      "scope": "project",
+      "mode": "repo-materialize",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "rm-removed",
+      "role": "all",
+      "scope": "project",
+      "mode": "repo-materialize",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "np-plugin-listed",
+      "role": "native-plugin",
+      "scope": "user",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "np-skill",
+      "role": "skill",
+      "scope": "user",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "np-instruction",
+      "role": "instruction",
+      "scope": "user",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "np-specialist",
+      "role": "specialist",
+      "scope": "user",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "np-workflow",
+      "role": "workflow",
+      "scope": "user",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "np-lifecycle",
+      "role": "lifecycle",
+      "scope": "user",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": "automatic hook log check"
+    },
+    {
+      "check": "np-integration",
+      "role": "integration",
+      "scope": "user",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "np-integration-proc",
+      "role": "integration",
+      "scope": "user",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": "automatic MCP process check"
+    },
+    {
+      "check": "np-removed",
+      "role": "all",
+      "scope": "user",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "npp-plugin-listed",
+      "role": "native-plugin",
+      "scope": "project",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "n",
+      "note": "project-scope plugins/local not loaded on first launch (no plugin, skill, rule, subagent, command or MCP)"
+    },
+    {
+      "check": "npp-skill",
+      "role": "skill",
+      "scope": "project",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "n",
+      "note": "project-scope plugins/local not loaded on first launch (no plugin, skill, rule, subagent, command or MCP)"
+    },
+    {
+      "check": "npp-instruction",
+      "role": "instruction",
+      "scope": "project",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "n",
+      "note": "project-scope plugins/local not loaded on first launch (no plugin, skill, rule, subagent, command or MCP)"
+    },
+    {
+      "check": "npp-specialist",
+      "role": "specialist",
+      "scope": "project",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "n",
+      "note": "project-scope plugins/local not loaded on first launch (no plugin, skill, rule, subagent, command or MCP)"
+    },
+    {
+      "check": "npp-workflow",
+      "role": "workflow",
+      "scope": "project",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "n",
+      "note": "project-scope plugins/local not loaded on first launch (no plugin, skill, rule, subagent, command or MCP)"
+    },
+    {
+      "check": "npp-integration",
+      "role": "integration",
+      "scope": "project",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "n",
+      "note": "project-scope plugins/local not loaded on first launch (no plugin, skill, rule, subagent, command or MCP)"
+    },
+    {
+      "check": "npp-lifecycle",
+      "role": "lifecycle",
+      "scope": "project",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "n",
+      "note": "automatic hook log check"
+    },
+    {
+      "check": "npp-integration-proc",
+      "role": "integration",
+      "scope": "project",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "n",
+      "note": "automatic MCP process check"
+    },
+    {
+      "check": "xread-claude",
+      "role": "skill",
+      "scope": "user",
+      "mode": "cross-read",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "xread-agents",
+      "role": "skill",
+      "scope": "user",
+      "mode": "cross-read",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "npp-relaunch",
+      "role": "native-plugin",
+      "scope": "project",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "n",
+      "note": "still not loaded after a second restart; nothing under Customize"
+    },
+    {
+      "check": "npp-removed",
+      "role": "all",
+      "scope": "project",
+      "mode": "native-plugin",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "xread-removed",
+      "role": "skill",
+      "scope": "user",
+      "mode": "cross-read",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": ""
+    },
+    {
+      "check": "final-clean",
+      "role": "all",
+      "scope": "user",
+      "mode": "removal",
+      "question": "recorded interactively",
+      "answer": "y",
+      "note": "all probe items gone after final restart"
+    }
+  ]
+}

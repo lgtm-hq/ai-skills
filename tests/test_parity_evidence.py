@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import calendar
+import hashlib
+import json
 import re
 import shlex
 from collections import Counter
@@ -242,11 +245,19 @@ def test_supported_requires_invocation_and_complete_cycle(
 def test_evidence_dates_and_unverified_reasons(
     evidence_records: list[tuple[Path, dict[str, Any]]],
 ) -> None:
-    """Evidence has a forward recheck date and explains unverified states."""
+    """Evidence expires within six calendar months and explains unknown cells."""
     for _, record in evidence_records:
         checked = date.fromisoformat(str(record["checkedOn"]))
         recheck = date.fromisoformat(str(record["recheckBy"]))
         assert_that(recheck).is_greater_than(checked)
+        year = checked.year + (checked.month + 5) // 12
+        month = (checked.month + 5) % 12 + 1
+        maximum = date(
+            year=year,
+            month=month,
+            day=min(checked.day, calendar.monthrange(year, month)[1]),
+        )
+        assert_that(recheck).is_less_than_or_equal_to(maximum)
         if record["state"] == "unverified":
             assert_that(record["notes"].lower()).contains("reason:")
 
@@ -254,7 +265,7 @@ def test_evidence_dates_and_unverified_reasons(
 def test_published_evidence_redaction(evidence_paths: list[Path]) -> None:
     """Scan records and prose for personal paths/secrets while permitting aliases."""
     root = evidence_paths[0].parents[2]
-    paths = [*evidence_paths, *root.glob("*.md")]
+    paths = [*evidence_paths, *root.glob("*.md"), *root.rglob("raw/**/*.json")]
     home_path = re.compile(
         r"(?<![\w~/])(?:/home/|/Users/|[A-Za-z]:[\\/]Users[\\/])[^\s]+",
     )
@@ -268,6 +279,72 @@ def test_published_evidence_redaction(evidence_paths: list[Path]) -> None:
         text = path.read_text(encoding="utf-8")
         assert_that(home_path.search(text)).described_as(str(path)).is_none()
         assert_that(secret.search(text)).described_as(str(path)).is_none()
+
+
+def test_raw_cursor_snapshots_match_write_once_digest_index() -> None:
+    """Missing, changed or unindexed returned evidence must fail verification."""
+    raw = Path(__file__).resolve().parents[1] / "docs/parity/evidence/cursor/raw"
+    lines = (raw / "INDEX.sha256").read_text(encoding="utf-8").splitlines()
+    assert_that(lines).is_not_empty()
+    indexed = []
+    for line in lines:
+        digest, relative = line.split("  ", maxsplit=1)
+        assert_that(re.fullmatch(r"[a-f0-9]{64}", digest)).is_not_none()
+        path = raw / relative
+        assert_that(path.resolve().is_relative_to(raw.resolve())).is_true()
+        assert_that(path.is_file()).described_as(relative).is_true()
+        assert_that(hashlib.sha256(path.read_bytes()).hexdigest()).described_as(
+            relative,
+        ).is_equal_to(digest)
+        indexed.append(path)
+    assert_that(indexed).does_not_contain_duplicates()
+    assert_that(set(indexed)).is_equal_to(set(raw.rglob("*.json")))
+
+
+def test_measured_cursor_cells_match_returned_checks(
+    evidence_records: list[tuple[Path, dict[str, Any]]],
+) -> None:
+    """Measured cells cite actual checks, platform metadata and removal evidence."""
+    root = Path(__file__).resolve().parents[1]
+    for path, record in evidence_records:
+        if record.get("evidence", {}).get("kind") != "measured":
+            continue
+        sources = record["evidence"]["sources"]
+        raw_source = next(source for source in sources if ".json#" in source)
+        relative, check_id = raw_source.split("#", maxsplit=1)
+        run = json.loads((root / relative).read_text(encoding="utf-8"))
+        checks = {check["check"]: check for check in run["checks"]}
+        check = checks[check_id]
+        for field in ("host", "interface", "version", "os", "checkedOn"):
+            assert_that(record[field]).described_as(str(path)).is_equal_to(run[field])
+        for field in ("role", "scope", "mode"):
+            assert_that(record[field]).described_as(str(path)).is_equal_to(check[field])
+        tag = check_id.split("-", maxsplit=1)[0]
+        assert_that(checks[f"{tag}-removed"]["answer"]).is_equal_to("y")
+        assert_that(checks["final-clean"]["answer"]).is_equal_to("y")
+        if check["answer"] == "n":
+            assert_that(record["state"]).is_equal_to("adapter-missing")
+            assert_that(record["observed"]).is_equal_to("absent")
+            assert_that(checks["npp-relaunch"]["answer"]).is_equal_to("n")
+        elif check["answer"] == "d":
+            assert_that(record["state"]).is_equal_to("partial")
+            assert_that(record["observed"]).is_equal_to("discovered")
+        else:
+            assert_that(check["answer"]).is_equal_to("y")
+            assert_that(record["observed"]).is_equal_to("invoked")
+            if record["role"] == "lifecycle":
+                assert_that(
+                    any(
+                        event.startswith(f"PROBE-7f3a-lifecycle-{tag} ")
+                        for event in run["hookLog"]
+                    ),
+                ).is_true()
+            elif record["role"] == "integration":
+                assert_that(run["mcpLog"]).contains(f"{tag} called")
+        if check_id == "ue-skill":
+            assert_that(record["state"]).is_equal_to("partial")
+            assert_that(record["lostFields"]).contains("invocation")
+            assert_that(record["notes"]).contains("unconfirmed", "file search")
 
 
 def test_recorded_attempt_totals(evidence_paths: list[Path]) -> None:

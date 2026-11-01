@@ -13,23 +13,23 @@ unverified: #581 does not define these combinations. They are inventory cells,
 not proposed routes. User and project are distinct from Claude's additional
 `local` setting, whose supplementary results live in the command log.
 
-| Field           | Type and meaning                                                                |
-| --------------- | ------------------------------------------------------------------------------- |
-| `host`          | `claude-code`, `codex`, `cursor`                                                |
-| `interface`     | `cli` for the original run; `ide` only in the separate extension below          |
-| `version`       | Exact installed version string                                                  |
-| `os`            | OS and architecture, here `linux-x86_64`                                        |
-| `role`          | `skill`, `instruction`, `specialist`, `workflow`, `lifecycle`, `integration`    |
-| `scope`         | `user` or `project`                                                             |
-| `mode`          | `native-plugin`, `user-explode`, `repo-materialize`                             |
-| `state`         | One of the seven states below                                                   |
-| `lostFields`    | List of demonstrated losses: `invocation`, `activation`, `permissions`, `scope` |
-| `observed`      | `invoked`, `discovered`, `absent`                                               |
-| `policyMarkers` | CLI: observed markers; Cursor IDE policy: public setting name only              |
-| `checkedOn`     | ISO date of observation or explicit assessment of why no probe ran              |
-| `recheckBy`     | ISO date strictly later than `checkedOn`; not a support extension               |
-| `steps`         | Nonempty list of `{phase, command, exitCode, output}` mappings                  |
-| `notes`         | Scope, semantic limits, cleanup caveats; `unverified` includes `Reason:`        |
+| Field           | Type and meaning                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------- |
+| `host`          | `claude-code`, `codex`, `cursor`                                                                        |
+| `interface`     | `cli` for the original run; `ide` only in the separate extension below                                  |
+| `version`       | Exact installed version string                                                                          |
+| `os`            | OS and architecture: `linux-x86_64` or measured `darwin-arm64`                                          |
+| `role`          | `skill`, `instruction`, `specialist`, `workflow`, `lifecycle`, `integration`                            |
+| `scope`         | `user` or `project`                                                                                     |
+| `mode`          | `native-plugin`, `user-explode`, `repo-materialize`                                                     |
+| `state`         | One of the seven states below                                                                           |
+| `lostFields`    | Losses: `invocation`, `activation`, `permissions`, `scope`; suspected losses must be qualified in notes |
+| `observed`      | `invoked`, `discovered`, `absent`                                                                       |
+| `policyMarkers` | CLI: observed markers; Cursor IDE policy: public setting name only                                      |
+| `checkedOn`     | ISO date of observation or explicit assessment of why no probe ran                                      |
+| `recheckBy`     | ISO date after `checkedOn`, at most six calendar months later                                           |
+| `steps`         | Nonempty list of `{phase, command, exitCode, output}` mappings                                          |
+| `notes`         | Scope, semantic limits, cleanup caveats; `unverified` includes `Reason:`                                |
 
 Step phases are `install`, `reload`, `invoke`, `remove`, `verify`. Commands may
 reference numbered commands in [the log](probe-log.md), whose argv and trimmed
@@ -50,11 +50,14 @@ server process shutdown exit codes were not captured.
 | `platform-unavailable` | Tested prerequisite absent on this platform; no inference from another OS                                       |
 | `policy-blocked`       | Demonstrated denial, or the explicitly sourced Cursor owner definition below                                    |
 | `source-unportable`    | Demonstrated source requirement cannot survive the projection                                                   |
-| `adapter-missing`      | Host route established but the necessary projection does not exist                                              |
+| `adapter-missing`      | The tested host route is absent, or its necessary projection does not exist                                     |
 
 `supported` always requires `observed: invoked` and no demonstrated field loss.
 `partial` requires `observed: invoked` or `discovered`; `absent` cannot establish
 partial behavior.
+The Cursor user-explode skill has a suspected `invocation` loss: a token was
+returned without naming the skill, but skill invocation versus file search is
+unconfirmed. It is `partial`; the restriction is not established.
 The issue allows MCP listing as evidence; these records conservatively use
 `partial/discovered` for listed entries, even a Connected entry, rather than
 labelling discovery as invocation. `absent` with `unverified` means **no
@@ -68,7 +71,8 @@ another role. Likewise, an installed plugin is not a discovered specialist.
 
 Do not infer policy from the presence of a plugin directory, an empty marker
 list or authentication failure. The original CLI records do not assess policy.
-The [owner decision](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548)
+The [owner
+decision](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548)
 defines Cursor policy outcomes using public documentation and personal-Cursor
 results, as described below and in the [checklist](cursor-probe-checklist.md).
 No employer-managed machine is probed or organization policy data collected.
@@ -105,13 +109,14 @@ result. The assessment date is not an execution date for these records.
 IDE steps use `{phase, action, outcome, output}` with the existing five phases
 and `outcome: pending|observed|not-run`, rather than CLI commands/exit codes.
 Owner-attested and owner-derived records have no empirical steps. Pending
-personal cells name their exact outstanding JSON check in an invoke action.
+personal cells explain the undefined mode/scope pair for which no check exists.
 Measured `supported` requires an observed invocation token, all five phases,
 observed removal/verification and preserved semantics. A derived supported
 file-policy cell must reference a measured supported personal cell; it cannot
 claim an independent execution or exceed that source's state/observation/losses.
 
-The [owner record](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548)
+The [owner
+record](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548)
 and [Cursor public docs](https://cursor.com/docs/plugins#test-plugins-locally)
 are the sources for all twelve native-plugin policy definitions. Those records
 use `state: policy-blocked`, `observed: not-measured`, empty empirical steps,
@@ -121,13 +126,41 @@ definition**, not a policy-host measurement. `policyMarkers` contains only
 No guessed on-disk policy detector follows from that public setting name.
 
 The 24 file-policy cells use `evidence.kind: owner-derived` and cite the owner
-decision plus the exact matching personal-cell path. The defined routes await
-`ue-<role>` (user-explode/user) or `rm-<role>` (repo-materialize/project) from
-`cursor-probe-results-*.json`; the other pairs remain undefined by #581.
-Until those measurements exist, file-policy cells stay unverified with null
-version/OS and no measured observation. All 36 personal IDE cells currently
-remain unverified. The supplied script and offline tests are source validation,
-not returned evidence. No personal version, observation or cleanup is invented.
+decision plus the exact matching personal-cell path. The defined routes inherit
+`ue-<role>` (user-explode/user) or `rm-<role>` (repo-materialize/project) from the
+returned personal run, including its suspected loss. The twelve undefined
+file-mode pairs remain unverified under #581, with null version/OS and no
+measured observation. The other 24 personal cells are measured on Cursor IDE
+3.27.22, darwin-arm64, macOS 27.2 on 2026-11-01. Six project native-plugin cells
+are `adapter-missing/absent`; all six user native-plugin roles invoked.
+
+## Raw evidence and rechecks
+
+Returned probe files under `evidence/cursor/raw/` are **WRITE-ONCE** snapshots.
+Never edit, normalize, reformat or replace an existing file, even to correct a
+run note. Add a new file for a new run and append its SHA-256 and relative path
+to [raw/INDEX.sha256](evidence/cursor/raw/INDEX.sha256). The pytest integrity check
+fails for a changed or missing indexed file or an unindexed JSON snapshot.
+The 2026-11-01 snapshot contains 41 checks plus hook/MCP sentinel logs; the run
+was resumed by hand in the same record format. Its `*-removed` and `final-clean`
+answers are the maintainer's removal observations; it contains no automatic
+hook-boundary or scratch-purge status. Do not invent these from later kit tests.
+
+The exact supplied script is archived at
+[`cursor-macos-probe.sh`](../../tests/fixtures/host-probe/cursor-macos-probe.sh).
+It predates the R6 controls; the maintained
+[`cursor-macos-probe-driver.sh`](../../tests/fixtures/host-probe/cursor-macos-probe-driver.sh)
+retains them and includes the canonical path, keychain restoration and This Mac
+prompt. The archival lint exception is documented in
+[CONTRIBUTING.md](../../CONTRIBUTING.md). Neither script's offline tests establish
+new host evidence.
+
+Owner policy requires a recheck after a host major/minor version change, an
+adapter change, or the six-month maximum, whichever comes first. Re-probe only
+the affected cells; #585 implements these triggers and expiry handling. The
+2026-11-01 Cursor assessments use `recheckBy: 2027-05-01`. #620 adds the unattended
+`cursor-agent` probe, with a separate CLI identity; it does not replace this IDE
+evidence. Issue #565 must ratify the minimal `interface: ide` and policy extension.
 
 Paths in committed evidence are home-relative aliases (`~/probe/...`) or
 repository-relative paths. Tokens, auth contents, personal absolute paths,

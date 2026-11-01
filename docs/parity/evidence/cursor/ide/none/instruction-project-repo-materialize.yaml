@@ -1,30 +1,61 @@
 ---
 host: cursor
 interface: ide
-version: null
-os: null
+version: 3.27.22
+os: darwin-arm64
 role: instruction
 scope: project
 mode: repo-materialize
-state: unverified
+state: supported
 lostFields: []
-observed: not-measured
+observed: invoked
 policyMarkers: []
 checkedOn: '2026-11-01'
-recheckBy: '2027-02-01'
+recheckBy: '2027-05-01'
 steps:
+  - phase: install
+    action: Install isolated instruction payloads from the supplied phase-rm recipe
+    outcome: observed
+    output: Phase rm payloads installed under the isolated profile/project.
+  - phase: reload
+    action: |-
+      Restart isolated Cursor; open the canonical project path; select This Mac
+    outcome: observed
+    output: Isolated Cursor restarted on the probe project before the checks.
   - phase: invoke
-    action: Await cursor-probe-results-*.json check rm-instruction
-    outcome: pending
-    output: No personal Cursor IDE JSON result received.
+    action: Personal interactive rm-instruction check using the supplied role prompt
+    outcome: observed
+    output: 'rm-instruction=y: returned PROBE-7f3a-instruction-rm.'
+  - phase: remove
+    action: Delete phase-rm payloads and restart isolated Cursor
+    outcome: observed
+    output: 'rm-removed=y: all previous phase items gone after restart.'
+  - phase: verify
+    action: Inspect Customize and probe items after final restart
+    outcome: observed
+    output: 'final-clean=y: all probe items gone after final restart.'
 notes: |-
-  Reason: awaiting cursor-probe-results-*.json check rm-instruction.
-  No IDE version, architecture or observation is claimed.
-  Owner decision:
-  https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
+  Personal Cursor IDE 3.27.22, macOS 27.2 (darwin-arm64); This Mac local agent.
+  Run resumed by hand in the same record format. No-policy personal install.
+  Installed project/.cursor/rules/probe-rm.mdc; restarted before invocation.
+  Removal verified by rm-removed=y and final-clean=y after restarts.
+  Run note: first attempt failed while the window had /var vs /private/var path
+  ambiguity / empty window; passed once the project folder was opened via its real
+  path.
+  Supplementary rm-agentsmd=y also returned the project AGENTS.md instruction
+  sentinel.
+  Maintainer reports no probe residue in real host config; 29 reported changes came
+  from normal Cursor opened mid-run and concurrent Claude Code. Not a whole-inventory
+  immutability claim.
+  Removal is maintainer-observed; no automatic hook-boundary or scratch-purge
+  status was returned in this raw snapshot.
 policy: none
 evidence:
-  kind: pending
+  kind: measured
   sources:
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#rm-instruction
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#rm-removed
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#final-clean
     - tests/fixtures/host-probe/cursor-macos-probe.sh
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#rm-agentsmd
   derivedFrom: []

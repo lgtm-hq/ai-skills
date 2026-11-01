@@ -1,30 +1,28 @@
 ---
 host: cursor
 interface: ide
-version: null
-os: null
+version: 3.27.22
+os: darwin-arm64
 role: specialist
 scope: project
 mode: repo-materialize
-state: unverified
+state: supported
 lostFields: []
-observed: not-measured
+observed: invoked
 policyMarkers:
   - Allow Local Plugin Imports
 checkedOn: '2026-11-01'
-recheckBy: '2027-02-01'
+recheckBy: '2027-05-01'
 steps: []
 notes: |-
-  Reason: file-policy behavior follows the matching personal cell by
-  owner decision; outstanding dependency: cursor-probe-results-*.json check
-  rm-specialist.
-  The source cell is unverified, so no measured result is derived.
-  Owner decision:
-  https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
+  File-policy behavior follows the exact matching personal cell by owner decision.
+  Owner-derived equivalence, not an independent policy-host measurement. No employer
+  machine or organization policy names/values collected.
 policy: local-plugin-import-disabled
 evidence:
   kind: owner-derived
   sources:
     - https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
+    - docs/parity/evidence/cursor/ide/none/specialist-project-repo-materialize.yaml
   derivedFrom:
     - docs/parity/evidence/cursor/ide/none/specialist-project-repo-materialize.yaml

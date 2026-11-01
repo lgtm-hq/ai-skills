@@ -1,27 +1,42 @@
 # Cursor personal macOS probe checklist
 
-Human handoff for #563. The binding [owner decision](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548)
+Completed personal-Mac checklist for #563; retained for affected-cell rechecks. The
+binding [owner
+decision](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548)
 replaces the earlier procedure. Probe **personal Cursor on a personal Mac only**,
 in an isolated profile. No employer-managed machine is probed and no
 organization policy names, values or sources are collected.
 
-Cursor's [Test plugins locally documentation](https://cursor.com/docs/plugins#test-plugins-locally)
+Cursor's [Test plugins locally
+documentation](https://cursor.com/docs/plugins#test-plugins-locally)
 names **Allow Local Plugin Imports**. Under the owner's decision, native-plugin
 policy cells are `policy-blocked` by definition, citing the decision and public
 docs. This is owner attestation, not an empirical policy-host measurement.
 File-mode policy cells follow the corresponding personal no-policy results;
-they remain `unverified` until those exact results arrive. `policyMarkers`
+the measured results are recorded in the separate IDE cells. `policyMarkers`
 references only the public setting name. Do not invent on-disk detection keys.
 
-## Run the supplied source kit
+## Completed run
 
-Use [cursor-macos-probe.sh](../../tests/fixtures/host-probe/cursor-macos-probe.sh)
+- [x] Personal Cursor IDE 3.27.22, darwin-arm64/macOS 27.2, 2026-11-01.
+- [x] 41 checks and hook/MCP logs recorded in the immutable
+      [raw snapshot](evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json).
+- [x] Defined IDE cells populated and file-policy cells derived from exact matches.
+- [x] Project-native route absent after two restarts; user-native roles invoked.
+- [x] Cross-reads and removal checked; invocation-restriction result marked unconfirmed.
+- [x] Real-config changes and manual resumption documented in
+      [run notes](README.md#personal-mac-cursor-run-notes); no probe residue reported.
+
+## Run the maintained kit for a recheck
+
+Use
+[cursor-macos-probe-driver.sh](../../tests/fixtures/host-probe/cursor-macos-probe-driver.sh)
 with stock macOS `/bin/bash` 3.2, an already installed personal Cursor, Python 3
 and `shasum`. Run it from a scratch output directory, with the script addressed
 by its absolute checkout path:
 
 ```bash
-/bin/bash /path/to/checkout/tests/fixtures/host-probe/cursor-macos-probe.sh
+/bin/bash /path/to/checkout/tests/fixtures/host-probe/cursor-macos-probe-driver.sh
 ```
 
 Quit normal Cursor first. The script creates a private temporary HOME, project,
@@ -32,12 +47,25 @@ profile and that **Allow Local Plugin Imports** permits the native control.
 Stop if a window is handed to an existing profile or isolation is unconfirmed.
 HOME overrides are not a sandbox: macOS account services and Keychain can still
 use the logged-in account. Do not copy credentials or complete settings homes.
+Select **This Mac** as the agent location: Cloud cannot see local probe files.
+Use the canonical `/private/var` path, since the `/var` alias produced an empty
+window or unrunnable project items. The maintained script canonicalizes the root.
+
+A throwaway HOME needs its own empty keychain. **Never click Reset To Defaults**
+in a Keychain Not Found dialog: it resets the real account keychain. The
+maintained driver saves and restores the original search list exactly (including
+spaces or an empty list), and deletes only its isolated keychain. If restoration
+fails, it retains scratch state and reports incomplete cleanup. The exact
+supplied [historical script](../../tests/fixtures/host-probe/cursor-macos-probe.sh)
+is archived unchanged, with its lint exception documented in
+[CONTRIBUTING.md](../../CONTRIBUTING.md); use the maintained driver for new runs.
 
 The five phases cover user-explode/user, repo-materialize/project, native/user,
 native/project and final removal. Each phase asks about all six roles, then
 records removal after restart. Candidate native roots are isolated
 `~/.cursor/plugins/local` and `project/.cursor/plugins/local`; the project root
-is a candidate, not a supported route. File candidates are `rules`, `skills`,
+did not load on Cursor 3.27.22 after two restarts (#584); recheck after relevant
+host/adapter changes. File candidates are `rules`, `skills`,
 `agents`, `commands`, `hooks.json` and `mcp.json` under isolated `.cursor`.
 Additional AGENTS.md, cross-read and invocation-restriction controls are
 supplementary checks, not extra Cartesian cells. Cross-read checks do not by
@@ -108,12 +136,14 @@ rm -rf "${probe_case:?Owned isolated case is required}"
 test ! -e "$probe_case"
 ```
 
-## Return evidence and keep #563 open
+## Preserve evidence and maintain provenance
 
 Return `cursor-probe-results-<timestamp>.json`. Review the sanitized output
 locally before returning it; retain any original returned file unchanged.
-No results have been received in this revision. Do not fill in a Cursor IDE
-version, OS architecture, observation or exit status from the Linux CLI run.
+The received 2026-11-01 snapshot is committed byte-for-byte with its SHA-256 in
+[INDEX.sha256](evidence/cursor/raw/INDEX.sha256). Raw probe files are WRITE-ONCE;
+new runs add new files and entries. Never infer IDE version, observation or exit
+status from the Linux CLI run.
 
 The [draft format](evidence-format.md#cursor-ide-and-policy-extension) now gives
 IDE/policy evidence a separate identity and provenance. For each measured cell,
@@ -127,8 +157,9 @@ remain undefined under #581.
 For `evidence/cursor/ide/local-plugin-import-disabled/`, retain the twelve
 native-plugin definitions as owner-attested `policy-blocked` with no measured
 observation. File records derive only from the matching `ide/none` cell and
-cite the owner decision. Their current dependency is that cell's specific
-personal JSON check (`ue-<role>` or `rm-<role>` for the defined file routes).
+cite the owner decision. The defined file routes now cite that cell's measured personal
+JSON checks
+(`ue-<role>` or `rm-<role>`); undefined pairs remain unverified under #581.
 CLI records remain separate. #565 must ratify this minimal extension; #585
 owns its production schema.
 
@@ -151,7 +182,10 @@ still exit nonzero. If writing the result file fails, sanitized JSON is printed
 to stdout as a fallback. Inspect deletion and cache/config removal separately.
 These transcript fields are input to #565, not a production schema redesign.
 
-The source kit is complete, but returned personal JSON remains the owner gate.
-This revision is **Part of #563**. It cannot close the issue or establish host
-acceptance; the owner's merge order after #562 and personal-result requirement
-still apply. Historical D001–D003 and old-collector-only counts remain unchanged.
+The personal-evidence requirement is satisfied. The parent handles publication
+and review, with the owner's merge order after #562 still binding; this revision
+does not edit or close issues. Recheck only affected cells after host major/minor
+or adapter changes, or within six months (by 2027-05-01 for this run); #585
+implements that lifecycle. #620 adds the separate unattended cursor-agent probe.
+Historical D001–D003, Codex/Claude findings and old-collector-only counts are
+unchanged.

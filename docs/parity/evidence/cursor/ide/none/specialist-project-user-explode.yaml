@@ -11,21 +11,18 @@ lostFields: []
 observed: not-measured
 policyMarkers: []
 checkedOn: '2026-11-01'
-recheckBy: '2027-02-01'
+recheckBy: '2027-05-01'
 steps:
   - phase: invoke
-    action: 'Await undefined mode/scope pair under #581; no personal check scheduled'
+    action: 'No route specified under #581'
     outcome: not-run
-    output: No personal Cursor IDE JSON result received.
+    output: 'No check: undefined mode/scope pair under #581.'
 notes: |-
-  Reason: awaiting undefined mode/scope pair under #581; no personal check
-  scheduled.
-  No IDE version, architecture or observation is claimed.
-  Owner decision:
-  https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
+  Reason: undefined mode/scope pair under #581; no personal check scheduled.
+  The returned run does not define this route or establish support.
 policy: none
 evidence:
   kind: pending
   sources:
-    - tests/fixtures/host-probe/cursor-macos-probe.sh
+    - docs/parity/evidence-format.md
   derivedFrom: []

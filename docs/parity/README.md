@@ -1,6 +1,8 @@
 # Host load-path evidence spike (#563)
 
-Recorded 2026-11-01 from `032ee309` on `research/563-host-load-paths`.
+Original Linux probes recorded 2026-11-01 from `032ee309`; personal-Mac Cursor
+evidence recorded 2026-11-01, building on R6 `e5e4969` on
+`research/563-host-load-paths`.
 This is research only: no gateway, ADR, generated catalog or #562 files changed.
 The future PR must merge after #562/PR #615, per epic #596.
 
@@ -9,51 +11,93 @@ The future PR must merge after #562/PR #615, per epic #596.
 | Claude Code CLI | 2.1.310            | linux-x86_64; clean config unauthenticated            |
 | Codex CLI       | 0.164.0            | linux-x86_64; isolated auth.json copy                 |
 | Cursor CLI      | 2026.10.22-27dcf5f | linux-x86_64; unauthenticated, no admin plugin policy |
+| Cursor IDE      | 3.27.22            | darwin-arm64, macOS 27.2; isolated personal install   |
 
 The issue describes Codex 0.165.0 on another machine. This run verifies
 **0.164.0**, not 0.165.0 or macOS. Cursor CLI does not certify Cursor IDE.
 
-| State                | Cells |
-| -------------------- | ----: |
-| supported            |     6 |
-| partial              |    10 |
-| unverified           |   152 |
-| platform-unavailable |     0 |
-| policy-blocked       |    12 |
-| source-unportable    |     0 |
-| adapter-missing      |     0 |
+| State                | All cells | Cursor CLI | Cursor IDE, no policy | Cursor IDE, policy |
+| -------------------- | --------: | ---------: | --------------------: | -----------------: |
+| supported            |        34 |          0 |                    17 |                 11 |
+| partial              |        12 |          0 |                     1 |                  1 |
+| unverified           |       116 |         36 |                    12 |                 12 |
+| platform-unavailable |         0 |          0 |                     0 |                  0 |
+| policy-blocked       |        12 |          0 |                     0 |                 12 |
+| source-unportable    |         0 |          0 |                     0 |                  0 |
+| adapter-missing      |         6 |          0 |                     6 |                  0 |
 
-The six supported cells are Codex instruction delivery in the two file modes
-and Claude lifecycle delivery at native user/project, user-explode/user, and
-repo-materialize/project. Counts were computed from all 180 YAML records:
-108 original CLI cells plus 36 personal Cursor IDE cells and 36 owner-derived
-Cursor IDE policy cells. All 36 CLI Cursor cells and all 36 personal IDE cells
-remain unverified. Twelve native-plugin policy cells are blocked by owner
-definition; the 24 file-policy cells await their matching personal results
-(including twelve undefined mode/scope pairs). The original matrix includes
-36 structurally undefined mode/scope combinations across the hosts; they are
-not support candidates. A partial cell never authorizes widening
-activation. [Record format](evidence-format.md), [command log](probe-log.md),
+Counts cover all 180 YAML cells: 108 original CLI cells, 36 personal Cursor IDE
+cells and 36 owner-defined/derived Cursor IDE policy cells. Cursor totals across
+interfaces/policies: 28 supported, two partial, 60 unverified, twelve
+policy-blocked and six adapter-missing. The 36 Cursor CLI cells retain their
+original unverified results; CLI authentication failure establishes no IDE
+behavior. The twelve undefined pairs in each IDE dimension remain unverified
+under #581. The original CLI matrix has 36 undefined pairs across all hosts.
+
+All six roles invoked from user-native, user-explode/user and
+repo-materialize/project in the personal IDE. The user-explode skill is partial
+because its invocation restriction is unconfirmed. File-policy cells inherit
+these outcomes; all native-plugin policy cells remain owner-attested blocked.
+The six previously supported Codex/Claude cells and their findings are unchanged.
+A partial cell never authorizes widening activation.
+[Record format](evidence-format.md), [command log](probe-log.md),
 [probe kit](../../tests/fixtures/host-probe/README.md), and
-[Cursor handoff](cursor-probe-checklist.md) give the reproducible details.
+[Cursor checklist](cursor-probe-checklist.md) provide the reproducible details.
 
-The binding [owner decision](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548)
+The binding [owner
+decision](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548)
 requires only personal Cursor on an isolated personal Mac. No employer-managed
 machine is probed or organization policy names/values/sources collected.
 [Cursor's public docs](https://cursor.com/docs/plugins#test-plugins-locally)
 name **Allow Local Plugin Imports**. Native-plugin policy records cite these
 sources as owner attestation and definition, with no empirical policy-host
 measurement. File-policy records depend on the exact matching personal IDE
-cell; the defined routes await `ue-<role>` or `rm-<role>` JSON checks. The
+cell, now measured by `ue-<role>` or `rm-<role>` JSON checks for defined routes. The
 [minimal IDE/policy extension](evidence-format.md#cursor-ide-and-policy-extension)
 is flagged for #565; it does not ratify a production schema.
 
-The [personal macOS source kit](../../tests/fixtures/host-probe/cursor-macos-probe.sh)
-is complete. No returned `cursor-probe-results-*.json` was found in the evidence
-handoff directory during R4. Personal IDE versions, observations and cleanup
-cannot be supplied by offline tests. The owner's returned-JSON gate remains:
-this is **Part of #563**, with no closure or host acceptance claim. Publication
-and review remain with the parent; the required merge order after #562 applies.
+The maintainer's returned
+[raw
+snapshot](evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json)
+is committed byte-for-byte, with 41 checks and hook/MCP logs. It is WRITE-ONCE:
+new runs add files, never edit this one.
+[INDEX.sha256](evidence/cursor/raw/INDEX.sha256)
+and pytest enforce integrity. The personal-evidence requirement is satisfied;
+publication, review and the required merge order after #562 remain with the parent.
+No issue is edited or closed by this revision.
+
+## Personal-Mac Cursor run notes
+
+- Cursor IDE 3.27.22 ran on darwin-arm64, macOS 27.2, on 2026-11-01, with
+  throwaway HOME, user-data/extensions directories and an isolated empty keychain.
+  The local **This Mac** agent is required; a Cloud agent cannot see local files.
+  The first skill attempt used Cloud by mistake; the local slash invocation passed.
+- macOS needs a keychain under the throwaway HOME. Without it Cursor reports
+  **Keychain Not Found**. Never click **Reset To Defaults**, which resets the real
+  account keychain. Restore the account's original search list exactly; the
+  maintained driver preserves paths containing spaces and an empty search list.
+- Resolve `/var` to `/private/var` before opening the project. The alias produced
+  an empty window or unrunnable project items; reopening the physical path fixed
+  the project file-mode checks. Project-native plugins still failed after two
+  restarts on the physical path.
+- The driving shell was interrupted. The maintainer resumed the run by hand,
+  recording the remaining checks in the same format. The raw file is the
+  returned transcript, without invented automatic cleanup fields.
+- The reported 29 real-config changes came from normal Cursor opened by mistake
+  mid-run (built-in skills sync, chats and statsig cache) and a concurrent Claude
+  Code session, per the maintainer. The maintainer found no probe-named or
+  `PROBE-7f3a` residue in real `~/.cursor`, `~/.claude` or `~/.agents`.
+  Phase `*-removed=y`, `xread-removed=y` and `final-clean=y` confirm removal after
+  restarts. These observations do not establish whole-inventory immutability or
+  an automatic hook-removal boundary; those fields are absent from the snapshot.
+
+The exact supplied [script](../../tests/fixtures/host-probe/cursor-macos-probe.sh)
+is archived unchanged. It predates R6 and has ShellCheck/shfmt findings, so the
+narrow archival exception is documented in [CONTRIBUTING.md](../../CONTRIBUTING.md).
+The [maintained driver](../../tests/fixtures/host-probe/cursor-macos-probe-driver.sh)
+keeps R6's launcher isolation and failure handling, adds the Mac fixes and the
+This Mac prompt, and remains linted and tested. Offline tests make no new IDE
+claims. #620 adds a separate unattended `cursor-agent` probe.
 
 ## Findings for #584
 
@@ -68,11 +112,20 @@ and review remain with the parent; the required merge order after #562 applies.
   (R080–R093), but Claude retained the cached tree. Final purge of the owned
   scratch roots removed that residue. Do not equate an empty plugin list with
   an empty cache, or delete a shared cache without ownership checks.
-- No measurement establishes Cursor's automatic project plugin drop path.
-  Both native drop paths under policy are blocked by owner definition, not
-  empirically measured here. `native-cursor.js` constructs the project
-  path, but construction is not host loading evidence. #584 must retain its
-  reject-unless-verified gate. No Copilot claim was tested by this issue.
+- Cursor IDE **3.27.22 on macOS 27.2/darwin-arm64** did not load
+  `project/.cursor/plugins/local` after two restarts: no plugin, skill, rule,
+  specialist, workflow, hook or MCP. Checks `npp-plugin-listed`, all six
+  `npp-<role>`, `npp-integration-proc` and `npp-relaunch` were `n`. The six
+  project-native cells are `adapter-missing/absent`, confirming #584's
+  project-scope bug. All six roles invoked from `~/.cursor/plugins/local`
+  (`np-<role>=y`, hook events and `np called`); removal passed. #584 should reject
+  project-native plans before writes and point to the verified
+  `repo-materialize/project` route. Directory existence is no capability proof.
+  Native plugins under policy remain owner-defined blocked, not measured on a
+  policy host. Codex/Claude findings are unchanged; no Copilot claim was tested.
+- Cursor also reads skills from both `~/.claude/skills` and `~/.agents/skills`:
+  `xread-claude=y`, `xread-agents=y`, and `xread-removed=y` prove invocation and
+  removal. Duplicate discovery or repeated execution in one turn was not tested.
 
 ## Codex native contract for #384
 
@@ -140,18 +193,18 @@ listing worked. No MCP config table was created by native plugin import.
 
 ### Cursor personal results and owner-derived policy
 
-| Question                                            | Answer                                                                                                                                                                                                         |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Do user/project plugins/local load?                 | Under policy: `policy-blocked` by owner attestation/definition. Without policy: both candidate roots await personal IDE JSON checks `np-<role>` and `npp-<role>`.                                              |
-| Do rules, skills, agents and mcp.json load?         | Policy file modes follow the matching personal result by owner decision. Those results are outstanding (`ue-<role>` and `rm-<role>`); records remain unverified. CLI auth failure R046 proves no IDE behavior. |
-| Cross-reads from .claude/skills and .agents/skills? | Await personal `xread-claude`/`xread-agents` checks. The supplied combined phase does not establish duplicate discovery or repeated execution; do not promote historical statements to current evidence.       |
-| Detectable on-disk policy markers?                  | No detector is established. `policyMarkers` names only public **Allow Local Plugin Imports**, with source/derivation in the separate IDE policy records. No organization policy collection is requested.       |
+| Question                                            | Answer and evidence                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Do user/project plugins/local load?                 | No policy: user root supports all six roles (`np-<role>=y`, hook/MCP logs); project root loads none after two restarts (`npp-<role>=n`, `npp-plugin-listed=n`, `npp-relaunch=n`). Under policy: both are `policy-blocked` by owner attestation/definition and public docs; **Allow Local Plugin Imports** is off by default on Enterprise.                     |
+| Do rules, skills, agents and mcp.json load?         | Yes, all six file-mode roles invoke from user `~/.cursor` (`ue-<role>`) and project `.cursor` (`rm-<role>`), including token-returning MCP calls. Project `AGENTS.md` also invokes (`rm-agentsmd=y`). Policy file modes follow these results by owner decision. Project MCP's initial enabled/default setting is not determinable because it was not recorded. |
+| Cross-reads from .claude/skills and .agents/skills? | Yes: `xread-claude=y` and `xread-agents=y` returned each root's skill sentinel; `xread-removed=y` verified removal. The roots work independently in this combined phase; duplicate discovery or multiple executions in one turn are not determinable because they were not measured.                                                                           |
+| Does disable-model-invocation hold?                 | Not determinable: explicit user-explode slash invocation works; `ue-skill-autoinvoke=y` returned the token without naming the skill, but skill invocation versus file search is unconfirmed. Record a suspected `lostFields: [invocation]` and partial user-explode skill. Other tested skill payloads used `false`; no restriction claim follows.             |
+| Detectable on-disk policy markers?                  | Not determinable: no on-disk detector was tested or established, and no organization policy data was collected. `policyMarkers` names only the public **Allow Local Plugin Imports** setting, with decision/docs provenance in the separate IDE policy records.                                                                                                |
 
-The [personal-Mac checklist](cursor-probe-checklist.md) is the outstanding human
-step. The owner policy decision is answered; the missing input is personal
-JSON, not another policy decision. Only native policy definitions are presently
-`policy-blocked`; authentication failure is still unverified. The separate
-identities preserve CLI evidence without implying it certified an IDE.
+The [completed personal-Mac checklist](cursor-probe-checklist.md) links the
+WRITE-ONCE raw snapshot. Every specified Cursor question is answered or bounded
+above. Separate identities retain the CLI evidence; these IDE results do not
+upgrade the unauthenticated CLI run.
 
 ### Claude Code
 
@@ -167,17 +220,17 @@ Read-only issue inspection covered #584, #384, #583, #575, #581, #582, #587.
 No issue was edited. These are precise corrections or limitations to carry
 forward before implementation:
 
-| Issue | Claim or assumption                                                                         | Observed evidence / required correction                                                                                                                                                                                          |
-| ----- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #384  | Version reference 0.165.0; config shape includes last_updated                               | Plugin contract already observed at 0.164.0; local marketplace table omitted last_updated. Version-bound the contract and make that field optional.                                                                              |
-| #384  | Verification uses unfiltered plugin list --json                                             | R016 timed out; R029/R070 scoped to the local marketplace succeeded. Filter verification rather than depending on remote enumeration.                                                                                            |
-| #384  | Native default whenever capability and policy allow; workflow record is an acceptance input | Native skill ignores disable-model-invocation (R031); workflow becomes a model-visible skill (R047/R057). Both are partial, so native capability alone cannot authorize user-only content. Preserve #583's strict semantic gate. |
-| #583  | Problem locates disable-model-invocation loss in exploded delivery                          | Loss is also observed in Codex native delivery (R031). Apply the rejection/override rules to native envelopes as well. File-mode restriction preservation remains unverified.                                                    |
-| #575  | Per-plugin envelopes list specialists as agents by role                                     | Codex accepts the experimental key but execution is unverified; command migration, rather than a native command directory contract, is what invoked. No evidence authorizes Codex agents/hooks generation as supported.          |
-| #584  | Scope fix and remove/rollback use matching scope                                            | Scope behavior confirmed; Claude uninstall leaves cache (R083/R088/R093). Registration removal and cache cleanup need separate ownership-aware handling. Cursor project loading stays unverified.                                |
-| #581  | Host-native repo files offer a route under restricted policy                                | Codex project skill/instruction route observed. Owner attests Cursor file-policy equivalence; actual personal Cursor file results remain pending. Preserve that exact dependency before claiming support.                        |
-| #582  | Example local-plugin-import-disabled marker can drive detection                             | Public Allow Local Plugin Imports names the policy; no on-disk detector was identified. The owner decision does not authorize organization policy collection or invent a setting filename.                                       |
-| #587  | Supported workflow cells count toward portability; native cells require tier: verified      | Codex native workflow is partial, not a portable user-only workflow. Cursor policy evidence is pending. Draft #563 has no tier field; #565/#585 must define it before #587 consumes it.                                          |
+| Issue | Claim or assumption                                                                         | Observed evidence / required correction                                                                                                                                                                                                                                                      |
+| ----- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #384  | Version reference 0.165.0; config shape includes last_updated                               | Plugin contract already observed at 0.164.0; local marketplace table omitted last_updated. Version-bound the contract and make that field optional.                                                                                                                                          |
+| #384  | Verification uses unfiltered plugin list --json                                             | R016 timed out; R029/R070 scoped to the local marketplace succeeded. Filter verification rather than depending on remote enumeration.                                                                                                                                                        |
+| #384  | Native default whenever capability and policy allow; workflow record is an acceptance input | Native skill ignores disable-model-invocation (R031); workflow becomes a model-visible skill (R047/R057). Both are partial, so native capability alone cannot authorize user-only content. Preserve #583's strict semantic gate.                                                             |
+| #583  | Problem locates disable-model-invocation loss in exploded delivery                          | Loss is also observed in Codex native delivery (R031). Apply the rejection/override rules to native envelopes as well. File-mode restriction preservation remains unverified.                                                                                                                |
+| #575  | Per-plugin envelopes list specialists as agents by role                                     | Codex accepts the experimental key but execution is unverified; command migration, rather than a native command directory contract, is what invoked. No evidence authorizes Codex agents/hooks generation as supported.                                                                      |
+| #584  | Scope fix and remove/rollback use matching scope                                            | Scope behavior confirmed; Claude uninstall leaves cache (R083/R088/R093). Registration removal and cache cleanup need separate ownership-aware handling. Cursor 3.27.22 project-native loading fails after two restarts; reject that route before writes and offer repo-materialize/project. |
+| #581  | Host-native repo files offer a route under restricted policy                                | Codex project skill/instruction route observed. Owner attests Cursor file-policy equivalence; personal IDE 3.27.22 file results now support all roles except the partial user-explode skill. Preserve that suspected invocation loss.                                                        |
+| #582  | Example local-plugin-import-disabled marker can drive detection                             | Public Allow Local Plugin Imports names the policy; no on-disk detector was identified. The owner decision does not authorize organization policy collection or invent a setting filename.                                                                                                   |
+| #587  | Supported workflow cells count toward portability; native cells require tier: verified      | Codex native workflow is partial, not a portable user-only workflow. Cursor file-policy cells now derive from the measured personal IDE cells; native policy remains owner-attested blocked. Draft #563 has no tier field; #565/#585 must define it before #587 consumes it.                 |
 
 The last four caveats reinforce existing evidence gates; they are not claims
 that the proposed implementations are impossible. No contradiction was found
@@ -185,7 +238,8 @@ with #384's user-only native scope or its cache-version safety recommendation.
 
 ## Cleanup and protected configuration
 
-Before the probes, the original `config_snapshot.py` inventoried paths, nanosecond mtimes,
+Before the probes, the original `config_snapshot.py` inventoried paths, nanosecond
+mtimes,
 and SHA-256 under the real `.claude`, `.codex`, `.cursor`, `.agents`, plus
 `~/.claude.json` when present. It selected configuration suffixes and auth-file
 names, but excluded any path containing a runtime-like directory name anywhere.

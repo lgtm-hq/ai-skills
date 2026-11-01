@@ -16,7 +16,7 @@ type EmbeddedRunner = Callable[
 ]
 
 
-SCRIPT = Path(__file__).parent / "fixtures/host-probe/cursor-macos-probe.sh"
+SCRIPT = Path(__file__).parent / "fixtures/host-probe/cursor-macos-probe-driver.sh"
 
 
 @pytest.mark.parametrize(
