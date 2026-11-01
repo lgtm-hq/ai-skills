@@ -1638,14 +1638,129 @@ def test_direct_offline_observation_survives_missing_packer(
     monkeypatch.setattr(
         offline, "prepare_packages", lambda **_: pytest.fail("no packer")
     )
+    monkeypatch.setattr(
+        offline, "install_client", lambda **_: pytest.fail("no packed archives")
+    )
+    monkeypatch.setattr(
+        offline, "command", lambda **_: pytest.fail("no packer command permitted")
+    )
     result = offline.worker(build=tmp_path / "build", work=tmp_path / "work")
     assert_that(variants).is_equal_to(["ts", "py"])
     for variant, item in result.items():
         assert_that(item["direct_execution"]["status"]).is_equal_to("pass")
         assert_that(item["status"]).is_equal_to("unverified")
         assert_that(item["clients"]).is_empty()
+        assert_that(item["reason"]).is_equal_to("Bun unavailable for local packing")
         assert_that(
             json.loads((tmp_path / "work" / f"worker-{variant}.json").read_bytes())
+        ).is_equal_to(item)
+
+
+@pytest.mark.parametrize("missing", [None, "wrapper", "platform"])
+def test_npm_only_worker_reuses_complete_prepacked_archives(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    missing: str | None,
+) -> None:
+    """Exercise worker and real client plumbing; only child execution is stubbed.
+
+    Valid local tarballs exercise archive reuse without packing or lifecycle
+    scripts. The injected command failure is unit evidence, not an offline pass.
+    """
+    import tarfile
+
+    offline, packages = collector["offline"], collector["packages"]
+    build, control, work = (tmp_path / name for name in ("build", "control", "work"))
+    for variant in ("ts", "py"):
+        (build / variant).mkdir(parents=True)
+        (build / variant / "unit-boundary.txt").write_bytes(b"not a runnable payload")
+        package_root = control / f"packages-{variant}"
+        directories = packages.prepare_packages(
+            build=build, work=package_root, variant=variant, local=True
+        )
+        for directory in directories:
+            archive = package_root / f"{directory.name}.tgz"
+            with tarfile.open(name=archive, mode="w:gz") as packed:
+                packed.add(directory, arcname="package")
+        if missing:
+            absent = (
+                package_root / f"wrapper-{variant}.tgz"
+                if missing == "wrapper"
+                else package_root / f"{variant}-{offline.SETTINGS['targets'][0]}.tgz"
+            )
+            absent.unlink()
+    monkeypatch.setattr(offline, "identity", lambda: {"effective_uid": 123})
+    monkeypatch.setattr(
+        offline.shutil, "which", lambda tool: "/unit/npm" if tool == "npm" else None
+    )
+    monkeypatch.setattr(
+        offline, "prepare_packages", lambda **_: pytest.fail("reused archives repacked")
+    )
+    monkeypatch.setattr(
+        offline, "command", lambda **_: pytest.fail("packing command on archive reuse")
+    )
+    direct_results: dict[str, dict[str, Any]] = {}
+    direct_commands: dict[str, list[dict[str, Any]]] = {}
+    npm_calls: list[str] = []
+
+    def direct(**kwargs: Any) -> dict[str, Any]:
+        """Retain original-payload identity and distinct direct checkpoints."""
+        variant = kwargs["variant"]
+        assert_that(kwargs["root"]).is_equal_to(build / variant)
+        assert_that(kwargs["home"]).is_equal_to(work / f"direct-{variant}")
+        direct_commands[variant] = [{"unit_boundary": f"direct-{variant}"}]
+        kwargs["records"].extend(direct_commands[variant])
+        direct_results[variant] = {
+            "status": "unverified",
+            "reason": f"unit test: direct {variant} execution deliberately stubbed",
+        }
+        return direct_results[variant]
+
+    def npm_command(**kwargs: Any) -> dict[str, Any]:
+        """Inspect actual client argv/checkpoint without running npm or networking."""
+        assert_that(missing).is_none()
+        argv = kwargs["argv"]
+        assert_that(argv[:3]).is_equal_to(["/unit/npm", "install", "--ignore-scripts"])
+        assert_that(argv).contains("--offline", "--no-audit", "--no-fund")
+        assert_that(argv[-2:]).is_equal_to(["--registry", "http://127.0.0.1:9"])
+        variant = "ts" if kwargs["cwd"].name == "client-ts-npm" else "py"
+        checkpoint = json.loads((work / f"worker-{variant}.json").read_bytes())
+        assert_that(checkpoint["direct_execution"]).is_equal_to(direct_results[variant])
+        assert_that(checkpoint["direct_commands"]).is_equal_to(direct_commands[variant])
+        assert_that(checkpoint["clients"]).is_empty()
+        manifest = json.loads((kwargs["cwd"] / "package.json").read_bytes())
+        wrapper_archive = control / f"packages-{variant}" / f"wrapper-{variant}.tgz"
+        assert_that(manifest["dependencies"][f"@spike/{variant}"]).is_equal_to(
+            f"file:{wrapper_archive.as_posix()}"
+        )
+        npm_calls.append(variant)
+        result = {"argv": argv, "exit": 23, "stdout": "", "stderr": "unit boundary"}
+        kwargs["records"].append(result)
+        return result
+
+    monkeypatch.setattr(offline, "run_payload", direct)
+    monkeypatch.setattr(packages, "command", npm_command)
+    result = offline.worker(build=build, work=work, packages_from=control)
+    assert_that(npm_calls).is_equal_to([] if missing else ["ts", "py"])
+    for variant, item in result.items():
+        assert_that(item["direct_execution"]).is_same_as(direct_results[variant])
+        assert_that(item["direct_commands"]).is_equal_to(direct_commands[variant])
+        assert_that(item["packing_commands"]).is_empty()
+        assert_that(item["bun_local_file_gate"]).is_false()
+        if missing:
+            assert_that(item["clients"]).is_empty()
+            assert_that(item["missing_archives"]).is_length(1)
+            assert_that(item["status"]).is_equal_to("unverified")
+        else:
+            assert_that(item["missing_archives"]).is_empty()
+            assert_that(item["clients"]["bun"]["status"]).is_equal_to("unverified")
+            assert_that(item["clients"]["bun"]["reason"]).contains("absent")
+            assert_that(item["clients"]["npm"]["commands"][0]["exit"]).is_equal_to(23)
+            assert_that(item["clients"]["npm"]["status"]).is_equal_to("fail")
+            assert_that(item["status"]).is_equal_to("fail")
+        assert_that(
+            json.loads((work / f"worker-{variant}.json").read_bytes())
         ).is_equal_to(item)
 
 

@@ -267,8 +267,12 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
         raise ValueError("incomplete archive")
     output = {name: contents[name] for name in sorted(retained)}
     target = home / ".spike-target"
-    with tempfile.TemporaryDirectory(prefix=".spike-stage-", dir=home) as temporary:
-        staging = Path(temporary)
+    temporary = tempfile.TemporaryDirectory(prefix=".spike-stage-", dir=home)
+    staging = Path(temporary.name)
+    owns_target = False
+    is_published = False
+    failures: list[OSError] = []
+    try:
         for name, content in output.items():
             destination = staging / name
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -277,12 +281,35 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
         # directory. Only publish after all writes succeed. Move failures roll
         # back only this invocation's reservation, never a pre-existing target.
         target.mkdir()
-        try:
-            for child in staging.iterdir():
-                child.rename(target / child.name)
-        except OSError:
-            shutil.rmtree(target)
-            raise
+        owns_target = True
+        for child in staging.iterdir():
+            child.rename(target / child.name)
+        is_published = True
+    except OSError as error:
+        failures.append(error)
+        if owns_target:
+            try:
+                shutil.rmtree(target)
+            except OSError as cleanup_error:
+                failures.append(cleanup_error)
+    try:
+        temporary.cleanup()
+    except OSError as cleanup_error:
+        if is_published:
+            # Publication commits the installation, as in the TypeScript variant.
+            print(
+                f"Installation completed; staging cleanup failed: {cleanup_error}",
+                file=sys.stderr,
+            )
+        else:
+            failures.append(cleanup_error)
+    if len(failures) == 1:
+        raise failures[0]
+    if failures:
+        details = "; ".join(str(error) for error in failures)
+        raise ExceptionGroup(
+            f"Installation failed; cleanup also failed: {details}", failures
+        ) from failures[0]
     return output
 
 
@@ -324,7 +351,7 @@ def main() -> int:
         )
         print(json.dumps(result, sort_keys=True))
         return 0
-    except (ValueError, OSError, tarfile.TarError) as error:
+    except (ValueError, OSError, tarfile.TarError, ExceptionGroup) as error:
         print(str(error), file=sys.stderr)
         return 1
 

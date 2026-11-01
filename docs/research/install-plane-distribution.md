@@ -42,7 +42,7 @@ All R3–R6 tables below retain **historical raw outcomes under the superseded
 both-clients-offline policy**. In particular, POSIX offline `fail` reflects Bun
 selection failure under that old rule. It is not a current-policy gate failure,
 and cannot be retroactively turned into a direct-runtime pass. No raw JSON is
-modified or relabeled, and no earlier run certifies R9.
+modified or relabeled, and no earlier run certifies R10.
 
 ## Method and evidence identity
 
@@ -217,7 +217,7 @@ a payload-mutable golden oracle, and partial output that prevents installation
 retry. R7 records acquisition step outcomes without checkout, exports them to the
 runner log/summary before best-effort artifact upload, rejects decoded duplicate
 keys in both runtimes, snapshots the collector's trusted golden before execution,
-and stages writes with cleanup before publishing into a fresh reserved target.
+and stages completed writes before publishing into a fresh reserved target.
 Acquisition-only evidence stays **unverified**, with no source-head or denial
 claim; unavailable artifacts never count as passing scenario evidence.
 
@@ -315,6 +315,32 @@ remains **3.14.6**; local isolated verification uses installed **3.14.7** with
 downloads disabled and offline mode. No historical artifacts are rewritten and
 ADR 0008 remains Proposed pending the required current-head native/dispatch
 direct-offline, denial and provenance evidence.
+
+## R10 local P2 repairs (hosted verification pending)
+
+Python now shares TypeScript's publication commit point: once every staged child
+has moved, staging cleanup failure warns and the CLI returns success with the
+complete target. Before publication, original installation, target rollback and
+staging cleanup errors are retained together, including in CLI failure output.
+An existing target is never removed. Injected Python regressions check CLI status,
+installed bytes, leftover staging, retry after successful rollback, and explicit
+residue when rollback itself fails. The TypeScript regression also checks all
+three errors when publication, rollback and staging cleanup fail together.
+
+The offline worker requires Bun only when packing fresh archives. With a complete
+prepacked set, an npm-only host now reaches npm installation; unavailable Bun
+remains unverified informational evidence. Missing wrapper/platform archives
+prevent installation, and no Bun without prepacked archives remains an explicit
+packing inability. Direct-runtime observations and their checkpoints survive all
+these paths. Boundary regressions use valid local tarballs and intercept child
+commands; they run no package scripts or network and supply no scenario proof.
+
+These are local source repairs. R9's runs at
+`edc39a3c1c00d27159f5fb83e520d5298a00a95d` cannot certify R10. Local isolated tests
+use installed Python **3.14.7**, with downloads disabled and offline mode; the
+hosted pin remains **3.14.6**. Historical artifacts stay unchanged, and ADR 0008
+stays Proposed until current-source restricted direct-runtime/npm, denial and
+provenance evidence permits final selection under the answered owner policies.
 
 ## R3 restricted-scenario comparison
 
@@ -494,7 +520,7 @@ Linux has no macOS/Windows security observation; third-party EDR is unverified t
 The R2 runs [41288233178][r2] and [41290059704][r2-dispatch] predate these R3
 observations; R2 Windows stopped at firewall Error 87 without restricted installs.
 The R3 green dispatch now satisfies the dispatch collection/link criterion at
-`ca2db52`. R4, R5 and R6 collection are separately inspected above; none validates R9.
+`ca2db52`. R4, R5 and R6 collection are separately inspected above; none validates R10.
 
 R4's schema **3** enforces a clean checkout and required matching expected head in
 hosted mode, records `GITHUB_RUN_ATTEMPT`, and labels local runs as local

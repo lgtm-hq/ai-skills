@@ -151,7 +151,8 @@ R6 PR/green dispatch evidence at **10205e3 only**. Historical dual-client offlin
 rollups and raw JSON are retained under the superseded rule. R6 has no independent
 original-payload direct execution under restriction; R7 native CI failed before
 build/measurement. R8 run 41310148490 at `623c098` exposed six Windows test failures
-before build/measurement; R9 local corrections await hosted verification.
+before build/measurement. R9 runs at `edc39a3` cannot certify the R10 Python
+publication and npm-only archive-reuse repairs; R10 awaits hosted verification.
 ADR 0008 stays Proposed for
 fresh comparable restricted direct-runtime plus npm evidence, with Windows scope,
 Harden Runner baseline and payload provenance still explicit limits. The

@@ -119,45 +119,42 @@ def worker(
             "bun_local_file_gate": False,
         }
         write_json(path=work / f"worker-{variant}.json", value=results[variant])
-        if bun is None:
-            results[variant]["reason"] = "Bun unavailable for local packing"
-            write_json(path=work / f"worker-{variant}.json", value=results[variant])
-            continue
         entries = []
         packages = (packages_from or work) / f"packages-{variant}"
-        directories = (
-            []
-            if packages_from
-            else prepare_packages(
-                build=build, work=packages, variant=variant, local=True
-            )
-        )
         required_archives = [
             packages / f"{variant}-{platform_target}.tgz"
             for platform_target in SETTINGS["targets"]
         ] + [packages / f"wrapper-{variant}.tgz"]
         packed = not packages_from or all(path.is_file() for path in required_archives)
-        for directory in directories:
-            archive = packages / f"{directory.name}.tgz"
-            result = command(
-                argv=[
-                    bun,
-                    "pm",
-                    "pack",
-                    "--ignore-scripts",
-                    "--quiet",
-                    "--filename",
-                    str(archive),
-                ],
-                cwd=directory,
-                env=client_env(
-                    client=work / f"pack-{directory.name}",
-                    registry="http://127.0.0.1:9",
-                ),
-                records=entries,
-                timeout=300,
+        if packages_from is None:
+            if bun is None:
+                results[variant]["reason"] = "Bun unavailable for local packing"
+                write_json(path=work / f"worker-{variant}.json", value=results[variant])
+                continue
+            directories = prepare_packages(
+                build=build, work=packages, variant=variant, local=True
             )
-            packed = packed and result["exit"] == 0 and archive.is_file()
+            for directory in directories:
+                archive = packages / f"{directory.name}.tgz"
+                result = command(
+                    argv=[
+                        bun,
+                        "pm",
+                        "pack",
+                        "--ignore-scripts",
+                        "--quiet",
+                        "--filename",
+                        str(archive),
+                    ],
+                    cwd=directory,
+                    env=client_env(
+                        client=work / f"pack-{directory.name}",
+                        registry="http://127.0.0.1:9",
+                    ),
+                    records=entries,
+                    timeout=300,
+                )
+                packed = packed and result["exit"] == 0 and archive.is_file()
         clients = {}
         if packed:
             wrapper_archive = packages / f"wrapper-{variant}.tgz"

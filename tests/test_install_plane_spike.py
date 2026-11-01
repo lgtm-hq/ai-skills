@@ -133,6 +133,162 @@ def test_existing_target_is_preserved(
         assert_that(list(target.iterdir())).is_empty()
 
 
+def test_postpublication_cleanup_failure_reports_cli_success(
+    prototype: ModuleType,
+    spike_fixture: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A late cleanup error warns, leaving a complete successful CLI install."""
+    home = tmp_path / "home"
+    home.mkdir()
+    rmtree = shutil.rmtree
+
+    def remove(path: Path, *args: object, **kwargs: object) -> None:
+        """Fail real TemporaryDirectory removal, leaving its empty staging tree."""
+        if Path(path).name.startswith(".spike-stage-"):
+            raise OSError("injected staging cleanup failure")
+        rmtree(path)
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(sys, "argv", ["prototype", str(spike_fixture), "fixture:drop"])
+    with monkeypatch.context() as patch:
+        patch.setattr(shutil, "rmtree", remove)
+        assert_that(prototype.main()).is_zero()
+    captured = capsys.readouterr()
+    expected = json.loads((spike_fixture / "expected-output.json").read_bytes())
+    assert_that(json.loads(captured.out)).is_equal_to(expected)
+    assert_that(captured.err).contains(
+        "Installation completed; staging cleanup failed:",
+        "injected staging cleanup failure",
+    )
+    for name, content in expected.items():
+        assert_that((home / ".spike-target" / name).read_bytes()).is_equal_to(
+            content.encode("utf-8")
+        )
+    # A completed installation is occupied, rather than a failed retryable install.
+    assert_that(prototype.main()).is_equal_to(1)
+    assert_that(capsys.readouterr().out).is_empty()
+    residue = list(home.glob(".spike-stage-*"))
+    assert_that(residue).is_length(1)
+    assert_that(list(residue[0].iterdir())).is_empty()
+    rmtree(residue[0])
+    assert_that([path.name for path in home.iterdir()]).contains_only(".spike-target")
+    for name, content in expected.items():
+        assert_that((home / ".spike-target" / name).read_bytes()).is_equal_to(
+            content.encode("utf-8")
+        )
+
+
+@pytest.mark.parametrize(
+    ("boundary", "rollback_fails"),
+    [
+        ("write", False),
+        ("publication", False),
+        ("publication", True),
+        ("existing", False),
+    ],
+)
+def test_prepublication_failures_retain_evidence_and_cli_status(
+    prototype: ModuleType,
+    spike_fixture: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    boundary: str,
+    rollback_fails: bool,
+) -> None:
+    """Original, rollback and cleanup errors survive, with honest state and retry."""
+    original_error = OSError("injected original installation failure")
+    rollback_error = OSError("injected target rollback failure")
+    cleanup_error = OSError("injected staging cleanup failure")
+    rmtree = shutil.rmtree
+    expected = json.loads((spike_fixture / "expected-output.json").read_bytes())
+    for entrypoint in ("api", "cli"):
+        home = tmp_path / entrypoint
+        home.mkdir()
+        target = home / ".spike-target"
+        if boundary == "existing":
+            target.mkdir()
+            (target / "owned").write_bytes(b"preserve me")
+
+        def fail_output(*args: object, **kwargs: object) -> None:
+            """Fail the selected write or publication operation before commit."""
+            raise original_error
+
+        def remove(
+            path: Path,
+            *args: object,
+            owned_target: Path = target,
+            **kwargs: object,
+        ) -> None:
+            """Inject staging cleanup and optional owned-target rollback failures."""
+            if Path(path).name.startswith(".spike-stage-"):
+                raise cleanup_error
+            if path == owned_target and rollback_fails:
+                raise rollback_error
+            rmtree(path)
+
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setattr(
+            sys, "argv", ["prototype", str(spike_fixture), "fixture:drop"]
+        )
+        with monkeypatch.context() as patch:
+            patch.setattr(shutil, "rmtree", remove)
+            if boundary != "existing":
+                patch.setattr(
+                    Path,
+                    "write_bytes" if boundary == "write" else "rename",
+                    fail_output,
+                )
+            if entrypoint == "api":
+                with pytest.raises(ExceptionGroup) as observed:
+                    prototype.install(
+                        fixture=spike_fixture, home=home, exclude="fixture:drop"
+                    )
+                errors = observed.value.exceptions
+                if boundary == "existing":
+                    assert_that(errors[0]).is_instance_of(FileExistsError)
+                else:
+                    assert_that(errors[0]).is_same_as(original_error)
+                assert_that(observed.value.__cause__).is_same_as(errors[0])
+                assert_that(errors[-1]).is_same_as(cleanup_error)
+                assert_that(errors).is_length(3 if rollback_fails else 2)
+                if rollback_fails:
+                    assert_that(errors[1]).is_same_as(rollback_error)
+            else:
+                assert_that(prototype.main()).is_equal_to(1)
+                captured = capsys.readouterr()
+                assert_that(captured.out).is_empty()
+                assert_that(captured.err).contains(str(cleanup_error))
+                if boundary != "existing":
+                    assert_that(captured.err).contains(str(original_error))
+                if rollback_fails:
+                    assert_that(captured.err).contains(str(rollback_error))
+                assert_that(captured.err).does_not_contain("Traceback")
+        residue = list(home.glob(".spike-stage-*"))
+        assert_that(residue).is_length(1)
+        if boundary == "existing":
+            assert_that((target / "owned").read_bytes()).is_equal_to(b"preserve me")
+            assert_that(prototype.main()).is_equal_to(1)
+            capsys.readouterr()
+            rmtree(residue[0])
+            continue
+        assert_that(target.exists()).is_equal_to(rollback_fails)
+        if rollback_fails:
+            assert_that(list(target.iterdir())).is_empty()
+            assert_that(prototype.main()).is_equal_to(1)
+            capsys.readouterr()
+            rmtree(target)
+        assert_that(prototype.main()).is_zero()
+        assert_that(json.loads(capsys.readouterr().out)).is_equal_to(expected)
+        rmtree(residue[0])
+        assert_that([path.name for path in home.iterdir()]).contains_only(
+            ".spike-target"
+        )
+
+
 @pytest.fixture
 def prototype() -> ModuleType:
     """Import this checkout's prototype explicitly, independent of PYTHONPATH.
