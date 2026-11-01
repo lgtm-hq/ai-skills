@@ -841,3 +841,51 @@ def test_keep_sha_all_summarizes_only_changed_vendors(
     assert_that(summary.read_text(encoding="utf-8")).contains(
         "No vendor pin or slice changes",
     )
+
+
+def test_keep_sha_all_summarizes_new_vendor(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An absent baseline vendor becomes a new pin with all its skills added."""
+    baseline = (
+        (repo_root / "vendors.yaml")
+        .read_text()
+        .replace(
+            "example-vendor",
+            "old-vendor",
+        )
+        .replace("example-plugin", "old-plugin")
+    )
+    monkeypatch.setattr(
+        repin_vendor,
+        "_registry_text_at_ref",
+        lambda **kwargs: baseline,
+    )
+    summary = repo_root / "summary.md"
+    status = repin_vendor.main(
+        [
+            "--repo-root",
+            str(repo_root),
+            "--all",
+            "--keep-sha",
+            "--baseline-ref",
+            "base",
+            "--summary-path",
+            str(summary),
+        ]
+    )
+    assert_that(status).is_zero()
+    assert_that(summary.read_text()).contains(
+        "`new`",
+        _EXISTING_SHA,
+        "Added skills",
+        "alpha",
+        "beta",
+        "0 → 2",
+    )
+    assert_that(
+        load_registry(registry_path=repo_root / "vendors.yaml")[0].sha
+    ).is_equal_to(
+        _EXISTING_SHA,
+    )

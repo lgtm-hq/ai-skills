@@ -20,6 +20,10 @@ jobs:
       startsWith(github.head_ref, 'renovate/')
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.user.login == 'renovate[bot]'
+      && contains(fromJSON('["renovate[bot]","lgtm-release-bot[bot]"]'),
+      github.triggering_actor)
+    permissions:
+      contents: read
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
@@ -36,6 +40,8 @@ jobs:
             raw.githubusercontent.com:443
             release-assets.githubusercontent.com:443
             pipelines.actions.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
             pypi.org:443
             files.pythonhosted.org:443
             astral.sh:443
@@ -53,7 +59,7 @@ jobs:
         # yamllint disable-line rule:line-length
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.13'
+          python-version: '3.15'
 
       - name: Set up uv
         # yamllint disable-line rule:line-length
@@ -63,12 +69,86 @@ jobs:
         run: uv sync --locked
 
       - name: Regenerate and summarize selected pins
-        id: regenerate
         env:
           GITHUB_TOKEN: ${{ github.token }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           SUMMARY_PATH: ${{ runner.temp }}/vendor-pin-summary.md
+          ARTIFACT_DIR: ${{ runner.temp }}/vendor-pin-output
         run: bash scripts/ci/vendor_pin_regen.sh
+
+      - name: Upload generated data envelope
+        # yamllint disable-line rule:line-length
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: vendor-pin-publication
+          path: ${{ runner.temp }}/vendor-pin-output/publication.json
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish vendor catalog from trusted base
+    needs: regenerate
+    if: >-
+      startsWith(github.head_ref, 'renovate/')
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'renovate[bot]'
+      && contains(fromJSON('["renovate[bot]","lgtm-release-bot[bot]"]'),
+      github.triggering_actor)
+    permissions:
+      contents: read
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    env:
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Harden runner
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            raw.githubusercontent.com:443
+            pipelines.actions.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            astral.sh:443
+            releases.astral.sh:443
+
+      - name: Checkout trusted base
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Set up Python
+        # yamllint disable-line rule:line-length
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.15'
+
+      - name: Set up isolated uv
+        # yamllint disable-line rule:line-length
+        uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        with:
+          enable-cache: false
+
+      - name: Download generated data outside the checkout
+        # yamllint disable-line rule:line-length
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: vendor-pin-publication
+          path: ${{ runner.temp }}/vendor-pin-input
+
+      - name: Validate untrusted publication data before minting credentials
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/vendor-pin-input
+        # yamllint disable-line rule:line-length
+        run: uv run --no-project python scripts/ci/create_signed_commit.py --validate-only
 
       - name: Create release App token
         id: app-token
@@ -84,10 +164,8 @@ jobs:
 
       - name: Commit generated data and upsert summary
         env:
+          ARTIFACT_DIR: ${{ runner.temp }}/vendor-pin-input
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_BRANCH: ${{ github.head_ref }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          SUMMARY_PATH: ${{ runner.temp }}/vendor-pin-summary.md
-          SUMMARY_STATUS: ${{ steps.regenerate.outputs.summary-status }}
-        run: uv run python scripts/ci/create_signed_commit.py
+        run: uv run --no-project python scripts/ci/create_signed_commit.py

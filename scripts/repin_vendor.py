@@ -17,6 +17,7 @@ import subprocess  # nosec B404 - fixed git argv list, no shell
 import sys
 import tempfile
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from pathlib import Path
 from urllib.parse import quote
 
@@ -210,7 +211,7 @@ def _reload_vendor(*, repo_root: Path, vendor_id: str) -> Vendor:
     return vendor
 
 
-def _vendor_from_registry_text(*, text: str, vendor_id: str) -> Vendor:
+def _vendor_from_registry_text(*, text: str, vendor_id: str) -> Vendor | None:
     """Load one vendor from a ``vendors.yaml`` snapshot without touching disk.
 
     Args:
@@ -218,21 +219,16 @@ def _vendor_from_registry_text(*, text: str, vendor_id: str) -> Vendor:
         vendor_id: Vendor slug.
 
     Returns:
-        Matching vendor record.
+        Matching vendor record, or None for a newly added vendor.
 
     Raises:
-        ValueError: If the vendor id is unknown.
         TypeError: If the registry fails type validation.
     """
     with tempfile.TemporaryDirectory(prefix="vendor-repin-") as tmp:
         path = Path(tmp) / "vendors.yaml"
         path.write_text(text, encoding="utf-8")
         vendors = load_registry(registry_path=path)
-    vendor = next((item for item in vendors if item.id == vendor_id), None)
-    if vendor is None:
-        msg = f"Unknown vendor id: {vendor_id}"
-        raise ValueError(msg)
-    return vendor
+    return next((item for item in vendors if item.id == vendor_id), None)
 
 
 def _registry_text_at_ref(*, repo_root: Path, git_ref: str) -> str:
@@ -323,8 +319,10 @@ def repin_vendor(
         baseline_text = baseline_registry_text
     else:
         baseline_text = working_text
-    if baseline_text != working_text:
-        _vendor_from_registry_text(text=baseline_text, vendor_id=vendor_id)
+    baseline_vendor = _vendor_from_registry_text(
+        text=baseline_text,
+        vendor_id=vendor_id,
+    )
     if keep_sha:
         new_sha = vendor.sha
     elif resolve_sha is not None:
@@ -356,9 +354,11 @@ def repin_vendor(
             load_registry(registry_path=registry_path)
         before = _snapshot_vendor(
             repo_root=repo_root,
-            vendor=_reload_vendor(repo_root=repo_root, vendor_id=vendor_id),
+            vendor=baseline_vendor if baseline_vendor is not None else vendor,
             vendor_trees=vendor_trees,
         )
+        if baseline_vendor is None:
+            before = replace(before, sha="new")
         registry_path.write_text(working_text, encoding="utf-8")
         if new_sha != vendor.sha:
             manage_vendors.set_sha(

@@ -14,7 +14,7 @@ import manage_vendors
 import pytest
 import yaml
 from assertpy import assert_that
-from ci import create_signed_commit
+from ci import create_signed_commit, vendor_pin_artifact
 from vendor_registry.registry import load_registry
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -127,17 +127,42 @@ def _publish(
     """
     return str(
         create_signed_commit.publish(
-            repo_root=repo_root,
+            artifact_directory=_write_artifact(repo_root=repo_root),
             repository=_REPOSITORY,
             branch=_BRANCH,
             expected_head=(
                 expected_head if expected_head is not None else _head(repo_root)
             ),
             pr_number=522,
-            summary="# Bake summary\n",
             request=request,
         ),
     )
+
+
+def _write_artifact(*, repo_root: Path, status: int = 0) -> Path:
+    """Package fixture output outside its checkout.
+
+    Args:
+        repo_root: Fixture checkout root.
+        status: Summary collision status.
+
+    Returns:
+        Isolated envelope directory.
+    """
+    directory = repo_root.parent / f"{repo_root.name}-artifact"
+    directory.mkdir(exist_ok=True)
+    (directory / vendor_pin_artifact.ARTIFACT_NAME).write_text(
+        json.dumps(
+            {
+                "head": _head(repo_root),
+                "summary": "# Bake summary\n",
+                "status": status,
+                "fileChanges": create_signed_commit.file_changes(repo_root=repo_root),
+            }
+        ),
+        encoding="utf-8",
+    )
+    return directory
 
 
 @pytest.fixture
@@ -182,6 +207,22 @@ def test_renovate_captures_every_explicit_vendor_branch(
     assert_that(renovate_vendor_manager).does_not_contain_key("currentValueTemplate")
     for vendor in vendors:
         assert_that(vendor.branch).is_equal_to("main")
+
+
+def test_renovate_vendor_pattern_uses_re2_subset(
+    renovate_vendor_manager: dict[str, Any],
+) -> None:
+    """Keep the Python matching smoke tests free of RE2-unsupported constructs."""
+    assert_that(renovate_vendor_manager["matchStrings"][0]).does_not_contain(
+        "(?=",
+        "(?!",
+        "(?<=",
+        "(?<!",
+        "(?>",
+        r"\1",
+        r"\k",
+        r"\g",
+    )
 
 
 @pytest.mark.parametrize(
@@ -246,12 +287,23 @@ def test_renovate_captures_registry_writer_branch(
 @pytest.mark.parametrize(
     "branch_scalar", ["release/next", "'release/next'", '"release/next"']
 )
+@pytest.mark.parametrize(
+    "comment",
+    ["", " # upstream default", "\t # upstream 'default' (\"main\")"],
+    ids=["no-comment", "space-comment", "tab-comment-with-quotes"],
+)
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
 def test_renovate_captures_yaml_branch_quote_styles(
     renovate_vendor_manager: dict[str, Any],
     branch_scalar: str,
+    comment: str,
+    line_ending: str,
 ) -> None:
-    """Accept plain, single-quoted, and double-quoted YAML branch scalars."""
-    text = f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n    branch: {branch_scalar}\n'
+    """Capture complete YAML scalars with optional comments and line endings."""
+    text = (
+        f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
+        f"    branch: {branch_scalar}{comment}{line_ending}"
+    )
     pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
     matches = list(re.finditer(pattern, text))
 
@@ -323,7 +375,7 @@ def test_no_diff_posts_summary_without_commit(git_tree: Path, api: Mock) -> None
 
 def test_stale_checkout_makes_no_api_calls(git_tree: Path, api: Mock) -> None:
     """Never infer a newer expected head from a different local checkout."""
-    with pytest.raises(ValueError, match="Checkout must match"):
+    with pytest.raises(ValueError, match="expected PR head"):
         _publish(repo_root=git_tree, request=api, expected_head="b" * 40)
     assert_that(api.call_count).is_zero()
 
@@ -421,40 +473,459 @@ def test_sticky_summary_updates_only_own_comment(same_body: bool) -> None:
         )
 
 
-def test_workflow_limits_credentials_to_same_repo_renovate_heads() -> None:
-    """The regeneration job uses an exact head and App token only for publication."""
+def test_workflow_isolates_credentials_from_pr_head_code() -> None:
+    """Only base code runs in the token job, with no shared caches or overlay."""
     workflow = yaml.safe_load(
         (_ROOT / ".github/workflows/vendor-pin-regen.yml").read_text(encoding="utf-8"),
     )
     assert_that(workflow["on"]["pull_request"]).is_equal_to(
         {"types": ["opened", "synchronize"], "paths": ["vendors.yaml"]},
     )
-    job = workflow["jobs"]["regenerate"]
-    assert_that(job["if"]).contains(
-        "startsWith(github.head_ref, 'renovate/')",
-        "head.repo.full_name == github.repository",
-        "renovate[bot]",
+    for name, ref in [("regenerate", "head"), ("publish", "base")]:
+        job = workflow["jobs"][name]
+        assert_that(job["if"]).contains(
+            "startsWith(github.head_ref, 'renovate/')",
+            "head.repo.full_name == github.repository",
+            "pull_request.user.login == 'renovate[bot]'",
+            'contains(fromJSON(\'["renovate[bot]","lgtm-release-bot[bot]"]\')',
+            "github.triggering_actor",
+        )
+        assert_that(job["permissions"]).is_equal_to({"contents": "read"})
+        steps = job["steps"]
+        actions = [step for step in steps if "uses" in step]
+        for step in actions:
+            assert_that(step["uses"]).matches(r"@[0-9a-f]{40}$")
+        assert_that(actions[0]["with"]["egress-policy"]).is_equal_to("block")
+        assert_that(actions[0]["with"]["allowed-endpoints"].split()).contains(
+            "raw.githubusercontent.com:443",
+        )
+        checkouts = [
+            step for step in actions if step["uses"].startswith("actions/checkout@")
+        ]
+        assert_that(checkouts).is_length(1)
+        assert_that(checkouts[0]["with"]["ref"]).is_equal_to(
+            f"${{{{ github.event.pull_request.{ref}.sha }}}}",
+        )
+        assert_that(checkouts[0]["with"]["persist-credentials"]).is_false()
+    regen = workflow["jobs"]["regenerate"]
+    assert_that(json.dumps(regen)).does_not_contain("secrets.", "app-token")
+    publish = workflow["jobs"]["publish"]
+    assert_that(publish["needs"]).is_equal_to("regenerate")
+    for step in publish["steps"]:
+        if "run" in step:
+            assert_that(step["env"]["ARTIFACT_DIR"]).starts_with("${{ runner.temp }}/")
+            assert_that(step["run"]).starts_with(
+                "uv run --no-project python scripts/ci/create_signed_commit.py",
+            )
+            assert_that(step["run"]).does_not_contain("git", "sync", "install")
+        if "uses" in step:
+            assert_that(step["uses"]).does_not_contain("actions/cache@")
+            if step["uses"].startswith("astral-sh/setup-uv@"):
+                assert_that(step["with"]["enable-cache"]).is_false()
+            if step["uses"].startswith("actions/download-artifact@"):
+                assert_that(step["with"]["path"]).is_equal_to(
+                    "${{ runner.temp }}/vendor-pin-input",
+                )
+    steps = publish["steps"]
+    validation = next(
+        i for i, step in enumerate(steps) if "--validate-only" in step.get("run", "")
     )
-    steps = job["steps"]
-    actions = [step for step in steps if "uses" in step]
-    assert_that(
-        all(re.search(r"@[0-9a-f]{40}$", step["uses"]) for step in actions),
-    ).is_true()
-    harden = next(
-        step
-        for step in actions
-        if step["uses"].startswith("step-security/harden-runner@")
-    )
-    assert_that(harden["with"]["egress-policy"]).is_equal_to("block")
-    checkout = next(
-        step for step in actions if step["uses"].startswith("actions/checkout@")
-    )
-    assert_that(checkout["with"]["ref"]).is_equal_to(
-        "${{ github.event.pull_request.head.sha }}",
-    )
-    assert_that(checkout["with"]["persist-credentials"]).is_false()
+    token = next(i for i, step in enumerate(steps) if step.get("id") == "app-token")
+    assert_that(validation).is_less_than(token)
     publisher = steps[-1]
     assert_that(publisher["env"]["GH_TOKEN"]).is_equal_to(
         "${{ steps.app-token.outputs.token }}",
     )
     assert_that(publisher["env"]).does_not_contain_key("GITHUB_TOKEN")
+
+
+@pytest.mark.parametrize("name", ["NOTICE.md", "vendor-indexes/nested/file.json"])
+def test_symlinks_above_repo_do_not_reject_files(git_tree: Path, name: str) -> None:
+    """A symlinked runner workspace is permitted above the repository boundary."""
+    path = git_tree / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("changed", encoding="utf-8")
+    alias = git_tree.parent / f"{git_tree.name}-workspace-link"
+    alias.symlink_to(git_tree.parent, target_is_directory=True)
+    changes = create_signed_commit.file_changes(repo_root=alias / git_tree.name)
+    assert_that([item["path"] for item in changes["additions"]]).contains(name)
+
+
+def test_symlink_directory_inside_repo_is_rejected(git_tree: Path) -> None:
+    """The boundary exception never permits links inside generated directories."""
+    (git_tree / "vendor-indexes/sub").symlink_to(git_tree, target_is_directory=True)
+    with pytest.raises(ValueError, match="symlink"):
+        create_signed_commit.file_changes(repo_root=git_tree)
+
+
+@pytest.mark.parametrize("kind", ["additions", "deletions"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "scripts/ci/create_signed_commit.py",
+        ".venv/bin/python",
+        "vendors.yaml",
+        "/NOTICE.md",
+        "vendor-indexes/../scripts/unsafe.py",
+        "vendor-indexes/./x",
+        "vendor-indexes//x",
+        "npm/ai-skills/data/../../bin/skill.js",
+        "vendor-indexes/.git/config",
+        "vendor-indexes/x\\y",
+        "vendor-indexes/a\x01",
+        "npm/ai-skills/data/plugins-baked/plugin/hook.py",
+    ],
+)
+def test_artifact_revalidates_addition_and_deletion_paths(
+    git_tree: Path,
+    api: Mock,
+    kind: str,
+    name: str,
+) -> None:
+    """A malicious artifact cannot write or delete executable/traversal paths."""
+    directory = _write_artifact(repo_root=git_tree)
+    path = directory / vendor_pin_artifact.ARTIFACT_NAME
+    payload = json.loads(path.read_text())
+    item = {"path": name}
+    if kind == "additions":
+        item["contents"] = base64.b64encode(b"untrusted code").decode()
+    payload["fileChanges"][kind] = [item]
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="non-generated or noncanonical"):
+        create_signed_commit.publish(
+            artifact_directory=directory,
+            repository=_REPOSITORY,
+            branch=_BRANCH,
+            expected_head=_head(git_tree),
+            pr_number=522,
+            request=api,
+        )
+    assert_that(api.call_count).is_zero()
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "root-symlink",
+        "file-symlink",
+        "extra-file",
+        "extra-directory",
+        "invalid-base64",
+        "duplicate-path",
+        "wrong-head",
+        "bad-status",
+        "collision-changes",
+        "extra-key",
+        "not-a-file",
+    ],
+)
+def test_malformed_artifacts_make_no_api_calls(
+    git_tree: Path,
+    api: Mock,
+    tamper: str,
+) -> None:
+    """Untrusted metadata, filesystem entries, and change records fail closed."""
+    (git_tree / "NOTICE.md").write_text("changed")
+    directory = _write_artifact(repo_root=git_tree)
+    path = directory / vendor_pin_artifact.ARTIFACT_NAME
+    payload = json.loads(path.read_text())
+    if tamper == "root-symlink":
+        alias = directory.with_name("artifact-alias")
+        alias.symlink_to(directory, target_is_directory=True)
+        directory = alias
+    elif tamper == "file-symlink":
+        original = path.with_name("original")
+        path.rename(original)
+        path.symlink_to(original)
+    elif tamper == "extra-file":
+        (directory / "helper.py").write_text("untrusted code")
+    elif tamper == "extra-directory":
+        (directory / "scripts").mkdir()
+    elif tamper == "not-a-file":
+        path.unlink()
+        path.mkdir()
+    else:
+        if tamper == "invalid-base64":
+            payload["fileChanges"]["additions"][0]["contents"] = "!!bad!!"
+        elif tamper == "duplicate-path":
+            payload["fileChanges"]["deletions"] = [{"path": "NOTICE.md"}]
+        elif tamper == "wrong-head":
+            payload["head"] = "b" * 40
+        elif tamper == "bad-status":
+            payload["status"] = True
+        elif tamper == "collision-changes":
+            payload["status"] = 1
+        else:
+            payload["run"] = "untrusted code"
+        path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError):
+        create_signed_commit.publish(
+            artifact_directory=directory,
+            repository=_REPOSITORY,
+            branch=_BRANCH,
+            expected_head=_head(git_tree),
+            pr_number=522,
+            request=api,
+        )
+    assert_that(api.call_count).is_zero()
+
+
+def test_payload_budget_precedes_every_api_call(
+    git_tree: Path,
+    api: Mock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The combined base64 budget is enforced even across multiple additions."""
+    (git_tree / "NOTICE.md").write_bytes(b"abc")
+    (git_tree / "vendor-indexes/old.json").write_bytes(b"def")
+    directory = _write_artifact(repo_root=git_tree)
+    monkeypatch.setattr(vendor_pin_artifact, "MAX_BASE64_BYTES", 7)
+    with pytest.raises(ValueError, match="Combined base64 payload exceeds 7 bytes"):
+        create_signed_commit.publish(
+            artifact_directory=directory,
+            repository=_REPOSITORY,
+            branch=_BRANCH,
+            expected_head=_head(git_tree),
+            pr_number=522,
+            request=api,
+        )
+    assert_that(api.call_count).is_zero()
+
+
+def test_graphql_errors_explain_failure(git_tree: Path, api: Mock) -> None:
+    """Surface all GraphQL error messages without retrying against a moved head."""
+    (git_tree / "NOTICE.md").write_text("changed")
+    pr = api.side_effect(method="GET", path="/pulls/522")
+    api.side_effect = [
+        pr,
+        {"errors": [{"message": "Head moved"}, {"message": "denied"}]},
+    ]
+    with pytest.raises(RuntimeError, match="Head moved; denied"):
+        _publish(repo_root=git_tree, request=api)
+    assert_that(api.call_count).is_equal_to(2)
+
+
+def test_cli_refuses_artifact_inside_trusted_checkout(
+    git_tree: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Even configuration mistakes cannot turn the download into a code overlay."""
+    monkeypatch.chdir(git_tree)
+    monkeypatch.setenv("ARTIFACT_DIR", str(git_tree / "input"))
+    assert_that(create_signed_commit.main(["--validate-only"])).is_equal_to(1)
+
+
+@pytest.fixture
+def regen_runner(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+    """Provide a shell harness with fake uv/git and no network or vendor code.
+
+    Args:
+        tmp_path: Isolated fixture directory.
+
+    Returns:
+        Harness root and minimal process environment.
+    """
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    uv = binary / "uv"
+    uv.write_text("""#!/bin/bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$CALL_LOG"
+case "$*" in
+  *repin_vendor.py*)
+    printf '%s\\n' "$*" > "$BASELINE_LOG"
+    if [[ "${SUMMARY_FAIL:-0}" == 1 ]]; then exit 1; fi
+    echo summary > "$SUMMARY_PATH"
+    exit "${COLLISION_STATUS:-0}"
+    ;;
+  *manage_vendors.py*)
+    echo partial > partial-output
+    exit "${REFRESH_STATUS:-0}"
+    ;;
+  *vendor_pin_artifact.py*)
+    echo "$SUMMARY_STATUS" > "$ARTIFACT_DIR/publication.json"
+    ;;
+esac
+""")
+    uv.chmod(0o755)
+    git = binary / "git"
+    git.write_text(
+        '#!/bin/bash\necho "merge-base $*" >> "$CALL_LOG"\necho merge-base-sha\n'
+    )
+    git.chmod(0o755)
+    env = {
+        "PATH": f"{binary}:/usr/bin:/bin",
+        "SUMMARY_PATH": str(tmp_path / "summary.md"),
+        "ARTIFACT_DIR": str(tmp_path / "artifact"),
+        "BASE_SHA": "base-tip-sha",
+        "CALL_LOG": str(tmp_path / "calls"),
+        "BASELINE_LOG": str(tmp_path / "baseline"),
+    }
+    return tmp_path, env
+
+
+@pytest.mark.parametrize("failure", ["refresh", "summary"])
+def test_regeneration_failure_never_packages_partial_output(
+    regen_runner: tuple[Path, dict[str, str]],
+    failure: str,
+) -> None:
+    """A complete summary cannot excuse a subsequent hard refresh failure."""
+    root, env = regen_runner
+    Path(env["SUMMARY_PATH"]).write_text("stale summary")
+    directory = Path(env["ARTIFACT_DIR"])
+    directory.mkdir()
+    (directory / "publication.json").write_text("stale output")
+    env["REFRESH_STATUS" if failure == "refresh" else "SUMMARY_FAIL"] = "1"
+    result = subprocess.run(  # nosec B603 B607 - fixed local shell harness
+        ["bash", str(_ROOT / "scripts/ci/vendor_pin_regen.sh")],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert_that(result.returncode).is_not_zero()
+    assert_that((directory / "publication.json").exists()).is_false()
+    assert_that(Path(env["CALL_LOG"]).read_text()).does_not_contain(
+        "vendor_pin_artifact.py"
+    )
+    if failure == "refresh":
+        assert_that((root / "partial-output").exists()).is_true()
+
+
+@pytest.mark.parametrize("collision", [False, True])
+def test_regeneration_uses_merge_base_and_preserves_collision_report(
+    regen_runner: tuple[Path, dict[str, str]],
+    collision: bool,
+) -> None:
+    """The baseline is computed by Git, and collisions package a report alone."""
+    root, env = regen_runner
+    env["COLLISION_STATUS"] = str(int(collision))
+    result = subprocess.run(  # nosec B603 B607 - fixed local shell harness
+        ["bash", str(_ROOT / "scripts/ci/vendor_pin_regen.sh")],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert_that(result.returncode).described_as(result.stderr).is_zero()
+    assert_that(Path(env["BASELINE_LOG"]).read_text()).contains(
+        "--baseline-ref merge-base-sha"
+    )
+    assert_that(Path(env["CALL_LOG"]).read_text()).contains(
+        "merge-base base-tip-sha HEAD"
+    )
+    assert_that(
+        (Path(env["ARTIFACT_DIR"]) / "publication.json").read_text()
+    ).is_equal_to(
+        f"{int(collision)}\n",
+    )
+    assert_that((root / "partial-output").exists()).is_equal_to(not collision)
+
+
+@pytest.mark.parametrize("collision", [False, True])
+def test_real_artifact_cli_and_trusted_validation(
+    git_tree: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    collision: bool,
+) -> None:
+    """Real CLI entrypoints exchange data without imports from another checkout."""
+    import sys
+
+    (git_tree / "NOTICE.md").write_text("changed")
+    summary = git_tree.parent / f"{git_tree.name}-summary.md"
+    summary.write_text("# Collision report\n" if collision else "# Bake summary\n")
+    directory = git_tree.parent / f"{git_tree.name}-artifact"
+    directory.mkdir()
+    env = {
+        "ARTIFACT_DIR": str(directory),
+        "SUMMARY_PATH": str(summary),
+        "SUMMARY_STATUS": str(int(collision)),
+        "PR_HEAD_SHA": _head(git_tree),
+    }
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    # Run stdlib entrypoints with the interpreter that launched pytest.
+    for script, args in [
+        ("vendor_pin_artifact.py", []),
+        ("create_signed_commit.py", ["--validate-only"]),
+    ]:
+        result = subprocess.run(  # nosec B603 - fixed local Python scripts, no shell
+            [sys.executable, str(_ROOT / "scripts/ci" / script), *args],
+            cwd=git_tree,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert_that(result.returncode).described_as(result.stderr).is_zero()
+    payload = vendor_pin_artifact.read_artifact(
+        directory=directory,
+        expected_head=_head(git_tree),
+    )
+    assert_that(payload["status"]).is_equal_to(int(collision))
+    assert_that(bool(payload["fileChanges"]["additions"])).is_equal_to(not collision)
+    assert_that((git_tree / "NOTICE.md").read_text()).is_equal_to("changed")
+
+
+def test_collision_report_posts_without_commit_then_fails(
+    git_tree: Path,
+    api: Mock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Collision publication leaves the head intact and marks the workflow red."""
+    directory = _write_artifact(repo_root=git_tree, status=1)
+    monkeypatch.chdir(git_tree)
+    for name, value in {
+        "ARTIFACT_DIR": str(directory),
+        "PR_HEAD_SHA": _head(git_tree),
+        "GITHUB_REPOSITORY": _REPOSITORY,
+        "PR_BRANCH": _BRANCH,
+        "PR_NUMBER": "522",
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(create_signed_commit, "github_request", api)
+    assert_that(create_signed_commit.main([])).is_equal_to(1)
+    assert_that([call.kwargs["path"] for call in api.call_args_list]).does_not_contain(
+        "/graphql"
+    )
+    assert_that(api.call_args.kwargs["path"]).ends_with("/issues/522/comments")
+
+
+@pytest.mark.parametrize("branch", ["it's", 'embedded"quote', "both'\"quotes"])
+@pytest.mark.parametrize("comment", ["", " # upstream default"])
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
+def test_renovate_never_truncates_unsupported_branch_quotes(
+    renovate_vendor_manager: dict[str, Any],
+    branch: str,
+    comment: str,
+    line_ending: str,
+) -> None:
+    """Quoted branch names must never silently become a shorter upstream ref."""
+    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
+    for scalar in [branch, f"'{branch}'", json.dumps(branch)]:
+        text = (
+            f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
+            f"    branch: {scalar}{comment}{line_ending}"
+        )
+        assert_that(list(re.finditer(pattern, text))).is_empty()
+
+
+@pytest.mark.parametrize(
+    "branch_scalar",
+    ["'main''suffix'", '"main"suffix"', "main'bad", '"main"#no-separation'],
+)
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
+def test_renovate_rejects_malformed_scalar_boundaries(
+    renovate_vendor_manager: dict[str, Any],
+    branch_scalar: str,
+    line_ending: str,
+) -> None:
+    """Embedded quotes and unseparated comments cannot truncate the captured ref."""
+    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
+    text = (
+        f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
+        f"    branch: {branch_scalar}{line_ending}"
+    )
+    assert_that(list(re.finditer(pattern, text))).is_empty()

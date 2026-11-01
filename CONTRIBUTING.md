@@ -81,7 +81,11 @@ curl --proto '=https' --proto-redir '=https' -fLsS \
   "$UV_INSTALLER_URL" -o "$installer_tmp/uv-install.sh"
 curl --proto '=https' --proto-redir '=https' -fLsS \
   "$BUN_INSTALLER_URL" -o "$installer_tmp/bun-install.sh"
-sha256sum "$installer_tmp/uv-install.sh" "$installer_tmp/bun-install.sh"
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum "$installer_tmp/uv-install.sh" "$installer_tmp/bun-install.sh"
+else
+  shasum -a 256 "$installer_tmp/uv-install.sh" "$installer_tmp/bun-install.sh"
+fi
 ```
 
 Review the downloaded installer against the upstream release before recording its
@@ -268,13 +272,44 @@ uv run python scripts/manage_vendors.py update --id owner-skills \
 `--branch`. Omitting both flags preserves existing branch tracking, even when
 `--display-ref` changes.
 
+Branch names containing either quote character are explicitly unsupported:
+Renovate's regex manager cannot decode arbitrary YAML scalar escapes. The
+registry rejects these names, as well as whitespace and control characters,
+instead of capturing a truncated ref. Simple quoted scalars remain supported.
+
 [`.github/workflows/vendor-pin-regen.yml`](.github/workflows/vendor-pin-regen.yml)
-refreshes generated data on same-repository `renovate/**` PRs that change
-`vendors.yaml`. It checks out the exact PR head, runs the generators, and
-summarizes changed vendors against the PR base with `--keep-sha`; it never
-advances a Renovate-selected pin to a newer upstream commit. A single sticky
-PR comment contains skill, coverage, and collision deltas. Collisions fail
-the job after publishing the summary; hard bake failures abort publication.
+refreshes generated data on same-repository `renovate/**` PRs authored by
+`renovate[bot]` that change `vendors.yaml`. Both jobs also require the triggering
+actor to be `renovate[bot]` or `lgtm-release-bot[bot]` (including reruns). The
+read-only `regenerate` job checks out the exact PR head and summarizes changed
+vendors against `git merge-base base head` with `--keep-sha`; it never advances
+a Renovate-selected pin. A vendor absent from the baseline is reported as `new`.
+A single sticky PR comment contains skill, coverage, and collision deltas.
+
+The `publish` job checks out the exact base SHA. Only this job mints the release
+App token. Both jobs use Python 3.15, matching npm publication. The publisher
+uses stdlib-only helpers with `uv run --no-project`, without dependency installs
+or caches shared with regeneration. Executed repository helpers come from the
+trusted base checkout, but the workflow definition is selected by the PR and is
+not base-trusted. This boundary assumes workflow-editing writers and the allowed
+bot identities are trusted; it does not protect against a writer changing the
+workflow YAML.
+
+The handoff is a single `publication.json` data envelope containing base64
+additions, path-only deletions, the head SHA, summary, and collision status.
+It is downloaded under `runner.temp`, never extracted or copied over the trusted
+checkout. Before minting the token and again before any API call, the trusted
+reader validates its schema, expected head, canonical allowlisted paths,
+duplicate paths, base64, and filesystem entries (no symlinks or extra files).
+Symlinks inside the source repo are rejected; symlinks above its root are allowed.
+The combined base64 contents are limited to 20 MiB (`MAX_BASE64_BYTES` in
+`scripts/ci/vendor_pin_artifact.py`); the complete envelope has a further 1 MiB
+metadata budget. Oversize input fails locally before any API request.
+
+Summaries run before the final refresh. Collisions produce a report-only
+artifact with no changes, then fail the publishing job after posting the report.
+A hard summary or refresh failure produces no publication artifact, so even a
+refresh that writes partial output cannot cause a commit. No vendor code runs.
 
 Generated changes are committed with GraphQL `createCommitOnBranch`, using
 `expectedHeadOid` to reject concurrent branch updates. GitHub signs these
@@ -282,11 +317,19 @@ App-authored commits, and the App push triggers CI on the new head. No diff
 means no commit. Only generated catalog paths are eligible for a commit;
 `plugins-baked/` remains gitignored (ADR-0007).
 
-The workflow uses `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`. The release
-App must have **contents:write** and **pull-requests:write** on this repo.
-Renovate ignores the release bot's commit email so it can continue rebasing.
+The existing release identity is **`lgtm-release-bot[bot]`**. Its references must
+rotate together: the workflow's `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`
+secrets and triggering-actor gate, `_BOT_LOGIN` in
+`scripts/ci/create_signed_commit.py` (sticky comment ownership), and
+`gitIgnoredAuthors` in `renovate.json` (currently
+`273006376+lgtm-release-bot[bot]@users.noreply.github.com`). The App already has
+**contents:write** and **pull-requests:write** on this repo; no additional App or
+secrets are needed. Renovate ignores that email so it can continue rebasing.
 After rollout, verify the first real vendor PR's commit verification and
 required checks on its final head; those live checks cannot be proven locally.
+This requires the trusted helpers to have landed on the base first. The earlier
+live acceptance remains blocked by upstream vendor content errors, outside this
+change. Any organization ruleset change is a separate human operation.
 
 ## Pull requests
 

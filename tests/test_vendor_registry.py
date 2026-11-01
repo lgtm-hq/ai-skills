@@ -121,6 +121,13 @@ def test_load_registry_accepts_branch(valid_registry_path: Path, branch: str) ->
         "a?",
         "a[",
         "a\\b",
+        "it's",
+        'embedded"quote',
+        "both'\"quotes",
+        "a\x00b",
+        "a\x01b",
+        "a\x1bb",
+        "a\x7fb",
     ],
 )
 def test_load_registry_rejects_invalid_branch(
