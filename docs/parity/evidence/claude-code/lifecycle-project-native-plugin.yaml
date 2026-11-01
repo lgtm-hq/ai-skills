@@ -1,0 +1,56 @@
+---
+host: claude-code
+interface: cli
+version: 2.1.310
+os: linux-x86_64
+role: lifecycle
+scope: project
+mode: native-plugin
+state: supported
+lostFields: []
+observed: invoked
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: install
+    command: R024 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      Installing plugin "probe-sentinel@probe-marketplace"...✔ Successfully
+      installed plugin: probe-sentinel@probe-marketplace (scope: project)
+  - phase: reload
+    command: R050 (see probe-log.md)
+    exitCode: 1
+    output: Not logged in · Please run /login
+  - phase: invoke
+    command: R084 hook-log inspection before removal (see probe-log.md)
+    exitCode: 0
+    output: |-
+      {"stage": "before-remove", "hook": "PROBE-7f3a-lifecycle\n",
+      "claude/settings.json": {"extraKnownMarketplaces":
+      {"probe-marketplace": {"source": {"source": "directory", "path":
+      "~/probe/marketplace"}}}}, "project/.claude/settings.json":
+      {"enabledPlugins": {"probe-sentinel@probe-marketplace": true}},
+      "cacheExists": true, "skillsExist": false}
+  - phase: remove
+    command: R085 (see probe-log.md)
+    exitCode: 0
+    output: '✔ Successfully uninstalled plugin: probe-sentinel (scope: project)'
+  - phase: verify
+    command: |-
+      Final isolated-root purge; see
+      README.md#cleanup-and-protected-configuration
+    exitCode: 0
+    output: |-
+      All 17 isolated case roots deleted, including auth copies, caches,
+      logs and projects; no case directories remained.
+notes: |-
+  Host SessionStart appended PROBE-7f3a-lifecycle to isolated
+  TMPDIR/probe-hook.log. Model request failed authentication, but the
+  independent hook side effect proves lifecycle invocation.
+  CLAUDE_PLUGIN_ROOT resolved to the local marketplace directory. Native
+  uninstall left a cache; final owned-root purge removed it.
+  Invoke phase is inspection of a hook log from the earlier model
+  attempt, not a new session. No fresh post-removal session tested
+  noninvocation; final whole-root purge proves owned-residue cleanup.

@@ -1,0 +1,43 @@
+---
+host: codex
+interface: cli
+version: 0.164.0
+os: linux-x86_64
+role: instruction
+scope: project
+mode: repo-materialize
+state: supported
+lostFields: []
+observed: invoked
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: install
+    command: Fixture placement recipe in tests/fixtures/host-probe/README.md
+    exitCode: 0
+    output: Copied sentinel fixture to ~/probe/project/AGENTS.md.
+  - phase: reload
+    command: Fresh CLI process R039
+    exitCode: 0
+    output: No session resumed; disposable git project.
+  - phase: invoke
+    command: R039 (see probe-log.md)
+    exitCode: 0
+    output: PROBE-7f3a-instruction
+  - phase: remove
+    command: R105 (see probe-log.md)
+    exitCode: 0
+    output: Removed isolated sentinel files
+  - phase: verify
+    command: |-
+      Final isolated-root purge; see
+      README.md#cleanup-and-protected-configuration
+    exitCode: 0
+    output: |-
+      All 17 isolated case roots deleted, including auth copies, caches,
+      logs and projects; no case directories remained.
+notes: |-
+  Instruction sentinel invoked without reading files from
+  ~/probe/project/AGENTS.md. Only the disposable repository AGENTS.md
+  was written.

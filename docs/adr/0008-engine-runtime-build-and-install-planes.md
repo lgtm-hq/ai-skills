@@ -1,200 +1,131 @@
-# ADR 0008: Engine runtime: Python build plane, TypeScript install plane
+# ADR 0008: Engine runtime: bundled Python engine, thin TypeScript launcher
 
-- Status: Proposed (#562 corrected denial controls and comparable evidence pending)
+- Status: Accepted
 - Date: 2026-11-01
-- Scope: [#561](https://github.com/lgtm-hq/ai-skills/issues/561), part of
+- Scope: [#561](https://github.com/lgtm-hq/ai-skills/issues/561), finalized by
+  [#562](https://github.com/lgtm-hq/ai-skills/issues/562), part of
   [engine v2 (#596)](https://github.com/lgtm-hq/ai-skills/issues/596)
 
 ## Context
 
-The gateway in `npm/ai-skills/lib/` and `bin/skill.js` is authored
-JavaScript; `package.json` declares Node >=20 and Bun >=1.0.0. Bake,
-registry, safe-tree checks, generators and re-pin live in Python under
-`scripts/` and `scripts/vendor_registry/`, run with `uv` via `pyproject.toml`.
-Engine v2 adds dependency closure, provenance, lineage and policy. Allowing
-both runtimes to resolve would create two resolvers that can disagree.
+The gateway in `npm/ai-skills/` is authored JavaScript, while resolution, bake,
+registry and generators live in Python under `scripts/`. Engine v2 adds closure,
+provenance, lineage and policy. Two implementations risk disagreement. Restricted
+consumers may have only private npm mirrors, no Node, or no network; they must not
+need a Python installation or toolchain.
 
-Consumers may have only private npm mirrors, no Node, or offline machines.
-The runtime boundary must support those restrictions without requiring
-consumer Python. Project standards allow Python, TypeScript and Rust;
-authored JavaScript is disallowed. Deployment evidence belongs to
-[#562](https://github.com/lgtm-hq/ai-skills/issues/562); this decision is
-provisional until that spike concludes.
+The original proposal split Python build and TypeScript install planes. Its
+[merged escape hatch](https://github.com/lgtm-hq/ai-skills/blob/032ee309817813a9ef81bb2450cbed646a625222/docs/adr/0008-engine-runtime-build-and-install-planes.md)
+requires one Python engine behind a thin TypeScript npm launcher if bundled
+Python is equally deployable under the same private-registry, no-Node and offline
+restrictions. The [distribution report](https://github.com/lgtm-hq/ai-skills/blob/research/562-install-plane-spike/docs/research/install-plane-distribution.md)
+now establishes that comparison on all five native targets.
 
 ## Decision
 
-- **Python build plane (`uv`).** Own source and version resolution, graph
-  closure, provenance and lineage construction, build-time policy
-  evaluation, bake and host manifest generation. Only authors and CI need
-  Python under this split.
-- **Artifact contract.** Embed complete capability and resource inventories,
-  precomputed transitive closure for each capability, and lineage. Bind all
-  of it to a verified artifact digest. A published JSON Schema and shared
-  golden fixtures (identical inputs and expected outputs in pytest and
-  `bun test`) define the boundary.
-- **TypeScript install plane (strict, Bun toolchain).** Verify the digest;
-  subtract packages and capabilities by set membership in embedded data;
-  then reject any retained closure containing a removed item. Enforce
-  consumer and org denies by origin anywhere in the provenance chain,
-  across any number of hops, plus trust and support policy, from that
-  metadata alone. Regenerate filtered host envelopes deterministically,
-  plan and apply destination-adapter operations, and write receipts.
-  **The install plane never resolves** new sources, versions or
-  dependencies. This is a testable boundary: missing closure or lineage
-  data, or a policy it cannot evaluate, must fail closed rather than
-  trigger resolution or fetch missing inputs.
-- **Distribution.** Ship an npm package compatible with private registry
-  mirrors and per-platform `bun build --compile` binaries for machines
-  without Node. No install-time network bootstrap is permitted. These are
-  provisional delivery choices for #562 to validate under the same
-  restrictions, including offline use.
-- **Language rule.** JavaScript emitted from TypeScript, including JS
-  embedded in compiled binaries, is acceptable. Remove authored `.js` in
-  [#566](https://github.com/lgtm-hq/ai-skills/issues/566).
-- **Rust.** Do not adopt it. Only a superseding ADR may reopen Rust if the
-  install plane starts needing resolution logic, which this ADR forbids.
-- **Escape hatch.** If #562 finds that a bundled Python runtime is as
-  deployable as the compiled binary under the same private-registry,
-  no-Node and offline restrictions, revise this ADR to a single Python
-  engine behind a thin TypeScript npm launcher.
+- **One typed Python engine owns both planes.** The build entry point owns
+  source/version resolution, graph closure, provenance, lineage, policy, bake and
+  host envelopes. The install entry point owns verification, subtractive filtering,
+  deny evaluation, destination-adapter planning/application and receipts. Authors
+  and CI use `uv`; consumers execute the distributed bundled runtime.
+- **Preserve the build/install boundary.** Published artifacts embed complete
+  capability/resource inventories, precomputed transitive closure and lineage,
+  bound to a verified digest and defined by JSON Schema and golden fixtures.
+  Install uses only that resolved metadata: it never resolves new sources,
+  versions or dependency edges. Missing closure/lineage or an unevaluable policy
+  fails closed before writes. Diagnostic walks of embedded edges do not resolve.
+  Denies match origin anywhere in capability or resource ancestry across any
+  number of re-export hops.
+- **Thin strict TypeScript npm launcher.** Select and invoke the packaged Python
+  payload; forward arguments, output, signals and exit status; handle launcher
+  diagnostics. Do not implement another resolver, verifier, filter, policy
+  evaluator or installer in TypeScript. Use Bun for development. Emitted JavaScript
+  is permitted; authored `.js`/`.mjs`/`.cjs` is not.
+- **Self-contained distribution.** Per-platform Python directory bundles include
+  the interpreter and required engine dependencies. Direct execution requires no
+  consumer Python, uv, pip, Node or Bun. npm uses the thin launcher and optional
+  `os`/`cpu` payload packages, compatible with both Bun and npm, private mirrors
+  and `--ignore-scripts`. No postinstall bootstrap, floating dependency or runtime
+  download is allowed.
+- **Offline transport.** Apply the owner's standalone-primary rule to the chosen
+  Python bundle: execute it directly with no install step. The npm-only local-file
+  wrapper is the documented fallback. Both direct execution and npm fallback must
+  pass per target. Bun local-file selection failure remains evidence outside this
+  gate ([oven-sh/bun#47640](https://github.com/oven-sh/bun/issues/47640)); both
+  clients remain required for registry installs.
+- **No Rust adoption.** Reopening the runtime or install-resolution boundary
+  requires a superseding ADR.
+
+## Evidence and applied rule
+
+Green [PR run 41332673633](https://github.com/lgtm-hq/ai-skills/actions/runs/41332673633)
+and genuine [dispatch 41332723822](https://github.com/lgtm-hq/ai-skills/actions/runs/41332723822)
+execute exact clean source `fb4d21bbc68579606a283afa69af3eee664dab61`. All 24
+unique schema-3 results were inspected (ten native plus two dedicated offline per
+run), with matching source/expected head, empty status, exact event/run and
+attempt 1. The report links every artifact and raw JSON digest.
+
+Both variants pass registry installation with both clients, no-Node execution,
+standalone offline execution and npm local-file fallback on Linux x64/arm64,
+macOS x64/arm64 and Windows x64. Linux has connected IPv4 then connect EACCES/13
+under shared namespace-only `prohibit` policy and verified cleanup; macOS records
+EPERM in the shared sandbox. Windows matches exact direct/installed paths and
+hashes before/during rules: native Winsock SO_ERROR 10013 for A, actual WinError
+10013 for B, EACCES from npm's exact Node launcher, and verified rule removal.
+Unreachable IPv6 is informational and supplies no denial proof.
+
+**Apply the Python-first tie branch:** B is equally deployable under the required
+restrictions, so accept this revised single-engine decision. No size, file-count
+or timing threshold was specified. A's smaller POSIX footprint and B's smaller
+Windows footprint do not override that rule. Unknowns remain unknown; equality
+rests on the required native passes.
+
+The report records the source diff proving prototype, collector, build and pin
+bytes unchanged from `fb4d21b` through `7909883621f726eb26806f23ab075b91c6153064`
+and this documentation/main integration. The intervening changes move tests and
+change workflow triggers. Historical R11/R12 artifacts are never relabeled.
+Dispatch 41335569949 belongs to `7909883`; collect its completion and results
+separately rather than assigning it older JSON.
+
+## Security policy and limits
+
+The [owner security decision](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942)
+requires unsigned quarantine, `spctl`, codesign, MotW, Defender and SmartScreen
+observations and documented signing needs. The report records commands and
+outputs. CLI execution and clean custom scans are not fleet or shell approval.
+Mac assessment fails; Windows entries are NotSigned with real-time Defender off.
+
+Free SHA-256 checksums, GitHub artifact attestations, SLSA provenance, npm
+provenance and Sigstore/cosign keyless signing remain production obligations.
+Where paid signing is absent, delivery is **unsigned but attested**; this spike
+does not implement or certify that release pipeline. Developer ID/notarization
+is human-secret-gated [#619](https://github.com/lgtm-hq/ai-skills/issues/619);
+Windows Authenticode is cost-gated [#618](https://github.com/lgtm-hq/ai-skills/issues/618).
+No paid service or third-party EDR experiment is required for #562.
+
+Dedicated first-step Harden Runner denial without a same-host baseline,
+independent payload-to-source binding, Finder/SmartScreen enforcement, fleet
+policy, deliberate long paths, disk-cold performance and read-only runtime limits
+remain **unverified**. Native namespace proof is not Harden Runner proof. These
+limits are explicit, not additional universal-green runtime-selection gates.
 
 ## Consequences
 
-- There is one resolver. Consumers filter resolved artifacts and fail
-  closed when their embedded metadata cannot support an install.
-- [#566](https://github.com/lgtm-hq/ai-skills/issues/566) migrates the
-  authored gateway to strict TypeScript;
-  [#567](https://github.com/lgtm-hq/ai-skills/issues/567) extracts the build
-  plane into an importable, typed Python engine package.
-- Follow-up CI gates are `bunx tsc --noEmit`, `bun test` and `uv run pytest`.
-  Both test suites run the shared golden fixtures to prove the contract,
-  closure checks, deny propagation and fail-closed boundary agree.
-- #562 finalizes or revises this proposal using distribution evidence.
-  Host evidence follows in
-  [#563](https://github.com/lgtm-hq/ai-skills/issues/563); this ADR runs
-  neither spike and changes no runtime behavior.
-
-## Distribution evidence gate (#562)
-
-The report at `docs/research/install-plane-distribution.md` retains
-historical observations and raw run links. The prototypes and collectors live in
-`research/install-plane-spike/`, outside the published npm package.
-
-### Binding owner policy (resolved)
-
-The [security decision](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942)
-and [offline decision](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557886641)
-answer the earlier owner questions:
-
-- The **standalone compiled binary is the primary offline transport**, with no
-  install step. Compare B's self-contained directory bundle by the same direct
-  execution test. An **npm-only local-file wrapper is the documented fallback**.
-  Both direct execution and the npm fallback decide offline acceptance per target
-  and variant. Bun local-file selection failures remain evidence, outside this
-  gate; see the existing upstream [oven-sh/bun#47640](https://github.com/oven-sh/bun/issues/47640).
-- **Registry installs still require both Bun and npm**, including private
-  registries, correct optional platform selection and `--ignore-scripts`.
-- #562 records unsigned quarantine, `spctl`, codesign, MotW, Defender and
-  SmartScreen observations and each variant's signing/notarization requirements.
-  A signed Mac run is **not required for #562**. Developer ID/notarization is the
-  human-secret gate in [#619](https://github.com/lgtm-hq/ai-skills/issues/619);
-  Authenticode is cost-gated in [#618](https://github.com/lgtm-hq/ai-skills/issues/618).
-  No paid or third-party EDR experiment is required. The deliverable where paid
-  signing is unavailable is unsigned but attested; free checksum, provenance,
-  artifact/npm attestations and keyless signing obligations remain. This spike
-  does not claim to have implemented the production attestation pipeline.
-
-Earlier dual-client offline rollups are historical outcomes under the superseded
-policy. Their raw JSON is unchanged. They are neither new-policy failures nor
-proof of direct-runtime success. Owner policy is resolved; missing measurements
-remain missing measurements.
-
-### Inspected R11 evidence and decision application
-
-The report retains historical runs and now inspects the green
-[PR run 41322684015](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015)
-at exact clean source **196cb20a25a669498e5b6338bb633b7b11434e54**. Its twelve
-unique schema-3 results (ten native plus two dedicated offline) have matching
-source/expected head, empty source status, exact event/run identity and attempt 1.
-The report links immutable artifacts, current footprint and raw commands.
-[Dispatch 41323324901](https://github.com/lgtm-hq/ai-skills/actions/runs/41323324901)
-was in progress at the R11 write-up's status read. Parent later reported SUCCESS
-with all twelve results inspected; it remains historical R11 evidence.
-
-- Private-registry installs pass with **both Bun and npm** and `--ignore-scripts`
-  on all five targets; transported bytes, platform selection, golden execution
-  and owned-server cleanup pass. No-Node passes everywhere.
-- Both variants execute original payloads and npm local-file fallback under shared
-  Linux namespaces and macOS sandboxes. Linux's recorded errno 101 was incorrectly
-  classified as denial; under R13 it is inconclusive. macOS records EPERM.
-- Windows **B passes offline**: exact direct and npm-installed interpreter
-  controls are connected before rules, WinError 10013 during rules, with matching
-  paths/hashes. Exact npm Node similarly reports EACCES; launcher identity matches
-  and exact rule removal succeeds. A's direct and installed controls instead
-  report **ECONNREFUSED/inconclusive**, despite matching paths/hashes. A executes
-  successfully, but its offline status is still **unverified**. Refusal cannot be
-  relabeled as access denial, and B's proof cannot establish A's proof.
-- Unsigned security results remain within the answered owner scope: Mac quarantine
-  readback succeeds, both variants fail assessment and marked CLI execution passes;
-  Windows MotW readback and Defender custom scans pass, both entries are NotSigned,
-  real-time protection is disabled and shell/SmartScreen enforcement is U. The
-  report records signing/notarization needs; no paid gate is added.
-- Dedicated Harden Runner has no same-host unrestricted baseline; its denial stays
-  U. Payload provenance, fleet enforcement and deliberate deep-path behavior stay
-  U. These are explicit limits, not universal-green gates on this comparison.
-
-### Decision rule and minimal pending measurement
-
-The **Python-first tie interpretation** follows the
-[merged ADR escape hatch](https://github.com/lgtm-hq/ai-skills/blob/032ee309817813a9ef81bb2450cbed646a625222/docs/adr/0008-engine-runtime-build-and-install-planes.md),
-which says to revise to a single Python engine behind a thin TypeScript npm
-launcher if B is as deployable under the same private-registry, no-Node and
-offline restrictions. This precedence is not an additional owner statement.
-Otherwise accept A only if A is no worse on every required restricted criterion
-across the supported targets. No size/file-count/timing budget is specified;
-A's smaller POSIX footprint and B's smaller Windows footprint do not override it.
-
-R11 proves registry/no-Node equality and records macOS permission denial plus B's
-Windows 10013. Its Linux unreachable outcomes cannot prove denial; A's R11 Windows
-comparison is also unknown. Neither decision branch is justified across all five
-targets. These are control gaps, not unanswered owner questions or additional
-signing/provenance/fleet gates.
-
-R12 minimally repairs only Bun Win64's diagnostic: the same compiled executable
-and its npm-installed copy call native Winsock through deferred `bun:ffi`, retain
-WSAGetLastError/SO_ERROR, and classify only connection access denial (10013) as
-explicit denial. Nonblocking connect/select is bounded to two seconds. Cleanup
-attempts socket close, WSACleanup and DLL close; errors invalidate proof and remain
-structured raw evidence. npm's Node diagnostic and non-Windows paths are unchanged.
-Injectable tests use no network and cannot establish native Windows proof.
-
-R13 corrects Python and Node's shared classifier: unreachable, refusal and timeout
-stay inconclusive. POSIX accepts EACCES/EPERM, Windows Python requires actual
-WinError 10013, and Windows npm's exact Node launcher retains structured EACCES
-without claiming a native code. The native Winsock path remains unchanged.
-Historical Linux namespace `pass` labels and raw errno 101 are preserved, but do
-not establish current denial proof. An independently verified namespace argument
-would be a different trust basis; R13 did not introduce it. The subsequent Linux
-repair instead requires actual connection EACCES from namespace-only policy-routing
-`prohibit` rules after a same-endpoint connected baseline. Local control collection
-observed errno 13, nonroot execution with no groups/capabilities, inability to remove
-the rule, and verified namespace deletion. The existing direct/npm worker shares
-that exact namespace/identity prefix. This local observation is not hosted payload
-acceptance. Socket setup/cleanup failures invalidate the Python/Node proof; injected
-tests retain lifecycle errors and cover hosts without POSIX identity APIs.
-R12 PR 41326695290 and dispatch 41326779456 at `8b1194b` use the old classifier
-and cannot certify R13, including any native Windows results in their artifacts.
-
-**ADR 0008 and its index remain Proposed until fresh hosted evidence validates
-the corrected controls and the Linux control limitation is settled.** R11/R12 are
-not evidence for R13 code or footprint. Parent
-must inspect a new-head native matrix and genuine green dispatch, including all
-12 results each and exact same-path/hash Windows direct/npm controls, actual npm
-Node identity, golden execution and exact cleanup. Then apply the escape hatch
-and update ADR/index/spike README together. An unknown must remain unknown.
-Documentation-only follow-ups can cite proven unchanged executable source without
-an endless rerun; this executable revision does not qualify for that exception.
-
-Before implementation, reconcile #566/#567/#578/#386 with the selected runtime.
-No downstream specification or production runtime is changed here; required #562
-acceptance remains here and optional M5 NITs stay in #614.
+- [#566](https://github.com/lgtm-hq/ai-skills/issues/566) retains strict TypeScript,
+  no authored JavaScript, CLI behavior parity and CI. Its final npm role is the
+  thin launcher; Bun-compiled install engines are not the production plan.
+- [#567](https://github.com/lgtm-hq/ai-skills/issues/567) extracts the importable
+  typed Python engine as a behavior-preserving foundation for both planes.
+  [#578](https://github.com/lgtm-hq/ai-skills/issues/578) implements verification,
+  filtering, denies and consumer profiles there. The launcher delegates.
+- [#386](https://github.com/lgtm-hq/ai-skills/issues/386) distributes the same
+  attested artifacts and self-contained Python payloads through all transports,
+  including private npm mirrors and direct offline bundles. The npm wrapper is
+  the fallback; consumer Python is never a prerequisite.
+- Retain `uv run pytest`, `bun test` and `bunx tsc --noEmit` CI gates. Shared
+  fixtures verify contract semantics and launcher-to-engine behavior. Both spike
+  prototypes remain research evidence outside the published npm `files` allowlist.
+- This ADR changes the specification, not the production engine. Reconcile the
+  four downstream issue bodies and implementation prompts before implementation,
+  preserving unrelated criteria and owner policies. Optional spike hardening
+  stays in #614 under the owner's review cap.

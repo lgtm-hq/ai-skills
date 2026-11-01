@@ -1,0 +1,30 @@
+---
+host: cursor
+interface: ide
+version: null
+os: null
+role: specialist
+scope: project
+mode: user-explode
+state: unverified
+lostFields: []
+observed: not-measured
+policyMarkers:
+  - Allow Local Plugin Imports
+checkedOn: '2026-11-01'
+recheckBy: '2027-05-01'
+steps: []
+notes: |-
+  File-policy behavior follows the exact matching personal cell by owner decision.
+  Owner-derived equivalence, not an independent policy-host measurement. No employer
+  machine or organization policy names/values collected.
+  Reason: undefined mode/scope pair under #581; no personal check scheduled. No
+  support is inferred.
+policy: local-plugin-import-disabled
+evidence:
+  kind: owner-derived
+  sources:
+    - https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
+    - docs/parity/evidence/cursor/ide/none/specialist-project-user-explode.yaml
+  derivedFrom:
+    - docs/parity/evidence/cursor/ide/none/specialist-project-user-explode.yaml

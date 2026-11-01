@@ -51,6 +51,16 @@ bash scripts/validate.sh
 Use **`uv`** for Python tooling and **`lintro`** for lint/format/check — do not bypass
 with raw **ruff**, **black**, etc.
 
+Parity evidence has two narrow archival exceptions in `.lintro-ignore`:
+`docs/parity/evidence/cursor/raw/` contains WRITE-ONCE returned probe bytes, and
+`tests/fixtures/host-probe/cursor-macos-probe.sh` preserves the supplied personal-Mac
+script byte-for-byte, including its original formatting and ShellCheck findings.
+Do not execute that historical script for a new run. The maintained
+`cursor-macos-probe-driver.sh` preserves the R6 isolation/failure controls and
+receives the normal ShellCheck/shfmt checks and offline driver tests. Raw JSON
+integrity is enforced by `tests/test_parity_evidence.py` and `raw/INDEX.sha256`;
+new runs add files and digest entries without rewriting old evidence.
+
 When you add or move skills, also run:
 
 ```bash
@@ -183,7 +193,8 @@ not hand-edit baked indexes or a local `plugins-baked/` tree to encode a slice.
 ### Vendor plugin bake
 
 `scripts/bake_vendor_plugins.py` turns declared slices into canonical
-plugin trees under **`plugins-baked/`** ([ADR-0006](docs/adr/0006-vendor-bake-safety.md),
+plugin trees under **`plugins-baked/`**
+([ADR-0006](docs/adr/0006-vendor-bake-safety.md),
 [ADR-0007](docs/adr/0007-publish-time-vendor-bake.md)). That directory is
 gitignored: CI and `publish-npm.yml` bake it; the pin SHA in `vendors.yaml`
 is the review point.

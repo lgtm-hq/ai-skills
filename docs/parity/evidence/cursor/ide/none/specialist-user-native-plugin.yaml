@@ -1,0 +1,56 @@
+---
+host: cursor
+interface: ide
+version: 3.27.22
+os: darwin-arm64
+role: specialist
+scope: user
+mode: native-plugin
+state: supported
+lostFields: []
+observed: invoked
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-05-01'
+steps:
+  - phase: install
+    action: Install isolated specialist payloads from the supplied phase-np recipe
+    outcome: observed
+    output: Phase np payloads installed under the isolated profile/project.
+  - phase: reload
+    action: |-
+      Restart isolated Cursor; open the canonical project path; select This Mac
+    outcome: observed
+    output: Isolated Cursor restarted on the probe project before the checks.
+  - phase: invoke
+    action: Personal interactive np-specialist check using the supplied role prompt
+    outcome: observed
+    output: 'np-specialist=y: returned PROBE-7f3a-specialist-np.'
+  - phase: remove
+    action: Delete phase-np payloads and restart isolated Cursor
+    outcome: observed
+    output: 'np-removed=y: all previous phase items gone after restart.'
+  - phase: verify
+    action: Inspect Customize and probe items after final restart
+    outcome: observed
+    output: 'final-clean=y: all probe items gone after final restart.'
+notes: |-
+  Personal Cursor IDE 3.27.22, macOS 27.2 (darwin-arm64); This Mac local agent.
+  Run resumed by hand in the same record format. No-policy personal install.
+  Installed ~/.cursor/plugins/local/probe-sentinel-np/agents/probe-specialist-np.md;
+  restarted before invocation.
+  Removal verified by np-removed=y and final-clean=y after restarts.
+  Maintainer reports no probe residue in real host config; 29 reported changes came
+  from normal Cursor opened mid-run and concurrent Claude Code. Not a whole-inventory
+  immutability claim.
+  Removal is maintainer-observed; no automatic hook-boundary or scratch-purge
+  status was returned in this raw snapshot.
+policy: none
+evidence:
+  kind: measured
+  sources:
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#np-specialist
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#np-removed
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#final-clean
+    - tests/fixtures/host-probe/cursor-macos-probe.sh
+  derivedFrom: []

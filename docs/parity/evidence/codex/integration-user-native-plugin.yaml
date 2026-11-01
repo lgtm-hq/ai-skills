@@ -1,0 +1,82 @@
+---
+host: codex
+interface: cli
+version: 0.164.0
+os: linux-x86_64
+role: integration
+scope: user
+mode: native-plugin
+state: partial
+lostFields: []
+observed: discovered
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: install
+    command: R014 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      {"marketplaceName": "probe-marketplace", "installedRoot":
+      "~/probe/marketplace", "alreadyAdded": false}
+  - phase: install
+    command: R015 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      {"pluginId": "probe-sentinel@probe-marketplace", "name":
+      "probe-sentinel", "marketplaceName": "probe-marketplace", "version":
+      "1.0.0", "installedPath":
+      "~/probe/codex/plugins/cache/probe-marketplace/probe-sentinel/1.0.0",
+      "authPolicy": "ON_INSTALL"}
+  - phase: reload
+    command: R029 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      {"installed": [{"pluginId": "probe-sentinel@probe-marketplace",
+      "name": "probe-sentinel", "marketplaceName": "probe-marketplace",
+      "version": "1.0.0", "installed": true, "enabled": true, "source":
+      {"source": "local", "path": "~/probe/marketplace/probe-sentinel"},
+      "marketplaceSource": {"sourceType": "local", "source":
+      "~/probe/marketplace"}, "installPolicy": "AVAILABLE", "authPolicy":
+      "ON_INSTALL"}], "available": []}
+  - phase: invoke
+    command: R055 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      [{"name": "probe-integration", "enabled": true, "disabled_reason":
+      null, "transport": {"type": "stdio", "command": "python3", "args":
+      ["${CLAUDE_PLUGIN_ROOT}/mcp/sentinel.py"], "env": null, "env_vars":
+      [], "cwd": null}, "startup_timeout_sec": null, "tool_timeout_sec":
+      null, "auth_status": "unsupported"}]
+  - phase: remove
+    command: R068 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      {"pluginId": "probe-sentinel@probe-marketplace", "name":
+      "probe-sentinel", "marketplaceName": "probe-marketplace"}
+  - phase: verify
+    command: R069 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      {"stage": "after-plugin-remove", "hook": null, "config":
+      {"marketplaces": {"probe-marketplace": {"source_type": "local",
+      "source": "~/probe/marketplace"}}}, "cacheExists": false,
+      "skillsExist": true}
+  - phase: remove
+    command: R071 (see probe-log.md)
+    exitCode: 0
+    output: '{"marketplaceName": "probe-marketplace", "installedRoot": null}'
+  - phase: verify
+    command: |-
+      Final isolated-root purge; see
+      README.md#cleanup-and-protected-configuration
+    exitCode: 0
+    output: |-
+      All 17 isolated case roots deleted, including auth copies, caches,
+      logs and projects; no case directories remained.
+notes: |-
+  Baseline .mcp.json was imported and listed, but CLAUDE_PLUGIN_ROOT
+  remained a literal in the argument. Extension manifest mcpServers with
+  an isolated explicit path was also listed (R045). Neither proves
+  plugin-root substitution or a successful MCP session; listed-only is
+  partial/discovered.

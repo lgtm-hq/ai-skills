@@ -1,57 +1,66 @@
-# ADR 0005: Collision doctrine: hash, registry rename, CI report, install line
+# ADR 0005: Qualified identity, persistent aliases and explicit conflicts
 
-- Status: Accepted
+- Status: Accepted (amended 2026-11-01)
 - Date: 2026-08-27
+- Amends: Qualified IDs and persistent destination aliases replace bare-name
+  identity; configuration conflicts require persisted overrides.
 - Evidence: [plugin-engine-lab DECISIONS.md][lab-decisions]
-  (collision classes 1–3; interactive choice deferred to post-v1)
+  (historical collision classes 1–3)
 
 ## Context
 
-Native plugins namespace skills per plugin. Explode and some host indexes
-use a global name. Real vendors collide: `teach` (three-way), `handoff`,
-`tdd`. Identical content also appears twice (pstack `unslop` vs a local
-copy that was the same bytes).
+Different packages can publish capabilities with the same short name.
+Generated plugin envelopes may namespace them, while another delivery
+mode or host index exposes a shared name. Bare names therefore cannot
+serve as stable identity. Resource paths and configuration keys can also
+clash with existing local content in the requested scope.
 
-Auto-resolving different content silently corrupts installs. Prompting on
-every update is unusable for org fleets. cursor-toolkit's keep/replace
-flow exists but does not persist answers.
+Silent conflict resolution can change behavior or destroy local work.
+Repeated prompts do not support reproducible fleet installs: conflict
+answers must be declarations that every run can replay.
 
 ## Decision
 
-Three classes, three mechanisms:
+Evaluate collisions on qualified IDs first, then on host-visible names
+and destination paths through the adapter. A rename is a persistent
+destination alias, preserving the qualified capability ID and provenance.
 
-1. **Identical content, same name vs unowned local** — auto-dedupe by
-   content hash. Skip the incoming copy; do not claim ownership so later
-   remove cannot delete the user's file. Log line only. Catalog-vs-catalog
-   byte-identical names still go through the CI namespace report (class
-   2): two plugins must not share an explode name without a registry
-   rename or slice, even when the bytes match, or removing one plugin
-   would strand the other.
-2. **Different content, same name across catalog plugins** — never
-   auto-resolve. Declare `renameSkills: {old: new}` (or equivalent) in
-   the registry; bake renames the directory and the SKILL.md frontmatter
-   `name`. Alternative: slice one side out. CI emits a **global
-   namespace report** across baked plugins and fails loud.
-3. **Catalog vs local machine content** — CI cannot see laptops.
-   Install-time detection is the second line: hard error on different
-   content, dedupe on identical.
+Keep three content classes:
 
-Component defaults: agents collide like skills; hooks merge by event
-append; MCP server keys first-wins, never overwrite.
+1. **Identical incoming content vs unowned local content** — dedupe by
+   content hash. Skip and report the incoming copy without claiming
+   ownership; later removal cannot delete the local copy. Identical
+   catalog content still needs the namespace report and explicit aliases
+   or selection so package ownership remains unambiguous.
+2. **Different content across catalog packages** — never auto-resolve.
+   Declare a destination alias or select one side out. Build and CI emit
+   a global namespace report and fail on unresolved collisions.
+3. **Catalog vs local machine content** — install-time detection is the
+   second line because CI cannot inspect the destination. Different
+   content fails the plan without an explicit persisted resolution;
+   identical unowned content follows class 1.
 
-Interactive keep-both / pick-one, with answers persisted as declarations,
-is **post-v1 backlog** (epic #381 rules). V1 is registry + CI report +
-install-time second line. Non-interactive / `-y` / CI replays recorded
-decisions or fails with the report, never prompts.
+Configuration entries, including MCP servers and hooks, are owned by
+key. A conflicting key fails the plan unless a persisted `overrides:`
+declaration resolves it. Non-interactive runs (`-y` and CI included)
+replay declarations or fail with the report. The interactive prompt
+writes the same declarations for keep-both / pick-one decisions.
+
+Removal deletes only owned content whose current hash matches the
+recorded hash. Matching a name or alias alone never authorizes removal.
 
 ## Consequences
 
-- Bake and CI own catalog-vs-catalog collisions; the installer owns
-  catalog-vs-local.
-- Cleanup and remove whitelist by lock ownership and verify hash before
-  `rm` — matching a vendor name is not enough (orphan-cleanup deleted a
-  local `unslop` in the lab).
-- Engine `update` is versioned remove + reinstall via the same projector;
-  collision rules apply on the way in.
+- Bake and CI check catalog collisions; destination adapters check
+  local conflicts before an atomic plan changes disk
+  ([ADR 0001](./0001-plugin-canonical-atomic-selection.md)). Updates
+  obey the same collision and owned-plus-hash removal rules.
+- [#385](https://github.com/lgtm-hq/ai-skills/issues/385) implements
+  interactive resolution persisted as replayable overrides and aliases.
+- [#383](https://github.com/lgtm-hq/ai-skills/issues/383) applies key
+  ownership and explicit conflict resolution to lifecycle and integration
+  roles under trust policy.
+- [#565](https://github.com/lgtm-hq/ai-skills/issues/565) defines qualified
+  identity, adapter and declaration contracts without changing this doctrine.
 
 [lab-decisions]: https://github.com/lgtm-hq/plugin-engine-lab/blob/main/DECISIONS.md

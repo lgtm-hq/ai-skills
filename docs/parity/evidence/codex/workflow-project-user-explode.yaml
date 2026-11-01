@@ -1,0 +1,24 @@
+---
+host: codex
+interface: cli
+version: 0.164.0
+os: linux-x86_64
+role: workflow
+scope: project
+mode: user-explode
+state: unverified
+lostFields: []
+observed: absent
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: invoke
+    command: not run
+    exitCode: null
+    output: |-
+      not a defined engine v2 mode/scope pair (#581); recorded for matrix
+      completeness, no projection attempted.
+notes: |-
+  Reason: not a defined engine v2 mode/scope pair (#581); recorded for
+  matrix completeness, no projection attempted.

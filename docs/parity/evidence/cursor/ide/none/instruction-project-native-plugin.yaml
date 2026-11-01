@@ -1,0 +1,67 @@
+---
+host: cursor
+interface: ide
+version: 3.27.22
+os: darwin-arm64
+role: instruction
+scope: project
+mode: native-plugin
+state: adapter-missing
+lostFields: []
+observed: absent
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-05-01'
+steps:
+  - phase: install
+    action: Install isolated instruction payloads from the supplied phase-npp recipe
+    outcome: observed
+    output: Phase npp payloads installed under the isolated profile/project.
+  - phase: reload
+    action: |-
+      Restart isolated Cursor; open the canonical project path; select This Mac
+    outcome: observed
+    output: 'Two restarts: npp-relaunch=n; project plugin still absent.'
+  - phase: invoke
+    action: |-
+      Personal interactive npp-instruction check using the supplied role prompt
+    outcome: observed
+    output: |-
+      npp-instruction=n; npp-plugin-listed=n; npp-relaunch=n. No instruction
+      loaded after two restarts.
+  - phase: remove
+    action: Delete phase-npp payloads and restart isolated Cursor
+    outcome: observed
+    output: 'npp-removed=y: all previous phase items gone after restart.'
+  - phase: verify
+    action: Inspect Customize and probe items after final restart
+    outcome: observed
+    output: 'final-clean=y: all probe items gone after final restart.'
+notes: |-
+  Personal Cursor IDE 3.27.22, macOS 27.2 (darwin-arm64); This Mac local agent.
+  Run resumed by hand in the same record format. No-policy personal install.
+  Installed project/.cursor/plugins/local/probe-sentinel-npp/rules/probe-npp.mdc;
+  restarted before invocation.
+  Removal verified by npp-removed=y and final-clean=y after restarts.
+  Run note: project-scope plugins/local not loaded on first launch (no plugin, skill,
+  rule, subagent, command or MCP).
+  Host project-native route absent: project/.cursor/plugins/local never loaded any
+  role after two restarts.
+  Confirms the #584 project-scope bug in native-cursor.js; a directory is not a
+  capability signal. User-native control supported all six roles.
+  Maintainer reports no probe residue in real host config; 29 reported changes came
+  from normal Cursor opened mid-run and concurrent Claude Code. Not a whole-inventory
+  immutability claim.
+  Removal is maintainer-observed; no automatic hook-boundary or scratch-purge
+  status was returned in this raw snapshot.
+policy: none
+evidence:
+  kind: measured
+  sources:
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#npp-instruction
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#npp-removed
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#final-clean
+    - tests/fixtures/host-probe/cursor-macos-probe.sh
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#npp-plugin-listed
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#npp-relaunch
+  derivedFrom: []

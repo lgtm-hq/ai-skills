@@ -4,6 +4,14 @@ Throwaway code, separate from the gateway and future M6 engine. See the
 [report](../../docs/research/install-plane-distribution.md) for evidence and limits.
 Nothing here is in the gateway's npm publication allowlist.
 
+**Final decision:** [ADR 0008](../../docs/adr/0008-engine-runtime-build-and-install-planes.md)
+is Accepted: one bundled Python engine behind a thin strict TypeScript npm
+launcher. Both candidates pass the required five-target registry/no-Node/offline
+comparison. The selected Python directory includes its interpreter; consumers do
+not install Python, uv or pip. Direct bundled execution is the primary offline
+route, with npm-only local-file wrapper installation as fallback. The TypeScript
+prototype remains comparison evidence, not the production install engine.
+
 ## Contract
 
 Both source CLIs take `FIXTURE EXCLUDE`, require a disposable `HOME`, and write
@@ -59,9 +67,11 @@ inconclusive. POSIX accepts EACCES/EPERM; Windows Python requires actual
 `winerror == 10013`, retained alongside errno and the original error. Windows
 Node retains structured EACCES from the exact selected npm launcher; this is a
 Node permission result, not an observed native 10013. Linux/macOS
-probe and installers share a namespace/sandbox. R11 Windows program-specific rules
-prove direct/npm denial for B and npm's Node, while A's controls report refusal
-and remain unverified. The Windows-only controls compare the same fixed
+probe and installers share a namespace/sandbox. Historical R11 Windows controls
+for A reported refusal and remain inconclusive. The final `fb4d21b` runs instead
+record matched connected-to-native-10013 controls for A's direct/installed copies,
+actual WinError 10013 for B and EACCES for npm's exact Node launcher. The Windows-only
+controls compare the same fixed
 IPv4 endpoint, argv, resolved executable path and SHA-256 before/during restriction
 for direct A/B, actual npm Node and installed npm payloads. Seeded baseline copies
 at future install paths are removed before real fresh installs. Windows npm uses
@@ -74,8 +84,8 @@ while refusal/unreachable/timeout stay inconclusive. Nonblocking connect/select
 is bounded to two seconds. Raw native errors and cleanup failures are retained;
 socket, Winsock reference and DLL cleanup are attempted, and cleanup failure
 invalidates proof. Node and non-Windows keep their existing socket path. Tests
-inject native/socket boundaries and never connect. The changed executable still
-requires fresh hosted evidence. Informational Bun is
+inject native/socket boundaries and never connect. The final hosted runs validate this
+diagnostic at `fb4d21b`. Informational Bun is
 outside this required denial scope. Exact rules, commands and cleanup are retained.
 No-Node control removes tool directories from PATH while preserving Windows loader
 necessities and using disposable AppData/HOME locations. Node, nodejs, Bun and
@@ -165,10 +175,13 @@ plus absence checks are retained. This is separate from dedicated Harden Runner.
 A local disposable-namespace experiment observed connected unrestricted IPv4,
 then `connect` EACCES/errno 13 under this policy. A worker-boundary child had
 UID/GID 1000, no groups, zero capability sets, and could not remove the rule;
-namespace removal was verified. This is local control evidence, **not native
-payload/npm acceptance**. Earlier nft OUTPUT DROP and admin-prohibited attempts
-timed out and are not used as proof. Fresh exact-source hosted results remain
-required. Socket creation/configuration/cleanup failures are inconclusive, with
+namespace removal was verified. The final PR 41332673633 and dispatch 41332723822 also
+observe actual connect
+EACCES/13 on both Linux architectures, both variants, with nonroot workers,
+`groups=[]`, the shared restricted prefix and verified namespace deletion.
+Earlier nft OUTPUT DROP/admin-prohibited timeouts and route-loss errno 101 remain
+historical inconclusive observations; they are not used as proof. Socket
+creation/configuration/cleanup failures are inconclusive, with
 raw failure stages retained; only `connect` permission errors can prove denial.
 
 Each independent scenario is persisted before the next starts. Account readiness,
@@ -204,27 +217,35 @@ Windows direct CreateProcess does not test MotW shell/SmartScreen enforcement;
 macOS CLI execution does not establish Finder behavior. Defender engine failures,
 disabled Gatekeeper, third-party EDR, deliberate deep paths, unsigned fleet policy,
 non-AVX2 baseline, musl and older Linux compatibility remain unverified.
-The report retains historical runs and links inspected green R11 PR
-[41322684015](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015) at exact
-clean source **196cb20a25a669498e5b6338bb633b7b11434e54**. Its twelve unique schema-3
-results establish registry/no-Node passes on all five targets. Their Linux errno
-101 was incorrectly classified as denial: R13 keeps that outcome inconclusive,
-so Linux direct/npm offline acceptance remains unverified by this control.
-Historical macOS EPERM and Windows B's actual 10013 remain recorded evidence. A's
-Windows execution succeeds but controls report `ECONNREFUSED/inconclusive`, not
-denial. Parent reports historical dispatch 41323324901 SUCCESS with all twelve
-results inspected. Neither
-run validates R13. R12 PR 41326695290 and dispatch 41326779456 at `8b1194b` also
-used the old shared classifier and cannot certify this repair. Raw historical
-JSON and summaries remain unchanged. The new Linux control requires fresh evidence;
-namespace creation alone never proves denial.
-ADR/index stay Proposed until fresh native/dispatch evidence settles the corrected
-controls, including the Linux limitation and A's Windows comparison;
-then apply the [merged ADR escape hatch](https://github.com/lgtm-hq/ai-skills/blob/032ee309817813a9ef81bb2450cbed646a625222/docs/adr/0008-engine-runtime-build-and-install-planes.md)
-and update ADR/index/README together. Harden Runner's absent same-host baseline,
-independent payload provenance
-and shell/fleet enforcement remain explicit limits, not universal-green gates.
-The [security policy](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942)
-is resolved: unsigned observations and documented signing needs suffice for #562;
-signed Mac work belongs to #619's human-secret gate, Authenticode is cost-gated
-in #618, and no paid or third-party EDR is required.
+The [final report](../../docs/research/install-plane-distribution.md) links green
+[PR 41332673633](https://github.com/lgtm-hq/ai-skills/actions/runs/41332673633) and
+[genuine dispatch 41332723822](https://github.com/lgtm-hq/ai-skills/actions/runs/41332723822),
+exact clean source `fb4d21bbc68579606a283afa69af3eee664dab61`, all 24 raw JSON
+identities/digests, current footprint and unsigned security commands/results.
+Both variants pass registry (Bun and npm), no-Node, direct offline and npm fallback
+on all five targets. Bun local-file selection still fails, evidence only under
+[owner policy](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557886641).
+
+The report proves prototype/collector/build/pin bytes unchanged through `7909883`
+and this documentation/main integration: only the test runner's pytest paths
+change among the executed-source directories. Dispatch 41335569949 belongs to
+`7909883` and must be collected separately; older JSON is not assigned to it.
+Older R11/R12 and route-loss results remain historical, without altered raw files.
+
+Apply the [merged Python-first escape hatch](https://github.com/lgtm-hq/ai-skills/blob/032ee309817813a9ef81bb2450cbed646a625222/docs/adr/0008-engine-runtime-build-and-install-planes.md):
+B is equally deployable under required registry/no-Node/offline restrictions, so
+one typed Python package owns build and install semantics. Install still cannot
+resolve new sources, versions or edges; strict TypeScript only selects/invokes
+the bundled payload. #566/#567/#578/#386 specifications must follow that boundary
+before implementation. No production engine is implemented in this spike.
+
+Dedicated Harden Runner's absent same-host baseline, independent payload-source
+binding, Finder/SmartScreen and fleet enforcement, deliberate long paths and
+read-only runtime limits remain U, not universal-green decision gates. The
+[security policy](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942)
+is resolved: unsigned observations/documented signing needs suffice for #562;
+free checksums, artifact/npm attestations, SLSA provenance and Sigstore/cosign
+keyless signing remain production obligations. Developer ID/notarization is #619's
+human-secret gate; Windows Authenticode is cost-gated #618. No paid or third-party
+EDR experiment is required. Optional spike hardening stays in #614 under the
+[owner review cap](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6561604904).

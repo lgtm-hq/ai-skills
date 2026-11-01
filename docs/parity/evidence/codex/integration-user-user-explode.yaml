@@ -1,0 +1,56 @@
+---
+host: codex
+interface: cli
+version: 0.164.0
+os: linux-x86_64
+role: integration
+scope: user
+mode: user-explode
+state: partial
+lostFields: []
+observed: discovered
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: install
+    command: R065 (see probe-log.md)
+    exitCode: 0
+    output: Added global MCP server 'probe-integration'.
+  - phase: reload
+    command: R066 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      [{"name": "probe-integration", "enabled": true, "disabled_reason":
+      null, "transport": {"type": "stdio", "command": "python3", "args":
+      ["~/probe/codex/mcp/sentinel.py"], "env": null, "env_vars": [], "cwd":
+      null}, "startup_timeout_sec": null, "tool_timeout_sec": null,
+      "auth_status": "unsupported"}]
+  - phase: invoke
+    command: R066 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      [{"name": "probe-integration", "enabled": true, "disabled_reason":
+      null, "transport": {"type": "stdio", "command": "python3", "args":
+      ["~/probe/codex/mcp/sentinel.py"], "env": null, "env_vars": [], "cwd":
+      null}, "startup_timeout_sec": null, "tool_timeout_sec": null,
+      "auth_status": "unsupported"}]
+  - phase: remove
+    command: R099 (see probe-log.md)
+    exitCode: 0
+    output: Removed global MCP server 'probe-integration'.
+  - phase: verify
+    command: R100 (see probe-log.md)
+    exitCode: 0
+    output: '[]'
+  - phase: verify
+    command: |-
+      Final isolated-root purge; see
+      README.md#cleanup-and-protected-configuration
+    exitCode: 0
+    output: |-
+      All 17 isolated case roots deleted, including auth copies, caches,
+      logs and projects; no case directories remained.
+notes: |-
+  User config MCP entry listed; stdio tool invocation was not attempted.
+  No project-scope claim.

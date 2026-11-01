@@ -1,0 +1,24 @@
+---
+host: codex
+interface: cli
+version: 0.164.0
+os: linux-x86_64
+role: lifecycle
+scope: project
+mode: native-plugin
+state: unverified
+lostFields: []
+observed: absent
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: invoke
+    command: not run
+    exitCode: null
+    output: |-
+      codex plugin add rejects --scope project (R041); no project plugin
+      registration or project-only activation was established.
+notes: |-
+  Reason: codex plugin add rejects --scope project (R041); no project
+  plugin registration or project-only activation was established.

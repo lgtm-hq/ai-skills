@@ -1,0 +1,11 @@
+{
+  "name": "probe-marketplace",
+  "owner": { "name": "Host evidence spike" },
+  "plugins": [
+    {
+      "name": "probe-sentinel",
+      "source": "./probe-sentinel",
+      "description": "Isolated six-role host evidence fixture"
+    }
+  ]
+}

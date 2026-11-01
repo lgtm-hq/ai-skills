@@ -1,0 +1,62 @@
+---
+host: claude-code
+interface: cli
+version: 2.1.310
+os: linux-x86_64
+role: lifecycle
+scope: user
+mode: user-explode
+state: supported
+lostFields: []
+observed: invoked
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: install
+    command: File placement recipe in tests/fixtures/host-probe/README.md
+    exitCode: 0
+    output: |-
+      Copied hooks and wrote SessionStart settings under ~/probe/claude.
+  - phase: install
+    command: R059 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      Added stdio MCP server probe-integration with command: python3
+      ~/Code/ai-skills-563/tests/fixtures/host-probe/probe-sentinel/mcp/sentinel.py
+      to user config File modified: ~/probe/claude/.claude.json
+  - phase: reload
+    command: R060 (see probe-log.md)
+    exitCode: 1
+    output: Not logged in · Please run /login
+  - phase: invoke
+    command: R110 hook-log inspection after file removal (see probe-log.md)
+    exitCode: 0
+    output: |-
+      {"stage": "after-file-remove", "hook": "PROBE-7f3a-lifecycle\n",
+      "cacheExists": false, "skillsExist": false}
+  - phase: remove
+    command: R109 (see probe-log.md)
+    exitCode: 0
+    output: Removed isolated sentinel files
+  - phase: verify
+    command: |-
+      Final isolated-root purge; see
+      README.md#cleanup-and-protected-configuration
+    exitCode: 0
+    output: |-
+      All 17 isolated case roots deleted, including auth copies, caches,
+      logs and projects; no case directories remained.
+notes: |-
+  Host SessionStart appended PROBE-7f3a-lifecycle to isolated
+  TMPDIR/probe-hook.log. Model request failed authentication, but the
+  independent hook side effect proves lifecycle invocation. Hook
+  settings explicitly referenced the copied Python file; this is a hand
+  projection, not a gateway change.
+  Invoke phase is inspection of a hook log from the earlier model
+  attempt, not a new session. No fresh post-removal session tested
+  noninvocation; final whole-root purge proves owned-residue cleanup.
+  D002 (probe-log.md) recovers the original in-process MCP path
+  replacement after R059, before R060/R061, to the isolated copy
+  ~/probe/claude/mcp/sentinel.py. No independent edit output or
+  exit code was captured; the subsequent MCP listing shows that path.
