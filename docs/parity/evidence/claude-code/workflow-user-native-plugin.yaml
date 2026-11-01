@@ -1,0 +1,44 @@
+---
+host: claude-code
+interface: cli
+version: 2.1.310
+os: linux-x86_64
+role: workflow
+scope: user
+mode: native-plugin
+state: unverified
+lostFields: []
+observed: absent
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: install
+    command: R019 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      Installing plugin "probe-sentinel@probe-marketplace"...✔ Successfully
+      installed plugin: probe-sentinel@probe-marketplace (scope: user)
+  - phase: invoke
+    command: not run
+    exitCode: null
+    output: |-
+      Reason: isolated Claude config is unauthenticated; no auth-only file
+      available, and real settings/apiKeyHelper were not copied. Model-role
+      invocation cannot be confirmed.
+  - phase: remove
+    command: R080 (see probe-log.md)
+    exitCode: 0
+    output: '✔ Successfully uninstalled plugin: probe-sentinel (scope: user)'
+  - phase: verify
+    command: |-
+      Final isolated-root purge; see
+      README.md#cleanup-and-protected-configuration
+    exitCode: 0
+    output: |-
+      All 17 isolated case roots deleted, including auth copies, caches,
+      logs and projects; no case directories remained.
+notes: |-
+  Reason: isolated Claude config is unauthenticated; no auth-only file
+  available, and real settings/apiKeyHelper were not copied. Model-role
+  invocation cannot be confirmed.

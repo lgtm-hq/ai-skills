@@ -1,0 +1,30 @@
+---
+host: cursor
+interface: cli
+version: 2026.10.22-27dcf5f
+os: linux-x86_64
+role: integration
+scope: user
+mode: native-plugin
+state: unverified
+lostFields: []
+observed: absent
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: invoke
+    command: not run
+    exitCode: null
+    output: |-
+      Clean-HOME CLI invocation failed authentication (R046); no portable
+      auth-only file was identified. CLI evidence cannot certify Cursor IDE.
+      The personal IDE JSON is outstanding; see cursor-probe-checklist.md.
+      Owner decision:
+      https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
+notes: |-
+  Reason: Clean-HOME CLI invocation failed authentication (R046); no portable
+  auth-only file was identified. CLI evidence cannot certify Cursor IDE.
+  The personal IDE JSON is outstanding; see cursor-probe-checklist.md.
+  Owner decision:
+  https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548

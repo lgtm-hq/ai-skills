@@ -1,0 +1,49 @@
+---
+host: claude-code
+interface: cli
+version: 2.1.310
+os: linux-x86_64
+role: integration
+scope: user
+mode: native-plugin
+state: partial
+lostFields: []
+observed: discovered
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: install
+    command: R019 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      Installing plugin "probe-sentinel@probe-marketplace"...✔ Successfully
+      installed plugin: probe-sentinel@probe-marketplace (scope: user)
+  - phase: reload
+    command: R021 (see probe-log.md)
+    exitCode: 1
+    output: Not logged in · Please run /login
+  - phase: invoke
+    command: R022 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      Checking MCP server health…  plugin:probe-sentinel:probe-integration:
+      python3 ~/probe/marketplace/probe-sentinel/mcp/sentinel.py - ✔
+      Connected
+  - phase: remove
+    command: R080 (see probe-log.md)
+    exitCode: 0
+    output: '✔ Successfully uninstalled plugin: probe-sentinel (scope: user)'
+  - phase: verify
+    command: |-
+      Final isolated-root purge; see
+      README.md#cleanup-and-protected-configuration
+    exitCode: 0
+    output: |-
+      All 17 isolated case roots deleted, including auth copies, caches,
+      logs and projects; no case directories remained.
+notes: |-
+  MCP entry was listed and Connected. Listing meets the issue
+  integration discovery criterion, but the conservative record remains
+  partial/discovered; no tool invocation claim. Native uninstall
+  retained cache files until final root purge.

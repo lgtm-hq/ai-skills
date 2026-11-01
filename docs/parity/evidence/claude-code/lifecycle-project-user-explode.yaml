@@ -1,0 +1,24 @@
+---
+host: claude-code
+interface: cli
+version: 2.1.310
+os: linux-x86_64
+role: lifecycle
+scope: project
+mode: user-explode
+state: unverified
+lostFields: []
+observed: absent
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: invoke
+    command: not run
+    exitCode: null
+    output: |-
+      not a defined engine v2 mode/scope pair (#581); recorded for matrix
+      completeness, no projection attempted.
+notes: |-
+  Reason: not a defined engine v2 mode/scope pair (#581); recorded for
+  matrix completeness, no projection attempted.

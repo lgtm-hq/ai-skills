@@ -1,0 +1,66 @@
+---
+host: cursor
+interface: ide
+version: 3.27.22
+os: darwin-arm64
+role: skill
+scope: user
+mode: user-explode
+state: partial
+lostFields:
+  - invocation
+observed: invoked
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-05-01'
+steps:
+  - phase: install
+    action: Install isolated skill payloads from the supplied phase-ue recipe
+    outcome: observed
+    output: Phase ue payloads installed under the isolated profile/project.
+  - phase: reload
+    action: |-
+      Restart isolated Cursor; open the canonical project path; select This Mac
+    outcome: observed
+    output: Isolated Cursor restarted on the probe project before the checks.
+  - phase: invoke
+    action: |-
+      Type /probe-skill-ue in agent chat and send. Does it reply
+      PROBE-7f3a-skill-ue? (Also: is it listed under Customize/Settings -> Skills?
+      if listed but not invocable answer d)
+    outcome: observed
+    output: 'ue-skill=y: returned PROBE-7f3a-skill-ue.'
+  - phase: remove
+    action: Delete phase-ue payloads and restart isolated Cursor
+    outcome: observed
+    output: 'ue-removed=y: all previous phase items gone after restart.'
+  - phase: verify
+    action: Inspect Customize and probe items after final restart
+    outcome: observed
+    output: 'final-clean=y: all probe items gone after final restart.'
+notes: |-
+  Personal Cursor IDE 3.27.22, macOS 27.2 (darwin-arm64); This Mac local agent.
+  Run resumed by hand in the same record format. No-policy personal install.
+  Installed ~/.cursor/skills/probe-skill-ue/SKILL.md; restarted before invocation.
+  Removal verified by ue-removed=y and final-clean=y after restarts.
+  Run note: listed under Settings Skills and returns token via slash with agent
+  location 'This Mac' (first attempt used Cloud agent by mistake).
+  Explicit slash invocation returned the token. ue-skill-autoinvoke=y also returned
+  the token without naming the skill, despite disable-model-invocation: true.
+  Suspected invocation loss: unconfirmed whether skill invocation or file search
+  produced it. The restriction is not established; do not claim it holds.
+  Maintainer reports no probe residue in real host config; 29 reported changes came
+  from normal Cursor opened mid-run and concurrent Claude Code. Not a whole-inventory
+  immutability claim.
+  Removal is maintainer-observed; no automatic hook-boundary or scratch-purge
+  status was returned in this raw snapshot.
+policy: none
+evidence:
+  kind: measured
+  sources:
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#ue-skill
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#ue-removed
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#final-clean
+    - tests/fixtures/host-probe/cursor-macos-probe.sh
+    - docs/parity/evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json#ue-skill-autoinvoke
+  derivedFrom: []

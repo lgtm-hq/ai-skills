@@ -17,3 +17,8 @@ npm/ai-skills/data/plugins-baked/
 
 __pycache__
 .lintro/*
+# Exact maintainer-supplied archival fixture; see CONTRIBUTING.md. The maintained
+# cursor-macos-probe-driver.sh remains fully linted and tested.
+tests/fixtures/host-probe/cursor-macos-probe.sh
+# WRITE-ONCE raw evidence must never be reformatted (see docs/parity/evidence-format.md).
+docs/parity/evidence/cursor/raw/

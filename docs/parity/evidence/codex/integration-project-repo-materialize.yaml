@@ -1,0 +1,24 @@
+---
+host: codex
+interface: cli
+version: 0.164.0
+os: linux-x86_64
+role: integration
+scope: project
+mode: repo-materialize
+state: unverified
+lostFields: []
+observed: absent
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: invoke
+    command: not run
+    exitCode: null
+    output: |-
+      this role/path was not invoked in the bounded CLI spike; no support
+      inferred from file presence or plugin install success.
+notes: |-
+  Reason: this role/path was not invoked in the bounded CLI spike; no
+  support inferred from file presence or plugin install success.

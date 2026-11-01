@@ -1,0 +1,28 @@
+---
+host: cursor
+interface: ide
+version: null
+os: null
+role: specialist
+scope: user
+mode: repo-materialize
+state: unverified
+lostFields: []
+observed: not-measured
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-05-01'
+steps:
+  - phase: invoke
+    action: 'No route specified under #581'
+    outcome: not-run
+    output: 'No check: undefined mode/scope pair under #581.'
+notes: |-
+  Reason: undefined mode/scope pair under #581; no personal check scheduled.
+  The returned run does not define this route or establish support.
+policy: none
+evidence:
+  kind: pending
+  sources:
+    - docs/parity/evidence-format.md
+  derivedFrom: []
