@@ -777,14 +777,19 @@ def test_validation_diagnostics_precede_credentials_and_api_calls(
 
 
 @pytest.mark.parametrize("malformed", ["status", "summary"])
+@pytest.mark.parametrize("existing_final", [False, True], ids=["fresh", "replacement"])
 def test_invalid_generated_artifact_is_never_published(
     git_tree: Path,
     monkeypatch: pytest.MonkeyPatch,
     malformed: str,
+    existing_final: bool,
 ) -> None:
-    """Validation failures clean up staging without leaving publication.json."""
+    """Validation failures clean up staging and preserve any original final bytes."""
     directory = git_tree.parent / f"{git_tree.name}-artifact"
     directory.mkdir()
+    path = directory / vendor_pin_artifact.ARTIFACT_NAME
+    if existing_final:
+        path.write_bytes(b"original publication\n")
     summary = git_tree.parent / f"{git_tree.name}-summary.md"
     summary.write_text("x" * 65_536 if malformed == "summary" else "# Summary\n")
     monkeypatch.chdir(git_tree)
@@ -793,7 +798,100 @@ def test_invalid_generated_artifact_is_never_published(
     monkeypatch.setenv("SUMMARY_STATUS", "2" if malformed == "status" else "0")
     with pytest.raises(ValueError, match="Invalid artifact metadata|Summary comment"):
         vendor_pin_artifact.main()
-    assert_that(list(directory.iterdir())).is_empty()
+    assert_that(list(directory.iterdir())).is_equal_to([path] if existing_final else [])
+    if existing_final:
+        assert_that(path.read_bytes()).is_equal_to(b"original publication\n")
+
+
+@pytest.mark.parametrize(
+    "destination",
+    [
+        "extra-file",
+        "extra-directory",
+        "extra-symlink",
+        "root-symlink",
+        "final-symlink",
+        "final-directory",
+    ],
+)
+def test_invalid_artifact_destination_preserves_original(
+    git_tree: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    destination: str,
+) -> None:
+    """Reject consumer-invalid destinations before publishing or replacing bytes."""
+    directory = _write_artifact(repo_root=git_tree)
+    path = directory / vendor_pin_artifact.ARTIFACT_NAME
+    original_bytes = path.read_bytes()
+    preserved = path
+    if destination == "root-symlink":
+        alias = directory.with_name(f"{git_tree.name}-artifact-alias")
+        alias.symlink_to(directory, target_is_directory=True)
+        directory = alias
+    elif destination in {"final-symlink", "final-directory"}:
+        preserved = directory.with_name(f"{git_tree.name}-original.json")
+        path.rename(preserved)
+        if destination == "final-symlink":
+            path.symlink_to(preserved)
+        else:
+            path.mkdir()
+    else:
+        extra = directory / "unexpected"
+        if destination == "extra-file":
+            extra.write_bytes(b"unexpected entry\n")
+        elif destination == "extra-directory":
+            extra.mkdir()
+        else:
+            extra.symlink_to(directory / "missing")
+    entries = set(directory.iterdir())
+    summary = git_tree.parent / f"{git_tree.name}-summary.md"
+    summary.write_text("# New summary\n")
+    monkeypatch.chdir(git_tree)
+    monkeypatch.setenv("ARTIFACT_DIR", str(directory))
+    monkeypatch.setenv("SUMMARY_PATH", str(summary))
+    monkeypatch.setenv("SUMMARY_STATUS", "0")
+    with pytest.raises(ValueError, match="symlink|only publication.json"):
+        vendor_pin_artifact.main()
+    assert_that(set(directory.iterdir())).is_equal_to(entries)
+    assert_that(preserved.read_bytes()).is_equal_to(original_bytes)
+    if destination in {"root-symlink", "final-symlink"}:
+        alias = directory if destination == "root-symlink" else path
+        assert_that(alias.is_symlink()).is_true()
+    if destination == "final-directory":
+        assert_that(path.is_dir()).is_true()
+
+
+@pytest.mark.parametrize("destination", ["empty", "existing-final", "symlink-ancestor"])
+def test_valid_artifact_destination_is_accepted_by_reader(
+    git_tree: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    destination: str,
+) -> None:
+    """Publish atomically to valid destinations, allowing symlinks above the root."""
+    directory = git_tree.parent / f"{git_tree.name}-artifact"
+    directory.mkdir()
+    path = directory / vendor_pin_artifact.ARTIFACT_NAME
+    if destination != "empty":
+        path.write_bytes(b"original publication\n")
+    if destination == "symlink-ancestor":
+        alias = directory.with_name(f"{git_tree.name}-parent-alias")
+        alias.symlink_to(directory.parent, target_is_directory=True)
+        directory = alias / directory.name
+    summary = git_tree.parent / f"{git_tree.name}-summary.md"
+    summary.write_text("# New summary\n")
+    monkeypatch.chdir(git_tree)
+    monkeypatch.setenv("ARTIFACT_DIR", str(directory))
+    monkeypatch.setenv("SUMMARY_PATH", str(summary))
+    monkeypatch.setenv("SUMMARY_STATUS", "0")
+    vendor_pin_artifact.main()
+    payload = vendor_pin_artifact.read_artifact(
+        directory=directory,
+        expected_head=_head(git_tree),
+    )
+    assert_that(payload["summary"]).is_equal_to("# New summary\n")
+    assert_that(list(directory.iterdir())).is_equal_to(
+        [directory / vendor_pin_artifact.ARTIFACT_NAME],
+    )
 
 
 def test_graphql_errors_explain_failure(git_tree: Path, api: Mock) -> None:

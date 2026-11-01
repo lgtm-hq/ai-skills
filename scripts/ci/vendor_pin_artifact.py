@@ -179,6 +179,12 @@ def main() -> None:
     }
     directory = Path(os.environ["ARTIFACT_DIR"])
     path = directory / ARTIFACT_NAME
+    reject_symlinks(root=directory, path=path)
+    entries = set(directory.iterdir())
+    if entries and (entries != {path} or not path.is_file()):
+        raise ValueError(
+            "Artifact destination must contain only publication.json as a regular file"
+        )
     with tempfile.TemporaryDirectory(dir=directory) as temporary:
         staging = Path(temporary)
         staged_path = staging / ARTIFACT_NAME
