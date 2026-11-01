@@ -1,9 +1,20 @@
 import { Socket } from "node:net";
 import endpoint from "../network-control.json";
+import { windowsNetworkControl } from "./windows-network-control";
 
 // Diagnostic only: never called by installation. Keep the endpoint identical to
 // scripts/network_control.py; do not accept a caller-selected destination.
-export async function networkControl(): Promise<unknown[]> {
+export async function networkControl({
+  platform = process.platform,
+  isBun = Boolean(process.versions.bun),
+  arch = process.arch,
+  windows = windowsNetworkControl,
+} = {}): Promise<unknown[]> {
+  if (platform === "win32" && isBun) {
+    if (arch !== "x64")
+      return [{ ...endpoint, outcome: "inconclusive", error: "Winsock diagnostic requires Win64" }];
+    return windows();
+  }
   return new Promise((resolve) => {
     const socket = new Socket();
     const finish = (outcome: string, error?: Error) => {

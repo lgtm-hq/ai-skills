@@ -1,10 +1,11 @@
 # Install-plane distribution experiment (#562)
 
 Date: 2026-11-01. **ADR 0008 remains Proposed for a specific Windows measurement.**
-Inspected R10 PR and green dispatch evidence at **80f328c** covers both variants
-on all five native targets, including independent direct execution. Four POSIX
-targets pass offline; Windows execution succeeds but executable-specific denial
-is unverified. The comparison and recommendation below use these actual results.
+Inspected R11 PR evidence at **196cb20** covers both variants on all five native
+targets, including independent direct execution. Four POSIX targets pass offline
+for both variants; Windows Python now passes, while TypeScript execution succeeds
+but executable-specific denial remains unverified. This revision repairs that
+diagnostic boundary; **196cb20 does not validate the changed executable**.
 This throwaway spike is outside the
 published npm `files` allowlist and contains no authored JavaScript.
 
@@ -29,12 +30,12 @@ and Sigstore/cosign keyless signing remain distribution obligations. Where paid
 signing is absent, deliver unsigned but attested; this research does not claim a
 production attestation pipeline or fleet security approval.
 
-**Recommendation: complete the matched Windows control, then apply the Python-first
-tie rule.** R10 establishes equal passing registry/no-Node behavior everywhere and
-direct-plus-npm offline behavior on Linux/macOS. It does not establish Windows
-offline equality: both executions succeed, but denial of one Python executable
-does not prove denial of Node or the compiled/installed payloads. Neither unknown
-equals pass nor two unknowns equal deployability. A's smaller POSIX footprint
+**Recommendation: measure the repaired TypeScript Windows diagnostic, then apply
+ADR 0008's escape hatch.** The Python-first tie interpretation comes from the
+[merged ADR's escape hatch][merged-escape], not additional owner wording. R11
+establishes equal passing registry/no-Node behavior everywhere and direct-plus-npm
+offline behavior on Linux/macOS; Windows B passes, while A's denial is unknown.
+Neither unknown equals pass nor two unknowns equal deployability. A's smaller POSIX footprint
 supplies no threshold or justification for rejecting the Python-first tie rule;
 B is smaller on Windows. Retain Proposed for this concrete, runner-observable gap.
 The minimal next measurement is implemented below, with fresh hosted evidence
@@ -51,7 +52,121 @@ All R3–R6 tables below retain **historical raw outcomes under the superseded
 both-clients-offline policy**. In particular, POSIX offline `fail` reflects Bun
 selection failure under that old rule. It is not a current-policy gate failure,
 and cannot be retroactively turned into a direct-runtime pass. No raw JSON is
-modified or relabeled, and no earlier run certifies R10.
+modified or relabeled, and no earlier run certifies this revision.
+
+## Current inspected R11 evidence (196cb20 only)
+
+The [PR-triggered run 41322684015][r11-pr] completed **successfully** at exact
+clean source [196cb20a25a669498e5b6338bb633b7b11434e54][r11-source]. All twelve
+unique schema-3 result documents were inspected: ten native (five targets × two
+variants) plus two dedicated Linux offline observations. Every document records
+that source/expected head, empty source status, `pull_request`, the exact run URL
+and attempt **1**. Dedupe includes run, artifact kind, target and variant: native
+and dedicated documents both say `collection_scope=hosted`. Build/acquisition
+JSONs are setup evidence. The genuine [dispatch 41323324901][r11-dispatch] was
+still `in_progress` at this revision's single status read; no success or complete
+dispatch artifact inspection is claimed here. The older green R10 dispatch below
+certifies only its executed source, not R11 or the new native diagnostic.
+
+| Target / runner                 | R11 PR artifact                                                                                    |
+| ------------------------------- | -------------------------------------------------------------------------------------------------- |
+| linux-x64 / ubuntu-24.04        | [13090026458](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015/artifacts/13090026458) |
+| linux-arm64 / ubuntu-24.04-arm  | [13089418818](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015/artifacts/13089418818) |
+| darwin-arm64 / macos-15         | [13090220931](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015/artifacts/13090220931) |
+| darwin-x64 / macos-15-intel     | [13090540153](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015/artifacts/13090540153) |
+| windows-x64 / windows-2025      | [13090770318](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015/artifacts/13090770318) |
+| Dedicated Linux empty allowlist | [13090425637](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015/artifacts/13090425637) |
+
+P means pass, U means unverified. Execution observations do not alone prove offline.
+Registry columns read the raw `private_registry.clients`; local-file columns read
+`offline.installation_observation.clients`, not nonexistent summary keys.
+
+| Target                                           | Variant            | Private registry Bun / npm / overall | No Node | Restricted direct / npm execution | Direct / offline overall |
+| ------------------------------------------------ | ------------------ | ------------------------------------ | ------- | --------------------------------- | ------------------------ |
+| linux-x64, linux-arm64, darwin-arm64, darwin-x64 | A and B separately | P / P / P                            | P       | P / P                             | P / P                    |
+| windows-x64                                      | A                  | P / P / P                            | P       | P / P                             | U / U                    |
+| windows-x64                                      | B                  | P / P / P                            | P       | P / P                             | P / P                    |
+| Dedicated Linux                                  | A and B separately | Not run                              | Not run | P / P                             | U / U                    |
+
+Both private-registry clients pass `--ignore-scripts`, correct platform selection,
+transported-byte verification and golden execution on all five targets, with
+owned-server cleanup. All **30** native no-Node processes pass with the cache
+blocker intact and no unexpected HOME files. npm local-file control/restricted
+installs pass everywhere. Bun selects all five platform packages in every local
+cell and fails, retained as informational evidence under [owner policy][owner-offline].
+
+Windows matched controls now prove denial for **both exact Python paths** (direct
+and npm-installed): connected IPv4 before rules, WinError **10013** during rules,
+identical resolved path and SHA-256. The exact npm Node launcher similarly changes
+from connected to **EACCES**, and launcher identity matches. The compiled A and
+its npm-installed copy each change from connected to **ECONNREFUSED/inconclusive**,
+despite identical paths and hashes. Refusal is not firewall-denial proof. Exact
+scoped rule removal is verified. Thus B's Windows direct/npm offline passes and
+A's remains U; B's probe or Node's denial cannot establish A's denial.
+
+Unsigned security evidence is recorded in those same raw command arrays:
+macOS quarantine write/read succeeds and `spctl --status` says assessments enabled;
+A's `spctl --assess`/`codesign --verify` exit **1**, invalid signature on both Macs.
+B's assessment exits **3** on both; arm64 ad-hoc verification exits **0**, x64
+verification exits **1**, unsigned. All four marked direct CLI runs exit **0**
+with golden output. Windows MotW ZoneId=3 write/read and Defender custom scans
+exit **0**, scans report no threats, and both entries are `NotSigned`. Defender
+real-time protection is false; direct CreateProcess is not SmartScreen evidence.
+The detailed historical commands below and signing requirements still apply;
+the linked R11 arrays retain the exact R11 argv/stdout/stderr and temporary paths.
+
+### R11 footprint (PR 41322684015 only)
+
+Times are three fresh processes in milliseconds, rounded to three decimals.
+Page caches were not flushed; disk-cold timing is U. A already embeds a
+diagnostic-only network entry point at this source, so its bytes include that
+instrumentation. Normal fixture installation never calls it. The new native
+diagnostic changes bytes again; these are **not new-revision footprint numbers**.
+
+| Target       | Variant | Payload bytes | Files | Archive bytes | Three fresh-process times (ms) |
+| ------------ | ------- | ------------- | ----- | ------------- | ------------------------------ |
+| linux-x64    | A       | 82,554,595    | 4     | 36,593,734    | 25.719, 24.627, 24.278         |
+| linux-x64    | B       | 205,564,886   | 4,765 | 73,267,270    | 36.404, 36.963, 36.445         |
+| linux-arm64  | A       | 82,506,259    | 4     | 36,588,353    | 21.959, 21.385, 22.495         |
+| linux-arm64  | B       | 157,367,571   | 4,765 | 58,605,448    | 36.551, 35.727, 35.726         |
+| darwin-arm64 | A       | 63,921,293    | 4     | 25,897,530    | 78.496, 27.346, 21.795         |
+| darwin-arm64 | B       | 107,771,282   | 1,898 | 43,357,171    | 48.932, 40.886, 67.387         |
+| darwin-x64   | A       | 70,715,323    | 4     | 28,466,006    | 93.913, 79.152, 77.419         |
+| darwin-x64   | B       | 110,137,770   | 1,898 | 43,403,991    | 372.207, 96.595, 98.253        |
+| windows-x64  | A       | 88,838,171    | 4     | 39,806,768    | 38.534, 38.293, 37.204         |
+| windows-x64  | B       | 65,664,753    | 3,163 | 22,729,994    | 61.715, 60.881, 60.471         |
+
+### R12 diagnostic repair and minimal pending measurement
+
+Only Bun on Windows x64 loads `System32/ws2_32.dll` through deferred `bun:ffi`.
+The diagnostic runs **inside the same compiled executable**, including its
+npm-installed copy. It opens the existing fixed IPv4 endpoint only, makes a
+nonblocking socket, waits at most two seconds with `select`, and reads native
+`WSAGetLastError` immediately or `getsockopt(SO_ERROR)` for deferred completion.
+Only native **WSAEACCES (10013)** from connection establishment is explicit denial.
+Refusal, unreachable, timeout, setup errors and unknowns remain inconclusive.
+Socket close, balanced `WSACleanup` and library close are attempted in order;
+any cleanup failure invalidates success/denial and retains structured raw errors.
+The generated npm Node diagnostic and non-Windows socket path remain on `node:net`.
+No new helper executable, dependency, endpoint, firewall policy or pipeline is added.
+
+Injectable tests cover success, immediate/deferred native errors, Win64 layouts,
+64-bit handles, bounded timeout, load/setup/read failures and cleanup after errors.
+They perform no network I/O. Node-target emission and an injected Node smoke test
+also pass locally. These checks establish implementation behavior, **not native
+Windows denial**. The [Winsock select contract][winsock-select] grounds deferred
+error retrieval; [Bun FFI][bun-ffi] documents native calls and 64-bit Windows handles.
+
+Parent must collect a fresh native matrix and genuine green dispatch at the new
+executable source, inspect exact clean head/event/run/attempt and all twelve
+results per run, then refresh footprint and the Windows direct/npm controls.
+Require same path/hash, connected-before/authoritative-denial-during, actual npm
+Node identity, golden executions and exact rule cleanup. If A remains unknown,
+keep it unknown and keep ADR/index Proposed. If comparable results justify the
+decision, apply the merged escape hatch and update ADR/index/spike README together.
+Harden Runner's absent same-host baseline, payload provenance, shell/fleet and
+deliberate long-path limits remain explicit U, not additional universal-green gates.
+This required #562 acceptance remains here; optional NITs stay in #614.
 
 ## Method and evidence identity
 
@@ -350,7 +465,7 @@ use installed Python **3.14.7**, with downloads disabled and offline mode; the
 hosted pin remains **3.14.6**. The following R10 results measure these repairs at
 80f328c; historical artifacts stay unchanged.
 
-## Actual inspected R10 evidence (80f328c only)
+## Historical inspected R10 evidence (80f328c only)
 
 The [PR run 41315907240][r10-pr] and genuine green
 [workflow_dispatch run 41316038552][r10-dispatch] both completed **successfully**
@@ -733,8 +848,8 @@ mutations now cover archive length, hidden NUL suffixes/prefix bytes and invalid
 octal metadata; empty size is rejected in both runtimes. Golden/BOM parity and
 bounded reads remain required.
 
-**Retain Proposed (Part of #562) for the matched Windows executable control.**
-R10's direct execution is now inspected, including successful Windows observations.
+**Retain Proposed (Part of #562) for A's native Windows diagnostic measurement.**
+R11's matched controls establish B's Windows offline pass; A's refusal remains U.
 The owner has disposed of the policy questions. Bun local-file failure is evidence
 only; unsigned assessment results and documented signing requirements satisfy the
 security-policy scope without a signed run. Missing Windows denial scope cannot
@@ -752,7 +867,7 @@ The remaining evidence work on **#562** is concrete:
    source binding as unverified. Native POSIX evidence is not Harden Runner proof;
    no independent provenance or fleet approval is claimed. These limits do not
    create a universal-green condition on the runtime decision.
-4. Apply the issue's decision rule after inspecting comparable evidence: revise to
+4. Apply the merged ADR escape hatch after inspecting comparable evidence: revise to
    Python behind a thin TypeScript npm launcher if B is equally deployable; accept
    A only if it is no worse on every required restricted criterion. Footprint has
    no specified budget. Update ADR/index/README together and reconcile
@@ -801,3 +916,9 @@ not waived or represented as completed by this spike.
 [artifacts]: https://github.com/lgtm-hq/ai-skills/actions/runs/41292078852#artifacts
 [r2]: https://github.com/lgtm-hq/ai-skills/actions/runs/41288233178
 [r2-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41290059704
+[r11-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015
+[r11-source]: https://github.com/lgtm-hq/ai-skills/tree/196cb20a25a669498e5b6338bb633b7b11434e54/research/install-plane-spike
+[r11-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41323324901
+[merged-escape]: https://github.com/lgtm-hq/ai-skills/blob/032ee309817813a9ef81bb2450cbed646a625222/docs/adr/0008-engine-runtime-build-and-install-planes.md
+[winsock-select]: https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-select
+[bun-ffi]: https://bun.com/docs/runtime/ffi

@@ -1,6 +1,6 @@
 # ADR 0008: Engine runtime: Python build plane, TypeScript install plane
 
-- Status: Proposed (#562 matched Windows executable controls pending)
+- Status: Proposed (#562 native TypeScript Windows diagnostic measurement pending)
 - Date: 2026-11-01
 - Scope: [#561](https://github.com/lgtm-hq/ai-skills/issues/561), part of
   [engine v2 (#596)](https://github.com/lgtm-hq/ai-skills/issues/596)
@@ -55,8 +55,8 @@ provisional until that spike concludes.
   install plane starts needing resolution logic, which this ADR forbids.
 - **Escape hatch.** If #562 finds that a bundled Python runtime is as
   deployable as the compiled binary under the same private-registry,
-  no-Node, offline and required quarantine/security restrictions, revise this ADR
-  to a single Python engine behind a thin TypeScript npm launcher.
+  no-Node and offline restrictions, revise this ADR to a single Python
+  engine behind a thin TypeScript npm launcher.
 
 ## Consequences
 
@@ -109,80 +109,71 @@ policy. Their raw JSON is unchanged. They are neither new-policy failures nor
 proof of direct-runtime success. Owner policy is resolved; missing measurements
 remain missing measurements.
 
-### Inspected R10 evidence and decision application
+### Inspected R11 evidence and decision application
 
-The report preserves R3–R9 history separately. Current inspected evidence is the
-R10 [PR run 41315907240](https://github.com/lgtm-hq/ai-skills/actions/runs/41315907240)
-and genuine green [workflow_dispatch run 41316038552](https://github.com/lgtm-hq/ai-skills/actions/runs/41316038552),
-both at exact clean source **80f328cb263c36c505ae1113224b7b36c36f85f6**.
-Each has twelve unique schema-3 results: ten native (five targets × two variants)
-and two dedicated Linux offline observations. All 24 have matching source and
-expected head, empty source status, exact event/run identity and attempt 1.
-The report links exact artifacts and records R10 commands, unsigned assessment
-outputs, footprint and recommendation. These results are not R9 measurements.
+The report retains historical runs and now inspects the green
+[PR run 41322684015](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015)
+at exact clean source **196cb20a25a669498e5b6338bb633b7b11434e54**. Its twelve
+unique schema-3 results (ten native plus two dedicated offline) have matching
+source/expected head, empty source status, exact event/run identity and attempt 1.
+The report links immutable artifacts, current footprint and raw commands.
+[Dispatch 41323324901](https://github.com/lgtm-hq/ai-skills/actions/runs/41323324901)
+was in progress at this revision's single status read; no green result is claimed.
 
-For both A and B in both runs:
+- Private-registry installs pass with **both Bun and npm** and `--ignore-scripts`
+  on all five targets; transported bytes, platform selection, golden execution
+  and owned-server cleanup pass. No-Node passes everywhere.
+- Both variants pass original direct execution plus npm local-file fallback
+  under shared Linux namespaces and macOS sandboxes on all four POSIX targets.
+- Windows **B passes offline**: exact direct and npm-installed interpreter
+  controls are connected before rules, WinError 10013 during rules, with matching
+  paths/hashes. Exact npm Node similarly reports EACCES; launcher identity matches
+  and exact rule removal succeeds. A's direct and installed controls instead
+  report **ECONNREFUSED/inconclusive**, despite matching paths/hashes. A executes
+  successfully, but its offline status is still **unverified**. Refusal cannot be
+  relabeled as access denial, and B's proof cannot establish A's proof.
+- Unsigned security results remain within the answered owner scope: Mac quarantine
+  readback succeeds, both variants fail assessment and marked CLI execution passes;
+  Windows MotW readback and Defender custom scans pass, both entries are NotSigned,
+  real-time protection is disabled and shell/SmartScreen enforcement is U. The
+  report records signing/notarization needs; no paid gate is added.
+- Dedicated Harden Runner has no same-host unrestricted baseline; its denial stays
+  U. Payload provenance, fleet enforcement and deliberate deep-path behavior stay
+  U. These are explicit limits, not universal-green gates on this comparison.
 
-- Private registry passes with **both Bun and npm**, exact platform selection,
-  verified installed bytes/golden execution and owned-server cleanup on all five
-  targets. No-Node passes everywhere.
-- Linux x64/arm64 and macOS x64/arm64 pass independent original standalone
-  execution plus npm local-file fallback under shared namespace/sandbox denial.
-- Windows actually executes both transports successfully, but bundled-Python
-  probe denial is true and installer denial false. Separately scoped Node and
-  direct/installed runtime executables have no matched controls. Direct and
-  overall offline remain **unverified**, not passes or proven equality.
-- Dedicated first-step empty-allowlist Harden Runner executes both transports
-  but lacks a same-host unrestricted baseline; its denial remains unverified.
-  Native Linux namespace proof is not credited to Harden Runner.
-- All 24 payload-source identity records are unverified: native source hashes
-  lack independent verification and transferred archive hashes are not bound to
-  expected source/build metadata. Collector identity does not establish payload
-  provenance. No production attestation pipeline or fleet approval is claimed.
-- Unsigned macOS assessments reject both variants; direct marked CLI execution
-  succeeds. A's inherited/ad-hoc signature fails verification; B arm64 verifies
-  ad-hoc, B x64 is unsigned. Windows MotW readback and Defender custom scans
-  succeed; both entries are NotSigned, real-time protection is disabled, and
-  shell/SmartScreen enforcement is unverified. The report documents each
-  variant's signing/notarization needs. This meets the owner's unsigned evidence
-  scope without inventing a paid signing or third-party EDR gate.
+### Decision rule and minimal pending measurement
 
-### Decision rule and specific remaining measurement
+The **Python-first tie interpretation** follows the
+[merged ADR escape hatch](https://github.com/lgtm-hq/ai-skills/blob/032ee309817813a9ef81bb2450cbed646a625222/docs/adr/0008-engine-runtime-build-and-install-planes.md),
+which says to revise to a single Python engine behind a thin TypeScript npm
+launcher if B is as deployable under the same private-registry, no-Node and
+offline restrictions. This precedence is not an additional owner statement.
+Otherwise accept A only if A is no worse on every required restricted criterion
+across the supported targets. No size/file-count/timing budget is specified;
+A's smaller POSIX footprint and B's smaller Windows footprint do not override it.
 
-The issue's **Python-first tie rule** takes precedence when B is equally
-deployable: revise to a single Python engine behind a thin TypeScript npm
-launcher. Otherwise accept A only if A is no worse on every required restricted
-criterion across the supported targets. Footprint records costs, not a new
-threshold: no size/file-count or timing budget is specified. A is smaller on
-POSIX; B is smaller on Windows. Those numbers do not override the tie rule.
+R11 proves registry/no-Node equality and POSIX offline equality, plus B's Windows
+pass. A's Windows offline comparison is still unknown, so neither decision branch
+is justified across all five targets. This is an observable diagnostic gap, not
+an unanswered owner question or additional signing/provenance/fleet gate.
 
-R10 supports a tie for registry/no-Node everywhere and offline on four POSIX
-targets. **The Windows offline comparison is still unproven**, so neither branch
-of the rule is justified across all five targets. Two unknown outcomes do not
-establish equal deployability. This is a missing runner-observable control, not
-an unanswered owner policy question, a demand for every field to be green, or
-an extra signing/provenance/fleet gate on #562. Runner-unobservable limits may
-remain explicitly unverified as the issue permits; free production attestation
-obligations remain binding before trusted distribution is claimed.
+R12 minimally repairs only Bun Win64's diagnostic: the same compiled executable
+and its npm-installed copy call native Winsock through deferred `bun:ffi`, retain
+WSAGetLastError/SO_ERROR, and classify only connection access denial (10013) as
+explicit denial. Nonblocking connect/select is bounded to two seconds. Cleanup
+attempts socket close, WSACleanup and DLL close; errors invalidate proof and remain
+structured raw evidence. npm's Node diagnostic and non-Windows paths are unchanged.
+Injectable tests use no network and cannot establish native Windows proof.
 
-The minimal follow-up in this revision adds matched Windows program controls:
-A's compiled diagnostic, B's existing interpreter probe, npm's explicitly selected
-Node launcher, and exact future npm-installed payload paths. Baseline copies are
-removed before fresh real installations. Connected-before/explicit-denial-after,
-identical argv/executable path/SHA-256, actual npm launcher match and exact rule
-cleanup are required. Offline tests inject socket/process boundaries and do not
-supply native proof. Informational Bun local-file execution is outside this
-required denial scope; its existing failure remains recorded.
+**ADR 0008 and its index remain Proposed until fresh hosted evidence validates
+this changed executable.** R11 is not evidence for R12 code or footprint. Parent
+must inspect a new-head native matrix and genuine green dispatch, including all
+12 results each and exact same-path/hash Windows direct/npm controls, actual npm
+Node identity, golden execution and exact cleanup. Then apply the escape hatch
+and update ADR/index/spike README together. An unknown must remain unknown.
+Documentation-only follow-ups can cite proven unchanged executable source without
+an endless rerun; this executable revision does not qualify for that exception.
 
-**ADR 0008 and its index remain Proposed until fresh hosted results validate this
-executable change.** R10 cannot certify the new controls. Inspect the new
-native/dispatch JSON, apply the rule, and update ADR/index/spike README together.
-Documentation-only edits may continue citing the exact executed source when
-source/workflow/test/package hashes are unchanged; they do not require an endless
-rerun of unchanged executables. This revision changes executable bytes, so that
-exception does not apply.
-
-Before future implementation, reconcile #566/#567/#578/#386 with whichever
-runtime is selected. The local parent handoff records the pending Windows gate
-and conditional implications; no downstream issue or remote metadata is changed
-here. Optional M5 NITs stay #614. No production runtime changes in this spike.
+Before implementation, reconcile #566/#567/#578/#386 with the selected runtime.
+No downstream specification or production runtime is changed here; required #562
+acceptance remains here and optional M5 NITs stay in #614.

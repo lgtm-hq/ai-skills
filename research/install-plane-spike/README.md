@@ -55,17 +55,23 @@ Use disposable machines for collection. Native isolation attempts namespaces,
 macOS sandboxing or Windows per-program firewall rules. A same-host successful
 IPv4 control is required before explicit denial proves the probe restriction;
 unavailable IPv6 is informational and timeouts remain unverified. Linux/macOS
-probe and installers share a namespace/sandbox. R10 Windows program-specific rules
-proved denial only for bundled Python; direct/npm execution succeeded but overall
-offline stayed unverified. The new Windows-only controls compare the same fixed
+probe and installers share a namespace/sandbox. R11 Windows program-specific rules
+prove direct/npm denial for B and npm's Node, while A's controls report refusal
+and remain unverified. The Windows-only controls compare the same fixed
 IPv4 endpoint, argv, resolved executable path and SHA-256 before/during restriction
 for direct A/B, actual npm Node and installed npm payloads. Seeded baseline copies
 at future install paths are removed before real fresh installs. Windows npm uses
 an explicit Node/npm-cli pair; mismatched launchers, missing/changed programs,
 timeouts or failed cleanup cannot pass. A's `--spike-network-control` diagnostic
 and emitted TypeScript Node module open only the fixed probe socket; normal
-installation never calls them. Unit tests inject socket events and never connect.
-These executable changes require fresh hosted evidence. Informational Bun is
+installation never calls them. Bun Win64 now uses a deferred `bun:ffi` Winsock
+diagnostic inside that same executable; native 10013 is access-denial proof,
+while refusal/unreachable/timeout stay inconclusive. Nonblocking connect/select
+is bounded to two seconds. Raw native errors and cleanup failures are retained;
+socket, Winsock reference and DLL cleanup are attempted, and cleanup failure
+invalidates proof. Node and non-Windows keep their existing socket path. Tests
+inject native/socket boundaries and never connect. The changed executable still
+requires fresh hosted evidence. Informational Bun is
 outside this required denial scope. Exact rules, commands and cleanup are retained.
 No-Node control removes tool directories from PATH while preserving Windows loader
 necessities and using disposable AppData/HOME locations. Node, nodejs, Bun and
@@ -154,14 +160,18 @@ Windows direct CreateProcess does not test MotW shell/SmartScreen enforcement;
 macOS CLI execution does not establish Finder behavior. Defender engine failures,
 disabled Gatekeeper, third-party EDR, deliberate deep paths, unsigned fleet policy,
 non-AVX2 baseline, musl and older Linux compatibility remain unverified.
-The report preserves R3–R9 history separately and links inspected R10 PR
-41315907240 and green dispatch 41316038552 at exact clean source
-**80f328cb263c36c505ae1113224b7b36c36f85f6**. Their 24 schema-3 results establish
-registry/no-Node passes on all five targets and direct-plus-npm offline passes on
-four POSIX targets. Windows execution succeeds but denial remains unverified;
-the new matched controls are not validated by R10. ADR 0008 stays Proposed for
-this observable comparison gap; two unknowns cannot establish the Python-first
-tie. Harden Runner's absent same-host baseline, independent payload provenance
+The report retains historical runs and links inspected green R11 PR
+[41322684015](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015) at exact
+clean source **196cb20a25a669498e5b6338bb633b7b11434e54**. Its twelve unique schema-3
+results establish registry/no-Node passes on all five targets, direct-plus-npm
+offline passes on four POSIX targets for both variants and Windows for B. A's
+Windows execution succeeds but controls report `ECONNREFUSED/inconclusive`, not
+denial. Dispatch 41323324901 was in progress at the single status read. Neither
+run validates this new Winsock code or its footprint. ADR/index stay Proposed
+until fresh native/dispatch evidence settles A's runner-observable comparison;
+then apply the [merged ADR escape hatch](https://github.com/lgtm-hq/ai-skills/blob/032ee309817813a9ef81bb2450cbed646a625222/docs/adr/0008-engine-runtime-build-and-install-planes.md)
+and update ADR/index/README together. Harden Runner's absent same-host baseline,
+independent payload provenance
 and shell/fleet enforcement remain explicit limits, not universal-green gates.
 The [security policy](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942)
 is resolved: unsigned observations and documented signing needs suffice for #562;
