@@ -19,6 +19,9 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ci.vendor_pin_artifact import (
+    SUMMARY_MARKER as _MARKER,
+)
+from ci.vendor_pin_artifact import (
     read_artifact,
     reject_symlinks,
     validate_changes,
@@ -26,7 +29,6 @@ from ci.vendor_pin_artifact import (
 )
 
 RequestJson = Callable[..., Any]
-_MARKER = "<!-- vendor-pin-regen -->"
 _BOT_LOGIN = "lgtm-release-bot[bot]"
 _MUTATION = """
 mutation($input: CreateCommitOnBranchInput!) {

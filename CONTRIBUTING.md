@@ -276,6 +276,9 @@ Branch names containing either quote character are explicitly unsupported:
 Renovate's regex manager cannot decode arbitrary YAML scalar escapes. The
 registry rejects these names, as well as whitespace and control characters,
 instead of capturing a truncated ref. Simple quoted scalars remain supported.
+Balanced surrounding quotes are enforced by YAML/registry validation, not the
+Renovate RE2 regex. The regex permits optional surrounding quotes and valid
+inline comments; malformed quoting must still fail registry validation.
 
 [`.github/workflows/vendor-pin-regen.yml`](.github/workflows/vendor-pin-regen.yml)
 refreshes generated data on same-repository `renovate/**` PRs authored by
@@ -284,6 +287,7 @@ actor to be `renovate[bot]` or `lgtm-release-bot[bot]` (including reruns). The
 read-only `regenerate` job checks out the exact PR head and summarizes changed
 vendors against `git merge-base base head` with `--keep-sha`; it never advances
 a Renovate-selected pin. A vendor absent from the baseline is reported as `new`.
+Regeneration sees only a read-only job token, never release App credentials.
 A single sticky PR comment contains skill, coverage, and collision deltas.
 
 The `publish` job checks out the exact base SHA. Only this job mints the release
@@ -302,14 +306,19 @@ checkout. Before minting the token and again before any API call, the trusted
 reader validates its schema, expected head, canonical allowlisted paths,
 duplicate paths, base64, and filesystem entries (no symlinks or extra files).
 Symlinks inside the source repo are rejected; symlinks above its root are allowed.
-The combined base64 contents are limited to 20 MiB (`MAX_BASE64_BYTES` in
-`scripts/ci/vendor_pin_artifact.py`); the complete envelope has a further 1 MiB
-metadata budget. Oversize input fails locally before any API request.
+The combined base64 contents have a conservative local budget of 20 MiB
+(`MAX_BASE64_BYTES` in `scripts/ci/vendor_pin_artifact.py`), not a measured GitHub
+API limit. The complete envelope has a further 1 MiB metadata allowance for the
+summary, paths, and JSON overhead. The full sticky comment, including its marker
+and newline, is limited to GitHub's 65,536 characters. Oversize input and JSON
+nesting beyond the parser limit fail locally before credentials or API use.
 
 Summaries run before the final refresh. Collisions produce a report-only
 artifact with no changes, then fail the publishing job after posting the report.
 A hard summary or refresh failure produces no publication artifact, so even a
 refresh that writes partial output cannot cause a commit. No vendor code runs.
+The generated envelope is validated in a temporary directory before an atomic
+rename publishes `publication.json`; failed validation leaves no new final file.
 
 Generated changes are committed with GraphQL `createCommitOnBranch`, using
 `expectedHeadOid` to reject concurrent branch updates. GitHub signs these

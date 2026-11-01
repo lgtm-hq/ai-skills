@@ -6,6 +6,7 @@ import base64
 import json
 import re
 import subprocess  # nosec B404 - isolated local Git fixtures, no shell
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
@@ -308,7 +309,13 @@ def test_renovate_captures_yaml_branch_quote_styles(
     matches = list(re.finditer(pattern, text))
 
     assert_that(matches).is_length(1)
-    assert_that(matches[0].group("currentValue")).is_equal_to("release/next")
+    assert_that(matches[0].groupdict()).is_equal_to(
+        {
+            "depName": "owner/example",
+            "currentDigest": _NEW_HEAD,
+            "currentValue": "release/next",
+        },
+    )
 
 
 def test_registry_branch_follows_sha() -> None:
@@ -692,6 +699,103 @@ def test_payload_budget_precedes_every_api_call(
     assert_that(api.call_count).is_zero()
 
 
+@pytest.mark.parametrize("oversize", [False, True], ids=["boundary", "oversize"])
+@pytest.mark.parametrize("character", ["a", "🙂"], ids=["ascii", "unicode"])
+def test_summary_budget_includes_sticky_marker_before_api_calls(
+    git_tree: Path,
+    api: Mock,
+    oversize: bool,
+    character: str,
+) -> None:
+    """Accept exactly 65,536 comment characters and reject even one extra."""
+    directory = _write_artifact(repo_root=git_tree)
+    path = directory / vendor_pin_artifact.ARTIFACT_NAME
+    payload = json.loads(path.read_text())
+    payload["summary"] = character * (
+        65_536 - len(vendor_pin_artifact.SUMMARY_MARKER) - 1 + int(oversize)
+    )
+    path.write_text(json.dumps(payload))
+    kwargs: dict[str, Any] = {
+        "artifact_directory": directory,
+        "repository": _REPOSITORY,
+        "branch": _BRANCH,
+        "expected_head": _head(git_tree),
+        "pr_number": 522,
+        "request": api,
+    }
+    if oversize:
+        with pytest.raises(ValueError, match="Summary comment exceeds 65536"):
+            create_signed_commit.publish(**kwargs)
+        assert_that(api.call_count).is_zero()
+    else:
+        assert_that(create_signed_commit.publish(**kwargs)).is_equal_to(
+            _head(git_tree),
+        )
+        assert_that(api.call_args.kwargs["payload"]["body"]).is_length(65_536)
+
+
+@pytest.mark.parametrize("malformed", ["summary", "nested-json"])
+def test_validation_diagnostics_precede_credentials_and_api_calls(
+    git_tree: Path,
+    api: Mock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    malformed: str,
+) -> None:
+    """Malformed inputs fail clearly in pre-token validation and publication."""
+    directory = _write_artifact(repo_root=git_tree)
+    path = directory / vendor_pin_artifact.ARTIFACT_NAME
+    if malformed == "summary":
+        payload = json.loads(path.read_text())
+        payload["summary"] = "x" * 65_536
+        path.write_text(json.dumps(payload))
+        diagnostic = "Summary comment exceeds 65536 characters"
+    else:
+        # Python 3.14's C decoder uses a stack limit, independent of sys recursion.
+        depth = 100_000
+        path.write_text('{"nested":' + "[" * depth + "0" + "]" * depth + "}")
+        diagnostic = "Artifact JSON nesting exceeds parser limit"
+    monkeypatch.chdir(git_tree)
+    monkeypatch.setenv("ARTIFACT_DIR", str(directory))
+    monkeypatch.setenv("PR_HEAD_SHA", _head(git_tree))
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr(create_signed_commit, "github_request", api)
+    for args in (["--validate-only"], []):
+        assert_that(create_signed_commit.main(args)).is_equal_to(1)
+        assert_that(capsys.readouterr().err).is_equal_to(f"{diagnostic}\n")
+    with pytest.raises(ValueError, match=diagnostic):
+        create_signed_commit.publish(
+            artifact_directory=directory,
+            repository=_REPOSITORY,
+            branch=_BRANCH,
+            expected_head=_head(git_tree),
+            pr_number=522,
+            request=api,
+        )
+    assert_that(api.call_count).is_zero()
+
+
+@pytest.mark.parametrize("malformed", ["status", "summary"])
+def test_invalid_generated_artifact_is_never_published(
+    git_tree: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    malformed: str,
+) -> None:
+    """Validation failures clean up staging without leaving publication.json."""
+    directory = git_tree.parent / f"{git_tree.name}-artifact"
+    directory.mkdir()
+    summary = git_tree.parent / f"{git_tree.name}-summary.md"
+    summary.write_text("x" * 65_536 if malformed == "summary" else "# Summary\n")
+    monkeypatch.chdir(git_tree)
+    monkeypatch.setenv("ARTIFACT_DIR", str(directory))
+    monkeypatch.setenv("SUMMARY_PATH", str(summary))
+    monkeypatch.setenv("SUMMARY_STATUS", "2" if malformed == "status" else "0")
+    with pytest.raises(ValueError, match="Invalid artifact metadata|Summary comment"):
+        vendor_pin_artifact.main()
+    assert_that(list(directory.iterdir())).is_empty()
+
+
 def test_graphql_errors_explain_failure(git_tree: Path, api: Mock) -> None:
     """Surface all GraphQL error messages without retrying against a moved head."""
     (git_tree / "NOTICE.md").write_text("changed")
@@ -831,8 +935,6 @@ def test_real_artifact_cli_and_trusted_validation(
     collision: bool,
 ) -> None:
     """Real CLI entrypoints exchange data without imports from another checkout."""
-    import sys
-
     (git_tree / "NOTICE.md").write_text("changed")
     summary = git_tree.parent / f"{git_tree.name}-summary.md"
     summary.write_text("# Collision report\n" if collision else "# Bake summary\n")
@@ -867,6 +969,9 @@ def test_real_artifact_cli_and_trusted_validation(
     assert_that(payload["status"]).is_equal_to(int(collision))
     assert_that(bool(payload["fileChanges"]["additions"])).is_equal_to(not collision)
     assert_that((git_tree / "NOTICE.md").read_text()).is_equal_to("changed")
+    assert_that(list(directory.iterdir())).is_equal_to(
+        [directory / vendor_pin_artifact.ARTIFACT_NAME],
+    )
 
 
 def test_collision_report_posts_without_commit_then_fails(
@@ -929,3 +1034,42 @@ def test_renovate_rejects_malformed_scalar_boundaries(
         f"    branch: {branch_scalar}{line_ending}"
     )
     assert_that(list(re.finditer(pattern, text))).is_empty()
+
+
+@pytest.mark.parametrize(
+    "branch_scalar",
+    ['"main', "'main", 'main"', "main'", "'main\"", "\"main'"],
+)
+@pytest.mark.parametrize("comment", ["", " # upstream 'default'"])
+def test_registry_rejects_unbalanced_quotes_permitted_by_renovate(
+    tmp_path: Path,
+    renovate_vendor_manager: dict[str, Any],
+    branch_scalar: str,
+    comment: str,
+) -> None:
+    """YAML/registry validation enforces quote pairing outside the RE2 regex."""
+    registry = tmp_path / "vendors.yaml"
+    registry.write_text(
+        "vendors:\n"
+        "  - id: example\n"
+        "    repo: owner/example\n"
+        f'    sha: "{_NEW_HEAD}"\n'
+        f"    branch: {branch_scalar}{comment}\n"
+        "    skillRoots: [skills]\n"
+        "    license: MIT\n"
+        "    homepage: https://github.com/owner/example\n",
+        encoding="utf-8",
+    )
+    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
+    matches = list(re.finditer(pattern, registry.read_text(encoding="utf-8")))
+    assert_that([match.groupdict() for match in matches]).is_equal_to(
+        [
+            {
+                "depName": "owner/example",
+                "currentDigest": _NEW_HEAD,
+                "currentValue": "main",
+            }
+        ],
+    )
+    with pytest.raises((yaml.YAMLError, ValueError)):
+        load_registry(registry_path=registry)

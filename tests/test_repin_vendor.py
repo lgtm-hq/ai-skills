@@ -889,3 +889,65 @@ def test_keep_sha_all_summarizes_new_vendor(
     ).is_equal_to(
         _EXISTING_SHA,
     )
+
+
+def test_real_summary_before_refresh_preserves_generated_outputs(
+    repo_root: Path,
+    tree_kind: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real summary and refresh CLIs produce the same bytes as refresh alone."""
+    manage = repin_vendor.manage_vendors
+    registry = repo_root / "vendors.yaml"
+    baseline = registry.read_text(encoding="utf-8")
+    manage.refresh(repo_root=repo_root)
+    paths = manage._generated_artifact_paths(repo_root=repo_root)
+    before_files, before_directories = manage._snapshot_artifacts(paths=paths)
+    manage.set_sha(
+        repo_root=repo_root,
+        vendor_id="example-vendor",
+        sha=_NEW_SHA,
+    )
+    selected_registry = registry.read_bytes()
+    tree_kind["kind"] = "after"
+    refresh_args = ["refresh", "--repo-root", str(repo_root)]
+    assert_that(manage.main(refresh_args)).is_zero()
+    expected = manage._snapshot_artifacts(paths=paths)
+    manage._restore_artifacts(
+        paths=paths,
+        snapshot=before_files,
+        directories=before_directories,
+    )
+    monkeypatch.setattr(
+        repin_vendor, "_registry_text_at_ref", lambda **kwargs: baseline
+    )
+
+    def no_network(**kwargs: object) -> bytes:
+        del kwargs
+        pytest.fail("Summary/refresh must use only the fixture's local vendor data")
+
+    monkeypatch.setattr(bake_vendor_plugins, "_http_get_bytes", no_network)
+    summary = repo_root / "summary.md"
+    assert_that(
+        repin_vendor.main(
+            [
+                "--repo-root",
+                str(repo_root),
+                "--all",
+                "--keep-sha",
+                "--baseline-ref",
+                "base",
+                "--summary-path",
+                str(summary),
+            ],
+        ),
+    ).is_zero()
+    assert_that(summary.read_text(encoding="utf-8")).contains(
+        _EXISTING_SHA,
+        _NEW_SHA,
+        "delta",
+        "gamma",
+    )
+    assert_that(manage.main(refresh_args)).is_zero()
+    assert_that(registry.read_bytes()).is_equal_to(selected_registry)
+    assert_that(manage._snapshot_artifacts(paths=paths)).is_equal_to(expected)
