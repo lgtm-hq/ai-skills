@@ -504,25 +504,29 @@ EOF
 }
 
 write_hooks() { # <file> <tag>
-  cat >"$1" <<EOF
-{
-  "version": 1,
-  "hooks": {
-    "sessionStart": [{ "command": "python3 '$SENT/hook.py' $2" }],
-    "beforeSubmitPrompt": [{ "command": "python3 '$SENT/hook.py' $2" }]
-  }
-}
-EOF
+  python3 - "$1" "$SENT/hook.py" "$2" <<'PY'
+import json, shlex, sys
+path, hook, tag = sys.argv[1:]
+command = " ".join(shlex.quote(arg) for arg in ("python3", hook, tag))
+with open(path, "w", encoding="utf-8") as stream:
+    json.dump({"version": 1, "hooks": {
+        "sessionStart": [{"command": command}],
+        "beforeSubmitPrompt": [{"command": command}],
+    }}, stream, indent=2)
+    stream.write("\n")
+PY
 }
 
 write_mcp() { # <file> <tag>
-  cat >"$1" <<EOF
-{
-  "mcpServers": {
-    "probe-$2": { "command": "python3", "args": ["$SENT/mcp.py", "$2", "$MCP_LOG"] }
-  }
-}
-EOF
+  python3 - "$1" "$SENT/mcp.py" "$2" "$MCP_LOG" <<'PY'
+import json, sys
+path, sentinel, tag, log = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as stream:
+    json.dump({"mcpServers": {
+        "probe-" + tag: {"command": "python3", "args": [sentinel, tag, log]},
+    }}, stream, indent=2)
+    stream.write("\n")
+PY
 }
 
 # standard role checks for one phase

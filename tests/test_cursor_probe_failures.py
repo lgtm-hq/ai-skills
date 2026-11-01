@@ -1,6 +1,7 @@
 """Exercise the actual interactive driver offline with fake macOS/IDE commands."""
 
 import json
+import shlex
 import shutil
 import subprocess  # nosec B404 - local driver with disposable HOME and fake tools
 import sys
@@ -18,7 +19,7 @@ type DriverRunner = Callable[
 
 
 @pytest.fixture
-def driver(tmp_path: Path) -> DriverRunner:
+def driver(tmp_path: Path, request: pytest.FixtureRequest) -> DriverRunner:
     """Run the unchanged source driver; stub only OS/IDE tools in a synthetic HOME."""
     bash = shutil.which("bash")
     real_find = shutil.which("find")
@@ -30,7 +31,7 @@ def driver(tmp_path: Path) -> DriverRunner:
     config = home / ".cursor/settings.json"
     config.parent.mkdir(parents=True)
     config.write_text("private synthetic configuration\n")
-    scratch = tmp_path / "scratch"
+    scratch = tmp_path / getattr(request, "param", "scratch")
     scratch.mkdir()
     tools = tmp_path / "tools"
     tools.mkdir()
@@ -47,7 +48,7 @@ def driver(tmp_path: Path) -> DriverRunner:
         fake = tools / "fake"
         fake.write_text(
             f"#!{sys.executable}\n"
-            "import json, os, signal, sys\n"
+            "import json, os, signal, subprocess, sys\n"
             "from pathlib import Path\n"
             f"base = Path({str(tmp_path)!r})\n"
             f"failure = {failure!r}\n"
@@ -95,6 +96,31 @@ def driver(tmp_path: Path) -> DriverRunner:
             "    counter.write_text(str(phase))\n"
             "    if phase <= 4:\n"
             "        tag = ['ue', 'rm', 'np', 'npp'][phase - 1]\n"
+            "        if failure in ('serialize-hooks', 'serialize-mcp'):\n"
+            "            config_root = [home / '.cursor',\n"
+            "                root / 'project/.cursor',\n"
+            "                home / '.cursor/plugins/local/probe-sentinel-np',\n"
+            "                root / 'project/.cursor/plugins/local/"
+            "probe-sentinel-npp'][phase - 1]\n"
+            "            writer = failure.removeprefix('serialize-')\n"
+            "            relative = ('hooks/hooks.json' if phase >= 3\n"
+            "                        else 'hooks.json') if writer == 'hooks' "
+            "else 'mcp.json'\n"
+            "            config = json.loads((config_root / relative).read_text())\n"
+            "            executions = []\n"
+            "            if writer == 'hooks':\n"
+            "                for event, hooks in config['hooks'].items():\n"
+            "                    for hook in hooks:\n"
+            "                        data = {'hook_event_name': event}\n"
+            "                        completed = subprocess.run(\n"
+            "                            ['/bin/sh', '-c', hook['command']],\n"
+            "                            input=json.dumps(data),\n"
+            "                            text=True, capture_output=True,\n"
+            "                            check=True, timeout=5)\n"
+            "                        executions.append(json.loads(completed.stdout))\n"
+            "            (base / f'{writer}-{tag}.json').write_text(json.dumps({\n"
+            "                'root': str(root), 'config': config,\n"
+            "                'executions': executions}))\n"
             "        with (root / 'tmp/probe-hook.log').open('a') as stream:\n"
             "            stream.write(f'PROBE-7f3a-lifecycle-{tag} sessionStart\\n')\n"
             "            if phase == 4 and failure == 'stale-hook':\n"
@@ -177,6 +203,66 @@ def driver(tmp_path: Path) -> DriverRunner:
         return result, json.loads(text), scratch
 
     return run
+
+
+@pytest.mark.parametrize(
+    "driver",
+    [
+        "scratch with spaces",
+        "scratch'apostrophe",
+        'scratch"doublequote',
+        r"scratch\backslash",
+        "scratch mixed '\"\\ chars",
+    ],
+    ids=["spaces", "apostrophe", "doublequote", "backslash", "mixed"],
+    indirect=True,
+)
+@pytest.mark.parametrize("writer", ["hooks", "mcp"])
+def test_driver_serializes_scratch_paths(
+    driver: DriverRunner,
+    writer: str,
+) -> None:
+    """Real writers preserve argv; generated hooks execute in the fake IDE only."""
+    result, report, scratch = driver(f"serialize-{writer}", False)
+    assert_that(result.returncode).described_as(result.stderr).is_zero()
+    for tag in ("ue", "rm", "np", "npp"):
+        captured = scratch.parent / f"{writer}-{tag}.json"
+        assert_that(captured.exists()).described_as(
+            f"Fake app failed to consume {writer} config for {tag}",
+        ).is_true()
+        payload = json.loads(captured.read_text())
+        root = Path(payload["root"])
+        assert_that(root.parent).is_equal_to(scratch.resolve())
+        config = payload["config"]
+        if writer == "mcp":
+            assert_that(config["mcpServers"]).is_equal_to(
+                {
+                    f"probe-{tag}": {
+                        "command": "python3",
+                        "args": [
+                            str(root / "sentinels/mcp.py"),
+                            tag,
+                            str(root / "logs/mcp.log"),
+                        ],
+                    },
+                },
+            )
+        else:
+            assert_that(config["version"]).is_equal_to(1)
+            assert_that(config["hooks"]).contains_only(
+                "sessionStart",
+                "beforeSubmitPrompt",
+            )
+            for event, hooks in config["hooks"].items():
+                assert_that(hooks).is_length(1)
+                assert_that(shlex.split(hooks[0]["command"])).is_equal_to(
+                    ["python3", str(root / "sentinels/hook.py"), tag],
+                )
+                assert_that(report["hookLog"]).contains(
+                    f"PROBE-7f3a-lifecycle-{tag} {event}",
+                )
+            assert_that(payload["executions"]).is_equal_to([{}, {}])
+    assert_that(list(scratch.iterdir())).is_empty()
 
 
 @pytest.mark.parametrize("failure", ["none", "empty-keychains"])
