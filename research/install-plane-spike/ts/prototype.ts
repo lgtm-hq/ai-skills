@@ -44,6 +44,7 @@ const digest = (value: Uint8Array): string => createHash("sha256").update(value)
 
 // Deliberately supports only tiny regular-file USTAR fixtures, not general extraction.
 function untar(archive: Buffer): Map<string, Buffer> {
+  if (archive.length % 512 !== 0) throw new Error("invalid archive length");
   const output = new Map<string, Buffer>();
   let offset = 0;
   while (offset + 512 <= archive.length) {
@@ -55,23 +56,41 @@ function untar(archive: Buffer): Map<string, Buffer> {
       return output;
     }
     if (header.some((byte) => byte >= 0x80)) throw new Error("non-ASCII archive header");
-    const field = (start: number, end: number): string =>
-      header.subarray(start, end).toString("ascii").replace(/\0.*$/s, "");
-    const sizeText = field(124, 136).trim();
-    const checksumText = field(148, 156).trim();
-    if (!/^[0-7]+$/.test(sizeText) || !/^[0-7]+$/.test(checksumText)) {
-      throw new Error("invalid archive number");
+    const field = (start: number, end: number): string => {
+      const bytes = header.subarray(start, end);
+      const terminator = bytes.indexOf(0);
+      if (terminator !== -1 && bytes.subarray(terminator).some((byte) => byte !== 0)) {
+        throw new Error("nonzero bytes after archive string terminator");
+      }
+      return bytes.subarray(0, terminator === -1 ? bytes.length : terminator).toString("ascii");
+    };
+    const octal = (start: number, end: number): number => {
+      const text = header.subarray(start, end).toString("ascii");
+      // Empty numbers (including size) are outside this fixture profile.
+      if (!/^ *[0-7]+[ \0]*$/.test(text)) throw new Error("invalid archive number");
+      return Number.parseInt(text, 8);
+    };
+    for (const [start, end] of [
+      [100, 108],
+      [108, 116],
+      [116, 124],
+      [136, 148],
+    ] as const) {
+      octal(start, end);
     }
+    field(157, 257);
+    field(265, 297);
+    field(297, 329);
     const checksum = header.reduce(
       (total, byte, index) => total + (index >= 148 && index < 156 ? 32 : byte),
       0,
     );
-    const size = Number.parseInt(sizeText, 8);
+    const size = octal(124, 136);
     const name = safePath(field(0, 100));
     if (
-      checksum !== Number.parseInt(checksumText, 8) ||
-      field(257, 263) !== "ustar" ||
-      field(345, 500) !== "" ||
+      checksum !== octal(148, 156) ||
+      !header.subarray(257, 263).equals(Buffer.from("ustar\0")) ||
+      header.subarray(345, 500).some((byte) => byte !== 0) ||
       ![0, 48].includes(header[156] ?? -1) ||
       output.has(name) ||
       offset + 512 + size > archive.length

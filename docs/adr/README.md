@@ -8,8 +8,9 @@ Consequences sections. Accepted decisions guide implementation; proposed
 decisions remain subject to their stated follow-up. Engine v2 work is
 tracked in epic [#596](https://github.com/lgtm-hq/ai-skills/issues/596).
 
-ADR 0008 remains Proposed pending #562's live multi-OS distribution evidence;
-the initial local Linux experiment does not finalize its runtime choice.
+ADR 0008 remains Proposed after #562's green five-target R3 PR/dispatch collection.
+Offline failures, Windows probe-only denial and required security dispositions
+still prevent a runtime choice; see the linked ADR and distribution report.
 
 | ID                                                        | Title                                                              | Status   |
 | --------------------------------------------------------- | ------------------------------------------------------------------ | -------- |

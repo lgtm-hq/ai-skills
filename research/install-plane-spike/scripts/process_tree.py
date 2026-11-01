@@ -90,11 +90,10 @@ def stop_process_tree(
         except (OSError, subprocess.TimeoutExpired) as error:
             action["reap_error"] = f"{type(error).__name__}: {error}"
         if os.name == "nt":
-            absent = action.get("exit") == 0
+            absent = False
             result["descendants"] = (
-                "taskkill /T succeeded"
-                if absent
-                else "unverified: taskkill /T did not succeed"
+                "unverified: taskkill command outcomes retained; "
+                "descendant absence not enumerated"
             )
         else:
             try:
@@ -112,6 +111,10 @@ def stop_process_tree(
                 result["descendants"] = f"unverified: {type(error).__name__}: {error}"
         if absent and result["parent_reaped"]:
             result["status"] = "pass"
+            break
+        if os.name == "nt" and result["parent_reaped"]:
+            # The parent PID may now be reused; do not issue a second taskkill
+            # against it. Reaping the parent still says nothing about its children.
             break
     result["exit"] = process.returncode
     result["scope"] = (

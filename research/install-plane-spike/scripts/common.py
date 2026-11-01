@@ -292,11 +292,11 @@ def run_payload(
     env.update(XDG_CACHE_HOME=str(cache), BUN_INSTALL_CACHE_DIR=str(cache))
     # cwd=HOME below: check Windows current-directory search there too, never in
     # the collector cwd. Use PATHEXT from the explicit consumer environment.
-    names = {"node", "bun"}
+    names = {"node", "nodejs", "bun", "bunx"}
     if os.name == "nt":
         names.update(
             tool + suffix.strip().lower()
-            for tool in ("node", "bun")
+            for tool in tuple(names)
             for suffix in env.get("PATHEXT", ".EXE;.CMD;.BAT;.COM").split(";")
         )
     directories = [home] if os.name == "nt" else []
@@ -343,10 +343,18 @@ def run_payload(
         stdout_matches = json.loads(result["stdout"]) == expected
     except (ValueError, TypeError):
         stdout_matches = False
+    other_home_files = [
+        p.relative_to(home).as_posix()
+        for p in home.rglob("*")
+        if p.is_file() and p != cache and destination not in p.parents
+    ]
     return {
         "status": (
             "pass"
-            if result["exit"] == 0 and stdout_matches and actual == expected
+            if result["exit"] == 0
+            and stdout_matches
+            and actual == expected
+            and not other_home_files
             else "fail"
         ),
         "seconds": result["seconds"],
@@ -354,11 +362,7 @@ def run_payload(
         "PATH": env["PATH"],
         "resolved_tools": resolved_tools,
         "cache_directory_blocked": True,
-        "other_HOME_files": [
-            p.relative_to(home).as_posix()
-            for p in home.rglob("*")
-            if p.is_file() and p != cache and destination not in p.parents
-        ],
+        "other_HOME_files": other_home_files,
         "cache_scope": (
             "HOME only; writes elsewhere and read-only runtime trees unverified"
         ),

@@ -296,7 +296,9 @@ def measure_offline(
             "positive_control": control,
             "positive_installation_control": positive_installs[variant],
             "collector_identity": identity(),
-            "denial_proven": False,
+            "probe_denial_proven": False,
+            "installer_denial_proven": False,
+            "denial_scope": "requires a matched control covering probe and installers",
             "commands": records,
             "cleanup": cleanup,
             "reason": (
@@ -403,7 +405,20 @@ def measure_offline(
             proved = proven_denial(control=control, restricted=restricted)
             for result in results.values():
                 result["restricted_probe"] = restricted
-                result["denial_proven"] = proved
+                result["probe_denial_proven"] = proved
+                # Per-program rules do not share the probe's network boundary.
+                # No matched Bun/Node/installed-runtime probes are performed here.
+                result["installer_denial_proven"] = (
+                    proved and platform.system() != "Windows"
+                )
+                result["denial_scope"] = (
+                    "bundled Python probe only; Bun, Node and installed runtime "
+                    "rules have no same-program positive/restricted controls"
+                    if platform.system() == "Windows"
+                    else f"shared restriction: {mechanism}; matched control required"
+                )
+                if proved and not result["installer_denial_proven"]:
+                    result["reason"] = result["denial_scope"]
             if proved or harden_block:
                 chosen = prefix
                 break
@@ -444,7 +459,7 @@ def measure_offline(
                 observed = json.loads(result_path.read_text(encoding="utf-8"))
                 for variant in ("ts", "py"):
                     results[variant]["installation_observation"] = observed[variant]
-                    if proved:
+                    if results[variant]["installer_denial_proven"]:
                         results[variant].update(
                             status=observed[variant]["status"], reason=None
                         )

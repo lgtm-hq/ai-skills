@@ -23,11 +23,14 @@ check stdout **and installed bytes**. Portable paths, excluded inventory, closur
 BOM rejection on the index and malformed archives fail before destination writes.
 The co-located index is not authenticated; production contracts remain M6/M7 work.
 
-The inspected R2 [PR-trigger run 41288233178][r2] completed **successfully** at
-`1e5bdc76acf9e5667c19b2425a0c5c4676b90f11`. Its 12 unique result JSONs comprise
-10 native observations (five targets × two variants) and two dedicated Linux
-offline observations. Every JSON records matching source/expected heads and a
-clean checkout. Artifacts on that run are:
+The inspected R3 [PR run 41292001121][pr] and genuine
+[workflow_dispatch run 41292078852][dispatch] both completed **successfully** at
+`ca2db52669b8611a7d9cd24733c80572516ff94a`. Each contains **12 unique result
+JSONs**: ten native (five targets × two variants) plus two dedicated Linux offline
+observations. All 24 record that exact source/expected head, empty source status,
+and the corresponding event/run identity. Collection success is not scenario
+acceptance. Both [PR artifacts][pr-artifacts] and [dispatch artifacts][artifacts]
+contain these six evidence artifacts:
 
 | Runner           | Artifact                               | Result JSON names                |
 | ---------------- | -------------------------------------- | -------------------------------- |
@@ -38,114 +41,116 @@ clean checkout. Artifacts on that run are:
 | windows-2025     | `spike-evidence-windows-2025`          | `windows-x64-{ts,py}.json`       |
 | Dedicated Linux  | `spike-evidence-linux-empty-allowlist` | `linux-x64-{ts,py}-offline.json` |
 
-Use the [run's artifact list][artifacts] for raw argv, stdout/stderr, exits,
-timings, build metadata and source fingerprints. The tool pins are Bun **1.4.0**,
-uv **0.11.26**, CPython **3.14.6**, Verdaccio **6.2.0**. The entire Verdaccio
-transitive setup tree is not locked. Its `(node:PID)` stderr warnings do not
-establish execution under Bun despite the launcher's `--bun` flag.
-The separate [CI run 41288233753][ci] succeeded (739 collected, 733 passed,
-6 skipped). A green collector or CI badge is not a scenario pass.
+The additional `spike-linux-payloads` artifact transfers payloads/tooling to the
+dedicated job. Raw JSON retains argv, stdout/stderr, exits, timings and source
+fingerprints. Pins are Bun **1.4.0**, uv **0.11.26**, CPython **3.14.6** and
+Verdaccio **6.2.0**. Verdaccio's transitive setup tree is not locked; launcher
+`--bun` flags or Node-style warnings do not certify its entire runtime tree.
 
-## R2 restricted-scenario comparison
+## R3 restricted-scenario comparison
 
-Each client gets fresh HOME, temp, config and caches. Registry publication uses
-cached `bun x --bun --no-install verdaccio@6.2.0`, no uplinks, a 512 MB request
-limit and a disposable account. Both measured clients install exact wrapper and
-optional os/cpu packages with `--ignore-scripts`; payload hashes/modes, matching
-platform selection and execution must all pass. Other platforms are empty
-stand-ins. Registry-only configuration is not an OS firewall around clients.
+Each client gets fresh HOME, temp, config and caches. The private registry has no
+uplinks; both clients install the wrapper and optional os/cpu package with
+`--ignore-scripts`, then check platform selection, payload hashes/modes and golden
+execution. Registry-only configuration is not an OS firewall around clients.
 
-Offline uses real package-manager installation of local wrapper/platform
-tarballs, fresh caches, `--offline --ignore-scripts`, and verified payload bytes.
-The **network-unrestricted control retains those same offline flags** and uses
-the identical tarballs. It is not a fully unrestricted installer control.
+Offline uses actual local-file wrapper/platform tarball installation with fresh
+caches, `--offline --ignore-scripts` and verified installed bytes. The
+**network-unrestricted control retains these same offline flags** and tarballs.
+In this table, pairs are **Bun / npm**, and `U` means **unverified**. The installer
+observations stay separate from proof that their executables cannot use egress.
 
-In the table, client pairs are **Bun / npm**. `U` means **unverified**, never pass.
-The overall offline result additionally requires proven same-host egress denial.
+| Target       | Variant | Registry clients | No Node | Same-input control clients | Restricted install observations | Verified offline |
+| ------------ | ------- | ---------------- | ------- | -------------------------- | ------------------------------- | ---------------- |
+| linux-x64    | A       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                     | Fail             |
+| linux-x64    | B       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                     | Fail             |
+| linux-arm64  | A       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                     | Fail             |
+| linux-arm64  | B       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                     | Fail             |
+| darwin-arm64 | A       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                     | Fail             |
+| darwin-arm64 | B       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                     | Fail             |
+| darwin-x64   | A       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                     | Fail             |
+| darwin-x64   | B       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                     | Fail             |
+| windows-x64  | A       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                     | U (probe only)   |
+| windows-x64  | B       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                     | U (probe only)   |
 
-| Target       | Variant | Registry clients | No Node | Same-input control clients | Restricted offline clients | Overall offline |
-| ------------ | ------- | ---------------- | ------- | -------------------------- | -------------------------- | --------------- |
-| linux-x64    | A       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                | Fail            |
-| linux-x64    | B       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                | Fail            |
-| linux-arm64  | A       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                | Fail            |
-| linux-arm64  | B       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                | Fail            |
-| darwin-arm64 | A       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                | Fail            |
-| darwin-arm64 | B       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                | Fail            |
-| darwin-x64   | A       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                | Fail            |
-| darwin-x64   | B       | Pass / pass      | Pass    | Fail / pass                | Fail / pass                | Fail            |
-| windows-x64  | A       | Pass / pass      | Pass    | Fail / pass                | U / U (not run)            | U               |
-| windows-x64  | B       | Pass / pass      | Pass    | Fail / pass                | U / U (not run)            | U               |
+These outcomes reproduce across **both R3 runs**. All registry installs select only
+their target, execute and match build bytes. Every local-file Bun install selects
+**all five** platform packages rather than its target; npm selects its target.
+The payload itself executes and matches in both clients. Bun's incompatible
+platform assertion correctly fails before and during restriction on all five
+targets for both variants. Equal failure does not prove equal deployability.
+Neither client nor the failing assertion has been removed.
 
-Registry readiness reached HTTP 200 and account creation HTTP 201 everywhere.
-Every registry client selected only its target and executed verified payloads.
-For all ten network-unrestricted local-file controls, Bun installed **all five**
-platform packages; npm installed only its target. Both matching payloads executed,
-but Bun correctly failed the incompatible-platform assertion. Linux/macOS
-restricted installations reproduced this exact selection failure. Identical
-failures implicate this transport/client combination, not either runtime, and do
-not prove deployability. No failing client or assertion has been removed.
+Linux's shared network namespace has a connected IPv4 baseline followed by errno
+101 `Network is unreachable`; macOS's shared sandbox gives errno 1
+`Operation not permitted`. These restrictions cover probe and installers together.
+The Linux sudo/setpriv fallback runs installers as UID/GID 1001 with no
+supplementary groups. These observations are not Harden Runner-only proof.
 
-Linux namespace probes show IPv4 connected before isolation, then errno 101
-`Network is unreachable`; macOS `sandbox-exec` gives errno 1
-`Operation not permitted` after a connected baseline. Linux's sudo/setpriv fallback
-runs installers at UID/GID 1001 with supplementary groups empty. Neither mechanism
-is credited to Harden Runner. Timeout/DROP and missing baselines are inconclusive.
+**Windows R3 repaired rule creation, but proves only Python probe denial.** All
+scoped `New-NetFirewallRule` commands exit **0** with full executable identities;
+future paths expand the existing `RUNNER~1` ancestor to `runneradmin`. Bundled
+Python's IPv4 baseline connects; its restricted probe gets WinError **10013** /
+errno **13**, explicit access denial. Both clients actually install under the
+rules. Finally, exact per-run rules are absent and cleanup exits **0**.
 
-Windows' IPv4 baseline connected, but `New-NetFirewallRule` exited **1** after
-creating the first rule. The ordered argv first names Node, then a **future**
-Python payload under `C:\Users\RUNNER~1\...\client-py-bun\...\python.exe`.
-Its stderr excerpt is:
+Rules for `bun.exe`, `node.exe` and future installed runtimes have **no matched
+same-program positive/restricted control**. Python denial cannot certify them.
+The unchanged schema-2 R3 JSON says `denial_proven=true` and top-level `fail`;
+those fields overstate installation-level denial. The table interprets Windows
+offline as **U**, retaining Bun fail / npm pass as installation observations.
+Even a passing npm observation is not a verified offline pass. R4 separates
+`probe_denial_proven` from `installer_denial_proven`; Windows keeps the latter
+false and the restricted cell unverified. Rule setup/cleanup failures also remain
+unverified. No host/control-plane firewall expansion or invented runtime probe is
+used.
 
-```text
-New-NetFirewallRule : The parameter is incorrect.
-FullyQualifiedErrorId : Windows System Error 87,New-NetFirewallRule
-```
+The dedicated first-step Harden Runner empty-allowlist job remains **U for both
+variants in both runs**. There is no same-host unrestricted baseline; IPv4 gives
+errno 111 `Connection refused` / `inconclusive`. Informational IPv6 errno 101
+does not prove denial. Its installer observations are again Bun fail / npm pass.
 
-No restricted Windows probe or install happened. Cleanup exited **0** with
-`rules absent`. R3 resolves the existing ancestor to its full local path before
-appending future destination components, rejects unresolved short/UNC/device
-identities, and records each exact scoped program before rule creation. It retains
-per-run rule ownership, profiles, setup diagnostics and verified cleanup. This
-repairs the observed parameter boundary; it is **not yet hosted Windows proof**.
-The runner agent/control plane and host-wide firewall policy remain outside scope.
+R3 registry process-tree records show POSIX owned groups absent. Windows records
+graceful `taskkill /T` exit **255**, forced `/T /F` exit **0**, then parent reap.
+Its schema-2 `pass` is command evidence, not descendant enumeration. R4 retains
+those actions and reports Windows descendant absence **unverified**, including
+when graceful taskkill succeeds. Registry summaries are downgraded accordingly;
+the R3 registry client installation passes remain historical observations.
 
-The dedicated first-step empty-allowlist Linux job remains **U for A and B**:
-there is no same-host unrestricted baseline, and IPv4 gave errno 111
-`Connection refused` / `inconclusive`. Informational IPv6 errno 101 is not proof.
-Its installer observations again show Bun fail / npm pass. Collection success
-establishes neither Harden Runner denial nor offline acceptance.
+## R3 footprint
 
-## R2 footprint
-
-Exact bytes and file counts below are measured payloads/archives. Three times are
-fresh processes in milliseconds, rounded to three decimals. Page caches were not
-flushed, so these are not disk-cold benchmarks.
+The following values come only from **dispatch 41292078852** native JSONs.
+Archive bytes and timing vary across runs; no R2 measurements are relabeled.
+Times are three fresh processes in milliseconds, rounded to three decimals.
+Page caches were not flushed, so these are not disk-cold benchmarks.
 
 | Target       | Variant | Payload bytes | Files | Archive bytes | Three process times (ms) |
 | ------------ | ------- | ------------- | ----- | ------------- | ------------------------ |
-| linux-x64    | A       | 82,550,499    | 4     | 36,592,085    | 19.622, 19.812, 21.793   |
-| linux-x64    | B       | 205,507,858   | 4,761 | 73,244,695    | 32.848, 32.938, 32.330   |
-| linux-arm64  | A       | 82,506,259    | 4     | 36,586,873    | 19.695, 17.220, 17.309   |
-| linux-arm64  | B       | 157,310,539   | 4,761 | 58,581,108    | 32.658, 32.163, 32.385   |
-| darwin-arm64 | A       | 63,921,293    | 4     | 25,896,076    | 67.056, 30.247, 80.559   |
-| darwin-arm64 | B       | 107,714,242   | 1,894 | 43,333,867    | 45.462, 37.879, 39.691   |
-| darwin-x64   | A       | 70,715,323    | 4     | 28,464,795    | 89.216, 48.316, 48.614   |
-| darwin-x64   | B       | 110,080,734   | 1,894 | 43,377,973    | 63.923, 73.634, 77.606   |
-| windows-x64  | A       | 88,833,051    | 4     | 39,805,142    | 45.529, 33.998, 33.246   |
-| windows-x64  | B       | 65,658,953    | 3,163 | 22,730,605    | 87.812, 71.558, 58.899   |
+| linux-x64    | A       | 82,550,499    | 4     | 36,592,297    | 24.506, 21.314, 21.578   |
+| linux-x64    | B       | 205,508,411   | 4,761 | 73,244,380    | 33.030, 32.308, 32.207   |
+| linux-arm64  | A       | 82,506,259    | 4     | 36,587,067    | 18.191, 17.998, 16.289   |
+| linux-arm64  | B       | 157,311,092   | 4,761 | 58,582,754    | 32.343, 31.133, 30.872   |
+| darwin-arm64 | A       | 63,921,293    | 4     | 25,896,207    | 29.357, 17.530, 16.994   |
+| darwin-arm64 | B       | 107,714,795   | 1,894 | 43,333,654    | 33.487, 33.712, 34.410   |
+| darwin-x64   | A       | 70,715,323    | 4     | 28,464,914    | 95.117, 50.957, 51.757   |
+| darwin-x64   | B       | 110,081,287   | 1,894 | 43,377,518    | 54.670, 56.362, 54.848   |
+| windows-x64  | A       | 88,833,563    | 4     | 39,805,349    | 54.118, 37.652, 38.198   |
+| windows-x64  | B       | 65,659,506    | 3,163 | 22,731,708    | 65.292, 59.907, 59.377   |
 
-All 30 no-Node processes passed with a file blocking the cache directory and no
-other HOME files. R2 filters Node/Bun directories from PATH rather than physically
-uninstalling tooling. R3 also fails collection if either executable remains
-resolvable in that runtime environment. Writes outside HOME and read-only payload
-operation remain unverified. Windows `LongPathsEnabled` is **1**; observed
-quarantine-tree maxima are A **103**, B **180** characters, not deliberate deep-path
-or MAX_PATH tests. No numeric size/timing budget was specified by #562.
+All **60** no-Node processes across the two runs pass with the cache directory
+blocked and no other HOME files observed. Tool directories are filtered from
+PATH and Node/Bun resolution checked; tools are not physically uninstalled.
+R4 also checks `nodejs`/`bunx` aliases and makes observed extra HOME files fail.
+Writes outside HOME and read-only payload operation remain unverified.
+Windows `LongPathsEnabled=1`; observed quarantine-tree maxima are A **103** and
+B **180** characters, not deliberate MAX_PATH tests. No size/timing budget was
+specified by #562.
 
-## R2 quarantine and signatures
+## R3 quarantine and signatures
 
-The exact absolute argv and complete outputs are in the corresponding native
-JSON's `quarantine.commands`. In the commands below, `ENTRY` denotes A's `spike`
+The inspected R3 security outcomes agree across PR and dispatch. Exact absolute
+argv and complete outputs are in each native JSON's `quarantine.commands`.
+In the commands below, `ENTRY` denotes A's `spike`
 (`spike.exe` on Windows) or B's `runtime/bin/python3` (`runtime/python.exe` on
 Windows), inside the disposable quarantine tree; `TREE` denotes that tree.
 Quoted output excerpts are verbatim, with path prefixes omitted where stated.
@@ -199,10 +204,10 @@ Scan starting...
 Scan finished.
 ```
 
-The final scanner line for A is:
+The dispatch's final scanner line for A is:
 
 ```text
-Scanning C:\Users\RUNNER~1\AppData\Local\Temp\spike-measure-3isctsbo\quarantine-ts found no threats.
+Scanning C:\Users\RUNNER~1\AppData\Local\Temp\spike-measure-8oeqvin0\quarantine-ts found no threats.
 ```
 
 B has the identical line ending in `quarantine-py found no threats.`
@@ -213,65 +218,60 @@ the entry executable only. Shell/SmartScreen reputation enforcement, organizatio
 signing policy and third-party EDR remain unknown for both variants. Linux has no
 macOS/Windows security observation; it remains unverified for third-party EDR too.
 
-## Dispatch and revision boundary
+## Revision boundary and remaining work
 
-Workflow **403362287** is already registered from PR runs. The parent's authorized
-`workflow run install-plane-spike.yml --ref research/562-install-plane-spike`
-succeeded, and independent GET confirmed genuine `workflow_dispatch`
-[run 41290059704][dispatch] at exact R2 head `1e5bdc7`. A main-file contents GET 404
-did **not** prevent dispatch; no bootstrap issue or registration PR is needed.
-Inspection confirms **completed / success**, event `workflow_dispatch`, exact
-source/expected R2 head and clean checkout on all **12** retained JSONs in its
-[six evidence artifacts](https://github.com/lgtm-hq/ai-skills/actions/runs/41290059704#artifacts).
-All ten registry/no-Node results pass. Linux/macOS offline again gives Bun fail /
-npm pass with denial proven; Windows again stops at Error 87 and verifies rule
-removal without a restricted probe/install. Dedicated Linux remains unverified.
-This meets the green dispatch collection/link criterion at R2, without changing
-any scenario failure or unknown above. It predates the R3 source fixes.
+The R2 runs [41288233178][r2] and [41290059704][r2-dispatch] predate these R3
+observations; R2 Windows stopped at firewall Error 87 without restricted installs.
+The R3 green dispatch now satisfies the dispatch collection/link criterion at
+`ca2db52`. It supplies no hosted evidence for this later R4 code.
 
-R3 adds bounded LIMIT+1 reads before parsing/hashing in both runtimes, non-ASCII tar
-header rejection, fail-closed source identity checks, actual no-Node resolution
-checks, reused-tarball checks, explicit Verdaccio process-group/tree shutdown with
-bounded graceful/forced reap evidence, and clearer scan/setup statuses. POSIX
-server-PID runtime output is collected when available; launcher flags and warnings
-alone do not certify the complete server tree. Unit tests and a harmless local
-child-tree probe validate boundaries without installing a registry dependency tree.
-None of those local checks retroactively validates R2 or supplies new hosted data.
+R4's schema **3** enforces a clean checkout and required matching expected head in
+hosted mode, records `GITHUB_RUN_ATTEMPT`, and labels local runs as local
+observations. The R3 clean status was inspected, rather than enforced. Downloaded
+offline payloads are hashed, but are **not bound to the expected source head or
+build metadata**; R4 explicitly records that source identity as unverified.
+This is not end-to-end fail-closed payload provenance. Shared malformed USTAR
+mutations now cover archive length, hidden NUL suffixes/prefix bytes and invalid
+octal metadata; empty size is rejected in both runtimes. Golden/BOM parity and
+bounded reads remain required.
 
-## Recommendation and concrete remaining work
+**Defer the runtime decision; retain Proposed (Part of #562).** Compare both
+variants on **every** restricted criterion, including observed quarantine,
+signature/assessment failures and owner-required security. Passing registry,
+no-Node or other core scenarios cannot bypass required security. Unknown
+Harden Runner/Windows denial and fleet security scope establish no equality.
+Identical Bun failures need owner disposition; footprint without a specified
+threshold cannot choose the runtime. No runtime choice or waiver is inferred.
 
-**Defer the runtime decision; retain Proposed.** The existing Python-first escape
-hatch requires complete comparable private-registry, no-Node and offline evidence
-for both clients on every target. Identical Bun failures do not establish equal
-deployability, and Windows offline is unknown. Unknown security/Harden Runner
-results establish no equality either. Footprint differences have no supplied
-threshold and cannot select a runtime after the fact. No criterion or owner
-approval is invented here.
+The parent retains these concrete steps in existing M5 batch **#614**:
 
-The parent can finish the remaining work in this order:
+1. Review/push R4 and inspect the next existing collection tick's raw JSON. Windows
+   installer denial stays unverified until each relevant executable has matched
+   same-program controls, or the owner disposes of that unmet criterion.
+   Windows process-tree enumeration is deferred: bounded taskkill/reap evidence
+   alone cannot establish absence, so R4 makes no such claim.
+2. Isolate the Bun local-file wrapper selection failure and obtain an explicit
+   disposition against deployment requirements. A direct platform-tarball control
+   may diagnose transport, but cannot replace the required wrapper/client cell.
+3. Establish a valid same-host empty-allowlist Harden Runner control or obtain
+   owner disposition. Keep the first-step restriction and failing observations.
+4. Obtain signing/notarization, Finder/SmartScreen and EDR requirements for the
+   observed assessment failures/unsigned artifacts. Test appropriately signed
+   artifacts and the required security route before accepting that route.
+5. Bind transferred payload hashes/build metadata to expected source identity
+   before claiming verified provenance. This is explicitly unverified in R4;
+   no extra distribution experiment or dependency install is added here.
+   Verdaccio transitive locking/runtime-tree attribution and broader cache,
+   CPU/OS compatibility tests remain outside this small spike's proof.
+   Conservative tilde rejection remains: legitimate tilde paths can produce U,
+   but unverified program identities are not broadened.
+6. Apply the existing Python-first decision rule only after these failures and
+   owner requirements have dispositions. Update ADR/index together and reconcile
+   #566/#567/#578/#386 then. ADR acceptance and #562 completion remain open.
 
-1. Push/review R3 and inspect fresh hosted Windows program identities, successful
-   rule creation, matched denial probe, both installs and verified removal. Keep
-   R2 Windows offline unverified until that evidence exists.
-2. Reproduce the identical Bun local-file selection failure in a scoped transport
-   experiment; a direct platform-tarball control may isolate payload deployability
-   but must not replace the required wrapper/client cell. Obtain an explicit
-   disposition of this known failure against deployment requirements.
-3. Establish a valid same-host positive/negative control for empty-allowlist Harden
-   Runner, or obtain an explicit disposition of that unmet criterion. Preserve the
-   first-step restriction; do not silently add application endpoints.
-4. Obtain concrete signing/security requirements for the observed signature
-   failures and unknown shell/EDR scope; inspect fresh R3 dispatch evidence after
-   the parent's next authorized collection.
-   Apply the existing rule only when these observations and dispositions support
-   it; then update ADR/index together and reconcile #566/#567/#578/#386.
-
-Golden/closure CI, publication exclusion, green R2 dispatch, the ten-case comparison, footprint,
-and exact security observations are recorded. A final accepted/revised ADR,
-Windows restricted result, Harden Runner proof/disposition and security disposition
-remain acceptance gaps. This revision does not close #562 or choose a runtime.
-
+[pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41292001121
+[dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41292078852
+[pr-artifacts]: https://github.com/lgtm-hq/ai-skills/actions/runs/41292001121#artifacts
+[artifacts]: https://github.com/lgtm-hq/ai-skills/actions/runs/41292078852#artifacts
 [r2]: https://github.com/lgtm-hq/ai-skills/actions/runs/41288233178
-[artifacts]: https://github.com/lgtm-hq/ai-skills/actions/runs/41288233178#artifacts
-[ci]: https://github.com/lgtm-hq/ai-skills/actions/runs/41288233753
-[dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41290059704
+[r2-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41290059704

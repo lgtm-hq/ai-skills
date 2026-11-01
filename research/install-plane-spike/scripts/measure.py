@@ -109,8 +109,12 @@ def main() -> None:
     records: list[dict[str, Any]] = []
     head = command(argv=["git", "rev-parse", "HEAD"], records=records)
     status = command(argv=["git", "status", "--porcelain"], records=records)
+    hosted = os.environ.get("GITHUB_ACTIONS") == "true" or bool(
+        os.environ.get("GITHUB_RUN_ID")
+    )
     metadata = {
-        "schema": 2,
+        "schema": 3,
+        "collection_scope": "hosted" if hosted else "local observation",
         "target": target(),
         "platform": platform.platform(),
         "collected_utc": datetime.now(UTC).isoformat(),
@@ -127,6 +131,16 @@ def main() -> None:
         },
         "metadata_commands": records,
         "workflow_event": os.environ.get("GITHUB_EVENT_NAME"),
+        "workflow_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+        "payload_source_identity": {
+            "status": "unverified",
+            "reason": (
+                "downloaded payload archives are hashed but not bound to expected "
+                "source head/build metadata"
+                if args.offline_only
+                else "local build source hashes recorded, not independently verified"
+            ),
+        },
         "workflow_run": (
             f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
             if os.environ.get("GITHUB_RUN_ID")
@@ -151,17 +165,20 @@ def main() -> None:
             or status["exit"] != 0
             or not metadata["source_head"]
             or (expected is not None and metadata["source_head"] != expected)
+            or (hosted and (not expected or metadata["source_status"]))
         ):
             for item in evidence.values():
                 item.update(
                     status="invalid",
                     reason=(
-                        "source head unavailable or differs from expected_source_head"
+                        "source head unavailable/mismatched, or hosted checkout "
+                        "dirty or missing expected source head"
                     ),
                 )
             persist()
             raise ValueError(
-                "source head unavailable or differs from expected_source_head"
+                "source head unavailable/mismatched, or hosted checkout "
+                "dirty or missing expected source head"
             )
         with tempfile.TemporaryDirectory(prefix="spike-measure-") as temporary:
             work = Path(temporary)

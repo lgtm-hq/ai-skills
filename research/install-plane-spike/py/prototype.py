@@ -19,6 +19,32 @@ DEVICE_PATTERN = re.compile(
 )
 
 
+def validate_header(header: bytes) -> None:
+    """Reject ambiguous fields outside the shared tiny USTAR profile.
+
+    Args:
+        header: One raw 512-byte regular-file header.
+
+    Raises:
+        ValueError: For hidden string suffixes or empty/invalid octal fields.
+    """
+    for start, end in ((0, 100), (157, 257), (265, 297), (297, 329)):
+        field = header[start:end]
+        if b"\0" in field and any(field[field.index(0) :]):
+            raise ValueError("nonzero bytes after archive string terminator")
+    # Empty numbers, including size, are rejected rather than coerced to zero.
+    for start, end in (
+        (100, 108),
+        (108, 116),
+        (116, 124),
+        (124, 136),
+        (136, 148),
+        (148, 156),
+    ):
+        if not re.fullmatch(rb" *[0-7]+[ \0]*", header[start:end]):
+            raise ValueError("invalid archive number")
+
+
 def safe_path(value: object) -> str:
     """Validate the small fixture's portable file-path profile.
 
@@ -127,6 +153,7 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
         raise ValueError("invalid archive length")
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tar:
         for member in tar:
+            validate_header(archive[member.offset : member.offset + 512])
             name = safe_path(member.name)
             if (
                 member.type not in {tarfile.REGTYPE, tarfile.AREGTYPE}

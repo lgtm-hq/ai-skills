@@ -1,6 +1,6 @@
 # ADR 0008: Engine runtime: Python build plane, TypeScript install plane
 
-- Status: Proposed (#562 live distribution evidence pending)
+- Status: Proposed (#562 scenario and owner dispositions pending)
 - Date: 2026-11-01
 - Scope: [#561](https://github.com/lgtm-hq/ai-skills/issues/561), part of
   [engine v2 (#596)](https://github.com/lgtm-hq/ai-skills/issues/596)
@@ -55,8 +55,8 @@ provisional until that spike concludes.
   install plane starts needing resolution logic, which this ADR forbids.
 - **Escape hatch.** If #562 finds that a bundled Python runtime is as
   deployable as the compiled binary under the same private-registry,
-  no-Node and offline restrictions, revise this ADR to a single Python
-  engine behind a thin TypeScript npm launcher.
+  no-Node, offline and required quarantine/security restrictions, revise this ADR
+  to a single Python engine behind a thin TypeScript npm launcher.
 
 ## Consequences
 
@@ -80,25 +80,31 @@ The throwaway prototypes and collector live under
 `research/install-plane-spike/`; the distribution report in
 `docs/research/install-plane-distribution.md` records methods, actual observations,
 limitations and concrete remaining experiments.
-The inspected R2 [PR-triggered run](https://github.com/lgtm-hq/ai-skills/actions/runs/41288233178)
-succeeded at `1e5bdc76acf9e5667c19b2425a0c5c4676b90f11`, producing ten native
-JSONs plus two dedicated Linux offline JSONs. Registry and no-Node pass on all five
-targets for both variants and both registry clients. Linux/macOS offline fails
-for both variants: Bun selects incompatible platform packages, while npm passes.
-The network-unrestricted control uses the same tarballs and the same `--offline`
-flags and reproduces the failure. Windows firewall setup fails with Error 87;
-cleanup is verified but restricted installation is unverified. The dedicated
-Harden Runner result also remains unverified. Exact security/signature outputs
-and footprint are in the report. None of this establishes equal deployability.
+The inspected R3 [PR run 41292001121](https://github.com/lgtm-hq/ai-skills/actions/runs/41292001121)
+and genuine [workflow_dispatch run 41292078852](https://github.com/lgtm-hq/ai-skills/actions/runs/41292078852)
+both completed successfully at `ca2db52669b8611a7d9cd24733c80572516ff94a`.
+Each retains twelve result JSONs in six evidence artifacts: ten native plus two
+dedicated Linux offline observations. All 24 record matching source/expected
+heads, clean status and exact event/run identity. The report links both artifact
+lists, exact R3 footprint and security outputs. Dispatch collection acceptance is
+met; collection success does not establish scenario acceptance or validate R4.
 
-The workflow is already registered; the parent's genuine
-[workflow_dispatch run](https://github.com/lgtm-hq/ai-skills/actions/runs/41290059704)
-at the same R2 head disproves the prior default-branch-registration blocker.
-Inspection confirms it completed successfully with twelve retained JSONs, matching
-heads and a clean tree. Its scenario outcomes reproduce the PR run, including the
-Windows setup failure and offline limitations. It does not validate the later R3
-source fixes. No bootstrap PR is needed; dispatch collection acceptance is met at
-R2, while scenario and decision gaps remain.
+Registry clients and no-Node execution pass for both variants on all five targets.
+Local-file Bun installs select all five platform packages while npm selects only
+its target, both before and during restriction. Equal failures do not establish
+deployability. Windows R3 now creates normalized per-program rules, observes
+bundled Python IPv4 denial, runs both installers and verifies rule removal.
+It has no same-program control for Bun, Node or installed runtimes: schema-2
+`denial_proven=true` covers the Python probe only. Windows installer denial remains
+unverified; R4 separates probe and installer proof without rewriting historical
+JSON. POSIX shared namespace/sandbox proof remains valid. Windows registry tree
+shutdown records graceful taskkill exit 255, forced exit 0 and parent reap,
+not enumerated descendant absence; R4 reports that limitation as unverified.
+Dedicated Harden Runner denial still lacks a same-host baseline.
+
+R4 requires clean, matching expected source identity in hosted collection and
+records the run attempt. Downloaded payload/build identity remains explicitly
+unverified: archive hashes alone do not bind payloads to the expected source.
 
 The existing escape hatch names these decision-bearing restrictions, evaluated
 for **both variants on all five supported targets**:
@@ -114,6 +120,13 @@ for **both variants on all five supported targets**:
   distinguishes package-manager
   selection failures from failures introduced by the restriction. Both count as
   observations; a failed control never turns a restricted failure into a pass.
+- **Quarantine and required security:** compare observed signing, assessment,
+  marked-file execution and endpoint restrictions for both variants. R3 macOS
+  assessment rejects both; A's signatures fail verification, B arm64 verifies
+  ad hoc but is rejected, and B x64 is unsigned. Windows artifacts are unsigned;
+  clean custom scans with real-time protection disabled do not establish fleet
+  approval. Required signing/notarization and security routes need owner
+  disposition and appropriate evidence.
 
 Footprint (payload/archive bytes, file count, fresh-process timing and observed
 cache writes) records deployment costs and tradeoffs. The issue supplies no size
@@ -124,10 +137,11 @@ core observation. Any new owner budget must be stated before applying it; this
 revision neither invents a threshold nor claims owner acceptance of an outcome.
 
 Apply the documented Python-first rule only after inspecting complete comparable
-core evidence: revise to the Python escape hatch if B is equally deployable;
-otherwise accept A only if it is no worse on **every** core target/client criterion.
-Unknown core cells establish neither equality nor superiority. Known failures need
-an explicit disposition against the owner's deployment requirements; identical
+evidence for every restricted criterion, including quarantine and required
+security: revise to the Python escape hatch if B is equally deployable;
+otherwise accept A only if it is no worse on **every** target/client/security
+criterion. Unknown cells establish neither equality nor superiority. Known failures
+need an explicit disposition against the owner's deployment requirements; identical
 failures do not prove either variant deployable. If neither branch is supported,
 retain Proposed and identify the missing experiment or unresolved requirement.
 
@@ -136,7 +150,9 @@ and the empty-allowlist job without an unrestricted baseline are **separately
 unverified limitations**, never equal or pass. Report observed quarantine CLI
 execution separately from security enforcement and signing requirements. These
 limitations cannot supply missing core evidence, nor can the core comparison
-establish fleet security approval. Owner security requirements remain outstanding.
+establish fleet security approval or bypass required security. Observed quarantine
+and signing differences are part of the every-criterion comparison above, even
+when registry/no-Node/offline results pass. Owner requirements remain outstanding.
 
 Independent namespace/sandbox/firewall denial is **not Harden Runner-only offline
 proof**. The issue specifically requests empty-allowlist Harden Runner evidence;

@@ -13,6 +13,8 @@ The shared data-only USTAR fixture includes a BOM-prefixed retained Markdown fil
 actual installed bytes must match its verified hash. Windows reserved basenames,
 case aliases and file/directory collisions are rejected, even for excluded files.
 This tiny regular-file UTF-8 profile is not the production v2 schema.
+Both runtimes reject non-512-byte archive lengths, nonzero string suffixes after
+NUL, nonzero prefix bytes and invalid or empty mode/uid/gid/size/mtime octal fields.
 
 Generate fixture bytes with `scripts/fixture.py`; `--check` is its byte-drift gate.
 Scoped Git attributes preserve fixture bytes and LF script lines on Windows.
@@ -42,10 +44,15 @@ uv run python research/install-plane-spike/scripts/measure.py \
 
 Use disposable machines for collection. Native isolation attempts namespaces,
 macOS sandboxing or Windows per-program firewall rules. A same-host successful
-IPv4 control is required before explicit denial proves isolation; unavailable IPv6
-is informational and timeouts remain unverified. Windows cleanup is verified.
+IPv4 control is required before explicit denial proves the probe restriction;
+unavailable IPv6 is informational and timeouts remain unverified. Linux/macOS
+probe and installers share a namespace/sandbox. Windows program-specific rules
+prove denial only for bundled Python; Bun/Node/installed-runtime controls are
+absent, so installer denial and overall offline status stay unverified. Exact
+rule identities, setup, both installer observations and cleanup are retained.
 No-Node control removes tool directories from PATH while preserving Windows loader
-necessities and using disposable AppData/HOME locations.
+necessities and using disposable AppData/HOME locations. Node, nodejs, Bun and
+bunx resolution or unexpected HOME files fail the runtime observation.
 
 ## CI and raw evidence
 
@@ -67,6 +74,8 @@ Build records the setup temp/cache identity used to prime Verdaccio. Only the
 server reuses it with `--no-install`; measured clients retain isolated fresh
 config, temp and caches. Registry readiness has a bounded retry window, and both
 shutdown waits retain errors without losing other evidence.
+POSIX verifies owned-group absence. Windows taskkill exits and parent reap are
+command evidence; descendant absence remains unverified and downgrades summaries.
 
 Before native isolation, both clients install the **same local tarballs** with
 identical flags and fresh caches as a package-manager control. Per-client control
@@ -90,9 +99,16 @@ before a best-effort artifact upload, which can itself be blocked. Native namesp
 evidence cannot be credited to Harden Runner. See the report's explicit limits.
 
 JSON distinguishes pass, fail, unverified and narrow quarantine observations.
+Schema 3 separates `probe_denial_proven` from `installer_denial_proven`. Hosted
+collection requires a clean checkout and matching `SPIKE_SOURCE_SHA`, records
+`GITHUB_RUN_ATTEMPT`, and rejects invalid identity before scenarios. Local runs
+have explicit `local observation` scope. Downloaded offline archive hashes are
+not bound to expected source/build metadata; payload source identity remains
+explicitly unverified. These checks do not authenticate build artifacts.
 Windows direct CreateProcess does not test MotW shell/SmartScreen enforcement;
 macOS CLI execution does not establish Finder behavior. Defender engine failures,
 disabled Gatekeeper, third-party EDR, deliberate deep paths, unsigned fleet policy,
 non-AVX2 baseline, musl and older Linux compatibility remain unverified.
-A PR run does not complete the issue's green workflow_dispatch acceptance criterion;
-ADR 0008 stays Proposed until the parent inspects live evidence and applies its rule.
+The report links inspected R3 PR and green workflow_dispatch evidence at ca2db52.
+Those runs predate R4 and do not validate its changes. ADR 0008 stays Proposed
+pending scenario and owner dispositions, including required quarantine/security.

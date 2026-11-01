@@ -219,6 +219,15 @@ def test_spike_runtime_parity(spike_fixture: Path, tmp_path: Path) -> None:
         "pax-header",
         "gnu-header",
         "high-bit-header",
+        "short-zero-tail",
+        "nul-name-suffix",
+        "nul-prefix-suffix",
+        "invalid-mode",
+        "invalid-uid",
+        "invalid-gid",
+        "invalid-mtime",
+        "nul-number-suffix",
+        "empty-size",
     ],
 )
 def test_shared_malformed_inputs_fail_closed(
@@ -231,11 +240,64 @@ def test_shared_malformed_inputs_fail_closed(
     else:
         archive_path = spike_fixture / "artifact.tar"
         archive = archive_path.read_bytes()
+        index = json.loads(index_path.read_text(encoding="utf-8"))
         if mutation == "bad-trailer":
             archive = archive[:-1] + b"x"
-        elif mutation == "high-bit-header":
+        elif mutation == "short-zero-tail":
+            archive += b"\0"
+        elif mutation in {
+            "high-bit-header",
+            "nul-name-suffix",
+            "nul-prefix-suffix",
+            "invalid-mode",
+            "invalid-uid",
+            "invalid-gid",
+            "invalid-mtime",
+            "nul-number-suffix",
+            "empty-size",
+        }:
+            if mutation == "empty-size":
+                # A real zero-length member with a matching inventory would pass
+                # Python's old empty-size coercion. Avoid a later digest failure.
+                buffer = io.BytesIO()
+                with (
+                    tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as source,
+                    tarfile.open(
+                        fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT
+                    ) as output,
+                ):
+                    for number, member in enumerate(source):
+                        if number == 0:
+                            member.size = 0
+                            for cap in index["capabilities"]:
+                                if member.name in cap["files"]:
+                                    cap["files"][member.name] = hashlib.sha256(
+                                        b""
+                                    ).hexdigest()
+                            output.addfile(member, io.BytesIO(b""))
+                        else:
+                            output.addfile(member, source.extractfile(member))
+                archive = buffer.getvalue()
             header = bytearray(archive[:512])
-            header[0] |= 0x80
+            if mutation == "high-bit-header":
+                header[0] |= 0x80
+            elif mutation == "nul-name-suffix":
+                header[99] = ord("x")
+            elif mutation == "nul-prefix-suffix":
+                header[346] = ord("x")
+            elif mutation == "empty-size":
+                header[124:136] = b"\0" * 12
+            elif mutation == "nul-number-suffix":
+                header[100:108] = b"000\0" + b"001\0"
+            else:
+                header[
+                    {
+                        "invalid-mode": 100,
+                        "invalid-uid": 108,
+                        "invalid-gid": 116,
+                        "invalid-mtime": 136,
+                    }[mutation]
+                ] = ord("8")
             header[148:156] = b" " * 8
             header[148:156] = f"{sum(header):06o}\0 ".encode()
             archive = bytes(header) + archive[512:]
@@ -257,7 +319,6 @@ def test_shared_malformed_inputs_fail_closed(
                 output.addfile(member, io.BytesIO(b"x"))
             archive = buffer.getvalue()
         archive_path.write_bytes(archive)
-        index = json.loads(index_path.read_text(encoding="utf-8"))
         index["sha256"] = hashlib.sha256(archive).hexdigest()
         index_path.write_text(json.dumps(index), encoding="utf-8", newline="\n")
     bun = shutil.which("bun")
