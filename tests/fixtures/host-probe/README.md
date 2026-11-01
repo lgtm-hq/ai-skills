@@ -37,7 +37,7 @@ Run from the checkout before overriding the home for any child process:
 probe_fixture="$PWD/tests/fixtures/host-probe"
 probe_real_home="$HOME"
 probe_parent="$(mktemp -d "${TMPDIR:-/tmp}/host-probe.XXXXXX")"
-python3 "$probe_fixture/config_snapshot.py" "$probe_parent/before.json"
+python3 "$probe_fixture/config_snapshot.py" "$probe_parent/before.json" || exit 1
 probe_case="$probe_parent/case"
 mkdir -p "$probe_case"/{home,claude,codex,tmp,project,config,cache,data,state}
 cp -R "$probe_fixture" "$probe_case/marketplace"
@@ -221,9 +221,24 @@ It verified that zero case directories remained.
 Before changing the parent shell's home, compare protected inventories:
 
 ```bash
-python3 "$probe_fixture/config_snapshot.py" "$probe_parent/after.json"
-cmp "$probe_parent/before.json" "$probe_parent/after.json"
+python3 "$probe_fixture/config_snapshot.py" "$probe_parent/after.json" && \
+  cmp "$probe_parent/before.json" "$probe_parent/after.json"
 ```
+
+Use fresh before/after destinations and check collector exits. The collector
+does not support symbolic links in the protected scope, including skill/plugin
+directories, host roots, payload ancestors, linked files, dangling links or
+cycles. HOME and its ancestors must also be physical directories; use the
+canonical physical HOME path if the platform provides an alias. Links under
+explicitly excluded runtime roots are outside the check. Unsupported nodes,
+unreadable directories/files and metadata errors abort collection, without a
+success summary or a new inventory artifact. Do not skip the error, compare a
+stale artifact or call the inventory unchanged. Stop the probe if the baseline
+fails; if final collection fails, report incomplete verification while still
+purging owned scratch state. Never change real-home links to make collection
+pass. Coverage is limited to selected suffixes/auth names, and collection is not
+atomic against concurrent changes. Offline disposable-HOME regressions prove
+link/error rejection only, not live coverage or absence of residue.
 
 If they differ, compare paths/mtimes/digests locally, never print contents,
 never restore over concurrent work, and report the limitation. This run found

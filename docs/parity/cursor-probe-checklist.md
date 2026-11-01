@@ -17,17 +17,98 @@ machine. Do not infer policy behavior from CLI help or directory presence.
    directories, and a temporary git project. The home override must apply to
    every Cursor child. Copy only a known auth-only file if necessary. Never
    copy a full `cli-config.json` containing unrelated user preferences/helpers.
-3. For an IDE test, launch a separate process with isolated user-data and
-   extensions directories as well as HOME. After verifying `cursor --help`
-   accepts the flags on that version, the command is:
+3. For an IDE test, use **Bash in the authorized desktop session**, before
+   changing HOME. Launch a separate process with isolated user-data and
+   extensions directories as well as HOME/config/cache. After verifying
+   `cursor --help` accepts the flags on that version, run this common setup
+   and exactly one platform recipe below:
 
    ```bash
-   env -i PATH="$PATH" HOME="$probe_case/home" TMPDIR="$probe_case/tmp" \
-     XDG_CONFIG_HOME="$probe_case/config" XDG_CACHE_HOME="$probe_case/cache" \
-     XDG_DATA_HOME="$probe_case/data" XDG_STATE_HOME="$probe_case/state" \
-     cursor --new-window --user-data-dir "$probe_case/user-data" \
-     --extensions-dir "$probe_case/extensions" "$probe_case/project"
+   # Isolated IDE common setup
+   probe_real_home="${HOME:?Original HOME is required}"
+   : "${probe_case:?Prepare the isolated case first}"
+   mkdir -p "$probe_case"/{home,tmp,config,cache,data,state,user-data,extensions}
+   probe_cursor() {
+     env -i PATH="$PATH" HOME="$probe_case/home" TMPDIR="$probe_case/tmp" \
+       XDG_CONFIG_HOME="$probe_case/config" XDG_CACHE_HOME="$probe_case/cache" \
+       XDG_DATA_HOME="$probe_case/data" XDG_STATE_HOME="$probe_case/state" \
+       "${probe_session[@]}" \
+       cursor --new-window --user-data-dir "$probe_case/user-data" \
+       --extensions-dir "$probe_case/extensions" "$@" "$probe_case/project"
+   }
    ```
+
+   **Linux X11 (including an explicitly chosen Xwayland connection):**
+   preserve only the display name and authority-file path. Resolve the default
+   from the original HOME **before** the child receives its isolated HOME.
+   A session-specific `XAUTHORITY` takes precedence; relative paths are anchored
+   to the original working directory. The file must already be readable.
+
+   ```bash
+   # Linux X11 launch
+   (
+     : "${DISPLAY:?X11 DISPLAY is required}"
+     probe_xauthority="${XAUTHORITY:-$probe_real_home/.Xauthority}"
+     case "$probe_xauthority" in
+       /*) ;;
+       *) probe_xauthority="$PWD/$probe_xauthority" ;;
+     esac
+     test -r "$probe_xauthority" || exit 1
+     probe_session=("DISPLAY=$DISPLAY" "XAUTHORITY=$probe_xauthority"
+       "XDG_SESSION_TYPE=x11")
+     probe_cursor --ozone-platform=x11
+   )
+   ```
+
+   **Linux native Wayland:** preserve the compositor name, its session runtime
+   directory and session bus address, separately from the X11 recipe. These
+   must come from the authorized local desktop, with an accessible compositor
+   socket and session bus. Do not substitute a fresh runtime directory: it
+   would not contain the compositor socket. This recipe requires a Cursor
+   version accepting the native Wayland flag.
+
+   ```bash
+   # Linux Wayland launch
+   (
+     : "${WAYLAND_DISPLAY:?Wayland compositor name is required}"
+     : "${XDG_RUNTIME_DIR:?Wayland session runtime directory is required}"
+     : "${DBUS_SESSION_BUS_ADDRESS:?Desktop session bus address is required}"
+     case "$XDG_RUNTIME_DIR" in
+       /*) ;;
+       *) exit 1 ;;
+     esac
+     test -d "$XDG_RUNTIME_DIR" || exit 1
+     probe_session=("WAYLAND_DISPLAY=$WAYLAND_DISPLAY"
+       "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
+       "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
+       "XDG_SESSION_TYPE=wayland")
+     probe_cursor --ozone-platform=wayland
+   )
+   ```
+
+   **macOS:** use Cursor's installed direct CLI launcher in the logged-in GUI
+   session, with no Linux display/session variables. Do not use `open -a`, which
+   can hand the request to an existing real-profile process.
+
+   ```bash
+   # macOS launch
+   (
+     probe_session=()
+     probe_cursor
+   )
+   ```
+
+   These are minimal environment allowlists, not a sandbox. X11 authority and
+   Wayland's runtime directory/session bus grant access to the existing desktop;
+   they are the explicit exceptions to storage isolation. Do not print or copy
+   authority data, enable shell tracing, or forward arbitrary ambient variables
+   (tokens, helpers, proxies or credential agents). If a host needs more session
+   access, stop and document the requirement before changing the allowlist.
+   macOS account services, Keychain, managed policy and Cocoa preferences can
+   use the real account despite HOME/XDG overrides; verify effective paths and
+   policy, and stop if these cannot be isolated. None of these recipes has been
+   exercised against a graphical host here: offline tests use a fake `cursor`
+   and synthetic session values only, with no IDE or policy acceptance claim.
 
    Do not reuse a running real-profile IDE window. If the IDE hands off to an
    existing process, cannot isolate credentials, or loses the administered

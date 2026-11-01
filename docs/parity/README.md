@@ -196,6 +196,19 @@ skill/plugin payloads with those names are now included. Only disposable-HOME
 offline regressions exercised the correction. No real-home inventory was
 remeasured, and the historical comparison does not certify corrected coverage.
 
+The collector now also fails closed on links instead of silently omitting
+linked skill/plugin directories. Links anywhere in the protected scope,
+including host roots, payload ancestors, dangling links and cycles, are
+unsupported; HOME and its ancestors must be physical directories too. Linked
+files and non-regular payload nodes are rejected. Known excluded runtime roots
+remain outside this check. Directory-listing, metadata and read errors abort
+collection rather than skipping entries. A failed collection has no success
+count/digest and cannot establish an unchanged comparison; check its exit code
+before comparing artifacts. This is a suffix/name-selected inventory, not an
+atomic snapshot or a complete inventory of every host file. These source changes
+have only offline disposable-HOME coverage: no live inventory acceptance,
+historical evidence upgrade or no-residue claim follows from them.
+
 Private inventory aggregate digests:
 
 ```text

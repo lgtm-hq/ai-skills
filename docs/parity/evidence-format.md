@@ -85,6 +85,19 @@ exclusions have offline disposable-HOME coverage, with no live remeasurement
 or retroactive certification of the corrected inventory. Record cleanup
 references retain this limitation; they do not upgrade host evidence.
 
+The current collector rejects symbolic links throughout the protected scope
+(including skill/plugin directories, host roots, payload ancestors, dangling
+links and cycles), linked HOME/ancestors and unsupported file types. Known
+excluded runtime roots are still outside the inventory. Listing, stat and read
+errors fail collection; they are never treated as absent entries or skipped.
+Use physical HOME paths, fresh before/after destinations and require successful
+collector exits before comparison. Failure means the comparison is incomplete,
+not unchanged; preserve the error privately and report the limitation without
+publishing contents. Successful collection covers only the documented selected
+suffixes/names and is not atomic against concurrent writes. Link/error handling
+was verified only offline in disposable homes, with no live remeasurement or
+upgrade to the old counts, records or D001–D003 traces.
+
 `uv run pytest tests/test_parity_evidence.py` checks the complete field set,
 types, vocabulary, dates, redaction, filename identities, Cartesian coverage,
 and the invocation/cleanup requirements for supported cells. It is offline and
