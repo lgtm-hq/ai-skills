@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import http.client
 import json
-import os
 import secrets
 import shutil
 import socket
@@ -15,7 +14,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 
-from common import SETTINGS, SPIKE, command, write_json
+from common import SETTINGS, SPIKE, command, registry_setup_environment, write_json
 from packages import client_env, install_client, prepare_packages
 
 
@@ -172,8 +171,30 @@ def measure_registry(*, build: Path, work: Path) -> dict[str, Any]:
         server_env = client_env(client=work / "server-env", registry=url)
         # Keep Bun's pre-primed bun-x cache for server startup only.
         # This contains tooling, never a measured install client's package cache.
-        server_env["BUN_INSTALL_CACHE_DIR"] = os.environ.get(
-            "BUN_INSTALL_CACHE_DIR", str(Path.home() / ".bun/install/cache")
+        # bun x resolves its executable under the setup temp identity, regardless
+        # of BUN_INSTALL_CACHE_DIR. Restore it for the server only; measured client
+        # environments below keep their own fresh temp/config/cache directories.
+        setup = registry_setup_environment()
+        if (build / "build.json").is_file():
+            recorded = json.loads((build / "build.json").read_text(encoding="utf-8"))
+            setup.update(
+                {
+                    key: value
+                    for key, value in recorded.get(
+                        "registry_setup_environment", {}
+                    ).items()
+                    if key in setup
+                }
+            )
+        server_env.update(setup)
+        records.append(
+            {
+                "operation": "trusted server setup cache",
+                "environment": {
+                    key: server_env[key]
+                    for key in ("TMPDIR", "TEMP", "TMP", "BUN_INSTALL_CACHE_DIR")
+                },
+            }
         )
         with (
             stdout_path.open("w", encoding="utf-8") as stdout,
@@ -189,7 +210,7 @@ def measure_registry(*, build: Path, work: Path) -> dict[str, Any]:
         ready = False
         readiness: dict[str, Any] = {"operation": "registry readiness"}
         records.append(readiness)
-        for _ in range(150):
+        for _ in range(600):
             try:
                 with closing(
                     http.client.HTTPConnection(host="127.0.0.1", port=port, timeout=1)
@@ -269,13 +290,20 @@ def measure_registry(*, build: Path, work: Path) -> dict[str, Any]:
             }
         )
     finally:
+        termination = "intentional server shutdown"
         if server is not None:
-            server.terminate()
             try:
+                server.terminate()
                 server.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                server.kill()
-                server.wait(timeout=10)
+                termination = "terminate timeout; killed"
+                try:
+                    server.kill()
+                    server.wait(timeout=10)
+                except (subprocess.TimeoutExpired, OSError) as error:
+                    termination = f"kill/reap failed: {type(error).__name__}"
+            except OSError as error:
+                termination = f"terminate failed: {type(error).__name__}"
         server_record = {
             "argv": argv,
             "exit": server.returncode if server else None,
@@ -290,7 +318,7 @@ def measure_registry(*, build: Path, work: Path) -> dict[str, Any]:
                 else ""
             ),
             "seconds": time.perf_counter() - started,
-            "termination": "intentional server shutdown",
+            "termination": termination,
         }
         records.append(redact(value=server_record, sensitive=sensitive))
         results["server"] = records

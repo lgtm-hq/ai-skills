@@ -7,14 +7,33 @@ import hashlib
 import json
 import os
 import platform
+import signal
 import subprocess  # nosec B404 - experiment commands use explicit argv, never a shell
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
 
 SPIKE = Path(__file__).resolve().parents[1]
 REPO = SPIKE.parents[1]
-SETTINGS = json.loads((SPIKE / "settings.json").read_text())
+SETTINGS = json.loads((SPIKE / "settings.json").read_text(encoding="utf-8"))
+
+
+def registry_setup_environment() -> dict[str, str]:
+    """Capture trusted setup cache paths for bun x, never for measured clients.
+
+    Returns:
+        Explicit setup temp and Bun package-cache identity.
+    """
+    return {
+        **{
+            key: os.environ.get(key, tempfile.gettempdir())
+            for key in ("TMPDIR", "TEMP", "TMP")
+        },
+        "BUN_INSTALL_CACHE_DIR": os.environ.get(
+            "BUN_INSTALL_CACHE_DIR", str(Path.home() / ".bun/install/cache")
+        ),
+    }
 
 
 def target() -> str:
@@ -63,25 +82,57 @@ def command(
     start = time.perf_counter()
     result: dict[str, Any] = {"argv": argv, "cwd": str(cwd)}
     try:
-        process = subprocess.run(  # nosec B603 - explicit experiment argv, no shell
+        process = subprocess.Popen(  # nosec B603 - explicit experiment argv, no shell
             args=argv,
             cwd=cwd,
             env=env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=os.name != "nt",
+            creationflags=(
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                if os.name == "nt"
+                else 0
+            ),
         )
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            # Kill descendants too: npm.cmd/Node may otherwise retain pipe handles.
+            if os.name == "nt":
+                try:
+                    killed = subprocess.run(  # nosec B603 - fixed Windows tree cleanup
+                        args=["taskkill.exe", "/PID", str(process.pid), "/T", "/F"],
+                        capture_output=True,
+                        timeout=10,
+                        check=False,
+                    )
+                    result["tree_termination_exit"] = killed.returncode
+                except (subprocess.TimeoutExpired, OSError) as error:
+                    result["tree_termination_error"] = type(error).__name__
+                finally:
+                    process.kill()
+            else:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            try:
+                stdout, stderr = process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                result["termination_error"] = "pipe EOF timeout after tree termination"
+                raise
+            raise subprocess.TimeoutExpired(argv, timeout, output=stdout, stderr=stderr)
         result.update(
-            exit=process.returncode, stdout=process.stdout, stderr=process.stderr
+            exit=process.returncode,
+            stdout=output_text(stdout),
+            stderr=output_text(stderr),
         )
     except subprocess.TimeoutExpired as error:
         result.update(
             exit=None,
-            stdout=(error.stdout or b"").decode(errors="replace"),
-            stderr=(error.stderr or b"").decode(errors="replace"),
+            stdout=output_text(error.stdout),
+            stderr=output_text(error.stderr),
             error="timeout",
         )
     except OSError as error:
@@ -96,6 +147,22 @@ def command(
     records.append(result)
     print(json.dumps(result), flush=True)
     return result
+
+
+def output_text(value: str | bytes | None) -> str:
+    """Decode timeout output, which may be bytes even with text-mode pipes.
+
+    Args:
+        value: Partial subprocess output.
+
+    Returns:
+        UTF-8 text with undecodable bytes replaced.
+    """
+    return (
+        value.decode("utf-8", errors="replace")
+        if isinstance(value, bytes)
+        else value or ""
+    )
 
 
 def checked(*, argv: list[str], records: list[dict[str, Any]], cwd: Path = REPO) -> str:
@@ -185,7 +252,7 @@ def write_json(*, path: Path, value: object) -> None:
         value: JSON-serializable evidence.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 def payload_inventory(root: Path) -> dict[str, dict[str, object]]:
@@ -218,7 +285,7 @@ def export_evidence(path: Path) -> None:
     raw = path.read_text(encoding="utf-8")
     print(f"EVIDENCE {path.name}\n{raw}", flush=True)
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
-        with Path(summary).open("a", encoding="utf-8") as output:
+        with Path(summary).open("a", encoding="utf-8", newline="\n") as output:
             output.write(f"\n### {path.name}\n\n```json\n{raw}\n```\n")
 
 
@@ -242,7 +309,7 @@ def run_payload(
     """
     home.mkdir(parents=True, exist_ok=True)
     cache = home / ".cache"
-    cache.write_text("cache directory intentionally unavailable")
+    cache.write_text("cache directory intentionally unavailable", encoding="utf-8")
     env = isolated_env(home)
     env.update(XDG_CACHE_HOME=str(cache), BUN_INSTALL_CACHE_DIR=str(cache))
     result = command(
@@ -255,7 +322,9 @@ def run_payload(
         env=env,
         records=records,
     )
-    expected = json.loads((root / "fixtures/expected-output.json").read_text())
+    expected = json.loads(
+        (root / "fixtures/expected-output.json").read_text(encoding="utf-8")
+    )
     destination = home / ".spike-target"
     actual = {
         p.relative_to(destination).as_posix(): p.read_bytes().decode("utf-8")

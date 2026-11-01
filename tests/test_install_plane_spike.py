@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import shutil
 import subprocess  # nosec B404 - fixed local prototypes, no shell or network
 import sys
+import tarfile
 from pathlib import Path
 from types import ModuleType
 
@@ -48,23 +50,58 @@ def spike_fixture(tmp_path: Path) -> Path:
     return Path(shutil.copytree(src=SPIKE / "fixtures", dst=tmp_path / "fixture"))
 
 
+@pytest.fixture(autouse=True)
+def non_utf8_locale(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Model Windows locale defaults without changing explicit UTF-8 reads.
+
+    Args:
+        monkeypatch: Reversible pathlib boundary change.
+    """
+    read_text = Path.read_text
+
+    def locale_read(
+        path: Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> str:
+        """Use cp1252 when the caller omits its encoding.
+
+        Args:
+            path: File to read.
+            encoding: Explicit encoding or locale default.
+            errors: Decoder error handling.
+            newline: Newline translation option.
+
+        Returns:
+            Text decoded with the specified encoding.
+        """
+        return read_text(
+            path, encoding=encoding or "cp1252", errors=errors, newline=newline
+        )
+
+    monkeypatch.setattr(Path, "read_text", locale_read)
+
+
 def test_spike_golden(
     prototype: ModuleType, spike_fixture: Path, tmp_path: Path
 ) -> None:
     """Python materializes only the expected retained capability."""
-    expected = json.loads((spike_fixture / "expected-output.json").read_text())
+    expected = json.loads(
+        (spike_fixture / "expected-output.json").read_text(encoding="utf-8")
+    )
     output = prototype.install(
         fixture=spike_fixture, home=tmp_path, exclude="fixture:drop"
     )
     assert_that(output).is_equal_to(expected)
     target = tmp_path / ".spike-target"
     actual = {
-        p.relative_to(target).as_posix(): p.read_text()
+        p.relative_to(target).as_posix(): p.read_text(encoding="utf-8")
         for p in target.rglob("*")
         if p.is_file()
     }
     assert_that(actual).is_equal_to(expected)
-    index = json.loads((spike_fixture / "index.json").read_text())
+    index = json.loads((spike_fixture / "index.json").read_text(encoding="utf-8"))
     digest = next(c for c in index["capabilities"] if c["id"] == "fixture:keep")[
         "files"
     ]["keep/SKILL.md"]
@@ -98,7 +135,7 @@ def test_spike_rejects_before_writing(
 ) -> None:
     """Digest, closure and inventory failures leave no target tree."""
     path = spike_fixture / "index.json"
-    index = json.loads(path.read_text())
+    index = json.loads(path.read_text(encoding="utf-8"))
     keep = next(cap for cap in index["capabilities"] if cap["id"] == "fixture:keep")
     if mutation == "archive":
         index["sha256"] = "0" * 64
@@ -124,7 +161,7 @@ def test_spike_rejects_before_writing(
         keep["files"]["keep/nUl.txt"] = "0" * 64
     elif mutation == "reserved-directory":
         keep["files"]["COM1/child.md"] = "0" * 64
-    path.write_text(json.dumps(index))
+    path.write_text(json.dumps(index), encoding="utf-8", newline="\n")
     with pytest.raises(ValueError):
         prototype.install(fixture=spike_fixture, home=tmp_path, exclude="fixture:drop")
     assert_that((tmp_path / ".spike-target").exists()).is_false()
@@ -137,7 +174,9 @@ def test_spike_runtime_parity(spike_fixture: Path, tmp_path: Path) -> None:
         if os.environ.get("SPIKE_REQUIRE_BUN") == "1":
             pytest.fail("Bun required for spike CI parity")
         pytest.skip("Bun not installed; dispatch workflow requires the parity check")
-    expected = json.loads((spike_fixture / "expected-output.json").read_text())
+    expected = json.loads(
+        (spike_fixture / "expected-output.json").read_text(encoding="utf-8")
+    )
     for variant, command in {
         "py": [sys.executable, "-I", "-B", str(SPIKE / "py/prototype.py")],
         "ts": [bun, "run", str(SPIKE / "ts/prototype.ts")],
@@ -159,7 +198,7 @@ def test_spike_runtime_parity(spike_fixture: Path, tmp_path: Path) -> None:
         assert_that(json.loads(result.stdout)).is_equal_to(expected)
         target = home / ".spike-target"
         actual = {
-            p.relative_to(target).as_posix(): p.read_text()
+            p.relative_to(target).as_posix(): p.read_text(encoding="utf-8")
             for p in target.rglob("*")
             if p.is_file()
         }
@@ -167,6 +206,68 @@ def test_spike_runtime_parity(spike_fixture: Path, tmp_path: Path) -> None:
         assert_that((target / "keep/SKILL.md").read_bytes()).is_equal_to(
             expected["keep/SKILL.md"].encode("utf-8")
         )
+
+
+@pytest.mark.parametrize(
+    "mutation", ["bom-index", "bad-trailer", "extra-member", "pax-header", "gnu-header"]
+)
+def test_shared_malformed_inputs_fail_closed(
+    spike_fixture: Path, tmp_path: Path, mutation: str
+) -> None:
+    """Both source CLIs reject malformed index/archive bytes before writing."""
+    index_path = spike_fixture / "index.json"
+    if mutation == "bom-index":
+        index_path.write_bytes(b"\xef\xbb\xbf" + index_path.read_bytes())
+    else:
+        archive_path = spike_fixture / "artifact.tar"
+        archive = archive_path.read_bytes()
+        if mutation == "bad-trailer":
+            archive = archive[:-1] + b"x"
+        else:
+            buffer = io.BytesIO()
+            with tarfile.open(
+                fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT
+            ) as output:
+                with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as source:
+                    for member in source:
+                        output.addfile(member, source.extractfile(member))
+                member = tarfile.TarInfo("keep/extra.md")
+                member.type = {
+                    "extra-member": tarfile.REGTYPE,
+                    "pax-header": tarfile.XHDTYPE,
+                    "gnu-header": tarfile.GNUTYPE_LONGNAME,
+                }[mutation]
+                member.size = 1
+                output.addfile(member, io.BytesIO(b"x"))
+            archive = buffer.getvalue()
+        archive_path.write_bytes(archive)
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        index["sha256"] = hashlib.sha256(archive).hexdigest()
+        index_path.write_text(json.dumps(index), encoding="utf-8", newline="\n")
+    bun = shutil.which("bun")
+    if bun is None:
+        if os.environ.get("SPIKE_REQUIRE_BUN") == "1":
+            pytest.fail("Bun required for shared malformed-input parity")
+        pytest.skip("Bun unavailable for shared malformed-input parity")
+    for variant, argv in {
+        "py": [sys.executable, "-I", str(SPIKE / "py/prototype.py")],
+        "ts": [bun, "run", str(SPIKE / "ts/prototype.ts")],
+    }.items():
+        home = tmp_path / variant
+        home.mkdir()
+        result = subprocess.run(  # nosec B603 - local fail-closed prototypes
+            args=[*argv, str(spike_fixture), "fixture:drop"],
+            env={**os.environ, "HOME": str(home)},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+            check=False,
+        )
+        assert_that(result.returncode).described_as(
+            variant + result.stdout
+        ).is_not_zero()
+        assert_that((home / ".spike-target").exists()).is_false()
 
 
 @pytest.fixture
@@ -210,7 +311,9 @@ def test_spike_measurement_rejects_hollow_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An exit-zero process printing golden JSON without writing files fails."""
-    expected = json.loads((spike_fixture / "expected-output.json").read_text())
+    expected = json.loads(
+        (spike_fixture / "expected-output.json").read_text(encoding="utf-8")
+    )
     root = tmp_path / "payload"
     root.mkdir()
     shutil.copytree(src=spike_fixture, dst=root / "fixtures")
@@ -242,6 +345,7 @@ def test_spike_fixture_drift_gate() -> None:
         args=[sys.executable, str(SPIKE / "scripts/fixture.py"), "--check"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         timeout=10,
     )

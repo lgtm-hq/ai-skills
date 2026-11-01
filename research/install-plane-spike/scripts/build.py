@@ -10,7 +10,15 @@ import sys
 import tarfile
 from pathlib import Path
 
-from common import SETTINGS, SPIKE, checked, runtime, target, write_json
+from common import (
+    SETTINGS,
+    SPIKE,
+    checked,
+    registry_setup_environment,
+    runtime,
+    target,
+    write_json,
+)
 
 
 def main() -> None:
@@ -139,6 +147,7 @@ def main() -> None:
             value={
                 "target": target(),
                 "source_sha256": source_hashes,
+                "registry_setup_environment": registry_setup_environment(),
                 "commands": records,
             },
         )

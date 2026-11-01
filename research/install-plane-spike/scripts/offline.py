@@ -17,17 +17,64 @@ from network_control import proven_denial
 from packages import client_env, install_client, prepare_packages
 
 
-def worker(*, build: Path, work: Path) -> dict[str, Any]:
+def identity() -> dict[str, Any]:
+    """Record actual worker privilege without relying on inherited USER strings.
+
+    Returns:
+        Effective POSIX identity or Windows account observation scope.
+    """
+    if os.name == "nt":
+        return {
+            "account": os.environ.get("USERNAME"),
+            "effective_uid": None,
+            "privilege": "Windows token elevation unverified",
+        }
+    return {
+        "uid": os.getuid(),
+        "effective_uid": os.geteuid(),
+        "effective_gid": os.getegid(),
+        "groups": os.getgroups(),
+    }
+
+
+def isolation_argv(
+    *, prefix: list[str], argv: list[str], env: dict[str, str]
+) -> list[str]:
+    """Pass only explicit scenario environment after sudo resets its environment.
+
+    Args:
+        prefix: Selected namespace/sandbox prefix, ending in env -i for sudo.
+        argv: Probe or worker invocation.
+        env: Credential-free environment for this invocation.
+
+    Returns:
+        Complete command, restoring environment only after dropping privileges.
+    """
+    assignments = (
+        [f"{key}={value}" for key, value in sorted(env.items())]
+        if prefix and prefix[-1] == "-i"
+        else []
+    )
+    return [*prefix, *assignments, *argv]
+
+
+def worker(
+    *, build: Path, work: Path, packages_from: Path | None = None
+) -> dict[str, Any]:
     """Pack scripts-free wrappers and install local tarballs using both clients.
 
     Args:
         build: Original payloads (no extraction masquerading as installation).
         work: Fresh offline workspace.
+        packages_from: Reuse the exact tarballs from the unrestricted control.
 
     Returns:
         Per-client results and packing commands for each runtime.
     """
     results: dict[str, dict[str, Any]] = {}
+    consumer = identity()
+    if consumer["effective_uid"] == 0:
+        raise ValueError("refusing to measure package managers as root")
     bun = shutil.which("bun")
     for variant in ("ts", "py"):
         entries: list[dict[str, Any]] = []
@@ -37,9 +84,13 @@ def worker(*, build: Path, work: Path) -> dict[str, Any]:
                 "reason": "Bun unavailable for local packing",
             }
             continue
-        packages = work / f"packages-{variant}"
-        directories = prepare_packages(
-            build=build, work=packages, variant=variant, local=True
+        packages = (packages_from or work) / f"packages-{variant}"
+        directories = (
+            []
+            if packages_from
+            else prepare_packages(
+                build=build, work=packages, variant=variant, local=True
+            )
         )
         packed = True
         for directory in directories:
@@ -77,6 +128,8 @@ def worker(*, build: Path, work: Path) -> dict[str, Any]:
                     offline=True,
                 )
         results[variant] = {
+            "identity": consumer,
+            "package_source": str(packages),
             "status": (
                 "pass"
                 if clients
@@ -108,6 +161,16 @@ def measure_offline(
         Per-variant evidence including independent restriction and install outcomes.
     """
     records: list[dict[str, Any]] = []
+    # Same tarball shape, flags and fresh caches before OS isolation. The dedicated
+    # Harden Runner job has no unrestricted interval and cannot supply this control.
+    positive_installs = (
+        {
+            v: {"status": "unverified", "reason": "no unrestricted interval"}
+            for v in ("ts", "py")
+        }
+        if harden_block
+        else worker(build=build, work=work / "positive-installs")
+    )
     python = runtime(root=build / "py", variant="py")[0]
     probe_argv = [python, "-I", "-B", str(SPIKE / "scripts/network_control.py")]
     env = isolated_env(work)
@@ -132,9 +195,27 @@ def measure_offline(
         mechanism = "Linux network namespace (not Harden Runner)"
         unshare, sudo = shutil.which("unshare"), shutil.which("sudo")
         if unshare:
-            prefixes.append([unshare, "--user", "--map-root-user", "--net", "--"])
-            if sudo:
-                prefixes.append([sudo, "-n", unshare, "--net", "--"])
+            prefixes.append([unshare, "--user", "--map-current-user", "--net", "--"])
+            setpriv, env_tool = shutil.which("setpriv"), shutil.which("env")
+            if sudo and setpriv and env_tool and os.geteuid() != 0:
+                prefixes.append(
+                    [
+                        sudo,
+                        "-n",
+                        unshare,
+                        "--net",
+                        "--",
+                        setpriv,
+                        "--reuid",
+                        str(os.getuid()),
+                        "--regid",
+                        str(os.getgid()),
+                        "--clear-groups",
+                        "--",
+                        env_tool,
+                        "-i",
+                    ]
+                )
     elif platform.system() == "Darwin":
         mechanism = "macOS sandbox-exec (not Harden Runner)"
         if sandbox := shutil.which("sandbox-exec"):
@@ -148,6 +229,8 @@ def measure_offline(
             "mechanism": mechanism,
             "harden_runner_empty_allowlist_configured": harden_block,
             "positive_control": control,
+            "positive_installation_control": positive_installs[variant],
+            "collector_identity": identity(),
             "denial_proven": False,
             "commands": records,
             "cleanup": cleanup,
@@ -220,7 +303,10 @@ def measure_offline(
         proved = False
         for prefix in prefixes:
             restricted = command(
-                argv=[*prefix, *probe_argv], env=env, records=records, timeout=15
+                argv=isolation_argv(prefix=prefix, argv=probe_argv, env=env),
+                env=env,
+                records=records,
+                timeout=15,
             )
             proved = proven_denial(control=control, restricted=restricted)
             for result in results.values():
@@ -231,26 +317,35 @@ def measure_offline(
                 break
         if chosen is not None:
             result_path = work / "offline-worker.json"
+            worker_env = client_env(
+                client=work / "worker-env", registry="http://127.0.0.1:9"
+            )
             run = command(
-                argv=[
-                    *chosen,
-                    python,
-                    "-E",
-                    "-s",
-                    "-B",
-                    str(SPIKE / "scripts/offline.py"),
-                    "--worker",
-                    "--build",
-                    str(build),
-                    "--result",
-                    str(result_path),
-                    "--setup-path",
-                    os.environ.get("PATH", ""),
-                ],
-                records=records,
-                env=client_env(
-                    client=work / "worker-env", registry="http://127.0.0.1:9"
+                argv=isolation_argv(
+                    prefix=chosen,
+                    env=worker_env,
+                    argv=[
+                        python,
+                        "-E",
+                        "-s",
+                        "-B",
+                        str(SPIKE / "scripts/offline.py"),
+                        "--worker",
+                        "--build",
+                        str(build),
+                        "--result",
+                        str(result_path),
+                        "--setup-path",
+                        os.environ.get("PATH", ""),
+                        *(
+                            []
+                            if harden_block
+                            else ["--packages-from", str(work / "positive-installs")]
+                        ),
+                    ],
                 ),
+                records=records,
+                env=worker_env,
                 timeout=600,
             )
             if run["exit"] == 0 and result_path.is_file():
@@ -312,13 +407,14 @@ def main() -> None:
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--result", type=Path, required=True)
     parser.add_argument("--setup-path", required=True)
+    parser.add_argument("--packages-from", type=Path)
     args = parser.parse_args()
     # sudo may reset PATH before entering a namespace. Only setup tools use this;
     # installed runtime execution still uses its own filtered environment.
     os.environ["PATH"] = args.setup_path
     work = args.result.parent / "installs"
     work.mkdir()
-    results = worker(build=args.build, work=work)
+    results = worker(build=args.build, work=work, packages_from=args.packages_from)
     write_json(path=args.result, value=results)
 
 

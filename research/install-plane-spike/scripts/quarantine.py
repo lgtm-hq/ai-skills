@@ -229,4 +229,11 @@ def measure_quarantine(*, root: Path, variant: str, home: Path) -> dict[str, Any
             "Linux has no macOS quarantine or Windows Defender/MOTW; "
             "third-party EDR unavailable"
         )
+    if "execution" in result:
+        result["execution_status"] = result["execution"]["status"]
+        result["security_enforcement"] = (
+            "unverified: direct launch is not shell/Finder enforcement"
+        )
+        if result["execution_status"] != "pass":
+            result["status"] = "fail"
     return result

@@ -63,6 +63,19 @@ with local-file optional dependencies and exercise actual client installations
 under the measured restriction, using `--offline` and `--ignore-scripts`. npm is
 an intentional measured client, not this repo's package-management tool.
 
+Build records the setup temp/cache identity used to prime Verdaccio. Only the
+server reuses it with `--no-install`; measured clients retain isolated fresh
+config, temp and caches. Registry readiness has a bounded retry window, and both
+shutdown waits retain errors without losing other evidence.
+
+Before native isolation, both clients install the **same local tarballs** with
+identical flags and fresh caches as a package-manager control. Per-client control
+and restricted outcomes remain visible even when Bun selects incompatible local
+optional packages. Linux namespace setup drops sudo privileges to the original
+UID/GID and restores only explicitly passed setup environment; workers record
+effective identity and refuse root package managers. Cleanup errors remain fatal,
+and finally exports persisted JSON to logs/summary even on cleanup failure.
+
 Each independent scenario is persisted before the next starts. Account readiness,
 status, parsing and token failures retain sanitized registry/server evidence;
 random test credentials never enter runtime environments or evidence. Raw output

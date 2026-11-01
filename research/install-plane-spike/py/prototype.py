@@ -62,7 +62,7 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
     archive = (fixture / "artifact.tar").read_bytes()
     if len(index_bytes) > LIMIT or len(archive) > LIMIT:
         raise ValueError("fixture too large")
-    index = json.loads(index_bytes)
+    index = json.loads(index_bytes.decode("utf-8"))
     if not isinstance(index, dict) or set(index) != {"sha256", "capabilities"}:
         raise ValueError("invalid index")
     if hashlib.sha256(archive).hexdigest() != index["sha256"]:

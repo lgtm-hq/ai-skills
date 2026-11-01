@@ -144,82 +144,85 @@ def main() -> None:
             write_json(path=paths[variant], value=item)
 
     persist()
-    with tempfile.TemporaryDirectory(prefix="spike-measure-") as temporary:
-        work = Path(temporary)
-        offline_work = work / "offline"
-        offline_work.mkdir()
-        offline = collect(
-            lambda: measure_offline(
-                build=build, work=offline_work, harden_block=args.offline_only
+    try:
+        with tempfile.TemporaryDirectory(prefix="spike-measure-") as temporary:
+            work = Path(temporary)
+            offline_work = work / "offline"
+            offline_work.mkdir()
+            offline = collect(
+                lambda: measure_offline(
+                    build=build, work=offline_work, harden_block=args.offline_only
+                )
             )
-        )
-        for variant, item in evidence.items():
-            item["offline"] = offline.get(variant, offline)
-            item["archive_sha256"] = collect(
-                partial(archive_digest, build / f"{variant}.tgz")
-            )
-        persist()
-        if not args.offline_only:
             for variant, item in evidence.items():
-                root = build / variant
-                entries: list[dict[str, Any]] = []
-                cold = [
-                    collect(
+                item["offline"] = offline.get(variant, offline)
+                item["archive_sha256"] = collect(
+                    partial(archive_digest, build / f"{variant}.tgz")
+                )
+            persist()
+            if not args.offline_only:
+                for variant, item in evidence.items():
+                    root = build / variant
+                    entries: list[dict[str, Any]] = []
+                    cold = [
+                        collect(
+                            partial(
+                                run_payload,
+                                root=root,
+                                variant=variant,
+                                home=work / f"{variant}-cold-{number}",
+                                records=entries,
+                            )
+                        )
+                        for number in range(3)
+                    ]
+                    item["no_node"] = {
+                        "status": (
+                            "pass"
+                            if all(item["status"] == "pass" for item in cold)
+                            else "fail"
+                        ),
+                        "processes": cold,
+                        "commands": entries,
+                        "scope": (
+                            "Remove Node/Bun directories from PATH; "
+                            "retain Windows loader "
+                            "necessities. Tools are not physically uninstalled."
+                        ),
+                    }
+                    persist()
+                    item["footprint"] = collect(
                         partial(
-                            run_payload,
+                            footprint,
                             root=root,
-                            variant=variant,
-                            home=work / f"{variant}-cold-{number}",
-                            records=entries,
+                            archive=build / f"{variant}.tgz",
+                            cold=cold,
                         )
                     )
-                    for number in range(3)
-                ]
-                item["no_node"] = {
-                    "status": (
-                        "pass"
-                        if all(item["status"] == "pass" for item in cold)
-                        else "fail"
-                    ),
-                    "processes": cold,
-                    "commands": entries,
-                    "scope": (
-                        "Remove Node/Bun directories from PATH; retain Windows loader "
-                        "necessities. Tools are not physically uninstalled."
-                    ),
-                }
-                persist()
-                item["footprint"] = collect(
-                    partial(
-                        footprint,
-                        root=root,
-                        archive=build / f"{variant}.tgz",
-                        cold=cold,
+                    persist()
+                    quarantine_root = work / f"quarantine-{variant}"
+                    item["quarantine"] = collect(
+                        partial(
+                            quarantine_copy,
+                            root=root,
+                            destination=quarantine_root,
+                            variant=variant,
+                            home=work / f"quarantine-home-{variant}",
+                        )
                     )
+                    persist()
+                registry_work = work / "registry"
+                registry_work.mkdir()
+                registry = collect(
+                    lambda: measure_registry(build=build, work=registry_work)
                 )
+                for variant, item in evidence.items():
+                    item["private_registry"] = registry.get(variant, registry)
+                    item["registry_server"] = registry.get("server", [])
                 persist()
-                quarantine_root = work / f"quarantine-{variant}"
-                item["quarantine"] = collect(
-                    partial(
-                        quarantine_copy,
-                        root=root,
-                        destination=quarantine_root,
-                        variant=variant,
-                        home=work / f"quarantine-home-{variant}",
-                    )
-                )
-                persist()
-            registry_work = work / "registry"
-            registry_work.mkdir()
-            registry = collect(
-                lambda: measure_registry(build=build, work=registry_work)
-            )
-            for variant, item in evidence.items():
-                item["private_registry"] = registry.get(variant, registry)
-                item["registry_server"] = registry.get("server", [])
-            persist()
-    for path in paths.values():
-        export_evidence(path)
+    finally:
+        for path in paths.values():
+            export_evidence(path)
 
 
 if __name__ == "__main__":

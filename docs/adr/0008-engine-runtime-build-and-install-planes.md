@@ -76,24 +76,64 @@ provisional until that spike concludes.
 
 ## Distribution evidence gate (#562)
 
-The throwaway prototypes and collector now live under
-`research/install-plane-spike/`; method, local Linux observations, limitations and
-the remaining acceptance criteria are recorded in
-`docs/research/install-plane-distribution.md`. Local results establish neither
-macOS nor Windows deployability. The hosted multi-OS workflow has not yet run.
+The throwaway prototypes and collector live under
+`research/install-plane-spike/`; the distribution report in
+`docs/research/install-plane-distribution.md` records methods, actual observations,
+limitations and the outstanding checklist.
+The first hosted [PR-triggered run](https://github.com/lgtm-hq/ai-skills/actions/runs/41284689759)
+failed. It produced Linux/macOS JSON, but Windows tests stopped collection.
+Registry setup and Linux cleanup defects invalidate those portions as runtime
+comparisons. Revision 2 repairs the collector; it makes no runtime decision.
 
-Revision 1 adds narrow PR-head collection and required source parity gates. It
-withdraws the earlier extraction-only offline result as package-manager evidence.
-A PR-trigger run is not the required green workflow_dispatch run; default-branch
-registration is still needed for that dispatch. First-step empty-allowlist
-collection has no same-host unrestricted baseline and cannot prove Harden Runner
-denial by configuration alone. These limits and the acceptance hold remain explicit
-in the report; this revision makes no runtime decision.
+The existing escape hatch names these decision-bearing restrictions, evaluated
+for **both variants on all five supported targets**:
 
-This status stays Proposed until the parent records live per-scenario evidence
-and its green collection-run link, then applies the decision rule. Evaluate the
-Python escape hatch first when measured deployability is equal; otherwise accept
-TypeScript only if it is no worse on every restricted criterion. Unknown security
-or platform results do not count as equality or superiority. If neither result is
-supported, retain Proposed and identify the missing experiment. The ADR index must
-change with any final status revision. No production runtime changes in this spike.
+- **Private registry:** Bun and npm separately install the wrapper and correct
+  optional platform payload with `--ignore-scripts`, without a bootstrap, public
+  registry dependency or uplink; transported bytes and execution are checked.
+- **No Node:** the installed native payload executes with Node/Bun directories
+  removed from PATH and no consumer Python/uv/pip/runtime fetch.
+- **Offline:** Bun and npm separately install the same local tarballs using fresh
+  caches and identical flags, with verified egress denial, then execute verified
+  payloads. The unrestricted installer control distinguishes package-manager
+  selection failures from failures introduced by the restriction. Both count as
+  observations; a failed control never turns a restricted failure into a pass.
+
+Footprint (payload/archive bytes, file count, fresh-process timing and observed
+cache writes) records deployment costs and tradeoffs. The issue supplies no size
+or timing budget, so numeric differences alone do not establish a restricted
+criterion failure or override its Python-first tie rule. An actual cache or
+capacity restriction affecting installation/execution belongs to the corresponding
+core observation. Any new owner budget must be stated before applying it; this
+revision neither invents a threshold nor claims owner acceptance of an outcome.
+
+Apply the documented Python-first rule only after inspecting complete comparable
+core evidence: revise to the Python escape hatch if B is equally deployable;
+otherwise accept A only if it is no worse on **every** core target/client criterion.
+Unknown core cells establish neither equality nor superiority. Known failures need
+an explicit disposition against the owner's deployment requirements; identical
+failures do not prove either variant deployable. If neither branch is supported,
+retain Proposed and identify the missing experiment or unresolved requirement.
+
+Third-party EDR, Finder/SmartScreen enforcement, disabled/unavailable Gatekeeper,
+and the empty-allowlist job without an unrestricted baseline are **separately
+unverified limitations**, never equal or pass. Report observed quarantine CLI
+execution separately from security enforcement and signing requirements. These
+limitations cannot supply missing core evidence, nor can the core comparison
+establish fleet security approval. Owner security requirements remain outstanding.
+
+Independent namespace/sandbox/firewall denial is **not Harden Runner-only offline
+proof**. The issue specifically requests empty-allowlist Harden Runner evidence;
+the current dedicated job has no same-host baseline and remains unverified.
+That methodological gap must stay explicit until a valid experiment establishes
+it or the owner explicitly disposes of the unmet criterion. No such acceptance
+is claimed here.
+
+Proposed remains until fresh hosted JSON for every supported target/client has
+been inspected, a true green **workflow_dispatch** run at the reviewed ref and raw
+evidence are linked, and owner criteria permit applying the rule above. A green
+collection job may contain truthful scenario failures. PR-triggered collection
+cannot satisfy dispatch acceptance. Reviewed default-branch registration and the
+subsequent dispatch belong to the parent. Update this ADR and its index together
+only when the evidence supports a decision, then reconcile #566/#567/#578/#386.
+No production runtime changes in this spike.

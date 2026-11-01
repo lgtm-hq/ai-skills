@@ -6,6 +6,7 @@ import importlib
 import json
 import secrets
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
@@ -17,31 +18,47 @@ SPIKE = Path(__file__).resolve().parents[1] / "research/install-plane-spike"
 
 
 @pytest.fixture
-def collector(monkeypatch: pytest.MonkeyPatch) -> dict[str, ModuleType]:
+def collector(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ModuleType]]:
     """Import collector modules from this checkout with reversible search paths.
 
     Args:
         monkeypatch: Reversible import path updates.
 
-    Returns:
+    Yields:
         Local stdlib collector modules.
     """
     monkeypatch.syspath_prepend(str(SPIKE / "scripts"))
-    modules = {
-        "common": importlib.import_module("common"),
-        "network_control": importlib.import_module("network_control"),
-        "offline": importlib.import_module("offline"),
-        "registry": importlib.import_module("registry"),
-        "packages": importlib.import_module("packages"),
-        "quarantine": importlib.import_module("quarantine"),
-        "measure": importlib.import_module("measure"),
-        "pins": importlib.import_module("pins"),
-    }
-    for module in modules.values():
-        if module.__file__ is None:
-            raise ValueError("collector module has no local source")
-        assert_that(Path(module.__file__).resolve().is_relative_to(SPIKE)).is_true()
-    return modules
+    names = (
+        "common",
+        "network_control",
+        "offline",
+        "registry",
+        "packages",
+        "quarantine",
+        "measure",
+        "pins",
+    )
+    saved = {name: sys.modules.pop(name) for name in names if name in sys.modules}
+    try:
+        modules = {
+            "common": importlib.import_module("common"),
+            "network_control": importlib.import_module("network_control"),
+            "offline": importlib.import_module("offline"),
+            "registry": importlib.import_module("registry"),
+            "packages": importlib.import_module("packages"),
+            "quarantine": importlib.import_module("quarantine"),
+            "measure": importlib.import_module("measure"),
+            "pins": importlib.import_module("pins"),
+        }
+        for module in modules.values():
+            if module.__file__ is None:
+                raise ValueError("collector module has no local source")
+            assert_that(Path(module.__file__).resolve().is_relative_to(SPIKE)).is_true()
+        yield modules
+    finally:
+        for name in names:
+            sys.modules.pop(name, None)
+        sys.modules.update(saved)
 
 
 @pytest.mark.parametrize(
@@ -73,20 +90,30 @@ def test_checkout_attributes_preserve_bytes(tmp_path: Path) -> None:
             "-c",
             "core.autocrlf=true",
             "check-attr",
+            "-z",
             "text",
             "eol",
             "--",
-            *[str(SPIKE / path) for path in paths],
+            *[f"research/install-plane-spike/{path}" for path in paths],
         ],
+        cwd=SPIKE.parents[1],
         capture_output=True,
         text=True,
         encoding="utf-8",
         check=True,
     )
+    fields = result.stdout.rstrip("\0").split("\0")
+    attributes = {
+        (fields[i], fields[i + 1]): fields[i + 2] for i in range(0, len(fields), 3)
+    }
     for path in paths[:3]:
-        assert_that(result.stdout).contains(f"{path}: text: unset")
+        assert_that(
+            attributes[(f"research/install-plane-spike/{path}", "text")]
+        ).is_equal_to("unset")
     for path in paths[3:]:
-        assert_that(result.stdout).contains(f"{path}: eol: lf")
+        assert_that(
+            attributes[(f"research/install-plane-spike/{path}", "eol")]
+        ).is_equal_to("lf")
 
 
 def probe_record(outcome: str, *, ipv6: str = "explicit-denial") -> dict[str, Any]:
@@ -152,7 +179,11 @@ def test_harden_runner_runs_directly_and_remains_unverified(
         record = probe_record("explicit-denial")
         if "--worker" in argv:
             path = Path(argv[argv.index("--result") + 1])
-            path.write_text(json.dumps({v: {"status": "pass"} for v in ("ts", "py")}))
+            path.write_text(
+                json.dumps({v: {"status": "pass"} for v in ("ts", "py")}),
+                encoding="utf-8",
+                newline="\n",
+            )
         kwargs["records"].append(record)
         return record
 
@@ -173,12 +204,13 @@ def test_harden_runner_runs_directly_and_remains_unverified(
         ("account", 403, {"error": "account rejected"}),
         ("account", 201, None),
         ("account", 201, {}),
-        ("account", 201, {"token": 42}),
+        ("account", 201, dict.fromkeys(["token"], 42)),
         ("account", 201, {"token": chr(32)}),
         ("account", 201, b"unreadable JSON"),
         ("account", 201, TimeoutError()),
         ("readiness", 503, {}),
         ("readiness", 200, TimeoutError()),
+        ("kill-timeout", 403, {"error": "account rejected"}),
     ],
 )
 def test_registry_account_failure_is_sanitized_evidence(
@@ -191,6 +223,15 @@ def test_registry_account_failure_is_sanitized_evidence(
 ) -> None:
     """Bad account responses retain both variant failures and server logs."""
     registry = collector["registry"]
+    setup_temp = tmp_path / "trusted-setup-temp"
+    collector["common"].write_json(
+        path=tmp_path / "build/build.json",
+        value={
+            "registry_setup_environment": {
+                key: str(setup_temp) for key in ("TMPDIR", "TEMP", "TMP")
+            }
+        },
+    )
     monkeypatch.setattr(registry.time, "sleep", lambda _: None)
     password = secrets.token_urlsafe(24)
     monkeypatch.setattr(registry.secrets, "token_urlsafe", lambda _: password)
@@ -251,22 +292,49 @@ def test_registry_account_failure_is_sanitized_evidence(
         ),
     )
     monkeypatch.setattr(registry.shutil, "which", lambda _: "/fake/bun")
-    monkeypatch.setattr(
-        registry.subprocess,
-        "Popen",
-        lambda **_: SimpleNamespace(
+
+    def wait(**kwargs: Any) -> None:
+        """Model a server that can fail both bounded shutdown waits.
+
+        Args:
+            kwargs: Wait timeout.
+
+        Raises:
+            TimeoutExpired: For the selected kill-timeout case.
+        """
+        if stage == "kill-timeout":
+            raise registry.subprocess.TimeoutExpired("server", kwargs["timeout"])
+
+    def popen(**kwargs: Any) -> SimpleNamespace:
+        """Check server cache boundaries without treating this fake as startup proof.
+
+        Args:
+            kwargs: Server invocation and environment.
+
+        Returns:
+            Fake server process.
+        """
+        env = kwargs["env"]
+        for key in ("TMPDIR", "TEMP", "TMP"):
+            assert_that(env[key]).is_equal_to(str(setup_temp))
+        assert_that(env["NPM_CONFIG_CACHE"]).starts_with(str(tmp_path / "server-env"))
+        return SimpleNamespace(
             returncode=0,
             poll=lambda: None,
             terminate=lambda: None,
-            wait=lambda **_: None,
-        ),
-    )
+            kill=lambda: None,
+            wait=wait,
+        )
+
+    monkeypatch.setattr(registry.subprocess, "Popen", popen)
     result = registry.measure_registry(build=tmp_path / "build", work=tmp_path)
     assert_that(result["ts"]["status"]).is_equal_to("fail")
     assert_that(result["py"]["status"]).is_equal_to("fail")
     assert_that(result["server"]).is_not_empty()
     assert_that(json.dumps(result)).does_not_contain(password)
     assert_that((tmp_path / "registry-evidence.json").is_file()).is_true()
+    if stage == "kill-timeout":
+        assert_that(result["server"][-1]["termination"]).contains("TimeoutExpired")
 
 
 @pytest.mark.parametrize(
@@ -308,11 +376,13 @@ def test_raw_evidence_export_needs_no_egress(
 ) -> None:
     """Raw JSON appears in both log and summary without an artifact service."""
     path, summary = tmp_path / "result.json", tmp_path / "summary.md"
-    path.write_text('{"status":"unverified"}\n')
+    path.write_text('{"status":"unverified"}\n', encoding="utf-8", newline="\n")
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     collector["common"].export_evidence(path)
-    assert_that(capsys.readouterr().out).contains(path.read_text())
-    assert_that(summary.read_text()).contains(path.read_text())
+    assert_that(capsys.readouterr().out).contains(path.read_text(encoding="utf-8"))
+    assert_that(summary.read_text(encoding="utf-8")).contains(
+        path.read_text(encoding="utf-8")
+    )
 
 
 def test_collector_failure_does_not_erase_other_scenarios(
@@ -348,7 +418,7 @@ def test_collector_failure_does_not_erase_other_scenarios(
         Raises:
             TimeoutError: Simulated account failure.
         """
-        saved = json.loads(next(results.glob("*-ts.json")).read_text())
+        saved = json.loads(next(results.glob("*-ts.json")).read_text(encoding="utf-8"))
         assert_that(saved).contains_key("offline", "quarantine", "footprint")
         raise TimeoutError("test boundary")
 
@@ -357,7 +427,7 @@ def test_collector_failure_does_not_erase_other_scenarios(
         sys, "argv", ["measure.py", "--build", str(build), "--results", str(results)]
     )
     measure.main()
-    saved = json.loads(next(results.glob("*-ts.json")).read_text())
+    saved = json.loads(next(results.glob("*-ts.json")).read_text(encoding="utf-8"))
     assert_that(saved["private_registry"]["collector_error"]).is_equal_to(
         "TimeoutError"
     )
@@ -373,6 +443,9 @@ def test_firewall_is_scoped_and_cleanup_verified(
 ) -> None:
     """Windows rules cannot block the runner and removal failures remain visible."""
     offline = collector["offline"]
+    monkeypatch.setattr(
+        offline, "worker", lambda **_: {v: {"status": "fail"} for v in ("ts", "py")}
+    )
     monkeypatch.setattr(offline.platform, "system", lambda: "Windows")
     monkeypatch.setattr(offline.shutil, "which", lambda name: f"C:/{name}.exe")
     calls: list[list[str]] = []
@@ -479,14 +552,20 @@ def test_package_client_checks_installed_bytes(
     )
 
 
+@pytest.mark.parametrize("execution_status", ["pass", "fail"])
 def test_disabled_gatekeeper_cannot_prove_enforcement(
-    collector: dict[str, ModuleType], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    execution_status: str,
 ) -> None:
     """Attribute and CLI success remain unverified when Gatekeeper is disabled."""
     quarantine = collector["quarantine"]
     monkeypatch.setattr(quarantine.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(quarantine.shutil, "which", lambda name: f"/fake/{name}")
-    monkeypatch.setattr(quarantine, "run_payload", lambda **_: {"status": "pass"})
+    monkeypatch.setattr(
+        quarantine, "run_payload", lambda **_: {"status": execution_status}
+    )
     calls = []
 
     def command(**kwargs: Any) -> dict[str, Any]:
@@ -508,7 +587,11 @@ def test_disabled_gatekeeper_cannot_prove_enforcement(
     observed = quarantine.measure_quarantine(
         root=tmp_path, variant="ts", home=tmp_path / "home"
     )
-    assert_that(observed["status"]).is_equal_to("unverified")
+    assert_that(observed["status"]).is_equal_to(
+        "unverified" if execution_status == "pass" else "fail"
+    )
+    assert_that(observed["execution_status"]).is_equal_to(execution_status)
+    assert_that(observed["security_enforcement"]).starts_with("unverified")
     assert_that(any("--status" in argv for argv in calls)).is_true()
 
 
@@ -598,3 +681,213 @@ def test_command_redacts_before_persistence_or_display(
     assert_that(json.dumps(records) + capsys.readouterr().out).does_not_contain(
         credential
     )
+
+
+@pytest.mark.parametrize("output", [b"partial\xff", "partial text", None])
+def test_timeout_output_is_retained(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    output: str | bytes | None,
+) -> None:
+    """Timeouts accept both subprocess output types and remain failed observations."""
+    common = collector["common"]
+
+    def timeout(**kwargs: Any) -> None:
+        """Model a command timeout without starting a child.
+
+        Args:
+            kwargs: Ignored process arguments.
+
+        Raises:
+            TimeoutExpired: With partial text or bytes.
+        """
+        raise common.subprocess.TimeoutExpired("fake", 1, output=output, stderr=output)
+
+    monkeypatch.setattr(common.subprocess, "Popen", timeout)
+    observed = common.command(argv=["fake"], cwd=tmp_path, records=[])
+    assert_that(observed["exit"]).is_none()
+    assert_that(observed["error"]).is_equal_to("timeout")
+    assert_that(observed["stdout"]).is_equal_to(common.output_text(output))
+
+
+def test_command_timeout_terminates_descendants(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+) -> None:
+    """A child retaining pipe handles cannot make a timed-out command hang."""
+    result = collector["common"].command(
+        argv=[
+            sys.executable,
+            "-I",
+            "-c",
+            (
+                "import subprocess,sys,time; "
+                "subprocess.Popen([sys.executable,'-c',"
+                "'import time; time.sleep(30)']); "
+                "print('started',flush=True); time.sleep(30)"
+            ),
+        ],
+        cwd=tmp_path,
+        records=[],
+        timeout=1,
+    )
+    assert_that(result["error"]).is_equal_to("timeout")
+    assert_that(result["stdout"]).contains("started")
+    assert_that(result["seconds"]).is_less_than(15)
+
+
+def test_namespace_fallback_restores_environment_after_dropping_identity(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sudo only sets up netns; probes and workers use the original unprivileged UID."""
+    offline = collector["offline"]
+    monkeypatch.setattr(offline.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(offline.shutil, "which", lambda name: f"/setup/{name}")
+    monkeypatch.setattr(offline.os, "getuid", lambda: 1234, raising=False)
+    monkeypatch.setattr(offline.os, "geteuid", lambda: 1234, raising=False)
+    monkeypatch.setattr(offline.os, "getgid", lambda: 5678, raising=False)
+    monkeypatch.setattr(
+        offline,
+        "worker",
+        lambda **_: {
+            v: {
+                "status": "fail",
+                "clients": {"bun": {"status": "fail"}, "npm": {"status": "pass"}},
+            }
+            for v in ("ts", "py")
+        },
+    )
+    calls: list[dict[str, Any]] = []
+
+    def command(**kwargs: Any) -> dict[str, Any]:
+        """Reject user namespaces, then model the privileged setup boundary.
+
+        Args:
+            kwargs: Probe or worker inputs.
+
+        Returns:
+            Successful baseline, explicit namespace denial, or worker JSON.
+        """
+        calls.append(kwargs)
+        argv = kwargs["argv"]
+        if "--worker" in argv:
+            result = {
+                v: {"status": "fail", "identity": {"effective_uid": 1234}}
+                for v in ("ts", "py")
+            }
+            Path(argv[argv.index("--result") + 1]).write_text(
+                json.dumps(result), encoding="utf-8"
+            )
+            return {"exit": 0}
+        if "--user" in argv:
+            return {"exit": 1, "stdout": ""}
+        return probe_record("connected" if len(calls) == 1 else "explicit-denial")
+
+    monkeypatch.setattr(offline, "command", command)
+    observed = offline.measure_offline(build=tmp_path / "build", work=tmp_path)
+    sudo_calls = [call for call in calls if call["argv"][0] == "/setup/sudo"]
+    assert_that(sudo_calls).is_length(2)
+    for call in sudo_calls:
+        argv = call["argv"]
+        assert_that(argv).contains(
+            "--reuid", "1234", "--regid", "5678", "--clear-groups"
+        )
+        assignments = argv[argv.index("-i") + 1 :]
+        assert_that(assignments).contains(
+            *[f"{key}={value}" for key, value in call["env"].items()]
+        )
+        assert_that(argv.index("--reuid")).is_less_than(argv.index("-i"))
+    assert_that(
+        observed["ts"]["installation_observation"]["identity"]["effective_uid"]
+    ).is_equal_to(1234)
+    assert_that(observed["ts"]["positive_installation_control"]["status"]).is_equal_to(
+        "fail"
+    )
+    assert_that(observed["ts"]["status"]).is_equal_to("fail")
+
+
+def test_offline_worker_refuses_root(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A root worker must fail before packing or executing any package manager."""
+    offline = collector["offline"]
+    monkeypatch.setattr(offline, "identity", lambda: {"effective_uid": 0})
+    with pytest.raises(ValueError, match="as root"):
+        offline.worker(build=tmp_path, work=tmp_path)
+
+
+def test_cleanup_failure_still_exports_evidence(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Cleanup errors remain errors while persisted JSON reaches log and summary."""
+    import contextlib
+
+    measure = collector["measure"]
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    work = tmp_path / "work"
+    work.mkdir()
+
+    @contextlib.contextmanager
+    def temporary(**kwargs: Any) -> Iterator[str]:
+        """Model the observed late cleanup failure without creating root files.
+
+        Args:
+            kwargs: Ignored tempdir options.
+
+        Yields:
+            Disposable local directory.
+
+        Raises:
+            PermissionError: After all scenario evidence is saved.
+        """
+        yield str(work)
+        raise PermissionError("cleanup boundary")
+
+    monkeypatch.setattr(measure.tempfile, "TemporaryDirectory", temporary)
+    monkeypatch.setattr(measure, "command", lambda **_: {"stdout": "head", "exit": 0})
+    monkeypatch.setattr(
+        measure,
+        "measure_offline",
+        lambda **_: {v: {"status": "fail"} for v in ("ts", "py")},
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "measure.py",
+            "--offline-only",
+            "--build",
+            str(tmp_path / "build"),
+            "--results",
+            str(tmp_path / "results"),
+        ],
+    )
+    with pytest.raises(PermissionError, match="cleanup boundary"):
+        measure.main()
+    output = capsys.readouterr().out
+    for path in (tmp_path / "results").glob("*.json"):
+        assert_that(output).contains(path.name)
+        assert_that(summary.read_text(encoding="utf-8")).contains(path.name)
+    assert_that(summary.read_text(encoding="utf-8")).contains(
+        '"offline": {', '"status": "fail"'
+    )
+
+
+def test_json_evidence_has_utf8_and_lf_bytes(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+) -> None:
+    """JSON output uses LF and retains Unicode independently of the Windows locale."""
+    path = tmp_path / "result.json"
+    collector["common"].write_json(path=path, value={"text": "\ufeffkeep"})
+    assert_that(path.read_bytes()).does_not_contain(b"\r")
+    assert_that(json.loads(path.read_bytes())["text"]).is_equal_to("\ufeffkeep")
