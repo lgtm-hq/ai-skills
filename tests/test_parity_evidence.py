@@ -18,6 +18,10 @@ HOSTS = ("claude-code", "codex", "cursor")
 ROLES = ("skill", "instruction", "specialist", "workflow", "lifecycle", "integration")
 SCOPES = ("user", "project")
 MODES = ("native-plugin", "user-explode", "repo-materialize")
+OWNER_DECISION = (
+    "https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548"
+)
+CURSOR_DOCS = "https://cursor.com/docs/plugins#test-plugins-locally"
 STATES = (
     "supported",
     "partial",
@@ -54,7 +58,7 @@ def evidence_paths() -> list[Path]:
         Sorted YAML evidence paths.
     """
     root = Path(__file__).resolve().parents[1] / "docs/parity/evidence"
-    paths = sorted(root.glob("*/*.yaml"))
+    paths = sorted(root.rglob("*.yaml"))
     assert_that(paths).is_not_empty()
     return paths
 
@@ -80,17 +84,39 @@ def evidence_records(evidence_paths: list[Path]) -> list[tuple[Path, dict[str, A
 def test_evidence_covers_every_cell_once(
     evidence_records: list[tuple[Path, dict[str, Any]]],
 ) -> None:
-    """All 108 cells exist once, with filenames matching their identity."""
+    """Keep the base Cartesian set separate from the IDE/policy dimensions."""
     identities = []
     for path, record in evidence_records:
-        identity = tuple(record[key] for key in ("host", "role", "scope", "mode"))
+        identity = (
+            record["host"],
+            record["interface"],
+            record.get("policy", "unassessed"),
+            *(record[key] for key in ("role", "scope", "mode")),
+        )
         identities.append(identity)
-        assert_that(path.parent.name).is_equal_to(record["host"])
+        if record["interface"] == "cli":
+            assert_that(path.parent.name).is_equal_to(record["host"])
+        else:
+            assert_that(path.parent.parts[-3:]).is_equal_to(
+                ("cursor", "ide", record["policy"]),
+            )
         assert_that(path.stem).is_equal_to(
             f"{record['role']}-{record['scope']}-{record['mode']}",
         )
     assert_that(identities).does_not_contain_duplicates()
-    assert_that(set(identities)).is_equal_to(set(product(HOSTS, ROLES, SCOPES, MODES)))
+    expected = {
+        (host, "cli", "unassessed", role, scope, mode)
+        for host, role, scope, mode in product(HOSTS, ROLES, SCOPES, MODES)
+    } | {
+        ("cursor", "ide", policy, role, scope, mode)
+        for policy, role, scope, mode in product(
+            ("none", "local-plugin-import-disabled"),
+            ROLES,
+            SCOPES,
+            MODES,
+        )
+    }
+    assert_that(set(identities)).is_equal_to(expected)
 
 
 def test_evidence_field_types_and_vocabulary(
@@ -98,16 +124,46 @@ def test_evidence_field_types_and_vocabulary(
 ) -> None:
     """Records use the complete draft field set and typed evidence steps."""
     for path, record in evidence_records:
-        assert_that(set(record)).described_as(path.name).is_equal_to(FIELDS)
+        ide = record["interface"] == "ide"
+        fields = FIELDS | {"policy", "evidence"} if ide else FIELDS
+        assert_that(set(record)).described_as(str(path)).is_equal_to(fields)
         assert_that(record["state"]).is_in(*STATES)
-        assert_that(record["observed"]).is_in("invoked", "discovered", "absent")
+        observations: tuple[str, ...] = ("invoked", "discovered", "absent")
+        if ide:
+            observations += ("not-measured",)
+            evidence = record["evidence"]
+            assert_that(set(evidence)).is_equal_to({"kind", "sources", "derivedFrom"})
+            assert_that(evidence["kind"]).is_in(
+                "pending",
+                "measured",
+                "owner-attestation",
+                "owner-derived",
+            )
+            assert_that(evidence["sources"]).is_instance_of(list).is_not_empty()
+            assert_that(evidence["derivedFrom"]).is_instance_of(list)
+            for source in [*evidence["sources"], *evidence["derivedFrom"]]:
+                assert_that(source).is_instance_of(str).is_not_empty()
+            if record["observed"] == "not-measured":
+                assert_that(record["state"]).is_in("unverified", "policy-blocked")
+                assert_that(record["version"]).is_none()
+                assert_that(record["os"]).is_none()
+        assert_that(record["observed"]).is_in(*observations)
         if record["state"] == "partial":
             assert_that(record["observed"]).described_as(path.name).is_in(
                 "invoked",
                 "discovered",
             )
-        assert_that(record["interface"]).is_equal_to("cli")
-        for key in ("version", "os", "notes"):
+        assert_that(record["interface"]).is_in("cli", "ide")
+        strings = (
+            ("notes",)
+            if ide and record["version"] is None
+            else (
+                "version",
+                "os",
+                "notes",
+            )
+        )
+        for key in strings:
             assert_that(record[key]).is_instance_of(str).is_not_empty()
         for key in ("lostFields", "policyMarkers", "steps"):
             assert_that(record[key]).is_instance_of(list)
@@ -117,11 +173,20 @@ def test_evidence_field_types_and_vocabulary(
         assert_that(set(record["lostFields"])).is_subset_of(
             {"invocation", "activation", "permissions", "scope"},
         )
-        assert_that(record["steps"]).is_not_empty()
+        if not ide or record["evidence"]["kind"] in {"pending", "measured"}:
+            assert_that(record["steps"]).is_not_empty()
         for step in record["steps"]:
-            assert_that(set(step)).is_equal_to(
-                {"phase", "command", "exitCode", "output"},
+            step_fields = (
+                {"phase", "action", "outcome", "output"}
+                if ide
+                else {
+                    "phase",
+                    "command",
+                    "exitCode",
+                    "output",
+                }
             )
+            assert_that(set(step)).is_equal_to(step_fields)
             assert_that(step["phase"]).is_in(
                 "install",
                 "reload",
@@ -129,11 +194,14 @@ def test_evidence_field_types_and_vocabulary(
                 "remove",
                 "verify",
             )
-            for key in ("command", "output"):
+            for key in ("action" if ide else "command", "output"):
                 assert_that(step[key]).is_instance_of(str).is_not_empty()
-            assert_that(type(step["exitCode"])).is_in(int, type(None))
-            if step["exitCode"] is None:
-                assert_that(record["state"]).is_equal_to("unverified")
+            if ide:
+                assert_that(step["outcome"]).is_in("pending", "observed", "not-run")
+            else:
+                assert_that(type(step["exitCode"])).is_in(int, type(None))
+                if step["exitCode"] is None:
+                    assert_that(record["state"]).is_equal_to("unverified")
 
 
 def test_supported_requires_invocation_and_complete_cycle(
@@ -145,6 +213,10 @@ def test_supported_requires_invocation_and_complete_cycle(
             continue
         assert_that(record["observed"]).described_as(path.name).is_equal_to("invoked")
         assert_that(record["lostFields"]).is_empty()
+        ide = record["interface"] == "ide"
+        if ide and record["evidence"]["kind"] == "owner-derived":
+            # The owner-rule test below checks the source's full measured cycle.
+            continue
         assert_that({step["phase"] for step in record["steps"]}).contains(
             "install",
             "reload",
@@ -153,13 +225,16 @@ def test_supported_requires_invocation_and_complete_cycle(
             "verify",
         )
         successful = {
-            step["phase"] for step in record["steps"] if step["exitCode"] == 0
+            step["phase"]
+            for step in record["steps"]
+            if (step.get("outcome") == "observed" if ide else step["exitCode"] == 0)
         }
         assert_that(successful).contains("invoke", "remove", "verify")
         invocation_output = "\n".join(
             step["output"]
             for step in record["steps"]
-            if step["phase"] == "invoke" and step["exitCode"] == 0
+            if step["phase"] == "invoke"
+            and (step.get("outcome") == "observed" if ide else step["exitCode"] == 0)
         )
         assert_that(invocation_output).contains(f"PROBE-7f3a-{record['role']}")
 
@@ -232,11 +307,68 @@ def test_recorded_attempt_totals(evidence_paths: list[Path]) -> None:
     assert_that(exits["not captured; RPC succeeded"]).is_equal_to(3)
 
 
-def test_cursor_policy_claims_require_machine_evidence(
+def test_cursor_policy_claims_follow_answered_owner_rule(
     evidence_records: list[tuple[Path, dict[str, Any]]],
 ) -> None:
-    """The laptop cannot silently stand in for the required policy machine."""
-    for _, record in evidence_records:
-        if record["host"] == "cursor" and record["state"] != "unverified":
-            assert_that(record["policyMarkers"]).is_not_empty()
-            assert_that(record["notes"]).contains("policy machine")
+    """Owner definitions and file derivations cannot masquerade as measurements."""
+    by_path = {path.resolve(): record for path, record in evidence_records}
+    root = Path(__file__).resolve().parents[1]
+    for path, record in evidence_records:
+        if record["host"] != "cursor":
+            continue
+        if record["interface"] == "cli":
+            assert_that(record["state"]).is_equal_to("unverified")
+            assert_that(record["policyMarkers"]).is_empty()
+            continue
+        evidence = record["evidence"]
+        if record["policy"] == "none":
+            assert_that(evidence["kind"]).is_in("pending", "measured")
+            assert_that(record["policyMarkers"]).is_empty()
+            assert_that(evidence["derivedFrom"]).is_empty()
+            if evidence["kind"] == "pending":
+                assert_that(record["state"]).is_equal_to("unverified")
+                assert_that(record["observed"]).is_equal_to("not-measured")
+            else:
+                assert_that(record["version"]).is_instance_of(str).is_not_empty()
+                assert_that(record["os"]).starts_with("darwin-")
+                assert_that(record["observed"]).is_not_equal_to("not-measured")
+                assert_that(evidence["sources"]).extracting(
+                    lambda source: ".json#" in source,
+                ).contains(True)
+            continue
+        assert_that(record["policyMarkers"]).is_equal_to(["Allow Local Plugin Imports"])
+        assert_that(evidence["sources"]).contains(OWNER_DECISION)
+        assert_that(record["steps"]).is_empty()
+        if record["mode"] == "native-plugin":
+            assert_that(record["state"]).is_equal_to("policy-blocked")
+            assert_that(record["observed"]).is_equal_to("not-measured")
+            assert_that(evidence["kind"]).is_equal_to("owner-attestation")
+            assert_that(evidence["sources"]).contains(CURSOR_DOCS)
+            assert_that(evidence["derivedFrom"]).is_empty()
+        else:
+            assert_that(evidence["kind"]).is_equal_to("owner-derived")
+            source_path = path.parent.parent / "none" / path.name
+            assert_that(evidence["derivedFrom"]).is_equal_to(
+                [source_path.relative_to(root).as_posix()],
+            )
+            source = by_path[source_path.resolve()]
+            for field in ("state", "observed", "version", "os", "lostFields"):
+                assert_that(record[field]).described_as(str(path)).is_equal_to(
+                    source[field],
+                )
+            if source["state"] == "supported":
+                assert_that(source["evidence"]["kind"]).is_equal_to("measured")
+            if source["evidence"]["kind"] == "pending":
+                tag = {
+                    ("user", "user-explode"): "ue",
+                    ("project", "repo-materialize"): "rm",
+                }.get(
+                    (record["scope"], record["mode"]),
+                )
+                dependency = (
+                    f"cursor-probe-results-*.json check {tag}-{record['role']}"
+                    if tag
+                    else "undefined mode/scope pair under #581"
+                )
+                assert_that(" ".join(record["notes"].split())).contains(dependency)
+                assert_that(" ".join(source["notes"].split())).contains(dependency)

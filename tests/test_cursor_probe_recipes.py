@@ -1,4 +1,4 @@
-"""Execute documented launch recipes with a fake Cursor and synthetic session."""
+"""Execute the personal-Mac handoff with fake Cursor and disposable storage."""
 
 import json
 import re
@@ -17,14 +17,15 @@ from assertpy import assert_that
 def launch_recipe(
     tmp_path: Path,
 ) -> Callable[[str, dict[str, str]], subprocess.CompletedProcess[str]]:
-    """Extract actual Markdown commands and supply no real desktop environment."""
-    document = (
-        Path(__file__).resolve().parents[1] / "docs/parity/cursor-probe-checklist.md"
-    ).read_text(encoding="utf-8")
+    """Extract actual Markdown commands; never launch a desktop or read real HOME."""
+    root = Path(__file__).resolve().parents[1]
+    document = (root / "docs/parity/cursor-probe-checklist.md").read_text(
+        encoding="utf-8",
+    )
     blocks = {
         block.splitlines()[0]: block
         for match in re.findall(
-            r"^   ```bash\n(.*?)^   ```",
+            r"^ {0,3}```bash\n(.*?)^ {0,3}```",
             document,
             flags=re.MULTILINE | re.DOTALL,
         )
@@ -35,85 +36,64 @@ def launch_recipe(
         pytest.skip("Documented recipes require Bash")
     fake_bin = tmp_path / "fake bin"
     fake_bin.mkdir()
+    hook = shutil.copy2(
+        src=root / "tests/fixtures/host-probe/probe-sentinel/hooks/sentinel.py",
+        dst=tmp_path / "hook.py",
+    )
     cursor = fake_bin / "cursor"
     cursor.write_text(
         f"#!{sys.executable}\n"
-        "import json, os, sys\n"
+        "import json, os, runpy, sys\n"
+        f"runpy.run_path({str(hook)!r})\n"
         "print(json.dumps({'argv': sys.argv[1:], 'env': dict(os.environ)}))\n",
         encoding="utf-8",
     )
     cursor.chmod(0o700)
     home = tmp_path / "original home"
     home.mkdir()
-    (home / ".Xauthority").write_bytes(b"Synthetic authority; never a real cookie")
-    (tmp_path / "runtime").mkdir()
+    ambient = tmp_path / "ambient tmp"
+    ambient.mkdir()
+    (ambient / "probe-hook.log").write_text("unrelated runtime log\n")
     project = tmp_path / "case/project"
     project.mkdir(parents=True)
     environment = {
         "PATH": f"{fake_bin}:/usr/bin:/bin",
         "HOME": str(home),
+        "TMPDIR": str(ambient),
         "probe_case": str(project.parent),
-        "DISPLAY": ":offline",
-        "WAYLAND_DISPLAY": "wayland-offline",
-        "XDG_RUNTIME_DIR": str(tmp_path / "runtime"),
-        "DBUS_SESSION_BUS_ADDRESS": "unix:path=offline-session-bus",
         "GITHUB_TOKEN": str(tmp_path / "synthetic-credential"),
         "SSH_AUTH_SOCK": "synthetic-agent-must-not-reach-cursor",
         "XDG_CONFIG_HOME": str(home / "ambient-config"),
-        "XDG_CACHE_HOME": str(home / "ambient-cache"),
+        "DISPLAY": ":synthetic-not-for-macos",
     }
 
     def run(
         recipe: str,
         overrides: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
-        """Execute a selected documented block using synthetic values only."""
-        script = blocks["# Isolated IDE common setup"] + blocks[f"# {recipe}"]
-        return (
-            subprocess.run(  # nosec B603 - fixed Bash, extracted local docs, fake PATH
-                [bash, "--noprofile", "--norc", "-eu", "-c", script],
-                cwd=tmp_path,
-                env={**environment, **overrides},
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
+        """Run selected source blocks using synthetic environment values only."""
+        script = blocks["# Isolated IDE common setup"] + blocks["# macOS launch"]
+        if recipe != "macOS launch":
+            script += blocks[f"# {recipe}"]
+        return subprocess.run(  # nosec B603 - fixed Bash, local docs and fake PATH
+            [bash, "--noprofile", "--norc", "-eu", "-c", script],
+            cwd=tmp_path,
+            env={**environment, **overrides},
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
         )
 
     return run
 
 
-@pytest.mark.parametrize(
-    ("recipe", "session", "platform_flag"),
-    [
-        (
-            "Linux X11 launch",
-            {"DISPLAY", "XAUTHORITY", "XDG_SESSION_TYPE"},
-            "--ozone-platform=x11",
-        ),
-        (
-            "Linux Wayland launch",
-            {
-                "WAYLAND_DISPLAY",
-                "XDG_RUNTIME_DIR",
-                "DBUS_SESSION_BUS_ADDRESS",
-                "XDG_SESSION_TYPE",
-            },
-            "--ozone-platform=wayland",
-        ),
-        ("macOS launch", set(), None),
-    ],
-)
-def test_platform_recipe_isolates_storage_and_allowlists_session(
+def test_macos_recipe_isolates_storage_with_empty_session_array(
     launch_recipe: Callable[[str, dict[str, str]], subprocess.CompletedProcess[str]],
     tmp_path: Path,
-    recipe: str,
-    session: set[str],
-    platform_flag: str | None,
 ) -> None:
-    """Fake launches preserve only explicit session access and scratch storage."""
-    result = launch_recipe(recipe, {})
+    """Nounset and an empty session array still launch with only scratch storage."""
+    result = launch_recipe("macOS launch", {})
     assert_that(result.returncode).is_zero()
     assert_that(result.stderr).is_empty()
     captured = json.loads(result.stdout)
@@ -129,79 +109,48 @@ def test_platform_recipe_isolates_storage_and_allowlists_session(
     for name, directory in storage.items():
         assert_that(environment[name]).is_equal_to(str(tmp_path / "case" / directory))
     # CPython may insert LC_CTYPE during locale coercion in the fake executable.
-    assert_that(set(environment)).is_subset_of(
-        {*storage, *session, "PATH", "LC_CTYPE"},
+    assert_that(set(environment)).is_subset_of({*storage, "PATH", "LC_CTYPE"})
+    assert_that(captured["argv"]).is_equal_to(
+        [
+            "--new-window",
+            "--user-data-dir",
+            str(tmp_path / "case/user-data"),
+            "--extensions-dir",
+            str(tmp_path / "case/extensions"),
+            str(tmp_path / "case/project"),
+        ],
     )
-    assert_that(environment).does_not_contain_key("GITHUB_TOKEN", "SSH_AUTH_SOCK")
-    argv = [
-        "--new-window",
-        "--user-data-dir",
-        str(tmp_path / "case/user-data"),
-        "--extensions-dir",
-        str(tmp_path / "case/extensions"),
-    ]
-    if platform_flag is not None:
-        argv.append(platform_flag)
-    argv.append(str(tmp_path / "case/project"))
-    assert_that(captured["argv"]).is_equal_to(argv)
-    if recipe == "Linux X11 launch":
-        assert_that(environment["DISPLAY"]).is_equal_to(":offline")
-        assert_that(environment["XAUTHORITY"]).is_equal_to(
-            str(tmp_path / "original home/.Xauthority"),
-        )
-    elif recipe == "Linux Wayland launch":
-        assert_that(environment["WAYLAND_DISPLAY"]).is_equal_to("wayland-offline")
-        assert_that(environment["XDG_RUNTIME_DIR"]).is_equal_to(
-            str(tmp_path / "runtime")
-        )
-        assert_that(environment["DBUS_SESSION_BUS_ADDRESS"]).is_equal_to(
-            "unix:path=offline-session-bus",
-        )
+    document = (
+        Path(__file__).resolve().parents[1] / "docs/parity/cursor-probe-checklist.md"
+    ).read_text()
+    # Bash >=4.4 relaxed nounset arrays; require the guard for the 3.2 contract.
+    assert_that(document).contains('${probe_session[@]+"${probe_session[@]}"}')
 
 
-@pytest.mark.parametrize("authority", ["explicit", "relative", "empty"])
-def test_x11_resolves_authority_before_changing_home(
+@pytest.mark.parametrize("ambient_tmp", ["ambient", "empty"])
+def test_hook_inspection_reads_child_case_log(
     launch_recipe: Callable[[str, dict[str, str]], subprocess.CompletedProcess[str]],
     tmp_path: Path,
-    authority: str,
+    ambient_tmp: str,
 ) -> None:
-    """Explicit and relative authority paths work; empty uses the original HOME."""
-    expected = tmp_path / "original home/.Xauthority"
-    if authority != "empty":
-        expected = tmp_path / "session authority"
-        expected.write_bytes(b"Synthetic session authority")
-    value = {
-        "explicit": str(expected),
-        "relative": expected.name,
-        "empty": "",
-    }[authority]
-    result = launch_recipe("Linux X11 launch", {"XAUTHORITY": value})
+    """The actual kit hook and documented inspection agree despite parent TMPDIR."""
+    overrides = {"TMPDIR": ""} if ambient_tmp == "empty" else {}
+    result = launch_recipe("Isolated hook inspection", overrides)
     assert_that(result.returncode).is_zero()
-    assert_that(json.loads(result.stdout)["env"]["XAUTHORITY"]).is_equal_to(
-        str(expected)
+    assert_that(result.stdout.splitlines()[-1]).is_equal_to("PROBE-7f3a-lifecycle")
+    assert_that((tmp_path / "ambient tmp/probe-hook.log").read_text()).is_equal_to(
+        "unrelated runtime log\n",
     )
-    assert_that((tmp_path / "case/home/.Xauthority").exists()).is_false()
-    assert_that(result.stdout).does_not_contain("Synthetic session authority")
 
 
-@pytest.mark.parametrize(
-    ("recipe", "overrides"),
-    [
-        ("Linux X11 launch", {"DISPLAY": ""}),
-        ("Linux X11 launch", {"XAUTHORITY": "missing-authority"}),
-        ("Linux Wayland launch", {"WAYLAND_DISPLAY": ""}),
-        ("Linux Wayland launch", {"XDG_RUNTIME_DIR": ""}),
-        ("Linux Wayland launch", {"XDG_RUNTIME_DIR": "relative-runtime"}),
-        ("Linux Wayland launch", {"XDG_RUNTIME_DIR": "/nonexistent-offline-runtime"}),
-        ("Linux Wayland launch", {"DBUS_SESSION_BUS_ADDRESS": ""}),
-    ],
-)
-def test_missing_session_requirements_prevent_launch(
+def test_cleanup_removes_isolated_log_and_preserves_ambient_log(
     launch_recipe: Callable[[str, dict[str, str]], subprocess.CompletedProcess[str]],
-    recipe: str,
-    overrides: dict[str, str],
+    tmp_path: Path,
 ) -> None:
-    """Absent prerequisites cannot reach even the fake Cursor executable."""
-    result = launch_recipe(recipe, overrides)
-    assert_that(result.returncode).is_not_zero()
-    assert_that(result.stdout).is_empty()
+    """Documented cleanup removes the owned case without touching ambient runtime."""
+    result = launch_recipe("Isolated case cleanup", {})
+    assert_that(result.returncode).is_zero()
+    assert_that((tmp_path / "case").exists()).is_false()
+    assert_that((tmp_path / "ambient tmp/probe-hook.log").read_text()).is_equal_to(
+        "unrelated runtime log\n",
+    )

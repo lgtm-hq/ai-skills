@@ -1,0 +1,30 @@
+---
+host: cursor
+interface: ide
+version: null
+os: null
+role: workflow
+scope: user
+mode: native-plugin
+state: policy-blocked
+lostFields: []
+observed: not-measured
+policyMarkers:
+  - Allow Local Plugin Imports
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps: []
+notes: |-
+  Native-plugin loading under policy is blocked by owner attestation
+  and definition. No policy-host measurement or IDE invocation is
+  claimed. No employer-managed machine is probed.
+  Owner decision:
+  https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
+  Public docs: https://cursor.com/docs/plugins#test-plugins-locally
+policy: local-plugin-import-disabled
+evidence:
+  kind: owner-attestation
+  sources:
+    - https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
+    - https://cursor.com/docs/plugins#test-plugins-locally
+  derivedFrom: []

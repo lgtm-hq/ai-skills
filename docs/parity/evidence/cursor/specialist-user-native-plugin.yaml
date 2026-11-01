@@ -17,12 +17,14 @@ steps:
     command: not run
     exitCode: null
     output: |-
-      requires maintainer-run policy machine; this laptop has no
-      plugin-import-disabled admin policy. Clean-HOME CLI invocation failed
-      authentication (R046); no portable auth-only file was identified. See
-      cursor-probe-checklist.md.
+      Clean-HOME CLI invocation failed authentication (R046); no portable
+      auth-only file was identified. CLI evidence cannot certify Cursor IDE.
+      The personal IDE JSON is outstanding; see cursor-probe-checklist.md.
+      Owner decision:
+      https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
 notes: |-
-  Reason: requires maintainer-run policy machine; this laptop has no
-  plugin-import-disabled admin policy. Clean-HOME CLI invocation failed
-  authentication (R046); no portable auth-only file was identified. See
-  cursor-probe-checklist.md.
+  Reason: Clean-HOME CLI invocation failed authentication (R046); no portable
+  auth-only file was identified. CLI evidence cannot certify Cursor IDE.
+  The personal IDE JSON is outstanding; see cursor-probe-checklist.md.
+  Owner decision:
+  https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548

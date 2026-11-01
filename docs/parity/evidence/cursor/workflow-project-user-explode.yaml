@@ -17,10 +17,16 @@ steps:
     command: not run
     exitCode: null
     output: |-
-      Not run: this mode/scope pair is undefined by #581; policy-host
-      acceptance also remains pending (owner gate 6557600027).
+      This mode/scope pair is undefined by #581. Clean-HOME CLI invocation failed
+      authentication (R046); no portable
+      auth-only file was identified. CLI evidence cannot certify Cursor IDE.
+      The personal IDE JSON is outstanding; see cursor-probe-checklist.md.
+      Owner decision:
+      https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
 notes: |-
-  Reason: this mode/scope pair is undefined by #581. Policy-host
-  acceptance also remains pending (owner gate 6557600027); this
-  laptop has no plugin-import-disabled admin policy. No policy claim
-  is established. See cursor-probe-checklist.md.
+  Reason: This mode/scope pair is undefined by #581. Clean-HOME CLI invocation
+  failed authentication (R046); no portable
+  auth-only file was identified. CLI evidence cannot certify Cursor IDE.
+  The personal IDE JSON is outstanding; see cursor-probe-checklist.md.
+  Owner decision:
+  https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548

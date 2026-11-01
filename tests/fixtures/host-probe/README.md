@@ -29,6 +29,33 @@ The stdio MCP server uses Python's standard library, lists one read-only tool,
 and returns the integration token. No network or dependency installation is
 needed for either fixture. Run them only from a copied disposable tree.
 
+## Personal Cursor source kit
+
+[`cursor-macos-probe.sh`](cursor-macos-probe.sh) is the supplied interactive
+macOS Bash 3.2 kit, reviewed and hardened before committing. It uses a fresh
+HOME/project, TMPDIR/XDG roots, user-data and extensions directories, phased
+six-role checks, restart/removal observations, private config fingerprints
+(paths and SHA-256 only), sanitized JSON and an EXIT cleanup trap. The embedded
+tagged hook writes to the isolated `tmp/probe-hook.log`; the embedded MCP oracle
+emits its sentinel only for a valid call to the advertised tool. Offline tests
+extract and execute these actual embedded programs with synthetic inputs.
+
+Follow the [personal-Mac checklist](../../../docs/parity/cursor-probe-checklist.md)
+and [owner decision](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548).
+No employer-managed machine or organization policy data is used. Native-plugin
+policy cells are owner-attested definitions; file-policy cells derive from the
+matching personal results. The public setting is **Allow Local Plugin Imports**
+([Cursor docs](https://cursor.com/docs/plugins#test-plugins-locally)).
+
+The script's fingerprint excludes runtime-like paths and files at least 5 MiB;
+it is not the `config_snapshot.py` inventory and does not certify whole-home
+immutability. Changes have no assigned cause. JSON contains observations before
+the EXIT purge, so it does not itself prove successful purge; `--keep` retains
+private scratch state. Review JSON before sharing. No IDE was run here and no
+personal results have arrived: the source kit is complete, while #563 remains
+open pending the owner's JSON evidence and required merge order. Neither this
+script nor its offline tests upgrades historical host support or cleanup claims.
+
 ## Prepare an isolated case
 
 Run from the checkout before overriding the home for any child process:

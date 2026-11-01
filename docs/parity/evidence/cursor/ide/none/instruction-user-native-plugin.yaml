@@ -1,0 +1,30 @@
+---
+host: cursor
+interface: ide
+version: null
+os: null
+role: instruction
+scope: user
+mode: native-plugin
+state: unverified
+lostFields: []
+observed: not-measured
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: invoke
+    action: Await cursor-probe-results-*.json check np-instruction
+    outcome: pending
+    output: No personal Cursor IDE JSON result received.
+notes: |-
+  Reason: awaiting cursor-probe-results-*.json check np-instruction.
+  No IDE version, architecture or observation is claimed.
+  Owner decision:
+  https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
+policy: none
+evidence:
+  kind: pending
+  sources:
+    - tests/fixtures/host-probe/cursor-macos-probe.sh
+  derivedFrom: []

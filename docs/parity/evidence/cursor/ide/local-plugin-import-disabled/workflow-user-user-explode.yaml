@@ -1,0 +1,30 @@
+---
+host: cursor
+interface: ide
+version: null
+os: null
+role: workflow
+scope: user
+mode: user-explode
+state: unverified
+lostFields: []
+observed: not-measured
+policyMarkers:
+  - Allow Local Plugin Imports
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps: []
+notes: |-
+  Reason: file-policy behavior follows the matching personal cell by
+  owner decision; outstanding dependency: cursor-probe-results-*.json check
+  ue-workflow.
+  The source cell is unverified, so no measured result is derived.
+  Owner decision:
+  https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
+policy: local-plugin-import-disabled
+evidence:
+  kind: owner-derived
+  sources:
+    - https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
+  derivedFrom:
+    - docs/parity/evidence/cursor/ide/none/workflow-user-user-explode.yaml

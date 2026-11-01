@@ -5,7 +5,9 @@ implementation. It changes no gateway support table. A record describes one
 tested envelope and its semantics, on one host version and interface, rather
 than promising support for every possible payload of that role.
 
-There are 108 records: three hosts × six roles × two scopes × three modes.
+The original CLI set has 108 records: three hosts × six roles × two scopes ×
+three modes. The separate Cursor IDE extension below adds 72 records, for 180
+total; interface and policy dimensions never overwrite the original identities.
 `user-explode/project` and `repo-materialize/user` are deliberately recorded as
 unverified: #581 does not define these combinations. They are inventory cells,
 not proposed routes. User and project are distinct from Claude's additional
@@ -14,7 +16,7 @@ not proposed routes. User and project are distinct from Claude's additional
 | Field           | Type and meaning                                                                |
 | --------------- | ------------------------------------------------------------------------------- |
 | `host`          | `claude-code`, `codex`, `cursor`                                                |
-| `interface`     | `cli` for this run; CLI results do not certify an IDE                           |
+| `interface`     | `cli` for the original run; `ide` only in the separate extension below          |
 | `version`       | Exact installed version string                                                  |
 | `os`            | OS and architecture, here `linux-x86_64`                                        |
 | `role`          | `skill`, `instruction`, `specialist`, `workflow`, `lifecycle`, `integration`    |
@@ -23,7 +25,7 @@ not proposed routes. User and project are distinct from Claude's additional
 | `state`         | One of the seven states below                                                   |
 | `lostFields`    | List of demonstrated losses: `invocation`, `activation`, `permissions`, `scope` |
 | `observed`      | `invoked`, `discovered`, `absent`                                               |
-| `policyMarkers` | Observed policy markers with their source; empty means none established         |
+| `policyMarkers` | CLI: observed markers; Cursor IDE policy: public setting name only              |
 | `checkedOn`     | ISO date of observation or explicit assessment of why no probe ran              |
 | `recheckBy`     | ISO date strictly later than `checkedOn`; not a support extension               |
 | `steps`         | Nonempty list of `{phase, command, exitCode, output}` mappings                  |
@@ -46,7 +48,7 @@ server process shutdown exit codes were not captured.
 | `partial`              | Some behavior observed, but a semantic loss, discovery-only result, or incomplete semantic verification remains |
 | `unverified`           | Not safely or conclusively tested; a reason is mandatory                                                        |
 | `platform-unavailable` | Tested prerequisite absent on this platform; no inference from another OS                                       |
-| `policy-blocked`       | Active policy demonstrably denied the tested route                                                              |
+| `policy-blocked`       | Demonstrated denial, or the explicitly sourced Cursor owner definition below                                    |
 | `source-unportable`    | Demonstrated source requirement cannot survive the projection                                                   |
 | `adapter-missing`      | Host route established but the necessary projection does not exist                                              |
 
@@ -65,11 +67,67 @@ it does not prove the requested skill ran. Never transfer that evidence to
 another role. Likewise, an installed plugin is not a discovered specialist.
 
 Do not infer policy from the presence of a plugin directory, an empty marker
-list, authentication failure, or this laptop's lack of managed policy. Cursor's
-required policy-machine records remain unverified until the maintainer follows
-the [checklist](cursor-probe-checklist.md). No `tier` field is ratified here;
+list or authentication failure. The original CLI records do not assess policy.
+The [owner decision](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548)
+defines Cursor policy outcomes using public documentation and personal-Cursor
+results, as described below and in the [checklist](cursor-probe-checklist.md).
+No employer-managed machine is probed or organization policy data collected.
+No `tier` field is ratified here;
 Issue #587's proposed `tier: verified` belongs to #565/#585, not an invented
 spike field.
+
+## Cursor IDE and policy extension
+
+This is the minimal draft addition needed for the owner's answered decision,
+flagged for #565 ratification and #585 implementation, not a production redesign.
+Original filenames remain `evidence/<host>/<role>-<scope>-<mode>.yaml`, with
+implicit `interface: cli` and policy unassessed. New filenames are
+`evidence/cursor/ide/<policy>/<role>-<scope>-<mode>.yaml`, where policy is
+`none` (personal run) or `local-plugin-import-disabled` (owner derivation).
+Each has all 36 role/scope/mode identities, including the twelve undefined pairs.
+Full identity is `(host, interface, policy, role, scope, mode)`.
+
+IDE records retain the base fields and add exactly `policy` and `evidence`:
+
+| Field                  | Meaning                                                                                             |
+| ---------------------- | --------------------------------------------------------------------------------------------------- |
+| `policy`               | `none` or `local-plugin-import-disabled`                                                            |
+| `evidence.kind`        | `pending`, `measured`, `owner-attestation`, or `owner-derived`                                      |
+| `evidence.sources`     | Nonempty list of source URLs or repository paths; measured JSON references include actual check IDs |
+| `evidence.derivedFrom` | Repository-relative matching personal-cell path for file-policy derivations; otherwise empty list   |
+
+`version` and `os` are null until a personal IDE measurement exists; null also
+applies to native policy definitions, which make no version-specific measured
+claim. `observed: not-measured` is permitted only for pending IDE evidence and
+owner definitions. It explicitly avoids interpreting `absent` as an empirical
+result. The assessment date is not an execution date for these records.
+
+IDE steps use `{phase, action, outcome, output}` with the existing five phases
+and `outcome: pending|observed|not-run`, rather than CLI commands/exit codes.
+Owner-attested and owner-derived records have no empirical steps. Pending
+personal cells name their exact outstanding JSON check in an invoke action.
+Measured `supported` requires an observed invocation token, all five phases,
+observed removal/verification and preserved semantics. A derived supported
+file-policy cell must reference a measured supported personal cell; it cannot
+claim an independent execution or exceed that source's state/observation/losses.
+
+The [owner record](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548)
+and [Cursor public docs](https://cursor.com/docs/plugins#test-plugins-locally)
+are the sources for all twelve native-plugin policy definitions. Those records
+use `state: policy-blocked`, `observed: not-measured`, empty empirical steps,
+and `evidence.kind: owner-attestation`. This is **by owner attestation and
+definition**, not a policy-host measurement. `policyMarkers` contains only
+`Allow Local Plugin Imports`; the source links live in `evidence.sources`.
+No guessed on-disk policy detector follows from that public setting name.
+
+The 24 file-policy cells use `evidence.kind: owner-derived` and cite the owner
+decision plus the exact matching personal-cell path. The defined routes await
+`ue-<role>` (user-explode/user) or `rm-<role>` (repo-materialize/project) from
+`cursor-probe-results-*.json`; the other pairs remain undefined by #581.
+Until those measurements exist, file-policy cells stay unverified with null
+version/OS and no measured observation. All 36 personal IDE cells currently
+remain unverified. The supplied script and offline tests are source validation,
+not returned evidence. No personal version, observation or cleanup is invented.
 
 Paths in committed evidence are home-relative aliases (`~/probe/...`) or
 repository-relative paths. Tokens, auth contents, personal absolute paths,

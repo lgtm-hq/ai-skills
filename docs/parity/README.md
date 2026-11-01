@@ -17,24 +17,43 @@ The issue describes Codex 0.165.0 on another machine. This run verifies
 | -------------------- | ----: |
 | supported            |     6 |
 | partial              |    10 |
-| unverified           |    92 |
+| unverified           |   152 |
 | platform-unavailable |     0 |
-| policy-blocked       |     0 |
+| policy-blocked       |    12 |
 | source-unportable    |     0 |
 | adapter-missing      |     0 |
 
 The six supported cells are Codex instruction delivery in the two file modes
 and Claude lifecycle delivery at native user/project, user-explode/user, and
-repo-materialize/project. All 36 Cursor cells are unverified. The matrix also
-includes 36 structurally undefined mode/scope combinations across the hosts;
-they are not support candidates. A partial cell never authorizes widening
+repo-materialize/project. Counts were computed from all 180 YAML records:
+108 original CLI cells plus 36 personal Cursor IDE cells and 36 owner-derived
+Cursor IDE policy cells. All 36 CLI Cursor cells and all 36 personal IDE cells
+remain unverified. Twelve native-plugin policy cells are blocked by owner
+definition; the 24 file-policy cells await their matching personal results
+(including twelve undefined mode/scope pairs). The original matrix includes
+36 structurally undefined mode/scope combinations across the hosts; they are
+not support candidates. A partial cell never authorizes widening
 activation. [Record format](evidence-format.md), [command log](probe-log.md),
 [probe kit](../../tests/fixtures/host-probe/README.md), and
 [Cursor handoff](cursor-probe-checklist.md) give the reproducible details.
 
-The owner [Cursor policy-host acceptance gate](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6557600027)
-remains pending; all 36 Cursor cells stay unverified. Source fixes and offline
-regressions do not satisfy that live acceptance or authorize wider activation.
+The binding [owner decision](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548)
+requires only personal Cursor on an isolated personal Mac. No employer-managed
+machine is probed or organization policy names/values/sources collected.
+[Cursor's public docs](https://cursor.com/docs/plugins#test-plugins-locally)
+name **Allow Local Plugin Imports**. Native-plugin policy records cite these
+sources as owner attestation and definition, with no empirical policy-host
+measurement. File-policy records depend on the exact matching personal IDE
+cell; the defined routes await `ue-<role>` or `rm-<role>` JSON checks. The
+[minimal IDE/policy extension](evidence-format.md#cursor-ide-and-policy-extension)
+is flagged for #565; it does not ratify a production schema.
+
+The [personal macOS source kit](../../tests/fixtures/host-probe/cursor-macos-probe.sh)
+is complete. No returned `cursor-probe-results-*.json` was found in the evidence
+handoff directory during R4. Personal IDE versions, observations and cleanup
+cannot be supplied by offline tests. The owner's returned-JSON gate remains:
+this is **Part of #563**, with no closure or host acceptance claim. Publication
+and review remain with the parent; the required merge order after #562 applies.
 
 ## Findings for #584
 
@@ -49,8 +68,9 @@ regressions do not satisfy that live acceptance or authorize wider activation.
   (R080–R093), but Claude retained the cached tree. Final purge of the owned
   scratch roots removed that residue. Do not equate an empty plugin list with
   an empty cache, or delete a shared cache without ownership checks.
-- No evidence establishes Cursor's automatic project plugin drop path, nor
-  either drop path under policy. `native-cursor.js` constructs the project
+- No measurement establishes Cursor's automatic project plugin drop path.
+  Both native drop paths under policy are blocked by owner definition, not
+  empirically measured here. `native-cursor.js` constructs the project
   path, but construction is not host loading evidence. #584 must retain its
   reject-unless-verified gate. No Copilot claim was tested by this issue.
 
@@ -118,20 +138,20 @@ listing worked. No MCP config table was created by native plugin import.
 `features list` reported `plugins` and `hooks` stable, `plugin_hooks` removed
 (R056); feature flags alone do not prove a lifecycle projection.
 
-### Cursor under plugin-import-disabled policy
+### Cursor personal results and owner-derived policy
 
-| Question                                            | Answer                                                                                                                                                                                                    |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Do user/project plugins/local load?                 | Not determinable: requires maintainer-run policy machine; this laptop has no such policy.                                                                                                                 |
-| Do rules, skills, agents and mcp.json load?         | Not determinable under policy. The CLI's clean-HOME invocation also lacked portable auth (R046).                                                                                                          |
-| Cross-reads from .claude/skills and .agents/skills? | Not determinable here; the checklist tests each root separately and then duplicates. Do not promote ADR 0004's historical statement to this version's evidence.                                           |
-| Detectable on-disk policy markers?                  | Not determinable without a policy machine. No marker key/path is invented; an empty policyMarkers list means no observation. Capture effective policy plus its source and test whether it is server-only. |
+| Question                                            | Answer                                                                                                                                                                                                         |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Do user/project plugins/local load?                 | Under policy: `policy-blocked` by owner attestation/definition. Without policy: both candidate roots await personal IDE JSON checks `np-<role>` and `npp-<role>`.                                              |
+| Do rules, skills, agents and mcp.json load?         | Policy file modes follow the matching personal result by owner decision. Those results are outstanding (`ue-<role>` and `rm-<role>`); records remain unverified. CLI auth failure R046 proves no IDE behavior. |
+| Cross-reads from .claude/skills and .agents/skills? | Await personal `xread-claude`/`xread-agents` checks. The supplied combined phase does not establish duplicate discovery or repeated execution; do not promote historical statements to current evidence.       |
+| Detectable on-disk policy markers?                  | No detector is established. `policyMarkers` names only public **Allow Local Plugin Imports**, with source/derivation in the separate IDE policy records. No organization policy collection is requested.       |
 
-The [exact checklist](cursor-probe-checklist.md) is the outstanding human step.
-All 36 Cursor cells remain unverified; the owner's
-[policy-host gate](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6557600027)
-remains pending. This work is **Part of #563**, not completion of that issue.
-Neither authentication failure nor a missing policy test is `policy-blocked`.
+The [personal-Mac checklist](cursor-probe-checklist.md) is the outstanding human
+step. The owner policy decision is answered; the missing input is personal
+JSON, not another policy decision. Only native policy definitions are presently
+`policy-blocked`; authentication failure is still unverified. The separate
+identities preserve CLI evidence without implying it certified an IDE.
 
 ### Claude Code
 
@@ -155,8 +175,8 @@ forward before implementation:
 | #583  | Problem locates disable-model-invocation loss in exploded delivery                          | Loss is also observed in Codex native delivery (R031). Apply the rejection/override rules to native envelopes as well. File-mode restriction preservation remains unverified.                                                    |
 | #575  | Per-plugin envelopes list specialists as agents by role                                     | Codex accepts the experimental key but execution is unverified; command migration, rather than a native command directory contract, is what invoked. No evidence authorizes Codex agents/hooks generation as supported.          |
 | #584  | Scope fix and remove/rollback use matching scope                                            | Scope behavior confirmed; Claude uninstall leaves cache (R083/R088/R093). Registration removal and cache cleanup need separate ownership-aware handling. Cursor project loading stays unverified.                                |
-| #581  | Host-native repo files offer a route under restricted policy                                | Codex project skill/instruction route observed, but no Cursor policy route is established. The existing evidence gate must remain; do not count the policy scenario as proven.                                                   |
-| #582  | Example local-plugin-import-disabled marker can drive detection                             | No disk marker was identified on this non-policy machine. Treat the example as a candidate pending the checklist, not a known setting or filename.                                                                               |
+| #581  | Host-native repo files offer a route under restricted policy                                | Codex project skill/instruction route observed. Owner attests Cursor file-policy equivalence; actual personal Cursor file results remain pending. Preserve that exact dependency before claiming support.                        |
+| #582  | Example local-plugin-import-disabled marker can drive detection                             | Public Allow Local Plugin Imports names the policy; no on-disk detector was identified. The owner decision does not authorize organization policy collection or invent a setting filename.                                       |
 | #587  | Supported workflow cells count toward portability; native cells require tier: verified      | Codex native workflow is partial, not a portable user-only workflow. Cursor policy evidence is pending. Draft #563 has no tier field; #565/#585 must define it before #587 consumes it.                                          |
 
 The last four caveats reinforce existing evidence gates; they are not claims

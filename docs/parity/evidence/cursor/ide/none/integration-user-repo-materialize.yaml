@@ -1,0 +1,31 @@
+---
+host: cursor
+interface: ide
+version: null
+os: null
+role: integration
+scope: user
+mode: repo-materialize
+state: unverified
+lostFields: []
+observed: not-measured
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: invoke
+    action: 'Await undefined mode/scope pair under #581; no personal check scheduled'
+    outcome: not-run
+    output: No personal Cursor IDE JSON result received.
+notes: |-
+  Reason: awaiting undefined mode/scope pair under #581; no personal check
+  scheduled.
+  No IDE version, architecture or observation is claimed.
+  Owner decision:
+  https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548
+policy: none
+evidence:
+  kind: pending
+  sources:
+    - tests/fixtures/host-probe/cursor-macos-probe.sh
+  derivedFrom: []
