@@ -93,6 +93,7 @@ externally.
 
 - Publication and consumption share a reproducible contract without inheriting
   vendor authority.
-- These contracts do not settle the Proposed runtime decision in
-  [ADR 0008](./0008-engine-runtime-build-and-install-planes.md); they apply to
-  either runtime outcome. No deployment measurement is implied.
+- These contracts follow the Accepted bundled-Python engine and thin TypeScript
+  launcher decision in
+  [ADR 0008](./0008-engine-runtime-build-and-install-planes.md), preserving its
+  build/install boundary. No additional deployment measurement is implied.
