@@ -14,7 +14,7 @@ jobs:
   version-pr:
     # lgtm-ci owns the release lifecycle; this repo stays a thin caller.
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-release-version-pr.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-release-version-pr.yml@f63b85534ce3a561f177c4ee3417b17c04f14a8b # v0.83.1
     with:
       # Allow feat → minor; clamp major without an explicit break.
       max-bump: minor
@@ -22,7 +22,7 @@ jobs:
       # Keeps README install examples pinned to the release being cut.
       version-update-script: scripts/update-readme-version.sh
       auto-merge: true
-      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
+      tooling-ref: 'f63b85534ce3a561f177c4ee3417b17c04f14a8b' # v0.83.1
       egress-policy: block
       egress-preset: pypi
       # Harden-runner pre reads inputs only (not resolved presets).
