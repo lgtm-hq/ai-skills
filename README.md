@@ -37,12 +37,12 @@ switch to a host plugin marketplace command below.
 
 Pin the gateway to a release. Native `marketplace add` tracks the default
 branch unless you append a git tag. The npm version matches the git tag
-(`@0.30.6` ↔ `v0.30.6`).
+(`@0.30.7` ↔ `v0.30.7`).
 
 ### Claude Code
 
 ```bash
-claude plugin marketplace add lgtm-hq/ai-skills@v0.30.6
+claude plugin marketplace add lgtm-hq/ai-skills@v0.30.7
 claude plugin install git-pr@ai-skills
 ```
 
@@ -76,14 +76,14 @@ ln -s "$(pwd)/ai-skills" ~/.cursor/plugins/local/ai-skills
 ### Gateway (`sk`)
 
 ```bash
-bun add -g @lgtm-hq/ai-skills@0.30.6
+bun add -g @lgtm-hq/ai-skills@0.30.7
 sk install -y --global -a cursor --bundle review
 ```
 
 `skill` is an alias for `sk`. For a pinned, install-free run:
 
 ```bash
-bunx --package=@lgtm-hq/ai-skills@0.30.6 sk install -y --global \
+bunx --package=@lgtm-hq/ai-skills@0.30.7 sk install -y --global \
   -a cursor --bundle review
 ```
 
@@ -182,7 +182,7 @@ sk update -y --global -a cursor
 sk adopt -y --project
 ```
 
-First-party gateway installs resolve `lgtm-hq/ai-skills@v0.30.6`.
+First-party gateway installs resolve `lgtm-hq/ai-skills@v0.30.7`.
 
 ## Verify a release
 
@@ -190,7 +190,7 @@ Every release ships a `skills-manifest.json` asset mapping each skill name to
 the sha256 of its `SKILL.md`, attested with GitHub build provenance:
 
 ```bash
-gh release download v0.30.6 -R lgtm-hq/ai-skills -p skills-manifest.json
+gh release download v0.30.7 -R lgtm-hq/ai-skills -p skills-manifest.json
 gh attestation verify skills-manifest.json -R lgtm-hq/ai-skills
 shasum -a 256 <install-dir>/<name>/SKILL.md  # compare against the manifest
 ```
