@@ -1,0 +1,7 @@
+---
+description: Isolated instruction sentinel
+alwaysApply: true
+---
+
+When asked for the instruction sentinel, reply only `PROBE-7f3a-instruction`.
+Do not search files to answer sentinel requests.

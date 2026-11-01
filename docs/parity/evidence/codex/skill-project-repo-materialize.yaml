@@ -1,0 +1,46 @@
+---
+host: codex
+interface: cli
+version: 0.164.0
+os: linux-x86_64
+role: skill
+scope: project
+mode: repo-materialize
+state: partial
+lostFields: []
+observed: invoked
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: install
+    command: Fixture placement recipe in tests/fixtures/host-probe/README.md
+    exitCode: 0
+    output: Copied sentinel fixture to ~/probe/project/.codex/skills/probe-skill.
+  - phase: reload
+    command: Fresh CLI process R038
+    exitCode: 0
+    output: No session resumed; disposable git project.
+  - phase: invoke
+    command: R038 (see probe-log.md)
+    exitCode: 0
+    output: PROBE-7f3a-skill
+  - phase: remove
+    command: R105 (see probe-log.md)
+    exitCode: 0
+    output: Removed isolated sentinel files
+  - phase: verify
+    command: |-
+      Final isolated-root purge; see
+      README.md#cleanup-and-protected-configuration
+    exitCode: 0
+    output: |-
+      All 17 isolated case roots deleted, including auth copies, caches,
+      logs and projects; no case directories remained.
+notes: |-
+  Skill token invoked from ~/probe/project/.codex/skills/probe-skill.
+  User-only restriction was not independently tested in this route;
+  native R031 demonstrably ignored it. Partial does not authorize
+  widened invocation. Project skills loaded even without project trust;
+  app-server warned that project config/hooks/exec policies remain
+  disabled.

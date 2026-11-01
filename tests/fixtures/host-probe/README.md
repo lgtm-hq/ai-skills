@@ -1,0 +1,215 @@
+# Isolated host probe kit
+
+Research fixture for #563; never install this package into a real home or
+project. The three plugin envelopes and marketplaces are hand-written test
+inputs, not production generated adapters. Tokens live only in payloads:
+
+| Role | Payload | Sentinel |
+| --- | --- | --- |
+| skill | `probe-sentinel/skills/probe-skill/SKILL.md` | `PROBE-7f3a-skill` |
+| instruction | `AGENTS.md`, `CLAUDE.md`, `rules/probe.mdc` | `PROBE-7f3a-instruction` |
+| specialist | `agents/probe-specialist.md` | `PROBE-7f3a-specialist` |
+| workflow | `commands/probe-workflow.md` | `PROBE-7f3a-workflow` |
+| lifecycle | `hooks/hooks.json`, `hooks/sentinel.py` | `PROBE-7f3a-lifecycle` |
+| integration | `.mcp.json`, `mcp/sentinel.py` | `PROBE-7f3a-integration` |
+
+The published kit adds lint-only Markdown headings and Python package markers
+after measurement. Sentinel bodies, frontmatter and executable behavior are
+unchanged; this spike does not claim a byte-identical artifact digest.
+
+The hook appends only to the explicitly supplied `$TMPDIR/probe-hook.log`.
+The stdio MCP server uses Python's standard library, lists one read-only tool,
+and returns the integration token. No network or dependency installation is
+needed for either fixture. Run them only from a copied disposable tree.
+
+## Prepare an isolated case
+
+Run from the checkout before overriding the home for any child process:
+
+```bash
+probe_fixture="$PWD/tests/fixtures/host-probe"
+probe_real_home="$HOME"
+probe_parent="$(mktemp -d "${TMPDIR:-/tmp}/host-probe.XXXXXX")"
+python3 "$probe_fixture/config_snapshot.py" "$probe_parent/before.json"
+probe_case="$probe_parent/case"
+mkdir -p "$probe_case"/{home,claude,codex,tmp,project,config,cache,data,state}
+cp -R "$probe_fixture" "$probe_case/marketplace"
+git init -q "$probe_case/project"
+cd "$probe_case/project"
+```
+
+Every host command below must have this environment prefix. Use a new case
+root for each host/mode/scope and never resume an earlier host session:
+
+```bash
+env -i PATH="$PATH" LANG=C.UTF-8 \
+  HOME="$probe_case/home" CODEX_HOME="$probe_case/codex" \
+  CLAUDE_CONFIG_DIR="$probe_case/claude" TMPDIR="$probe_case/tmp" \
+  XDG_CONFIG_HOME="$probe_case/config" XDG_CACHE_HOME="$probe_case/cache" \
+  XDG_DATA_HOME="$probe_case/data" XDG_STATE_HOME="$probe_case/state" \
+  DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+  codex --version
+```
+
+Replace only the final executable/argv. The actual run retained the installed
+PATH, language, terminal, shell and configured certificate/proxy environment
+names, with all credential environment variables dropped. The empty-env
+recipe above is sufficient on machines without required proxy configuration.
+Do not put proxy credentials into evidence. Redact paths to `~/probe/...`.
+
+If invoking Codex requires auth, copy only its auth file, without displaying it:
+
+```bash
+install -m 600 "$probe_real_home/.codex/auth.json" "$probe_case/codex/auth.json"
+```
+
+Claude and Cursor had no portable auth-only file identified for this run.
+Do not copy their settings, helpers, sessions, plugin trees or full homes.
+If auth cannot be safely isolated, record the invocation unverified. Never
+run a real helper from the owner's settings just to make a probe authenticate.
+
+## Native commands
+
+With the environment prefix on **every** command, use:
+
+```bash
+codex plugin marketplace add "$probe_case/marketplace" --json
+codex plugin add probe-sentinel@probe-marketplace --json
+codex plugin list --marketplace probe-marketplace --json
+codex exec --ephemeral -s read-only \
+  'Use the installed probe-skill skill and return only its sentinel.'
+codex exec --ephemeral -s read-only \
+  'Use the installed probe-sentinel workflow probe-workflow and return only its sentinel.'
+codex mcp list --json
+codex plugin remove probe-sentinel@probe-marketplace --json
+codex plugin list --marketplace probe-marketplace --json
+codex plugin marketplace remove probe-marketplace --json
+```
+
+Claude user, project and supplementary local scopes use separate cases:
+
+```bash
+claude plugin marketplace add "$probe_case/marketplace"
+claude plugin install probe-sentinel@probe-marketplace --scope project
+claude plugin list --json
+claude -p --model haiku --max-turns 1 '/probe-sentinel:probe-skill'
+claude mcp list
+claude plugin uninstall probe-sentinel@probe-marketplace --scope project
+claude plugin list --json
+claude plugin marketplace remove probe-marketplace
+```
+
+The run also separately tested `marketplace add/remove --scope project`.
+For a new full project-native cycle, give marketplace add and remove the same
+project scope as install and uninstall. Inspect all settings and cache locations
+before and after; Claude unregisters without deleting its cache.
+
+Do not put the sentinel token into the prompt: it would prove nothing. Explicit
+specialist and workflow invocations must actually load their role payloads;
+listing a plugin is insufficient. Authentication failure can still trigger
+SessionStart, so inspect the independent hook log without crediting the skill.
+
+## File placement recipes
+
+These describe the Python copy/write operations performed by the temporary
+driver; the log preserves actual host commands, not an executable automation
+framework. All destinations are under the isolated case.
+
+| Host/role | user-explode/user | repo-materialize/project |
+| --- | --- | --- |
+| Codex skill | `$CODEX_HOME/skills/probe-skill/` | `project/.codex/skills/probe-skill/` |
+| Codex instruction | `$CODEX_HOME/AGENTS.md` | `project/AGENTS.md` |
+| Claude skill | `$CLAUDE_CONFIG_DIR/skills/probe-skill/` | `project/.claude/skills/probe-skill/` |
+| Claude instruction | `$CLAUDE_CONFIG_DIR/CLAUDE.md` | `project/CLAUDE.md` |
+| Claude specialist | `$CLAUDE_CONFIG_DIR/agents/probe-specialist.md` | `project/.claude/agents/probe-specialist.md` |
+| Claude workflow | `$CLAUDE_CONFIG_DIR/commands/probe-workflow.md` | `project/.claude/commands/probe-workflow.md` |
+| Claude hook | `$CLAUDE_CONFIG_DIR/hooks/` plus `settings.json` | `project/.claude/hooks/` plus `settings.json` |
+
+Copy the respective payload file or directory from `probe-sentinel`. For the
+Claude hook, copy `hooks/` then write a `hooks.SessionStart` settings entry
+equivalent to `hooks/hooks.json`, replacing the command with
+`python3 "<isolated-hooks-directory>/sentinel.py"`. No plugin-root expansion is
+assumed for an exploded file. The actual run used `shutil.copytree/copy2` and
+`json.dumps` for these operations. Remove only these owned scratch files.
+
+Test `~/.agents/skills/probe-skill/` in a separate Codex case, then combine it
+with `$CODEX_HOME/skills` and the native plugin to test duplicate discovery.
+In a native case, change only the copied source skill token after install;
+compare installed cache bytes and invoke again to distinguish live versus
+snapshot loading. Do not change the checked-in fixture.
+
+The additional Codex envelope experiment copied the same marketplace to a
+new case and amended only `.codex-plugin/plugin.json` with Python:
+
+```python
+payload.update(
+    agents="./agents/",
+    hooks="./hooks/hooks.json",
+    mcpServers={
+        "probe-integration": {
+            "command": "python3",
+            "args": [str(case / "marketplace/probe-sentinel/mcp/sentinel.py")],
+        },
+    },
+)
+```
+
+Here `case` is the isolated case directory and `payload` is the loaded JSON
+mapping. Then the host commands R042–R045/R058 installed, listed and started
+the package. No specialist was invoked; no hook log was produced. Key
+acceptance alone did not establish interpretation or role support.
+
+Integration registration, still with the environment prefix:
+
+```bash
+codex mcp add probe-integration -- python3 "$probe_case/codex/mcp/sentinel.py"
+codex mcp list --json
+codex mcp remove probe-integration
+claude mcp add --transport stdio --scope user probe-integration -- \
+  python3 "$probe_case/claude/mcp/sentinel.py"
+claude mcp list
+claude mcp remove probe-integration --scope user
+```
+
+Copy `mcp/sentinel.py` to the target first. Use Claude `--scope project` for
+the project case; it writes `.mcp.json` and may require explicit MCP approval.
+Listed-only integration evidence stays partial/discovered here.
+
+For offline Codex discovery, start `codex app-server`, send initialize and
+**wait for id 1**, then initialized and skills/list; keep stdin open until id 2:
+
+```json
+{"id":1,"method":"initialize","params":{"clientInfo":{"name":"probe","version":"1.0.0"}}}
+{"method":"initialized"}
+{"id":2,"method":"skills/list","params":{"cwds":["~/probe/project"],"forceReload":true}}
+```
+
+Expand that cwd alias to the isolated absolute project path before sending.
+R047–R049 show successful responses. Early EOF attempts are recorded failures
+of the probe protocol and do not establish absence.
+
+## Cleanup and protected configuration
+
+First perform scope-matched host remove/list checks. Inspect plugin config
+tables, settings enablement, and cached payloads independently. Delete the
+copied file-mode destinations, not any real host paths. The research driver
+then deleted every case directory it had created with `shutil.rmtree`, using
+the list of owned immediate children of its temporary parent. This removed
+auth copies, cached trees, marketplaces, projects, hook logs and runtime state.
+It verified that zero case directories remained.
+
+Before changing the parent shell's home, compare protected inventories:
+
+```bash
+python3 "$probe_fixture/config_snapshot.py" "$probe_parent/after.json"
+cmp "$probe_parent/before.json" "$probe_parent/after.json"
+```
+
+If they differ, compare paths/mtimes/digests locally, never print contents,
+never restore over concurrent work, and report the limitation. This run found
+nine changing Codex runtime-cache entries in the final comparison; all other
+5,372 entries matched. Seven changes affected only mtime; two also changed hash.
+See [the findings](../../../docs/parity/README.md) for the exact inventory
+scope and aggregate digests. Finally delete the owned temporary parent,
+including private inventories, after saving only sanitized evidence. Do not
+run unprefixed host commands against real config to prove cleanup.

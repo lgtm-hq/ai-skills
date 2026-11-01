@@ -1,0 +1,10 @@
+{
+  "name": "probe-sentinel",
+  "version": "1.0.0",
+  "description": "Isolated six-role host evidence fixture",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Probe Sentinel",
+    "shortDescription": "Isolated host evidence"
+  }
+}

@@ -1,0 +1,28 @@
+---
+host: cursor
+interface: cli
+version: 2026.10.22-27dcf5f
+os: linux-x86_64
+role: specialist
+scope: user
+mode: user-explode
+state: unverified
+lostFields: []
+observed: absent
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: invoke
+    command: not run
+    exitCode: null
+    output: |-
+      requires maintainer-run policy machine; this laptop has no
+      plugin-import-disabled admin policy. Clean-HOME CLI invocation failed
+      authentication (R046); no portable auth-only file was identified. See
+      cursor-probe-checklist.md.
+notes: |-
+  Reason: requires maintainer-run policy machine; this laptop has no
+  plugin-import-disabled admin policy. Clean-HOME CLI invocation failed
+  authentication (R046); no portable auth-only file was identified. See
+  cursor-probe-checklist.md.

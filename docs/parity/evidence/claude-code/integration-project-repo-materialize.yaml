@@ -1,0 +1,50 @@
+---
+host: claude-code
+interface: cli
+version: 2.1.310
+os: linux-x86_64
+role: integration
+scope: project
+mode: repo-materialize
+state: partial
+lostFields: []
+observed: discovered
+policyMarkers: []
+checkedOn: '2026-11-01'
+recheckBy: '2027-02-01'
+steps:
+  - phase: install
+    command: R062 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      Added stdio MCP server probe-integration with command: python3
+      ~/Code/ai-skills-563/tests/fixtures/host-probe/probe-sentinel/mcp/sentinel.py
+      to project config File modified: ~/probe/project/.mcp.json
+  - phase: reload
+    command: R063 (see probe-log.md)
+    exitCode: 1
+    output: Not logged in · Please run /login
+  - phase: invoke
+    command: R064 (see probe-log.md)
+    exitCode: 0
+    output: |-
+      Checking MCP server health…  probe-integration: python3
+      ~/probe/project/.claude/mcp/sentinel.py - ⏸ Pending approval (run
+      `claude` to approve)
+  - phase: remove
+    command: R111 (see probe-log.md)
+    exitCode: 0
+    output: Removed isolated sentinel files
+  - phase: verify
+    command: |-
+      Final isolated-root purge; see
+      README.md#cleanup-and-protected-configuration
+    exitCode: 0
+    output: |-
+      All 17 isolated case roots deleted, including auth copies, caches,
+      logs and projects; no case directories remained.
+notes: |-
+  MCP entry was listed as Pending approval. Listing meets the issue
+  integration discovery criterion, but the conservative record remains
+  partial/discovered; no tool invocation claim. MCP registration was
+  removed using the same host scope.
