@@ -11,10 +11,6 @@ let connect = spyOn(Socket.prototype, "connect");
 test.each([
   ["connect", undefined, "connected"],
   ["timeout", undefined, "inconclusive"],
-  ["error", "EACCES", "explicit-denial"],
-  ["error", "ENETUNREACH", "explicit-denial"],
-  ["error", "ECONNREFUSED", "inconclusive"],
-  ["error", "ETIMEDOUT", "inconclusive"],
 ])("network diagnostic %s/%s stays scoped", async (event, code, outcome) => {
   connect = spyOn(Socket.prototype, "connect").mockImplementation(function (this: Socket) {
     queueMicrotask(() => this.emit(event, Object.assign(new Error("boundary"), { code })));
@@ -25,6 +21,48 @@ test.each([
   expect(connect).toHaveBeenCalledWith({ host: endpoint.address, port: endpoint.port, family: 4 });
   expect(results).toMatchObject([{ ...endpoint, outcome }]);
 });
+
+for (const platform of ["linux", "darwin", "win32"] as const) {
+  test.each([
+    ["EACCES", -4092],
+    ["EPERM", -4048],
+    ["ENETUNREACH", -4062],
+    ["EHOSTUNREACH", -4073],
+    ["ECONNREFUSED", -4078],
+    ["ETIMEDOUT", -4039],
+    [undefined, undefined],
+  ] as const)(
+    `${platform} Node connection error %s retains permission evidence only`,
+    async (code, errno) => {
+      const error = Object.assign(new Error("boundary"), { code, errno, syscall: "connect" });
+      const destroy = spyOn(Socket.prototype, "destroy");
+      try {
+        connect = spyOn(Socket.prototype, "connect").mockImplementation(function (this: Socket) {
+          queueMicrotask(() => this.emit("error", error));
+          return this;
+        });
+        const results = await networkControl({ platform, isBun: false });
+        const denied = code === "EACCES" || (platform !== "win32" && code === "EPERM");
+        expect(results).toEqual([
+          {
+            ...endpoint,
+            outcome: denied ? "explicit-denial" : "inconclusive",
+            error: error.message,
+            raw_error: { code, errno, syscall: "connect" },
+          },
+        ]);
+        expect(connect).toHaveBeenCalledWith({
+          host: endpoint.address,
+          port: endpoint.port,
+          family: 4,
+        });
+        expect(destroy).toHaveBeenCalledTimes(1);
+      } finally {
+        destroy.mockRestore();
+      }
+    },
+  );
+}
 
 test("only Bun Win64 selects native Winsock; unsupported ABI fails closed", async () => {
   let calls = 0;

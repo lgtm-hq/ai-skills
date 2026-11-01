@@ -6,6 +6,7 @@ from __future__ import annotations
 import errno
 import json
 import socket
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +21,7 @@ def probe() -> list[dict[str, Any]]:
     """Probe a fixed IPv4 endpoint and collect informational IPv6 observations.
 
     Returns:
-        Raw connection outcomes; timeouts are always inconclusive.
+        Raw connection outcomes; unreachable, refusal and timeouts are inconclusive.
     """
     outcomes = []
     for family, address in [
@@ -39,20 +40,17 @@ def probe() -> list[dict[str, Any]]:
             item["outcome"] = "connected"
         except OSError as error:
             item.update(errno=error.errno, error=str(error))
-            item["outcome"] = (
-                "explicit-denial"
-                if error.errno
-                in {
-                    errno.EPERM,
-                    errno.EACCES,
-                    errno.ENETUNREACH,
-                    errno.EHOSTUNREACH,
-                    10013,
-                    10051,
-                    10065,
-                }
-                else "inconclusive"
+            winerror = getattr(error, "winerror", None)
+            if winerror is not None:
+                item["winerror"] = winerror
+            # A lost route is not access denial, even after a connected baseline.
+            # Windows errno is translated; require the actual Winsock WSAEACCES.
+            denied = (
+                winerror == 10013
+                if sys.platform == "win32"
+                else error.errno in {errno.EPERM, errno.EACCES}
             )
+            item["outcome"] = "explicit-denial" if denied else "inconclusive"
         outcomes.append(item)
     return outcomes
 

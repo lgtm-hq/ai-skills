@@ -17,14 +17,19 @@ export async function networkControl({
   }
   return new Promise((resolve) => {
     const socket = new Socket();
-    const finish = (outcome: string, error?: Error) => {
+    const finish = (outcome: string, error?: NodeJS.ErrnoException) => {
       socket.destroy();
       resolve([
         {
           address: endpoint.address,
           port: endpoint.port,
           outcome,
-          ...(error ? { error: error.message } : {}),
+          ...(error
+            ? {
+                error: error.message,
+                raw_error: { code: error.code, errno: error.errno, syscall: error.syscall },
+              }
+            : {}),
         },
       ]);
     };
@@ -33,7 +38,10 @@ export async function networkControl({
     socket.once("timeout", () => finish("inconclusive"));
     socket.once("error", (error: NodeJS.ErrnoException) => {
       finish(
-        ["EACCES", "EPERM", "ENETUNREACH", "EHOSTUNREACH"].includes(error.code ?? "")
+        // Node maps Winsock access denial to EACCES. Keep that permission code
+        // structured for the exact npm Node launcher; never infer native 10013.
+        // Lost routes, refusal and timeouts cannot prove denial on any platform.
+        error.code === "EACCES" || (platform !== "win32" && error.code === "EPERM")
           ? "explicit-denial"
           : "inconclusive",
         error,

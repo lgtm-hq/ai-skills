@@ -1,6 +1,6 @@
 # ADR 0008: Engine runtime: Python build plane, TypeScript install plane
 
-- Status: Proposed (#562 native TypeScript Windows diagnostic measurement pending)
+- Status: Proposed (#562 corrected denial controls and comparable evidence pending)
 - Date: 2026-11-01
 - Scope: [#561](https://github.com/lgtm-hq/ai-skills/issues/561), part of
   [engine v2 (#596)](https://github.com/lgtm-hq/ai-skills/issues/596)
@@ -118,13 +118,15 @@ unique schema-3 results (ten native plus two dedicated offline) have matching
 source/expected head, empty source status, exact event/run identity and attempt 1.
 The report links immutable artifacts, current footprint and raw commands.
 [Dispatch 41323324901](https://github.com/lgtm-hq/ai-skills/actions/runs/41323324901)
-was in progress at this revision's single status read; no green result is claimed.
+was in progress at the R11 write-up's status read. Parent later reported SUCCESS
+with all twelve results inspected; it remains historical R11 evidence.
 
 - Private-registry installs pass with **both Bun and npm** and `--ignore-scripts`
   on all five targets; transported bytes, platform selection, golden execution
   and owned-server cleanup pass. No-Node passes everywhere.
-- Both variants pass original direct execution plus npm local-file fallback
-  under shared Linux namespaces and macOS sandboxes on all four POSIX targets.
+- Both variants execute original payloads and npm local-file fallback under shared
+  Linux namespaces and macOS sandboxes. Linux's recorded errno 101 was incorrectly
+  classified as denial; under R13 it is inconclusive. macOS records EPERM.
 - Windows **B passes offline**: exact direct and npm-installed interpreter
   controls are connected before rules, WinError 10013 during rules, with matching
   paths/hashes. Exact npm Node similarly reports EACCES; launcher identity matches
@@ -152,10 +154,11 @@ Otherwise accept A only if A is no worse on every required restricted criterion
 across the supported targets. No size/file-count/timing budget is specified;
 A's smaller POSIX footprint and B's smaller Windows footprint do not override it.
 
-R11 proves registry/no-Node equality and POSIX offline equality, plus B's Windows
-pass. A's Windows offline comparison is still unknown, so neither decision branch
-is justified across all five targets. This is an observable diagnostic gap, not
-an unanswered owner question or additional signing/provenance/fleet gate.
+R11 proves registry/no-Node equality and records macOS permission denial plus B's
+Windows 10013. Its Linux unreachable outcomes cannot prove denial; A's R11 Windows
+comparison is also unknown. Neither decision branch is justified across all five
+targets. These are control gaps, not unanswered owner questions or additional
+signing/provenance/fleet gates.
 
 R12 minimally repairs only Bun Win64's diagnostic: the same compiled executable
 and its npm-installed copy call native Winsock through deferred `bun:ffi`, retain
@@ -165,8 +168,19 @@ attempts socket close, WSACleanup and DLL close; errors invalidate proof and rem
 structured raw evidence. npm's Node diagnostic and non-Windows paths are unchanged.
 Injectable tests use no network and cannot establish native Windows proof.
 
+R13 corrects Python and Node's shared classifier: unreachable, refusal and timeout
+stay inconclusive. POSIX accepts EACCES/EPERM, Windows Python requires actual
+WinError 10013, and Windows npm's exact Node launcher retains structured EACCES
+without claiming a native code. The native Winsock path remains unchanged.
+Historical Linux namespace `pass` labels and raw errno 101 are preserved, but do
+not establish current denial proof. An independently verified namespace argument
+would be a different trust basis; this repair does not introduce it.
+R12 PR 41326695290 and dispatch 41326779456 at `8b1194b` use the old classifier
+and cannot certify R13, including any native Windows results in their artifacts.
+
 **ADR 0008 and its index remain Proposed until fresh hosted evidence validates
-this changed executable.** R11 is not evidence for R12 code or footprint. Parent
+the corrected controls and the Linux control limitation is settled.** R11/R12 are
+not evidence for R13 code or footprint. Parent
 must inspect a new-head native matrix and genuine green dispatch, including all
 12 results each and exact same-path/hash Windows direct/npm controls, actual npm
 Node identity, golden execution and exact cleanup. Then apply the escape hatch

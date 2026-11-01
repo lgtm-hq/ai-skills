@@ -8,14 +8,17 @@ Consequences sections. Accepted decisions guide implementation; proposed
 decisions remain subject to their stated follow-up. Engine v2 work is
 tracked in epic [#596](https://github.com/lgtm-hq/ai-skills/issues/596).
 
-ADR 0008 remains Proposed for #562's **TypeScript Windows diagnostic measurement**.
+ADR 0008 remains Proposed for #562's **corrected denial controls and comparable evidence**.
 Inspected green R11 PR [41322684015](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015)
 applies to exact clean source `196cb20a25a669498e5b6338bb633b7b11434e54`: both
-variants pass registry/no-Node on five targets and direct-plus-npm offline on four
-POSIX targets. Windows Python now passes; TypeScript executes successfully but
+variants pass registry/no-Node on five targets. Linux's errno 101 was incorrectly
+classified as denial and is inconclusive under R13; macOS records EPERM.
+Windows Python records actual 10013; TypeScript executes successfully but
 its matched controls return refusal/inconclusive. The new native Winsock diagnostic
-requires fresh native/dispatch evidence before applying the merged escape hatch
-and updating ADR/index/spike README together. Harden Runner's missing baseline,
+and corrected Python/Node classifiers require fresh native/dispatch evidence,
+with the Linux control limitation settled, before applying the merged escape hatch
+and updating ADR/index/spike README together. Historical R11/R12 JSON and summaries
+remain unchanged; their old classifiers cannot certify R13. Harden Runner's missing baseline,
 independent payload
 provenance and fleet enforcement stay explicit unknowns, not a universal-green
 requirement. Bun local-file failure is informational; registry requires both

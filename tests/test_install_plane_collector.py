@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import importlib
 import json
 import secrets
@@ -409,6 +411,187 @@ def probe_record(outcome: str, *, ipv6: str = "explicit-denial") -> dict[str, An
             ]
         ),
     }
+
+
+class SocketError(OSError):
+    """Expose Windows-only socket metadata in portable injected exceptions."""
+
+    winerror: int
+
+
+def injected_probe(
+    *, network: ModuleType, monkeypatch: pytest.MonkeyPatch, error: OSError | None
+) -> dict[str, Any]:
+    """Run the real classifier with a socket fake and verify bounded cleanup."""
+    closed: list[int] = []
+
+    @contextlib.contextmanager
+    def socket(*, family: int) -> Iterator[Any]:
+        """Yield a fake connection; never create a network socket."""
+
+        def connect(address: tuple[str, int]) -> None:
+            """Validate the fixed destination and inject the connection outcome."""
+            assert_that(address).is_equal_to(
+                (
+                    (
+                        network.TARGET
+                        if family == network.socket.AF_INET
+                        else "2606:4700:4700::1111"
+                    ),
+                    network.PORT,
+                )
+            )
+            if error is not None:
+                raise error
+
+        try:
+            yield SimpleNamespace(
+                settimeout=lambda value: assert_that(value).is_equal_to(2),
+                connect=connect,
+            )
+        finally:
+            closed.append(family)
+
+    monkeypatch.setattr(network.socket, "socket", socket)
+    outcomes = network.probe()
+    assert_that(closed).is_equal_to([network.socket.AF_INET, network.socket.AF_INET6])
+    return {"exit": 0, "stdout": json.dumps(outcomes)}
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
+@pytest.mark.parametrize(
+    "code,raw_winerror",
+    [
+        (errno.EACCES, None),
+        (errno.EPERM, None),
+        (errno.ENETUNREACH, None),
+        (errno.EHOSTUNREACH, None),
+        (errno.ECONNREFUSED, None),
+        (errno.ETIMEDOUT, None),
+        (None, None),
+        (10013, None),
+        (10051, None),
+        (10065, None),
+        (errno.EACCES, 10013),
+        (10051, 10051),
+        (10065, 10065),
+        (errno.EACCES, 10051),
+        (errno.EACCES, 10065),
+        (errno.EACCES, 10061),
+        (errno.EACCES, 10060),
+    ],
+)
+def test_network_permission_errors_and_matched_proof(
+    collector: dict[str, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    code: int | None,
+    raw_winerror: int | None,
+) -> None:
+    """Route loss cannot become denial, even after a connected IPv4 baseline."""
+    network = collector["network_control"]
+    monkeypatch.setattr(
+        network, "sys", SimpleNamespace(platform=platform), raising=False
+    )
+    error = SocketError(code, "injected connection failure")
+    if raw_winerror is not None:
+        error.winerror = raw_winerror
+    before = injected_probe(network=network, monkeypatch=monkeypatch, error=None)
+    after = injected_probe(network=network, monkeypatch=monkeypatch, error=error)
+    denied = (
+        raw_winerror == 10013
+        if platform == "win32"
+        else code in {errno.EACCES, errno.EPERM}
+    )
+    assert_that(network.proven_denial(control=before, restricted=after)).is_equal_to(
+        denied
+    )
+    assert_that(network.proven_denial(control=after, restricted=after)).is_false()
+    assert_that(network.proven_denial(control=after, restricted=before)).is_false()
+    for item in json.loads(after["stdout"]):
+        assert_that(item["outcome"]).is_equal_to(
+            "explicit-denial" if denied else "inconclusive"
+        )
+        assert_that(item).contains_entry({"errno": code}, {"error": str(error)})
+        assert_that(item.get("winerror")).is_equal_to(raw_winerror)
+
+
+@pytest.mark.parametrize("system", ["Linux", "Darwin", "Windows"])
+@pytest.mark.parametrize("host_unreachable", [False, True])
+def test_route_loss_keeps_offline_transports_unverified(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    system: str,
+    host_unreachable: bool,
+) -> None:
+    """A real classified route loss cannot certify direct/npm or skip rule cleanup."""
+    offline, network = collector["offline"], collector["network_control"]
+    monkeypatch.setattr(offline.platform, "system", lambda: system)
+    monkeypatch.setattr(
+        network,
+        "sys",
+        SimpleNamespace(platform="win32" if system == "Windows" else "linux"),
+        raising=False,
+    )
+    monkeypatch.setattr(offline.shutil, "which", lambda name: f"/setup/{name}")
+    monkeypatch.setattr(offline, "runtime", lambda **_: [sys.executable])
+    monkeypatch.setattr(offline, "prepare_windows_controls", lambda **_: {})
+    monkeypatch.setattr(
+        offline, "firewall_program", lambda path: {"program": str(path)}
+    )
+    workers: list[Path] = []
+
+    def worker(**kwargs: Any) -> dict[str, Any]:
+        """Allow successful unrestricted transport observations only."""
+        workers.append(kwargs["work"])
+        return {variant: {"status": "pass"} for variant in ("ts", "py")}
+
+    calls: list[list[str]] = []
+    probes = 0
+
+    def command(**kwargs: Any) -> dict[str, Any]:
+        """Model route loss and firewall commands without executing either."""
+        nonlocal probes
+        argv = kwargs["argv"]
+        calls.append(argv)
+        assert_that(argv).does_not_contain("--worker")
+        if argv[-1].endswith("network_control.py"):
+            error = SocketError(
+                errno.EHOSTUNREACH if host_unreachable else errno.ENETUNREACH,
+                "route disappeared",
+            )
+            if system == "Windows":
+                error.winerror = 10065 if host_unreachable else 10051
+            record = injected_probe(
+                network=network,
+                monkeypatch=monkeypatch,
+                error=error if probes else None,
+            )
+            probes += 1
+        else:
+            record = {"exit": 0, "stdout": "rules absent"}
+        kwargs["records"].append(record)
+        return record
+
+    monkeypatch.setattr(offline, "worker", worker)
+    monkeypatch.setattr(offline, "command", command)
+    observed = offline.measure_offline(build=tmp_path / "build", work=tmp_path)
+    assert_that(workers).is_equal_to([tmp_path / "positive-installs"])
+    for result in observed.values():
+        assert_that(result["status"]).is_equal_to("unverified")
+        assert_that(result["probe_denial_proven"]).is_false()
+        assert_that(result["installer_denial_proven"]).is_false()
+        assert_that(result["direct_execution"]["status"]).is_equal_to("unverified")
+        assert_that(result).does_not_contain_key("installation_observation")
+        assert_that(
+            json.loads(result["restricted_probe"]["stdout"])[0]["error"]
+        ).contains("route disappeared")
+        if system == "Windows":
+            assert_that(result["cleanup"]["status"]).is_equal_to("verified removed")
+    assert_that(
+        any("Remove-NetFirewallRule" in argv[-1] for argv in calls)
+    ).is_equal_to(system == "Windows")
 
 
 @pytest.mark.parametrize(
@@ -1020,6 +1203,91 @@ def test_windows_program_controls_require_every_matching_identity(
         broken not in {"direct-ts", "npm-ts", "npm-node"}
     )
     assert_that(result["py"]).is_equal_to(broken not in {"npm-py", "npm-node"})
+
+
+@pytest.mark.parametrize("route", ["direct-py", "npm-py"])
+@pytest.mark.parametrize("raw_winerror", [10013, 10051, 10065, 10061, 10060, None])
+def test_windows_control_pairs_use_native_python_permission(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    route: str,
+    raw_winerror: int | None,
+) -> None:
+    """Real observe/finish cannot certify Python route loss at either exact path."""
+    module, network = collector["windows_control"], collector["network_control"]
+    monkeypatch.setattr(
+        network, "sys", SimpleNamespace(platform="win32"), raising=False
+    )
+    restricted = False
+    calls: list[list[str]] = []
+
+    def command(**kwargs: Any) -> dict[str, Any]:
+        """Inject process/socket boundaries while keeping real hashes and proof."""
+        argv = kwargs["argv"]
+        calls.append(argv)
+        if not restricted:
+            return injected_probe(network=network, monkeypatch=monkeypatch, error=None)
+        if Path(argv[0]).stem == route:
+            error = SocketError(errno.EACCES, "injected Windows connection failure")
+            if raw_winerror is not None:
+                error.winerror = raw_winerror
+            return injected_probe(network=network, monkeypatch=monkeypatch, error=error)
+        if Path(argv[0]).stem == "npm-node":
+            return {
+                "exit": 0,
+                "stdout": json.dumps(
+                    [
+                        {
+                            "address": network.TARGET,
+                            "port": network.PORT,
+                            "outcome": "explicit-denial",
+                            "error": "connect EACCES",
+                            "raw_error": {
+                                "code": "EACCES",
+                                "errno": -4092,
+                                "syscall": "connect",
+                            },
+                        }
+                    ]
+                ),
+            }
+        return probe_record("explicit-denial")
+
+    monkeypatch.setattr(module, "command", command)
+    controls: dict[str, Any] = {}
+    for name in ("direct-ts", "direct-py", "npm-ts", "npm-py", "npm-node"):
+        program = tmp_path / f"{name}.exe"
+        program.write_bytes(name.encode())
+        argv = [str(program), "--spike-network-control"]
+        if name.endswith("py"):
+            argv = [str(program), "-I", "-B", str(SPIKE / "scripts/network_control.py")]
+        elif name == "npm-node":
+            argv = [
+                str(program),
+                str(tmp_path / "network-control.mjs"),
+                "--spike-network-control",
+            ]
+        controls[name] = {
+            "argv": argv,
+            "control": module.observe(argv=argv, home=tmp_path / "before" / name),
+        }
+    restricted = True
+    result = module.finish(controls=controls, work=tmp_path)
+    assert_that(result).is_equal_to({"ts": True, "py": raw_winerror == 10013})
+    assert_that(controls[route]["denial_proven"]).is_equal_to(raw_winerror == 10013)
+    assert_that(calls).is_equal_to([item["argv"] for item in controls.values()] * 2)
+    for item in controls.values():
+        assert_that(item["restricted"]["program"]).is_equal_to(
+            item["control"]["program"]
+        )
+        assert_that(item["restricted"]["sha256"]).is_equal_to(item["control"]["sha256"])
+    assert_that(
+        json.loads(controls[route]["restricted"]["command"]["stdout"])[0].get(
+            "winerror"
+        )
+    ).is_equal_to(raw_winerror)
+    assert_that(controls["npm-node"]["denial_proven"]).is_true()
 
 
 def test_windows_controls_seed_exact_future_paths_and_remove_owned_trees(

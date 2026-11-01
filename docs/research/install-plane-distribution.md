@@ -1,13 +1,52 @@
 # Install-plane distribution experiment (#562)
 
-Date: 2026-11-01. **ADR 0008 remains Proposed for a specific Windows measurement.**
+Date: 2026-11-01. **ADR 0008 remains Proposed pending corrected denial evidence.**
 Inspected R11 PR evidence at **196cb20** covers both variants on all five native
-targets, including independent direct execution. Four POSIX targets pass offline
-for both variants; Windows Python now passes, while TypeScript execution succeeds
-but executable-specific denial remains unverified. This revision repairs that
-diagnostic boundary; **196cb20 does not validate the changed executable**.
+targets, including independent direct execution. Its Linux offline passes used
+an incorrect unreachable-as-denial classifier and cannot establish permission
+denial. macOS permission errors and Windows Python's actual 10013 remain historical
+observations; TypeScript's R11 Windows controls were inconclusive. R13 repairs the
+shared classifier; **neither R11 nor R12 validates this changed source**.
 This throwaway spike is outside the
 published npm `files` allowlist and contains no authored JavaScript.
+
+## R13 denial-proof correction
+
+The old Python and Node classifiers treated network/host unreachable as explicit
+denial. A route disappearing after a successful IPv4 baseline could therefore
+manufacture denial proof. R13 keeps unreachable, refusal and timeouts inconclusive:
+POSIX Python/Node accept EACCES or EPERM; Windows Python requires the actual
+`OSError.winerror == 10013`, retaining both errno and WinError. Windows npm's exact
+Node launcher may report EACCES through `node:net`; its symbolic code, numeric
+libuv errno and syscall are now retained alongside the original message. This
+does not claim Node observed native 10013. Bun's existing native Winsock diagnostic
+continues to accept only connection 10013, with cleanup errors invalidating proof.
+Same-endpoint connected baselines, executable path/hash checks, actual npm launcher
+matching and verified cleanup remain required.
+
+**Historical Linux namespace passes are not current denial proof.** Their raw
+IPv4 errno 101 (`Network is unreachable`) and old `explicit-denial`/`pass` labels
+are preserved verbatim in the artifacts. Under R13 those observations are
+inconclusive; direct/npm offline acceptance on both Linux targets remains
+unverified by this control. Namespace creation may support an independent
+isolation argument, but this repair neither verifies nor adopts that different
+trust basis. No routes, firewall rules, endpoints or pipeline policy are changed.
+macOS's recorded EPERM is a permission outcome, but historical runs still cannot
+certify R13's changed executable source.
+
+The R12 PR [41326695290][r12-pr] and genuine dispatch [41326779456][r12-dispatch]
+execute exact `8b1194beef52a1ae7374e6be6f701db0971d0d0b`, using the old shared
+classifier. Their raw JSON and prior summaries remain immutable historical
+evidence, including any native Windows FFI observations; they cannot certify R13.
+Injected regressions cover platform boundaries, errno/WinError, connected and
+unavailable baselines, real Windows control aggregation, route-loss rollups and
+cleanup without network I/O. They establish source behavior only.
+
+Parent must obtain and inspect fresh exact-source native/dispatch evidence and
+settle the Linux control limitation before applying the ADR decision rule. A
+green workflow alone is not denial proof. Final measured report, ADR/index/README
+updates and downstream #566/#567/#578/#386 reconciliation remain required #562
+acceptance; none moves to optional #614 or reopens the answered owner policies.
 
 ## Current owner policy and recommendation
 
@@ -30,31 +69,33 @@ and Sigstore/cosign keyless signing remain distribution obligations. Where paid
 signing is absent, deliver unsigned but attested; this research does not claim a
 production attestation pipeline or fleet security approval.
 
-**Recommendation: measure the repaired TypeScript Windows diagnostic, then apply
+**Recommendation: measure the corrected controls, then apply
 ADR 0008's escape hatch.** The Python-first tie interpretation comes from the
 [merged ADR's escape hatch][merged-escape], not additional owner wording. R11
-establishes equal passing registry/no-Node behavior everywhere and direct-plus-npm
-offline behavior on Linux/macOS; Windows B passes, while A's denial is unknown.
+establishes equal passing registry/no-Node behavior everywhere and historical
+direct-plus-npm permission evidence on macOS; Linux's unreachable result is
+inconclusive, and Windows A's R11 denial is unknown.
 Neither unknown equals pass nor two unknowns equal deployability. A's smaller POSIX footprint
 supplies no threshold or justification for rejecting the Python-first tie rule;
 B is smaller on Windows. Retain Proposed for this concrete, runner-observable gap.
-The minimal next measurement is implemented below, with fresh hosted evidence
-required. No owner policy question is reopened.
+Fresh hosted evidence is required, including resolution of the Linux control
+limitation above. No owner policy question is reopened.
 
 Harden Runner's absent same-host baseline, independent payload-source binding,
 Finder/SmartScreen and fleet enforcement remain explicitly unverified. The issue
 allows runner-unobservable limits; these are not a new universal-green or paid
-signing requirement. Native Linux's shared boundary supplies its offline evidence;
-it does not validate Harden Runner alone. Production distribution must implement
+signing requirement. Native Linux's namespace observations do not prove permission
+denial and do not validate Harden Runner alone. Production distribution must implement
 the owner's free attestation/provenance obligations before claiming trusted delivery.
 
 All R3–R6 tables below retain **historical raw outcomes under the superseded
-both-clients-offline policy**. In particular, POSIX offline `fail` reflects Bun
+both-clients-offline policy and old denial classifier**. In particular, POSIX
+offline `fail` reflects Bun
 selection failure under that old rule. It is not a current-policy gate failure,
 and cannot be retroactively turned into a direct-runtime pass. No raw JSON is
 modified or relabeled, and no earlier run certifies this revision.
 
-## Current inspected R11 evidence (196cb20 only)
+## Historical inspected R11 evidence (196cb20 only)
 
 The [PR-triggered run 41322684015][r11-pr] completed **successfully** at exact
 clean source [196cb20a25a669498e5b6338bb633b7b11434e54][r11-source]. All twelve
@@ -64,8 +105,9 @@ that source/expected head, empty source status, `pull_request`, the exact run UR
 and attempt **1**. Dedupe includes run, artifact kind, target and variant: native
 and dedicated documents both say `collection_scope=hosted`. Build/acquisition
 JSONs are setup evidence. The genuine [dispatch 41323324901][r11-dispatch] was
-still `in_progress` at this revision's single status read; no success or complete
-dispatch artifact inspection is claimed here. The older green R10 dispatch below
+still `in_progress` at the R11 write-up's single status read. Parent subsequently
+reported SUCCESS and inspection of all twelve historical results; this does not
+certify R13. The older green R10 dispatch below
 certifies only its executed source, not R11 or the new native diagnostic.
 
 | Target / runner                 | R11 PR artifact                                                                                    |
@@ -80,13 +122,16 @@ certifies only its executed source, not R11 or the new native diagnostic.
 P means pass, U means unverified. Execution observations do not alone prove offline.
 Registry columns read the raw `private_registry.clients`; local-file columns read
 `offline.installation_observation.clients`, not nonexistent summary keys.
+The Linux final column applies R13's corrected interpretation; the original JSON
+still retains its old `pass` and `explicit-denial` labels unchanged.
 
-| Target                                           | Variant            | Private registry Bun / npm / overall | No Node | Restricted direct / npm execution | Direct / offline overall |
-| ------------------------------------------------ | ------------------ | ------------------------------------ | ------- | --------------------------------- | ------------------------ |
-| linux-x64, linux-arm64, darwin-arm64, darwin-x64 | A and B separately | P / P / P                            | P       | P / P                             | P / P                    |
-| windows-x64                                      | A                  | P / P / P                            | P       | P / P                             | U / U                    |
-| windows-x64                                      | B                  | P / P / P                            | P       | P / P                             | P / P                    |
-| Dedicated Linux                                  | A and B separately | Not run                              | Not run | P / P                             | U / U                    |
+| Target                   | Variant            | Private registry Bun / npm / overall | No Node | Restricted direct / npm execution | Direct / offline overall |
+| ------------------------ | ------------------ | ------------------------------------ | ------- | --------------------------------- | ------------------------ |
+| linux-x64, linux-arm64   | A and B separately | P / P / P                            | P       | P / P                             | U / U (unreachable)      |
+| darwin-arm64, darwin-x64 | A and B separately | P / P / P                            | P       | P / P                             | P / P                    |
+| windows-x64              | A                  | P / P / P                            | P       | P / P                             | U / U                    |
+| windows-x64              | B                  | P / P / P                            | P       | P / P                             | P / P                    |
+| Dedicated Linux          | A and B separately | Not run                              | Not run | P / P                             | U / U                    |
 
 Both private-registry clients pass `--ignore-scripts`, correct platform selection,
 transported-byte verification and golden execution on all five targets, with
@@ -325,7 +370,9 @@ Both runs show, for both variants:
 | Windows x64                      | Pass / pass, pass              | Pass    | Fail / pass                                      | Unverified (probe only)     | Not collected              |
 | Dedicated Linux                  | Not run                        | Not run | Fail / pass restricted; no unrestricted interval | Unverified                  | Not collected              |
 
-Native Linux/macOS prove shared probe/installer denial. Windows has probe denial
+The old classifier credited shared Linux/macOS probe/installer denial. Linux's
+unreachable outcomes are inconclusive under R13; macOS records EPERM.
+Windows has probe denial
 true, installer denial false and verified rule removal. Both dedicated cells lack
 a same-host unrestricted Harden Runner control; payload-source identity remains
 unverified everywhere. Native macOS/Windows security is measured; Linux has no
@@ -519,8 +566,9 @@ cell, informational under [the owner policy][owner-offline]. Original standalone
 payloads execute **without installation**, before packing/installs, and match
 golden stdout and installed bytes in all 24 documents.
 
-Linux's connected IPv4 baseline is followed by explicit network-unreachable
-denial in the shared namespace; macOS records explicit operation-not-permitted
+Linux's connected IPv4 baseline is followed by network-unreachable in the shared
+namespace, incorrectly classified as denial before R13; this is inconclusive.
+macOS records explicit operation-not-permitted
 denial in the shared sandbox. Windows has a connected bundled-Python baseline
 then WinError 10013, scoped rule creation and verified rule removal. R10 has no
 matched controls for Node or the other direct/installed executables, so its
@@ -632,9 +680,9 @@ unverified behavior. Free provenance/checksum/keyless signing obligations remain
 
 ### Decision application and minimal remaining experiment
 
-The Python-first tie is supported by measured registry/no-Node and POSIX offline
-criteria, but **cannot yet be applied across all five supported targets**.
-Windows's unverified required-program denial is an observable missing control,
+The Python-first tie has measured registry/no-Node and macOS permission evidence,
+but **cannot yet be applied across all five supported targets**. Linux's historical
+unreachable outcomes and Windows's unverified required-program denial leave control gaps,
 not evidence that A is no worse or that B is equally deployable. No size, timing,
 signed-delivery, third-party EDR or universal-green threshold is invented.
 
@@ -848,19 +896,21 @@ mutations now cover archive length, hidden NUL suffixes/prefix bytes and invalid
 octal metadata; empty size is rejected in both runtimes. Golden/BOM parity and
 bounded reads remain required.
 
-**Retain Proposed (Part of #562) for A's native Windows diagnostic measurement.**
+**Retain Proposed (Part of #562) for corrected controls and comparable evidence.**
 R11's matched controls establish B's Windows offline pass; A's refusal remains U.
 The owner has disposed of the policy questions. Bun local-file failure is evidence
 only; unsigned assessment results and documented signing requirements satisfy the
-security-policy scope without a signed run. Missing Windows denial scope cannot
+security-policy scope without a signed run. Missing comparable denial scope cannot
 establish either equality or superiority under the Python-first rule.
 
 The remaining evidence work on **#562** is concrete:
 
-1. Parent verifies/reviews/publishes the minimal Windows-control revision on the
+1. Parent verifies/reviews/publishes the corrected denial-classifier revision on the
    existing queue tick, then obtains fresh hosted native and genuine dispatch
    results. No run is dispatched or published by this local acceptance pass.
-2. Inspect the same-path/same-byte Windows controls for original payloads, actual
+2. Keep Linux's unreachable outcomes inconclusive; settle that control limitation
+   without silently adopting a different proof basis. Inspect the same-path/same-byte
+   Windows controls for original payloads, actual
    npm Node launcher and npm-installed payloads. Keep unverified unless matched
    connected/explicit-denial controls and cleanup support the required scope.
 3. Preserve Harden Runner's missing same-host baseline and transferred-payload
@@ -919,6 +969,8 @@ not waived or represented as completed by this spike.
 [r11-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015
 [r11-source]: https://github.com/lgtm-hq/ai-skills/tree/196cb20a25a669498e5b6338bb633b7b11434e54/research/install-plane-spike
 [r11-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41323324901
+[r12-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41326695290
+[r12-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41326779456
 [merged-escape]: https://github.com/lgtm-hq/ai-skills/blob/032ee309817813a9ef81bb2450cbed646a625222/docs/adr/0008-engine-runtime-build-and-install-planes.md
 [winsock-select]: https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-select
 [bun-ffi]: https://bun.com/docs/runtime/ffi

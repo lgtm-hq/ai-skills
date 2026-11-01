@@ -54,7 +54,11 @@ uv run python research/install-plane-spike/scripts/measure.py \
 Use disposable machines for collection. Native isolation attempts namespaces,
 macOS sandboxing or Windows per-program firewall rules. A same-host successful
 IPv4 control is required before explicit denial proves the probe restriction;
-unavailable IPv6 is informational and timeouts remain unverified. Linux/macOS
+unavailable IPv6 is informational. Unreachable, refusal and timeouts are
+inconclusive. POSIX accepts EACCES/EPERM; Windows Python requires actual
+`winerror == 10013`, retained alongside errno and the original error. Windows
+Node retains structured EACCES from the exact selected npm launcher; this is a
+Node permission result, not an observed native 10013. Linux/macOS
 probe and installers share a namespace/sandbox. R11 Windows program-specific rules
 prove direct/npm denial for B and npm's Node, while A's controls report refusal
 and remain unverified. The Windows-only controls compare the same fixed
@@ -163,12 +167,18 @@ non-AVX2 baseline, musl and older Linux compatibility remain unverified.
 The report retains historical runs and links inspected green R11 PR
 [41322684015](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015) at exact
 clean source **196cb20a25a669498e5b6338bb633b7b11434e54**. Its twelve unique schema-3
-results establish registry/no-Node passes on all five targets, direct-plus-npm
-offline passes on four POSIX targets for both variants and Windows for B. A's
+results establish registry/no-Node passes on all five targets. Their Linux errno
+101 was incorrectly classified as denial: R13 keeps that outcome inconclusive,
+so Linux direct/npm offline acceptance remains unverified by this control.
+Historical macOS EPERM and Windows B's actual 10013 remain recorded evidence. A's
 Windows execution succeeds but controls report `ECONNREFUSED/inconclusive`, not
-denial. Dispatch 41323324901 was in progress at the single status read. Neither
-run validates this new Winsock code or its footprint. ADR/index stay Proposed
-until fresh native/dispatch evidence settles A's runner-observable comparison;
+denial. Parent reports historical dispatch 41323324901 SUCCESS with all twelve
+results inspected. Neither
+run validates R13. R12 PR 41326695290 and dispatch 41326779456 at `8b1194b` also
+used the old shared classifier and cannot certify this repair. Raw historical
+JSON and summaries remain unchanged; no alternate namespace proof is introduced.
+ADR/index stay Proposed until fresh native/dispatch evidence settles the corrected
+controls, including the Linux limitation and A's Windows comparison;
 then apply the [merged ADR escape hatch](https://github.com/lgtm-hq/ai-skills/blob/032ee309817813a9ef81bb2450cbed646a625222/docs/adr/0008-engine-runtime-build-and-install-planes.md)
 and update ADR/index/README together. Harden Runner's absent same-host baseline,
 independent payload provenance
