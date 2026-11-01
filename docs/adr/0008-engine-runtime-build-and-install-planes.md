@@ -1,6 +1,6 @@
 # ADR 0008: Engine runtime: Python build plane, TypeScript install plane
 
-- Status: Proposed (#562 scenario and owner dispositions pending)
+- Status: Proposed (#562 restricted direct-runtime measurements pending)
 - Date: 2026-11-01
 - Scope: [#561](https://github.com/lgtm-hq/ai-skills/issues/561), part of
   [engine v2 (#596)](https://github.com/lgtm-hq/ai-skills/issues/596)
@@ -76,129 +76,95 @@ provisional until that spike concludes.
 
 ## Distribution evidence gate (#562)
 
-The throwaway prototypes and collector live under
-`research/install-plane-spike/`; the distribution report in
-`docs/research/install-plane-distribution.md` records methods, actual observations,
-limitations and concrete remaining experiments.
-The inspected R3 [PR run 41292001121](https://github.com/lgtm-hq/ai-skills/actions/runs/41292001121)
-and genuine [workflow_dispatch run 41292078852](https://github.com/lgtm-hq/ai-skills/actions/runs/41292078852)
-both completed successfully at `ca2db52669b8611a7d9cd24733c80572516ff94a`.
-Each retains twelve result JSONs in six evidence artifacts: ten native plus two
-dedicated Linux offline observations. All 24 record matching source/expected
-heads, clean status and exact event/run identity. The report links both artifact
-lists, exact R3 footprint and security outputs. Dispatch collection acceptance is
-met at ca2db52; collection success does not establish scenario acceptance.
+The report at `docs/research/install-plane-distribution.md` retains
+historical observations and raw run links. The prototypes and collectors live in
+`research/install-plane-spike/`, outside the published npm package.
 
-The inspected R4 [PR run 41295866082](https://github.com/lgtm-hq/ai-skills/actions/runs/41295866082)
-and genuine [workflow_dispatch run 41295968562](https://github.com/lgtm-hq/ai-skills/actions/runs/41295968562)
-both succeeded at exact clean `d77da0126b9956bc1b4205416345d16c5a344228`.
-Each contains twelve unique schema-3 result JSONs (ten native plus two dedicated),
-with matching source/expected heads, exact event/run identity and attempt 1.
-Build logs are not extra result cells. Green dispatch satisfies the collection/link
-criterion at **d77da01**, not final current-head acceptance. Neither R3 nor R4
-validates the later R5 source, including its Windows Job Object launch/cleanup.
+### Binding owner policy (resolved)
 
-In both R4 runs, registry **client installations** and no-Node execution pass
-for both variants on all five targets. Registry **overall** is pass on Linux/macOS
-but unverified on Windows because descendant cleanup was not proven. Local-file
-Bun installs select all five platform packages while npm selects its target,
-both before and during restriction. Equal failures do not establish deployability.
-Linux/macOS prove shared probe/installer denial; overall offline remains fail.
-Windows proves only bundled Python probe denial, records installer denial false,
-and verifies exact firewall rule removal; overall offline remains unverified.
-Dedicated Harden Runner denial still lacks a same-host baseline and is unverified.
-The report keeps detailed numeric/quarantine tables explicitly bound to R3;
-no R3 numbers or raw artifacts have been relabeled as R4.
+The [security decision](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942)
+and [offline decision](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557886641)
+answer the earlier owner questions:
 
-The inspected R5 [PR run 41299584188](https://github.com/lgtm-hq/ai-skills/actions/runs/41299584188)
-and genuine [workflow_dispatch run 41299627797](https://github.com/lgtm-hq/ai-skills/actions/runs/41299627797)
-both succeeded at exact clean `6d2d86bdfd9a68d6dd9f36ca3fd16619b53c1069`.
-Each contains twelve unique schema-3 result JSONs (ten native plus two dedicated),
-with matching source/expected heads, exact event/run identity and attempt 1.
-Registry clients, registry overall and no-Node pass for both variants on all five
-targets. Windows registry cleanup now observes an empty owned non-breakaway Job
-Object, parent reap and closed job handle; R4's cleanup limitation is historical.
-POSIX offline still fails Bun platform selection; npm passes. Windows offline
-remains unverified with probe denial true, installer denial false and exact
-firewall cleanup. Dedicated Harden Runner and payload-source binding remain
-unverified. Numeric/quarantine tables remain explicitly R3-only historical data.
-The separate Python-only CI failed five Bun cases; R6 corrects that availability
-contract and three validation/evidence bugs with local regressions. R5 artifacts
-do not validate R6, and no R6 hosted proof is claimed. Green R5 collection meets
-the dispatch/link criterion at **6d2d86b only**, without accepting scenarios or
-waiving owner security, offline/control, provenance or ADR requirements.
+- The **standalone compiled binary is the primary offline transport**, with no
+  install step. Compare B's self-contained directory bundle by the same direct
+  execution test. An **npm-only local-file wrapper is the documented fallback**.
+  Both direct execution and the npm fallback decide offline acceptance per target
+  and variant. Bun local-file selection failures remain evidence, outside this
+  gate; see the existing upstream [oven-sh/bun#47640](https://github.com/oven-sh/bun/issues/47640).
+- **Registry installs still require both Bun and npm**, including private
+  registries, correct optional platform selection and `--ignore-scripts`.
+- #562 records unsigned quarantine, `spctl`, codesign, MotW, Defender and
+  SmartScreen observations and each variant's signing/notarization requirements.
+  A signed Mac run is **not required for #562**. Developer ID/notarization is the
+  human-secret gate in [#619](https://github.com/lgtm-hq/ai-skills/issues/619);
+  Authenticode is cost-gated in [#618](https://github.com/lgtm-hq/ai-skills/issues/618).
+  No paid or third-party EDR experiment is required. The deliverable where paid
+  signing is unavailable is unsigned but attested; free checksum, provenance,
+  artifact/npm attestations and keyless signing obligations remain. This spike
+  does not claim to have implemented the production attestation pipeline.
 
-R4 requires clean, matching expected source identity in hosted collection and
-records the run attempt. Downloaded payload/build identity remains explicitly
-unverified: archive hashes alone do not bind payloads to the expected source.
+Earlier dual-client offline rollups are historical outcomes under the superseded
+policy. Their raw JSON is unchanged. They are neither new-policy failures nor
+proof of direct-runtime success. Owner policy is resolved; missing measurements
+remain missing measurements.
 
-All remaining required signing/security, offline/control, provenance and ADR
-acceptance remains tracked on **#562**, under the unanswered
-[owner-policy gate](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6556223222).
-No waiver is inferred; both clients remain required. #614 holds optional M5 NITs
-only. This proposal remains **Part of #562**.
+### Inspected evidence and outstanding experiment
 
-The existing escape hatch names these decision-bearing restrictions, evaluated
-for **both variants on all five supported targets**:
+R3 (`ca2db52`), R4 (`d77da01`) and R5 (`6d2d86b`) run identities remain in the
+report. The retained complete R6 [PR run 41303888697](https://github.com/lgtm-hq/ai-skills/actions/runs/41303888697)
+and green [workflow_dispatch run 41304035426](https://github.com/lgtm-hq/ai-skills/actions/runs/41304035426)
+apply **only to `10205e3519ab610c97fd2a846bfc54e9ecbe3048`**. Each has twelve
+unique schema-3 scenario JSONs (ten native and two dedicated Linux offline),
+matching source/expected heads, clean source, event/run identity and attempt 1.
+Both variants pass registry (both clients, overall including owned-job cleanup)
+and no-Node on all five targets. npm local-file installation/execution passes
+before and during restriction; Bun's platform-selection failures are retained.
+Linux/macOS prove shared namespace/sandbox denial. Windows proves only bundled
+Python probe denial, not every installer/runtime program, and verifies rule removal.
+Dedicated Harden Runner lacks a same-host unrestricted baseline. Payload/build
+source binding remains unverified. No R6 document contains the independent
+**original standalone payload executed under restriction, without installation**
+cell needed by the owner's primary transport rule.
 
-- **Private registry:** Bun and npm separately install the wrapper and correct
-  optional platform payload with `--ignore-scripts`, without a bootstrap, public
-  registry dependency or uplink; transported bytes and execution are checked.
-- **No Node:** the installed native payload executes with Node/Bun directories
-  removed from PATH and no consumer Python/uv/pip/runtime fetch.
-- **Offline:** Bun and npm separately install the same local tarballs using fresh
-  caches and identical flags, with verified egress denial, then execute verified
-  payloads. A network-unrestricted control with identical `--offline` flags
-  distinguishes package-manager
-  selection failures from failures introduced by the restriction. Both count as
-  observations; a failed control never turns a restricted failure into a pass.
-- **Quarantine and required security:** compare observed signing, assessment,
-  marked-file execution and endpoint restrictions for both variants. R3 macOS
-  assessment rejects both; A's signatures fail verification, B arm64 verifies
-  ad hoc but is rejected, and B x64 is unsigned. Windows artifacts are unsigned;
-  clean custom scans with real-time protection disabled do not establish fleet
-  approval. Required signing/notarization and security routes need owner
-  disposition and appropriate evidence.
+The actual R7 [PR run 41307370871](https://github.com/lgtm-hq/ai-skills/actions/runs/41307370871)
+at `774ba560bcb0fdffa21b41c6e9127a11d26a02eb` failed all five native test jobs
+before build/measurement because isolated tests lacked PyYAML. It supplies no
+native scenario evidence. R8 corrects that isolated command, adds independent
+restricted direct-runtime cells, and applies direct-plus-npm offline rollups;
+Bun evidence is retained and registry requirements are unchanged. R8 has local
+verification only. Earlier green runs cannot validate R8.
 
-Footprint (payload/archive bytes, file count, fresh-process timing and observed
-cache writes) records deployment costs and tradeoffs. The issue supplies no size
-or timing budget, so numeric differences alone do not establish a restricted
-criterion failure or override its Python-first tie rule. An actual cache or
-capacity restriction affecting installation/execution belongs to the corresponding
-core observation. Any new owner budget must be stated before applying it; this
-revision neither invents a threshold nor claims owner acceptance of an outcome.
+**Proposed remains for a measured criterion:** inspect fresh comparable hosted
+JSON for the original standalone A and B payloads under restriction on all five
+targets, plus npm local-file fallback, at the reviewed source. Windows program
+rules alone cannot certify runtime/installer denial without matched same-program
+positive/restricted controls. The first-step empty-allowlist Harden Runner job
+still needs a valid same-host baseline, and transferred payload provenance must
+be bound before claiming it verified. Keep these limitations explicit; namespace
+or sandbox evidence is not Harden Runner-only proof. Link a genuine green dispatch
+and inspect source/build identities when reconciling the new collector. No current
+head hosted validation or final acceptance is claimed.
 
-Apply the documented Python-first rule only after inspecting complete comparable
-evidence for every restricted criterion, including quarantine and required
-security: revise to the Python escape hatch if B is equally deployable;
-otherwise accept A only if it is no worse on **every** target/client/security
-criterion. Unknown cells establish neither equality nor superiority. Known failures
-need an explicit disposition against the owner's deployment requirements; identical
-failures do not prove either variant deployable. If neither branch is supported,
-retain Proposed and identify the missing experiment or unresolved requirement.
+### Decision rule
 
-Third-party EDR, Finder/SmartScreen enforcement, disabled/unavailable Gatekeeper,
-and the empty-allowlist job without an unrestricted baseline are **separately
-unverified limitations**, never equal or pass. Report observed quarantine CLI
-execution separately from security enforcement and signing requirements. These
-limitations cannot supply missing core evidence, nor can the core comparison
-establish fleet security approval or bypass required security. Observed quarantine
-and signing differences are part of the every-criterion comparison above, even
-when registry/no-Node/offline results pass. Owner requirements remain outstanding.
+Apply the issue's **Python-first tie rule** after comparable evidence supports
+all restricted criteria: private registry (both clients), no Node, offline
+(direct primary plus npm local-file fallback), and the owner-required unsigned
+security observations and documented signing needs. Revise to a Python engine
+behind a thin TypeScript npm launcher if B is equally deployable. Otherwise accept
+A only if it is no worse on every restricted criterion on every supported target.
+Unknown measurements prove neither equality nor superiority. Bun local-file
+failure, unsigned assessment rejection, missing paid signing and third-party EDR
+cannot be reintroduced as owner-policy blockers.
 
-Independent namespace/sandbox/firewall denial is **not Harden Runner-only offline
-proof**. The issue specifically requests empty-allowlist Harden Runner evidence;
-the current dedicated job has no same-host baseline and remains unverified.
-That methodological gap must stay explicit until a valid experiment establishes
-it or the owner explicitly disposes of the unmet criterion. No such acceptance
-is claimed here.
+Footprint records costs, not a new threshold: #562 supplies no size/file-count or
+timing budget. Numeric differences alone do not override the Python-first rule.
+Finder/SmartScreen enforcement and real fleet policy remain separately unverified;
+CLI execution and Defender custom scans do not establish those claims.
 
-Proposed remains until fresh hosted JSON for every supported target/client has
-been inspected, a true green **workflow_dispatch** run at the reviewed ref and raw
-evidence are linked, and owner criteria permit applying the rule above. A green
-collection job may contain truthful scenario failures. PR-triggered collection
-cannot satisfy dispatch acceptance. Dispatch is already possible; inspected final
-status and artifacts, rather than registration assumptions, establish that gate.
-Update this ADR and its index together
-only when the evidence supports a decision, then reconcile #566/#567/#578/#386.
-No production runtime changes in this spike.
+Complete comparable direct-offline measurements are still needed before either
+branch of the rule is justified. Keep the ADR, index and spike README consistent,
+then reconcile #566/#567/#578/#386 when evidence permits a final decision. Optional
+M5 NITs stay on #614; measured acceptance remains on #562. This spike changes no
+production runtime.

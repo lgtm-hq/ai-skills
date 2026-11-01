@@ -205,6 +205,8 @@ def measure_quarantine(*, root: Path, variant: str, home: Path) -> dict[str, Any
             result["defender"] = (
                 f"unverified: no MpCmdRun.exe under {defender_dir} or {fallback}"
             )
+        if result["defender"] == "threat":
+            result["status"] = "fail"
         if mark["exit"] != 0:
             result["reason"] = "Mark-of-the-Web write/read failed (see exact output)"
             return result

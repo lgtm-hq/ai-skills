@@ -75,10 +75,13 @@ Python-only pytest runs skip TypeScript cases when Bun is absent; setting
 ## CI and raw evidence
 
 The workflow runs on narrow PR paths and workflow dispatch, checks out the exact
-PR head, and tests source parity with Bun required. Build also enforces Bun tests
-and typecheck. Collector runs exercise compiled TypeScript and bundled Python
-separately. Shared uv 0.11.26 supports the selected CPython 3.14.6 on every target;
-local historical 3.14.7 results are not interchangeable with it.
+PR head, and tests source parity with Bun required. `scripts/test-ci.sh` resolves only
+pytest, assertpy and PyYAML at exact repository-lock versions and uses
+`uv --no-project --isolated`, so a local `.venv` cannot supply undeclared test
+dependencies. Set `SPIKE_PYTHON` to the settings pin when invoking it. Build also
+enforces Bun tests and typecheck. Collector runs exercise compiled TypeScript and
+bundled Python separately. Shared uv 0.11.26 supports the selected CPython 3.14.6
+on every target; local historical 3.14.7 results are not interchangeable with it.
 
 Registry measurement publishes a scripts-free npm wrapper with optional os/cpu
 packages to Verdaccio without uplinks. It installs with **both Bun and npm** using
@@ -123,6 +126,15 @@ the measured allowlist. If measurement runs, raw JSON is printed to log and summ
 before a best-effort artifact upload, which can itself be blocked. Native namespace
 evidence cannot be credited to Harden Runner. See the report's explicit limits.
 
+The [binding offline policy](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557886641)
+makes the standalone compiled binary primary transport with no install step;
+npm-only local-file wrapper install is the documented fallback. Both variants
+each run directly before their wrapper packing/install step, in a fresh HOME
+under the same restriction. Direct execution plus npm decides offline status;
+Bun local-file results are retained as evidence, not a gate. See the existing upstream
+[oven-sh/bun#47640](https://github.com/oven-sh/bun/issues/47640). Both clients
+remain required for registry/private-registry installs.
+
 JSON distinguishes pass, fail, unverified and narrow quarantine observations.
 Schema 3 separates `probe_denial_proven` from `installer_denial_proven`. Hosted
 collection requires a clean checkout and matching `SPIKE_SOURCE_SHA`, records
@@ -134,9 +146,14 @@ Windows direct CreateProcess does not test MotW shell/SmartScreen enforcement;
 macOS CLI execution does not establish Finder behavior. Defender engine failures,
 disabled Gatekeeper, third-party EDR, deliberate deep paths, unsigned fleet policy,
 non-AVX2 baseline, musl and older Linux compatibility remain unverified.
-The report links inspected R3 evidence at ca2db52, R4 at d77da01 and complete R5
-PR/green workflow_dispatch evidence at 6d2d86b. R5 registry overall passes on all
-five targets, including Windows owned-job cleanup; R4's Windows cleanup limitation
-remains historical. These runs do not validate R6; R6 hosted proof remains pending.
-ADR 0008 stays Proposed
-pending scenario and owner dispositions, including required quarantine/security.
+The report links inspected R3 at ca2db52, R4 at d77da01, R5 at 6d2d86b and complete
+R6 PR/green dispatch evidence at **10205e3 only**. Historical dual-client offline
+rollups and raw JSON are retained under the superseded rule. R6 has no independent
+original-payload direct execution under restriction; R7 native CI failed before
+build/measurement. R8 has local verification only. ADR 0008 stays Proposed for
+fresh comparable restricted direct-runtime plus npm evidence, with Windows scope,
+Harden Runner baseline and payload provenance still explicit limits. The
+[security policy](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942)
+is resolved: unsigned observations and documented signing needs suffice for #562;
+signed Mac work belongs to #619's human-secret gate, Authenticode is cost-gated
+in #618, and no paid or third-party EDR is required.

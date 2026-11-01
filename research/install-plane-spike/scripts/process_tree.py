@@ -142,6 +142,7 @@ def stop_process_tree(
             return False
 
     for force, budget in ((False, grace), (True, forced)):
+        deadline = time.monotonic() + budget
         action: dict[str, Any] = {"force": force}
         result["actions"].append(action)
         try:
@@ -152,12 +153,11 @@ def stop_process_tree(
         except (OSError, subprocess.TimeoutExpired) as error:
             action["error"] = f"{type(error).__name__}: {error}"
         try:
-            process.wait(timeout=budget)
+            process.wait(timeout=max(0, deadline - time.monotonic()))
             result["parent_reaped"] = True
         except (OSError, subprocess.TimeoutExpired) as error:
             action["reap_error"] = f"{type(error).__name__}: {error}"
         try:
-            deadline = time.monotonic() + budget
             while group_present() and time.monotonic() < deadline:
                 time.sleep(min(0.05, max(0, deadline - time.monotonic())))
             absent = not group_present()

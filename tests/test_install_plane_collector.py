@@ -115,6 +115,7 @@ def test_output_tree_rejects_reparse_points(
     ).is_false()
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="fallback runs only on Ubuntu")
 def test_checkout_failure_has_source_independent_evidence(tmp_path: Path) -> None:
     """Run the actual fallback in an empty checkout with blocked acquisition/upload."""
     import os
@@ -252,6 +253,28 @@ def test_pin_parser_accepts_json_layout(
     path = tmp_path / "settings.json"
     path.write_bytes(content.encode())
     assert_that(collector["pins"].python_pin(path)).is_equal_to("3.14.6")
+
+
+def test_isolated_test_dependencies_use_lock(
+    collector: dict[str, ModuleType], tmp_path: Path
+) -> None:
+    """Resolve only small test dependencies from canonical locked versions."""
+    path = tmp_path / "uv.lock"
+    path.write_text(
+        "\n".join(
+            f'[[package]]\nname = "{name}"\nversion = "{version}"'
+            for name, version in (
+                ("pytest", "1.2.3"),
+                ("assertpy", "2.3.4"),
+                ("pyyaml", "3.4.5"),
+                ("large-unrelated", "9.9.9"),
+            )
+        ),
+        encoding="utf-8",
+    )
+    assert_that(collector["pins"].test_dependencies(path)).is_equal_to(
+        ["pytest==1.2.3", "assertpy==2.3.4", "pyyaml==3.4.5"]
+    )
 
 
 def test_checkout_attributes_preserve_bytes(tmp_path: Path) -> None:
@@ -786,6 +809,9 @@ def test_firewall_is_scoped_and_cleanup_verified(
             setup_exit == 0
         )
         assert_that(observed[variant]["installer_denial_proven"]).is_false()
+        assert_that(observed[variant]["direct_execution"]["status"]).is_equal_to(
+            "unverified"
+        )
         assert_that(observed[variant]["status"]).is_equal_to("unverified")
         assert_that(observed[variant]).does_not_contain_key("denial_proven")
         if setup_exit == 0:
@@ -1374,10 +1400,14 @@ def test_windows_job_abi_sizes(collector: dict[str, ModuleType]) -> None:
         assert_that(module.ctypes.sizeof(module.Accounting)).is_equal_to(48)
 
 
+@pytest.mark.parametrize("direct_status", ["pass", "fail", "unverified", None])
+@pytest.mark.parametrize("npm_status", ["pass", "fail", "unverified"])
 def test_namespace_fallback_restores_environment_after_dropping_identity(
     collector: dict[str, ModuleType],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    direct_status: str | None,
+    npm_status: str,
 ) -> None:
     """Sudo only sets up netns; probes and workers use the original unprivileged UID."""
     offline = collector["offline"]
@@ -1412,7 +1442,19 @@ def test_namespace_fallback_restores_environment_after_dropping_identity(
         argv = kwargs["argv"]
         if "--worker" in argv:
             result = {
-                v: {"status": "fail", "identity": {"effective_uid": 1234}}
+                v: {
+                    "status": "fail",
+                    "identity": {"effective_uid": 1234},
+                    **(
+                        {"direct_execution": {"status": direct_status}}
+                        if direct_status
+                        else {}
+                    ),
+                    "clients": {
+                        "bun": {"status": "fail"},
+                        "npm": {"status": npm_status},
+                    },
+                }
                 for v in ("ts", "py")
             }
             Path(argv[argv.index("--result") + 1]).write_text(
@@ -1443,9 +1485,100 @@ def test_namespace_fallback_restores_environment_after_dropping_identity(
     assert_that(observed["ts"]["positive_installation_control"]["status"]).is_equal_to(
         "fail"
     )
-    assert_that(observed["ts"]["status"]).is_equal_to("fail")
+    statuses = (direct_status, npm_status)
+    expected = (
+        "fail"
+        if "fail" in statuses
+        else "pass" if statuses == ("pass", "pass") else "unverified"
+    )
+    assert_that(observed["ts"]["status"]).is_equal_to(expected)
+    assert_that(observed["ts"]["direct_execution"]["status"]).is_equal_to(
+        direct_status or "unverified"
+    )
+    assert_that(observed["ts"]["direct_execution"]["denial_proven"]).is_true()
     assert_that(observed["ts"]["probe_denial_proven"]).is_true()
     assert_that(observed["ts"]["installer_denial_proven"]).is_true()
+
+
+@pytest.mark.parametrize("bun_status", ["pass", "fail"])
+@pytest.mark.parametrize("npm_status", ["pass", "fail", "unverified"])
+@pytest.mark.parametrize("direct_status", ["pass", "fail", "unverified"])
+def test_offline_worker_gates_direct_and_npm_only(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    bun_status: str,
+    npm_status: str,
+    direct_status: str,
+) -> None:
+    """Run direct payload cells before installs; retain informational Bun failure."""
+    offline = collector["offline"]
+    monkeypatch.setattr(offline, "identity", lambda: {"effective_uid": 123})
+    monkeypatch.setattr(offline.shutil, "which", lambda _: "/fake/bun")
+    monkeypatch.setattr(offline, "prepare_packages", lambda **_: [])
+    calls: list[str] = []
+
+    def direct(**kwargs: Any) -> dict[str, Any]:
+        """Verify the direct cell uses original payloads and an independent HOME."""
+        variant = kwargs["variant"]
+        assert_that(kwargs["root"]).is_equal_to(tmp_path / "build" / variant)
+        assert_that(kwargs["home"]).is_equal_to(tmp_path / "work" / f"direct-{variant}")
+        calls.append(f"direct-{variant}")
+        return {"status": direct_status}
+
+    def install(**kwargs: Any) -> dict[str, Any]:
+        """Model independent package-manager results after the direct observation."""
+        assert_that(calls).contains(f"direct-{kwargs['variant']}")
+        calls.append(kwargs["tool"])
+        return {"status": bun_status if kwargs["tool"] == "bun" else npm_status}
+
+    monkeypatch.setattr(offline, "run_payload", direct)
+    monkeypatch.setattr(offline, "install_client", install)
+    result = offline.worker(build=tmp_path / "build", work=tmp_path / "work")
+    required = (direct_status, npm_status)
+    expected = (
+        "fail"
+        if "fail" in required
+        else "pass" if all(s == "pass" for s in required) else "unverified"
+    )
+    for variant, item in result.items():
+        assert_that(item["status"]).is_equal_to(expected)
+        assert_that(item["direct_execution"]["status"]).is_equal_to(direct_status)
+        assert_that(item["clients"]["bun"]["status"]).is_equal_to(bun_status)
+        assert_that(
+            json.loads((tmp_path / "work" / f"worker-{variant}.json").read_bytes())
+        ).is_equal_to(item)
+
+
+def test_direct_offline_observation_survives_missing_packer(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Packer availability never gates the independent primary transport cell."""
+    offline = collector["offline"]
+    variants: list[str] = []
+
+    def direct(**kwargs: Any) -> dict[str, Any]:
+        """Model successful direct execution with no installation command."""
+        variants.append(kwargs["variant"])
+        return {"status": "pass"}
+
+    monkeypatch.setattr(offline, "identity", lambda: {"effective_uid": 123})
+    monkeypatch.setattr(offline.shutil, "which", lambda _: None)
+    monkeypatch.setattr(offline, "run_payload", direct)
+    monkeypatch.setattr(
+        offline, "prepare_packages", lambda **_: pytest.fail("no packer")
+    )
+    result = offline.worker(build=tmp_path / "build", work=tmp_path / "work")
+    assert_that(variants).is_equal_to(["ts", "py"])
+    for variant, item in result.items():
+        assert_that(item["direct_execution"]["status"]).is_equal_to("pass")
+        assert_that(item["status"]).is_equal_to("unverified")
+        assert_that(item["clients"]).is_empty()
+        assert_that(
+            json.loads((tmp_path / "work" / f"worker-{variant}.json").read_bytes())
+        ).is_equal_to(item)
 
 
 def test_offline_worker_refuses_root(
@@ -1589,6 +1722,54 @@ def test_posix_tree_shutdown_records_force_and_reap(
     assert_that(state["waits"]).is_equal_to(2)
 
 
+@pytest.mark.parametrize("parent_exit", [None, 0.75])
+@pytest.mark.parametrize("signal_cost", [0.0, 0.25])
+def test_posix_shutdown_shares_phase_deadline(
+    collector: dict[str, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    parent_exit: float | None,
+    signal_cost: float,
+) -> None:
+    """Model ignored TERM and parent exit without adding a second grace budget."""
+    tree = collector["process_tree"]
+    clock = {"now": 0.0}
+    signals: list[tuple[int, float]] = []
+    waits: list[float] = []
+
+    def advance(seconds: float) -> None:
+        """Advance deterministic time, never wall time."""
+        clock["now"] += seconds
+
+    def killpg(pid: int, sig: int) -> None:
+        """Keep descendants alive through both observation phases."""
+        if sig:
+            signals.append((sig, clock["now"]))
+            advance(signal_cost)
+
+    def wait(*, timeout: float) -> None:
+        """Consume the remaining budget unless the modeled parent exits early."""
+        waits.append(timeout)
+        if parent_exit is not None:
+            advance(min(timeout, max(0, parent_exit - clock["now"])))
+            return
+        advance(timeout)
+        raise tree.subprocess.TimeoutExpired("ignores TERM", timeout)
+
+    monkeypatch.setattr(tree, "os", SimpleNamespace(name="posix", killpg=killpg))
+    monkeypatch.setattr(
+        tree, "time", SimpleNamespace(monotonic=lambda: clock["now"], sleep=advance)
+    )
+    result = tree.stop_process_tree(
+        SimpleNamespace(pid=31415, returncode=None, wait=wait), grace=2, forced=1
+    )
+    assert_that(signals).is_equal_to(
+        [(tree.signal.SIGTERM, 0), (tree.signal.SIGKILL, 2)]
+    )
+    assert_that(waits[0]).is_equal_to(2 - signal_cost)
+    assert_that(clock["now"]).is_equal_to(3)
+    assert_that(result["status"]).is_equal_to("unverified")
+
+
 def test_local_server_tree_shutdown_reaps_child(
     collector: dict[str, ModuleType],
     tmp_path: Path,
@@ -1654,6 +1835,7 @@ def test_missing_reused_tarballs_do_not_start_installers(
 ) -> None:
     """A failed control's absent archives leave restricted installation unverified."""
     offline = collector["offline"]
+    monkeypatch.setattr(offline, "run_payload", lambda **_: {"status": "pass"})
     monkeypatch.setattr(offline, "identity", lambda: {"effective_uid": 123})
     monkeypatch.setattr(offline.shutil, "which", lambda _: "/fake/bun")
     monkeypatch.setattr(
@@ -2131,6 +2313,7 @@ def test_no_node_gate_rejects_resolvable_tool_before_execution(
         (5, "engine error", "unverified"),
     ],
 )
+@pytest.mark.parametrize("mark_exit", [0, 1])
 def test_windows_quarantine_summary_reflects_scan(
     collector: dict[str, ModuleType],
     tmp_path: Path,
@@ -2138,6 +2321,7 @@ def test_windows_quarantine_summary_reflects_scan(
     scan_exit: int,
     output: str,
     expected: str,
+    mark_exit: int,
 ) -> None:
     """Direct execution success cannot hide a Defender threat or unknown scan."""
     quarantine = collector["quarantine"]
@@ -2159,6 +2343,8 @@ def test_windows_quarantine_summary_reflects_scan(
         argv = kwargs["argv"]
         if "-Scan" in argv:
             return {"exit": scan_exit, "stdout": output, "stderr": ""}
+        if "Set-Content" in argv[-1]:
+            return {"exit": mark_exit, "stdout": "", "stderr": "marking failed"}
         return {
             "exit": 0,
             "stdout": json.dumps({"AMServiceEnabled": True, "AntivirusEnabled": True}),
@@ -2168,6 +2354,12 @@ def test_windows_quarantine_summary_reflects_scan(
     result = quarantine.measure_quarantine(
         root=tmp_path, variant="ts", home=tmp_path / "home"
     )
-    assert_that(result["status"]).is_equal_to(expected)
-    assert_that(result["execution_status"]).is_equal_to("pass")
-    assert_that(result["security_enforcement"]).starts_with("unverified")
+    assert_that(result["status"]).is_equal_to(
+        "unverified" if mark_exit and expected != "fail" else expected
+    )
+    if mark_exit:
+        assert_that(result["reason"]).contains("Mark-of-the-Web")
+        assert_that(result).does_not_contain_key("execution")
+    else:
+        assert_that(result["execution_status"]).is_equal_to("pass")
+        assert_that(result["security_enforcement"]).starts_with("unverified")

@@ -1,9 +1,48 @@
 # Install-plane distribution experiment (#562)
 
 Date: 2026-11-01. **ADR 0008 remains Proposed.** Registry and no-Node collection
-now covers both variants on all five targets. Offline failures and unknowns still
-prevent a runtime decision. This throwaway spike is outside the published npm
-`files` allowlist and contains no authored JavaScript.
+covers both variants on all five targets at the retained R6 head. Independent
+restricted direct-runtime measurements are still needed for a runtime decision
+under the resolved owner policy below. This throwaway spike is outside the
+published npm `files` allowlist and contains no authored JavaScript.
+
+## Current owner policy and recommendation
+
+The binding [security policy][owner-security] and [offline policy][owner-offline]
+resolve the earlier questions. **The standalone compiled binary is primary offline
+transport, with no install step; npm-only local-file wrapper installation is the
+documented fallback.** B's self-contained Python directory is compared by the same
+direct-run criterion. Both direct execution and npm fallback decide offline per
+OS/variant. Bun local-file failures remain visible evidence, **not a gate**;
+[oven-sh/bun#47640][bun-upstream] already tracks the offline reproduction. Bun
+remains required alongside npm for registry/private-registry installations.
+
+For #562, record unsigned quarantine/`spctl`/codesign, MotW, SmartScreen and
+Defender observations, plus what signing/notarization needs. A signed Mac run is
+not required. Developer ID/notarization is the human-secret gate in
+[#619](https://github.com/lgtm-hq/ai-skills/issues/619); Authenticode is cost-gated
+in [#618](https://github.com/lgtm-hq/ai-skills/issues/618). No paid or third-party EDR
+check is required. Free checksums, GitHub artifact/npm attestations, SLSA provenance
+and Sigstore/cosign keyless signing remain distribution obligations. Where paid
+signing is absent, deliver unsigned but attested; this research does not claim a
+production attestation pipeline or fleet security approval.
+
+**Recommendation: retain Proposed until direct-offline measurements are inspected.**
+R6 has no independent original-payload direct run under restriction. R8 adds it,
+without an install step or package-manager dependency for execution, and judges
+its result plus npm local-file installation/execution; Bun results are retained.
+Registry's dual-client rule is unchanged. Windows per-program denial remains
+unverified without matched same-program controls; Harden Runner's missing same-host
+baseline and transferred-payload provenance also remain explicit limits. These
+are measured-evidence gaps, not unresolved owner policy. Apply the existing
+Python-first tie rule once comparable evidence supports the required criteria;
+footprint alone supplies no new acceptance threshold.
+
+All R3–R6 tables below retain **historical raw outcomes under the superseded
+both-clients-offline policy**. In particular, POSIX offline `fail` reflects Bun
+selection failure under that old rule. It is not a current-policy gate failure,
+and cannot be retroactively turned into a direct-runtime pass. No raw JSON is
+modified or relabeled, and no earlier run certifies R8.
 
 ## Method and evidence identity
 
@@ -102,7 +141,7 @@ The footprint timings and detailed quarantine command/output tables below remain
 **R3-only historical measurements** at ca2db52. They are not R4 or R5 timings.
 Neither earlier artifact set has been modified or relabeled.
 
-## Inspected R5 evidence (not R6 validation)
+## Historical inspected R5 evidence
 
 The R5 [PR run 41299584188][r5-pr] and genuine
 [workflow_dispatch run 41299627797][r5-dispatch] completed **successfully** at
@@ -140,9 +179,35 @@ R6 restores the optional-Bun test contract while keeping dedicated parity requir
 rejects raw empty extension headers before Python tarfile interpretation, checks
 exact nonsymlink output trees, and preserves completed registry evidence on close
 failure. These source corrections have local regressions; **R5 artifacts do not
-validate R6**, and no R6 hosted proof is claimed. Existing raw evidence is unchanged.
+validate R6**. R6 is inspected separately below; existing raw evidence is unchanged.
 Green R5 spike collection supplies the dispatch/link evidence at **6d2d86b only**;
 it does not establish scenario acceptance, owner approval or ADR acceptance.
+
+## Inspected historical R6 evidence (10205e3 only)
+
+The retained [PR run 41303888697][r6-pr] and green
+[workflow_dispatch run 41304035426][r6-dispatch] both completed successfully at
+`10205e3519ab610c97fd2a846bfc54e9ecbe3048`. Each contains twelve unique schema-3
+result JSONs (ten native plus two dedicated offline), with exact matching
+source/expected head, empty source status, event/run identity and attempt 1.
+The five build JSONs per run are setup evidence, not scenario cells. The retained
+`562-r6-hosted-summary.json` agrees with the inspected 24 raw result documents.
+
+Both runs show, for both variants:
+
+| Targets                          | Registry Bun / npm and overall | No Node | Local-file Bun / npm (control and restricted)    | Historical offline overall  | Independent direct offline |
+| -------------------------------- | ------------------------------ | ------- | ------------------------------------------------ | --------------------------- | -------------------------- |
+| Linux x64/arm64, macOS x64/arm64 | Pass / pass, pass              | Pass    | Fail / pass                                      | Fail (old dual-client rule) | Not collected              |
+| Windows x64                      | Pass / pass, pass              | Pass    | Fail / pass                                      | Unverified (probe only)     | Not collected              |
+| Dedicated Linux                  | Not run                        | Not run | Fail / pass restricted; no unrestricted interval | Unverified                  | Not collected              |
+
+Native Linux/macOS prove shared probe/installer denial. Windows has probe denial
+true, installer denial false and verified rule removal. Both dedicated cells lack
+a same-host unrestricted Harden Runner control; payload-source identity remains
+unverified everywhere. Native macOS/Windows security is measured; Linux has no
+native quarantine control. The exact R3 numeric/security tables below remain R3
+observations, not R6 measurements. R6 supplies historical dispatch/link evidence
+only, and cannot certify subsequent source corrections or the new direct cell.
 
 ## R7 source corrections (local verification only)
 
@@ -163,14 +228,52 @@ Existing targets are preserved. The touched tree verifier also rejects Windows
 reparse metadata, and malformed-input Python tests run without Bun. Four fixture
 token literals that triggered B105 in quality run 41303889058 (job 124840243729)
 are replaced with generated disposable values while retaining redaction checks.
-Local command logs are retained under `.lintro/562-r7-*.log`.
+Parent verification logs were moved outside the worktree to the coder profile
+logs under `logs/tick-1229/`; `.lintro/562-r7-*.log` is not a committed artifact.
 
-No R7 hosted validation is claimed. R6 PR run 41303888697 and dispatch 41304035426
-apply only to `10205e3519ab610c97fd2a846bfc54e9ecbe3048`, regardless of their
-eventual results. Historical R3/R4/R5 tables and raw JSON remain unchanged.
-ADR 0008 stays Proposed; owner security/signing policy, the dual-client offline
-disposition, Windows installer denial, the Harden Runner baseline and payload
-provenance remain required on #562. Optional NITs remain on #614.
+The actual [R7 PR run 41307370871][r7-pr] at
+`774ba560bcb0fdffa21b41c6e9127a11d26a02eb`
+failed all five native test steps with `ModuleNotFoundError: yaml`, before payload
+build/measurement. Those failed jobs provide **no native scenario evidence**.
+Missing payload acquisition in the dependent offline job is not a scenario pass.
+R6 evidence above applies only to 10205e3. Historical R3/R4/R5/R6 raw JSON is unchanged.
+
+## R8 source corrections (local verification only)
+
+The actual isolated test command now reads exact pytest/assertpy/PyYAML versions
+from `uv.lock` and uses `--no-project --isolated`, preventing a local project
+`.venv` from masking omitted test dependencies. The checkout-failure regression
+executes the real Ubuntu fallback on Linux only, avoiding Windows Store Python or
+WSL aliases. `pins.sh` already uses the runner's `pythonLocation` interpreter
+rather than `python3`; that pins step succeeded on all five R7 runners. No Windows
+execution proof is inferred from Linux tests.
+
+Each POSIX shutdown phase now shares one monotonic deadline across signal, parent
+wait and group polling. Deterministic modeled-time regressions reproduce ignored
+SIGTERM and early parent exit, including signal overhead. Windows owned-job
+semantics are preserved. A confirmed Defender threat now remains `fail` when an
+independent MotW write/read fails; command-combination regressions use mocked
+boundaries, not native security evidence.
+
+Each offline worker now executes each original standalone A/B payload in a fresh
+HOME **before packing or installing its wrapper**, under the selected restriction.
+It records `direct_execution` and exact commands independently. An unavailable
+packer cannot erase that direct observation. The top-level restricted direct
+cell retains the execution observation and qualifies denial separately. Offline
+rollup uses direct plus npm only; Bun's per-client failure remains visible.
+Windows rules include the direct entry paths, but no same-program controls have
+been fabricated: direct and overall remain unverified there. The dedicated
+Harden Runner job remains unverified without its positive baseline. Registry
+still requires both clients. Local regressions are collector-contract tests, not
+new hosted measurements.
+
+Local logs are outside the worktree at the coder profile's
+`logs/562-r8-*.log`. The exact CI Python pin, **3.14.6**, is absent locally; its
+actual `test-ci.sh` invocation fails interpreter discovery with downloads disabled.
+The installed **3.14.7** interpreter is used for the isolated local smoke and is
+not interchangeable with pinned hosted evidence. Only the small locked test
+dependencies may be fetched; no runtime/toolchain bundle is installed. No R8
+hosted validation or ADR acceptance is claimed.
 
 ## R3 restricted-scenario comparison
 
@@ -306,7 +409,8 @@ disk but is rejected by assessment; B x64 is unsigned. These artifacts do not
 demonstrate acceptable assessed distribution for either variant. Producing and
 assessing appropriately signed artifacts, and testing notarization/Finder launch,
 remain necessary before claiming that delivery route. Required organizational
-signing/notarization policy is unknown; no fleet approval is inferred.
+signing/notarization policy is now resolved above; these historical measurements
+do not establish fleet approval. Signed delivery verification belongs to #619.
 
 Windows A and B both record these actual observations:
 
@@ -340,15 +444,16 @@ Both scans have empty stderr. Both direct CreateProcess launches exit **0** and
 pass the golden/tree checks. This is a clean **custom scan**, with the engine
 service enabled, not real-time endpoint protection approval. MotW was set/read on
 the entry executable only. Shell/SmartScreen reputation enforcement, organizational
-signing policy and third-party EDR remain unknown for both variants. Linux has no
-macOS/Windows security observation; it remains unverified for third-party EDR too.
+signing enforcement and third-party EDR remain unverified for both variants;
+the resolved policy requires neither paid signing nor third-party EDR for #562.
+Linux has no macOS/Windows security observation; third-party EDR is unverified too.
 
 ## Revision boundary and remaining work
 
 The R2 runs [41288233178][r2] and [41290059704][r2-dispatch] predate these R3
 observations; R2 Windows stopped at firewall Error 87 without restricted installs.
 The R3 green dispatch now satisfies the dispatch collection/link criterion at
-`ca2db52`. R4 and R5 collection are separately inspected above; none validates R6.
+`ca2db52`. R4, R5 and R6 collection are separately inspected above; none validates R8.
 
 R4's schema **3** enforces a clean checkout and required matching expected head in
 hosted mode, records `GITHUB_RUN_ATTEMPT`, and labels local runs as local
@@ -360,37 +465,41 @@ mutations now cover archive length, hidden NUL suffixes/prefix bytes and invalid
 octal metadata; empty size is rejected in both runtimes. Golden/BOM parity and
 bounded reads remain required.
 
-**Defer the runtime decision; retain Proposed (Part of #562).** Compare both
-variants on **every** restricted criterion, including observed quarantine,
-signature/assessment failures and owner-required security. Passing registry,
-no-Node or other core scenarios cannot bypass required security. Unknown
-Harden Runner/Windows denial and fleet security scope establish no equality.
-Identical Bun failures need owner disposition; footprint without a specified
-threshold cannot choose the runtime. No runtime choice or waiver is inferred.
+**Retain Proposed (Part of #562) for the missing direct-offline experiment.**
+The owner has disposed of the policy questions. Bun local-file failure is evidence
+only; unsigned assessment results and documented signing requirements satisfy the
+security-policy scope without a signed run. Missing direct execution evidence
+cannot establish either equality or superiority under the Python-first rule.
 
-These required acceptance steps remain tracked on **[#562][owner-policy]**.
-The [public owner-policy gate][owner-policy] remains unanswered: both clients and
-all required signing/security/offline/control criteria remain required, with no
-waiver inferred. This work is **Part of #562** and does not close it.
+The remaining evidence work on **#562** is concrete:
 
-1. Inspect hosted evidence for the final reviewed source; R5's Windows registry
-   owned-job cleanup is inspected, while R6 hosted validation remains pending.
-   Windows installer denial remains
-   unverified until each relevant executable has matched same-program controls,
-   or the owner explicitly disposes of the unmet criterion.
-2. Isolate the Bun local-file wrapper selection failure and obtain an explicit
-   disposition against deployment requirements. A direct platform-tarball control
-   may diagnose transport, but cannot replace the required wrapper/client cell.
-3. Establish a valid same-host empty-allowlist Harden Runner control or obtain
-   owner disposition. Keep the first-step restriction and failing observations.
-4. Obtain signing/notarization, Finder/SmartScreen and EDR requirements for the
-   observed assessment failures/unsigned artifacts. Test appropriately signed
-   artifacts and the required security route before accepting that route.
-5. Bind transferred payload hashes/build metadata to expected source identity
-   before claiming verified provenance. This remains explicitly unverified in R5.
-6. Apply the existing Python-first decision rule only after these failures and
-   owner requirements have dispositions. Update ADR/index together and reconcile
-   #566/#567/#578/#386 then. ADR acceptance and #562 completion remain open.
+1. Inspect current reviewed-head hosted JSON for both original standalone variants
+   running under restriction on all five targets, plus npm local-file fallback.
+   R6 lacks the direct cell and R7 never reached native measurement. Link a genuine
+   green dispatch for the corrected collector; local regressions cannot certify it.
+2. Keep Windows installer/direct-runtime denial unverified until matched
+   same-program controls exist. Python probe denial alone is insufficient.
+3. Preserve the empty-allowlist Harden Runner experiment's missing same-host
+   unrestricted baseline; namespace/sandbox proof does not repair it.
+4. Bind transferred payload hashes and build metadata to expected source before
+   claiming verified provenance; current evidence explicitly cannot do so.
+5. Apply the issue's decision rule after inspecting comparable evidence: revise to
+   Python behind a thin TypeScript npm launcher if B is equally deployable; accept
+   A only if it is no worse on every required restricted criterion. Footprint has
+   no specified budget. Update ADR/index/README together and reconcile
+   #566/#567/#578/#386 when justified. No new owner answer is needed.
+
+For a future signed Mac delivery route, A's final compiled Mach-O needs a valid
+Developer ID Application signature with hardened runtime and reviewed Bun/JIT
+entitlements; its inherited/ad-hoc signature is insufficient. B needs nested
+Mach-O dylibs/extensions and the interpreter signed inside-out, with reviewed
+interpreter/extension entitlements. Notarize the final archive/container with
+`notarytool` and assess the distributed output with `spctl`. A bare executable or
+directory/zip cannot receive a stapled ticket; a supported signed pkg/app/dmg can.
+Exact entitlements and signed/notarized/Finder verification remain the #619
+human-secret-gated work, not invented #562 evidence. Windows Authenticode remains
+in #618; MotW direct CreateProcess does not test shell/SmartScreen reputation. No
+paid EDR or scanner is required.
 
 Only optional M5 NITs belong in **#614**: locking Verdaccio's transitive setup
 runtime tree and attributing that tree, broader cache/read-only-runtime and CPU/OS
@@ -398,7 +507,12 @@ compatibility coverage, and support for legitimate tilde paths currently rejecte
 conservatively. These do not replace #562 acceptance. Required process ownership,
 security, controls, provenance and ADR finalization are not deferred to #614.
 
-[owner-policy]: https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6556223222
+[owner-security]: https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942
+[owner-offline]: https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557886641
+[bun-upstream]: https://github.com/oven-sh/bun/issues/47640
+[r6-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41303888697
+[r6-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41304035426
+[r7-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41307370871
 [r5-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41299584188
 [r5-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41299627797
 [r5-pr-artifacts]: https://github.com/lgtm-hq/ai-skills/actions/runs/41299584188#artifacts

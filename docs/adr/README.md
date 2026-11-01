@@ -8,11 +8,13 @@ Consequences sections. Accepted decisions guide implementation; proposed
 decisions remain subject to their stated follow-up. Engine v2 work is
 tracked in epic [#596](https://github.com/lgtm-hq/ai-skills/issues/596).
 
-ADR 0008 remains Proposed after #562's inspected five-target R5 PR/dispatch
-collection at `6d2d86b`. Windows registry job cleanup passes there; R6 hosted
-validation remains pending. R3 numeric/security tables retain their original run.
-Offline failures, Windows probe-only denial and required security dispositions
-still prevent a runtime choice; see the linked ADR and distribution report.
+ADR 0008 remains Proposed pending comparable restricted **direct-runtime** and
+npm local-file evidence under #562's resolved owner policy. Inspected R6 PR/green
+dispatch evidence applies only to `10205e3`; R7 native CI stopped before measuring,
+and R8 has local verification only. Bun local-file failure is informational;
+registry still requires both clients. Signed Mac verification is tracked in #619,
+not required to close #562. Windows scope, Harden Runner baseline and payload
+provenance remain explicit measurement limits; see the ADR and distribution report.
 
 | ID                                                        | Title                                                              | Status   |
 | --------------------------------------------------------- | ------------------------------------------------------------------ | -------- |

@@ -12,7 +12,15 @@ import uuid
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
-from common import SETTINGS, SPIKE, command, isolated_env, runtime, write_json
+from common import (
+    SETTINGS,
+    SPIKE,
+    command,
+    isolated_env,
+    run_payload,
+    runtime,
+    write_json,
+)
 from network_control import proven_denial
 from packages import client_env, install_client, prepare_packages
 
@@ -58,10 +66,27 @@ def isolation_argv(
     return [*prefix, *assignments, *argv]
 
 
+def transport_status(*, direct: dict[str, Any], npm: dict[str, Any]) -> str:
+    """Apply the owner's direct-runtime plus npm-fallback offline rule.
+
+    Args:
+        direct: Standalone execution observation, without an installation step.
+        npm: Local-file wrapper installation and execution observation.
+
+    Returns:
+        Fail for a known required failure, pass for both passes, else unverified.
+        Bun local-file evidence is retained separately and never enters this gate.
+    """
+    statuses = [item.get("status", "unverified") for item in (direct, npm)]
+    if "fail" in statuses:
+        return "fail"
+    return "pass" if all(status == "pass" for status in statuses) else "unverified"
+
+
 def worker(
     *, build: Path, work: Path, packages_from: Path | None = None
 ) -> dict[str, Any]:
-    """Pack scripts-free wrappers and install local tarballs using both clients.
+    """Run standalone payloads, then scripts-free local wrappers with both clients.
 
     Args:
         build: Original payloads (no extraction masquerading as installation).
@@ -69,7 +94,7 @@ def worker(
         packages_from: Reuse the exact tarballs from the unrestricted control.
 
     Returns:
-        Per-client results and packing commands for each runtime.
+        Independent direct execution, per-client results and packing commands.
     """
     results: dict[str, dict[str, Any]] = {}
     consumer = identity()
@@ -78,12 +103,27 @@ def worker(
     bun = shutil.which("bun")
     for variant in ("ts", "py"):
         entries: list[dict[str, Any]] = []
+        direct = run_payload(
+            root=build / variant,
+            variant=variant,
+            home=work / f"direct-{variant}",
+            records=entries,
+        )
+        results[variant] = {
+            "identity": consumer,
+            "status": transport_status(direct=direct, npm={}),
+            "direct_execution": direct,
+            "direct_commands": entries,
+            "clients": {},
+            "required_transports": ["direct_execution", "npm"],
+            "bun_local_file_gate": False,
+        }
+        write_json(path=work / f"worker-{variant}.json", value=results[variant])
         if bun is None:
-            results[variant] = {
-                "status": "unverified",
-                "reason": "Bun unavailable for local packing",
-            }
+            results[variant]["reason"] = "Bun unavailable for local packing"
+            write_json(path=work / f"worker-{variant}.json", value=results[variant])
             continue
+        entries = []
         packages = (packages_from or work) / f"packages-{variant}"
         directories = (
             []
@@ -132,14 +172,9 @@ def worker(
                     offline=True,
                 )
         results[variant] = {
-            "identity": consumer,
+            **results[variant],
             "package_source": str(packages),
-            "status": (
-                "pass"
-                if clients
-                and all(item["status"] == "pass" for item in clients.values())
-                else "fail" if packed else "unverified"
-            ),
+            "status": transport_status(direct=direct, npm=clients.get("npm", {})),
             "clients": clients,
             "packing_commands": entries,
             "missing_archives": [
@@ -298,7 +333,13 @@ def measure_offline(
             "collector_identity": identity(),
             "probe_denial_proven": False,
             "installer_denial_proven": False,
-            "denial_scope": "requires a matched control covering probe and installers",
+            "direct_execution": {
+                "status": "unverified",
+                "reason": "restricted standalone runtime not yet observed",
+            },
+            "required_transports": ["direct_execution", "npm"],
+            "bun_local_file_gate": False,
+            "denial_scope": "requires matched runtime and installer controls",
             "commands": records,
             "cleanup": cleanup,
             "reason": (
@@ -333,6 +374,7 @@ def measure_offline(
                 # both package managers, and the exact subsequently installed runtimes.
                 programs = {
                     python,
+                    *[runtime(root=build / v, variant=v)[0] for v in ("ts", "py")],
                     *[p for p in (shutil.which("bun"), shutil.which("node")) if p],
                 }
                 for variant in ("ts", "py"):
@@ -412,7 +454,7 @@ def measure_offline(
                     proved and platform.system() != "Windows"
                 )
                 result["denial_scope"] = (
-                    "bundled Python probe only; Bun, Node and installed runtime "
+                    "bundled Python probe only; Bun, Node and direct/installed runtime "
                     "rules have no same-program positive/restricted controls"
                     if platform.system() == "Windows"
                     else f"shared restriction: {mechanism}; matched control required"
@@ -459,9 +501,25 @@ def measure_offline(
                 observed = json.loads(result_path.read_text(encoding="utf-8"))
                 for variant in ("ts", "py"):
                     results[variant]["installation_observation"] = observed[variant]
+                    execution = observed[variant].get("direct_execution", {})
+                    results[variant]["direct_execution"] = {
+                        "status": (
+                            execution.get("status", "unverified")
+                            if results[variant]["installer_denial_proven"]
+                            else "unverified"
+                        ),
+                        "execution": execution,
+                        "commands": observed[variant].get("direct_commands", []),
+                        "denial_proven": results[variant]["installer_denial_proven"],
+                        "scope": "original standalone payload; no install step",
+                    }
                     if results[variant]["installer_denial_proven"]:
                         results[variant].update(
-                            status=observed[variant]["status"], reason=None
+                            status=transport_status(
+                                direct=execution,
+                                npm=observed[variant].get("clients", {}).get("npm", {}),
+                            ),
+                            reason=None,
                         )
             else:
                 for result in results.values():
