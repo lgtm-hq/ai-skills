@@ -43,6 +43,13 @@ Additional AGENTS.md, cross-read and invocation-restriction controls are
 supplementary checks, not extra Cartesian cells. Cross-read checks do not by
 themselves establish duplicate discovery or execution.
 
+Before each removal restart, the script records hook-log byte and line
+boundaries. Complete the displayed fresh-chat prompt before answering the
+removal question. The automatic removal check inspects only new entries for
+the exact removed tag; old entries and the next phase's tag do not count.
+`hookRemovalEvidence` retains the boundaries and actual removal status. A
+skipped prompt or unreadable/truncated log leaves hook removal unverified.
+
 Use a new agent chat for each check. Type only the prompt/invocation shown,
 not the expected token. `y` means the stated check succeeded, `d` means listed
 only, `n` means no, and `s` means skipped. Record uncertainties in a short note
@@ -132,7 +139,17 @@ files. Errors make comparison incomplete. No causality or no-residue claim
 follows from a match. It does not read file contents into returned evidence or
 restore over concurrent changes. The EXIT trap stops the isolated process and
 purges scratch state; `--keep` explicitly retains private scratch state and
-cannot prove cleanup. Inspect deletion and cache/config removal separately.
+cannot prove cleanup. Before cleanup, even a failed final scan, comparison or
+report collection saves available answers and logs to sanitized partial JSON.
+`runStatus`/`incompleteReason` and
+`configComparisonStatus`/`configComparisonReason` disclose incomplete work;
+an unverified comparison has a null `realConfigChangedEntries` count.
+`collectionErrors` names unavailable inputs without private exception text.
+`cleanup` reports pending, purged, retained or unverified owned-scratch cleanup;
+it does not establish host cache removal. Failures and handled interruptions
+still exit nonzero. If writing the result file fails, sanitized JSON is printed
+to stdout as a fallback. Inspect deletion and cache/config removal separately.
+These transcript fields are input to #565, not a production schema redesign.
 
 The source kit is complete, but returned personal JSON remains the owner gate.
 This revision is **Part of #563**. It cannot close the issue or establish host

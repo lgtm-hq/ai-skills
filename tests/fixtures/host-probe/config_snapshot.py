@@ -34,7 +34,19 @@ HOST_RUNTIME_ROOTS = {
     ".codex": {"sessions", "logs", "log", "shell_snapshots", "tmp"},
     ".cursor": {"logs", "projects"},
 }
-CONFIG_SUFFIXES = {".json", ".jsonc", ".toml", ".yaml", ".yml", ".md"}
+# Kit manifests/settings use JSON/TOML/YAML; instructions, skills, agents and
+# commands use Markdown/MDC; hook/MCP executables use Python or shell scripts.
+CONFIG_SUFFIXES = {
+    ".json",
+    ".jsonc",
+    ".toml",
+    ".yaml",
+    ".yml",
+    ".md",
+    ".mdc",
+    ".py",
+    ".sh",
+}
 
 
 def protected_files(base: Path, excluded: set[str]) -> Iterator[Path]:

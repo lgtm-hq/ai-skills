@@ -34,7 +34,12 @@ def embedded_program(
     ) -> subprocess.CompletedProcess[str]:
         """Run the exact here-document body, never the interactive driver."""
         if program == "report":
-            body = re.findall(r"<<'PY'\n(.*?)\nPY", source, re.DOTALL)[-1]
+            match = re.search(
+                r"write_report\(\).*?<<'PY'\n(.*?)\nPY", source, re.DOTALL
+            )
+            if match is None:
+                pytest.fail("Embedded reporter is missing")
+            body = match.group(1)
         else:
             match = re.search(
                 rf'cat >"\$SENT/{program}\.py" <<\'PY\'\n(.*?)\nPY',
@@ -208,6 +213,7 @@ def test_report_sanitizes_private_notes_and_labels_fingerprint_scope(
     hook, mcp = tmp_path / "hook.log", tmp_path / "mcp.log"
     hook.write_text("PROBE-7f3a-lifecycle-ue sessionStart\n")
     mcp.write_text("ue started\n")
+    (tmp_path / "removals.jsonl").write_text("")
     result = embedded_program(
         "report",
         [
@@ -222,6 +228,12 @@ def test_report_sanitizes_private_notes_and_labels_fingerprint_scope(
             str(mcp),
             private_root,
             home,
+            "complete",
+            "",
+            "complete",
+            "",
+            str(tmp_path / "removals.jsonl"),
+            "0",
         ],
         "",
         {},

@@ -38,7 +38,8 @@ six-role checks, restart/removal observations, private config fingerprints
 (paths and SHA-256 only), sanitized JSON and an EXIT cleanup trap. The embedded
 tagged hook writes to the isolated `tmp/probe-hook.log`; the embedded MCP oracle
 emits its sentinel only for a valid call to the advertised tool. Offline tests
-extract and execute these actual embedded programs with synthetic inputs.
+extract and execute these actual embedded programs with synthetic inputs and
+run the full driver using fake OS/IDE commands in a disposable HOME.
 
 Follow the [personal-Mac checklist](../../../docs/parity/cursor-probe-checklist.md)
 and [owner decision](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6558530548).
@@ -49,10 +50,15 @@ matching personal results. The public setting is **Allow Local Plugin Imports**
 
 The script's fingerprint excludes runtime-like paths and files at least 5 MiB;
 it is not the `config_snapshot.py` inventory and does not certify whole-home
-immutability. Changes have no assigned cause. JSON contains observations before
-the EXIT purge, so it does not itself prove successful purge; `--keep` retains
-private scratch state. Review JSON before sharing. No IDE was run here and no
-personal results have arrived: the source kit is complete, while #563 remains
+immutability. Changes have no assigned cause. The EXIT handler saves available
+answers/logs as sanitized partial JSON before purging private scratch on
+collection errors or handled interruptions. Incomplete comparisons have an
+explicit reason and null change count; errors still exit nonzero. Hook removal
+records a boundary before each restart and checks the exact removed tag after
+a fresh prompt. The JSON cleanup status describes owned scratch only, not host
+caches; `--keep` retains private scratch state. Review JSON before sharing.
+No IDE was run here and no personal results have arrived: the source kit is
+complete, while #563 remains
 open pending the owner's JSON evidence and required merge order. Neither this
 script nor its offline tests upgrades historical host support or cleanup claims.
 
@@ -263,9 +269,12 @@ success summary or a new inventory artifact. Do not skip the error, compare a
 stale artifact or call the inventory unchanged. Stop the probe if the baseline
 fails; if final collection fails, report incomplete verification while still
 purging owned scratch state. Never change real-home links to make collection
-pass. Coverage is limited to selected suffixes/auth names, and collection is not
-atomic against concurrent changes. Offline disposable-HOME regressions prove
-link/error rejection only, not live coverage or absence of residue.
+pass. Coverage is limited to selected suffixes/auth names: kit JSON/TOML/YAML
+configuration, Markdown/MDC payloads and Python/shell hook/MCP executables.
+Collection remains inside the named host roots; it is not whole-home traversal
+and is not atomic against concurrent changes. Offline disposable-HOME
+regressions prove selected-format coverage and link/error rejection only,
+not live coverage or absence of residue.
 
 If they differ, compare paths/mtimes/digests locally, never print contents,
 never restore over concurrent work, and report the limitation. This run found

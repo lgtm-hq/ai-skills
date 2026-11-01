@@ -332,9 +332,9 @@ def test_cursor_policy_claims_follow_answered_owner_rule(
                 assert_that(record["version"]).is_instance_of(str).is_not_empty()
                 assert_that(record["os"]).starts_with("darwin-")
                 assert_that(record["observed"]).is_not_equal_to("not-measured")
-                assert_that(evidence["sources"]).extracting(
-                    lambda source: ".json#" in source,
-                ).contains(True)
+                assert_that(
+                    any(".json#" in source for source in evidence["sources"])
+                ).is_true()
             continue
         assert_that(record["policyMarkers"]).is_equal_to(["Allow Local Plugin Imports"])
         assert_that(evidence["sources"]).contains(OWNER_DECISION)
@@ -372,3 +372,26 @@ def test_cursor_policy_claims_follow_answered_owner_rule(
                 )
                 assert_that(" ".join(record["notes"].split())).contains(dependency)
                 assert_that(" ".join(source["notes"].split())).contains(dependency)
+
+
+@pytest.mark.parametrize("sources", [["synthetic.json#ue-skill"], ["public-docs-only"]])
+def test_measured_cursor_record_requires_returned_json_source(
+    sources: list[str],
+) -> None:
+    """Exercise measured-record validation without publishing fake evidence."""
+    record = {
+        "host": "cursor",
+        "interface": "ide",
+        "policy": "none",
+        "policyMarkers": [],
+        "evidence": {"kind": "measured", "derivedFrom": [], "sources": sources},
+        "version": "synthetic-version",
+        "os": "darwin-synthetic",
+        "observed": "synthetic-observation",
+    }
+    records = [(Path("synthetic.json"), record)]
+    if sources == ["public-docs-only"]:
+        with pytest.raises(AssertionError):
+            test_cursor_policy_claims_follow_answered_owner_rule(records)
+    else:
+        test_cursor_policy_claims_follow_answered_owner_rule(records)

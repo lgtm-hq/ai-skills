@@ -158,6 +158,30 @@ def test_runtime_roots_are_host_specific(
     assert_that(snapshot_process()).is_equal_to(before)
 
 
+@pytest.mark.parametrize(
+    "relative", ["rules/probe.mdc", "hooks/sentinel.py", "hooks/run.sh"]
+)
+def test_cursor_rule_and_executable_changes_and_deletions_are_inventoried(
+    snapshot_process: Callable[[], dict[str, Any]],
+    tmp_path: Path,
+    relative: str,
+) -> None:
+    """Actual kit rule and executable formats stay protected in disposable HOME."""
+    payload = tmp_path / "home/.cursor" / relative
+    payload.parent.mkdir(parents=True)
+    payload.write_text("Original synthetic payload\n", encoding="utf-8")
+    key = f"~/.cursor/{relative}"
+    before = snapshot_process()
+    assert_that(before).contains_key(key)
+    payload.write_text("Changed synthetic payload\n", encoding="utf-8")
+    changed = snapshot_process()
+    assert_that(changed[key]["sha256"]).is_not_equal_to(before[key]["sha256"])
+    payload.unlink()
+    deleted = snapshot_process()
+    assert_that(deleted).does_not_contain_key(key)
+    assert_that(deleted).is_not_equal_to(before).is_not_equal_to(changed)
+
+
 @pytest.mark.parametrize("host", [".agents", ".claude", ".codex", ".cursor"])
 @pytest.mark.parametrize(
     "case",
