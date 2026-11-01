@@ -1,12 +1,18 @@
 # Architecture decision records
 
 Architecture decisions for this repo, covering the capability engine,
-its generated host envelopes and the proposed engine v2 runtime split.
+its generated host envelopes and the engine v2 runtime boundary.
 
 Each ADR records its status and date, with Context, Decision and
 Consequences sections. Accepted decisions guide implementation; proposed
 decisions remain subject to their stated follow-up. Engine v2 work is
 tracked in epic [#596](https://github.com/lgtm-hq/ai-skills/issues/596).
+
+ADR 0008 applies #562’s measured Python-first escape hatch: one bundled Python
+engine owns build and install behavior; strict TypeScript is the thin npm launcher.
+See the
+[distribution report](https://github.com/lgtm-hq/ai-skills/blob/research/562-install-plane-spike/docs/research/install-plane-distribution.md)
+for the five-target comparison, exact evidence identities and unverified limits.
 
 | ID                                                        | Title                                                             | Status                        |
 | --------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------- |
@@ -17,4 +23,4 @@ tracked in epic [#596](https://github.com/lgtm-hq/ai-skills/issues/596).
 | [0005](./0005-collision-doctrine.md)                      | Qualified identity, persistent aliases and explicit conflicts     | Accepted (amended 2026-11-01) |
 | [0006](./0006-vendor-bake-safety.md)                      | Vendor bake safety: no execute, path rejection, coverage reports  | Accepted                      |
 | [0007](./0007-publish-time-vendor-bake.md)                | Vendor bake output is a publish-time artifact, not repo content   | Accepted                      |
-| [0008](./0008-engine-runtime-build-and-install-planes.md) | Engine runtime: Python build plane, TypeScript install plane      | Proposed                      |
+| [0008](./0008-engine-runtime-build-and-install-planes.md) | Engine runtime: bundled Python engine, thin TypeScript launcher   | Accepted                      |
