@@ -101,6 +101,11 @@ def test_evidence_field_types_and_vocabulary(
         assert_that(set(record)).described_as(path.name).is_equal_to(FIELDS)
         assert_that(record["state"]).is_in(*STATES)
         assert_that(record["observed"]).is_in("invoked", "discovered", "absent")
+        if record["state"] == "partial":
+            assert_that(record["observed"]).described_as(path.name).is_in(
+                "invoked",
+                "discovered",
+            )
         assert_that(record["interface"]).is_equal_to("cli")
         for key in ("version", "os", "notes"):
             assert_that(record[key]).is_instance_of(str).is_not_empty()

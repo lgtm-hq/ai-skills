@@ -2,7 +2,8 @@
 
 Run before changing HOME. Write snapshots outside the repository, compare them
 locally, and publish only counts and the aggregate digest. Runtime transcripts,
-databases, logs and other session output are deliberately outside this inventory.
+databases, logs and other session output at known host runtime roots are outside
+this inventory. Identically named directories inside payloads remain protected.
 """
 
 from __future__ import annotations
@@ -12,26 +13,29 @@ import json
 import sys
 from pathlib import Path
 
-EXCLUDED_PARTS = {
-    "sessions",
-    "logs",
-    "debug",
-    "telemetry",
-    "projects",
-    "backups",
-    "shell_snapshots",
-    "tmp",
-    "session-env",
-    "todos",
-    "paste-cache",
-    "file-history",
-    "plans",
+# These are direct children of each host root, never arbitrary path components.
+# .agents has no known runtime roots to exclude.
+HOST_RUNTIME_ROOTS = {
+    ".claude": {
+        "projects",
+        "debug",
+        "telemetry",
+        "backups",
+        "tmp",
+        "session-env",
+        "todos",
+        "paste-cache",
+        "file-history",
+        "plans",
+    },
+    ".codex": {"sessions", "logs", "log", "shell_snapshots", "tmp"},
+    ".cursor": {"logs", "projects"},
 }
 CONFIG_SUFFIXES = {".json", ".jsonc", ".toml", ".yaml", ".yml", ".md"}
 
 
 def snapshot(home: Path) -> dict[str, dict[str, str | int | bool]]:
-    """Inventory config paths, mtimes and hashes under the real home.
+    """Inventory config paths, mtimes and hashes under the supplied home.
 
     Args:
         home: Home directory whose configuration is protected.
@@ -47,7 +51,7 @@ def snapshot(home: Path) -> dict[str, dict[str, str | int | bool]]:
             continue
         for path in sorted(base.rglob("*")):
             relative = path.relative_to(base)
-            if any(part in EXCLUDED_PARTS for part in relative.parts):
+            if relative.parts[0] in HOST_RUNTIME_ROOTS.get(name, set()):
                 continue
             if path.is_file() and (
                 path.suffix in CONFIG_SUFFIXES or path.name in {"auth", "credentials"}

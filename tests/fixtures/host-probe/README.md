@@ -18,7 +18,9 @@ markers after measurement. PR #617 R1 then revised the MCP executable and its
 schema to validate JSON-RPC requests, the advertised `probe_integration` name,
 and empty-object arguments (omitted arguments default to `{}`). Invalid calls
 return errors without the token; notifications are silent. Only a valid call
-emits the integration token. This is a **post-measurement behavioral revision**;
+emits the integration token. R2 additionally handles `ping` with an empty result
+and the original request ID, without emitting a token, and rejects null request
+IDs. These are **post-measurement behavioral revisions**;
 neither byte nor behavior equivalence to the measured MCP fixture is claimed.
 Offline subprocess tests do not upgrade the original host discovery records.
 
@@ -225,8 +227,15 @@ cmp "$probe_parent/before.json" "$probe_parent/after.json"
 
 If they differ, compare paths/mtimes/digests locally, never print contents,
 never restore over concurrent work, and report the limitation. This run found
-nine changing Codex runtime-cache entries in the final comparison; all other
-5,372 entries matched. Seven changes affected only mtime; two also changed hash.
+nine changing Codex runtime-cache entries in the final comparison; the other
+5,372 of 5,381 entries matched **under the old collector only**. Seven changes
+affected only mtime; two also changed hash. That collector excluded runtime-like
+names anywhere in a path, including legitimate skill/plugin payloads named
+`plans`, `logs`, `sessions`, etc. Its narrower coverage does not prove the whole
+protected inventory unchanged. R2 excludes only known runtime roots for each
+host and preserves same-name nested payloads. The correction was tested only
+with disposable HOME fixtures; no real-home remeasurement or certification of
+corrected coverage took place.
 See [the findings](../../../docs/parity/README.md) for the exact inventory
 scope and aggregate digests. Finally delete the owned temporary parent,
 including private inventories, after saving only sanitized evidence. Do not

@@ -51,6 +51,8 @@ server process shutdown exit codes were not captured.
 | `adapter-missing`      | Host route established but the necessary projection does not exist                                              |
 
 `supported` always requires `observed: invoked` and no demonstrated field loss.
+`partial` requires `observed: invoked` or `discovered`; `absent` cannot establish
+partial behavior.
 The issue allows MCP listing as evidence; these records conservatively use
 `partial/discovered` for listed entries, even a Connected entry, rather than
 labelling discovery as invocation. `absent` with `unverified` means **no
@@ -73,6 +75,15 @@ Paths in committed evidence are home-relative aliases (`~/probe/...`) or
 repository-relative paths. Tokens, auth contents, personal absolute paths,
 account information and machine names are excluded. Private snapshots contain
 only paths, mtimes and SHA-256 digests and must never be committed.
+
+The original run's protected-config counts (5,372 matching of 5,381 selected
+entries, nine changes) apply only to the old collector, which omitted paths
+containing runtime-like names anywhere, including legitimate nested payloads.
+The [cleanup comparison](README.md#cleanup-and-protected-configuration) does
+not establish whole protected-inventory immutability. R2's host-root-only
+exclusions have offline disposable-HOME coverage, with no live remeasurement
+or retroactive certification of the corrected inventory. Record cleanup
+references retain this limitation; they do not upgrade host evidence.
 
 `uv run pytest tests/test_parity_evidence.py` checks the complete field set,
 types, vocabulary, dates, redaction, filename identities, Cartesian coverage,

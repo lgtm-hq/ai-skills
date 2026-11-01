@@ -32,6 +32,10 @@ activation. [Record format](evidence-format.md), [command log](probe-log.md),
 [probe kit](../../tests/fixtures/host-probe/README.md), and
 [Cursor handoff](cursor-probe-checklist.md) give the reproducible details.
 
+The owner [Cursor policy-host acceptance gate](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-6557600027)
+remains pending; all 36 Cursor cells stay unverified. Source fixes and offline
+regressions do not satisfy that live acceptance or authorize wider activation.
+
 ## Findings for #584
 
 - Claude install scope is real. `plugin install -s user|project|local` wrote
@@ -161,13 +165,16 @@ with #384's user-only native scope or its cache-version safety recommendation.
 
 ## Cleanup and protected configuration
 
-Before the probes, `config_snapshot.py` inventoried paths, nanosecond mtimes,
+Before the probes, the original `config_snapshot.py` inventoried paths, nanosecond mtimes,
 and SHA-256 under the real `.claude`, `.codex`, `.cursor`, `.agents`, plus
-`~/.claude.json` when present. It includes configuration and plugin/skill files,
-excludes session transcripts/logs/databases and other named runtime directories,
-and never prints content. The identical algorithm ran after all probes.
+`~/.claude.json` when present. It selected configuration suffixes and auth-file
+names, but excluded any path containing a runtime-like directory name anywhere.
+That also omitted legitimate skill/plugin payloads named `plans`, `logs`,
+`sessions`, etc. The identical original algorithm ran after all probes; its
+coverage was narrower than the intended protected inventory.
 
-There were **5,381 entries before and after**: 5,372 matched exactly in the final
+With that **old collector only**, there were **5,381 entries before and after**:
+5,372 matched exactly in the final
 post-validation comparison. The main
 config/auth/instruction/settings files, all inventoried Claude/Cursor files,
 and the absence of `.agents` were unchanged. Nine Codex runtime-cache entries
@@ -179,7 +186,15 @@ sessions were active; causation is not established. Seven entries changed only
 mtime; `models_cache.json` and the remote plugin catalog changed both mtime and
 hash. The immediate post-probe comparison had six changed entries; the final
 comparison includes the three additional runtime cache paths. No attempt was made to
-restore or overwrite these files. **Whole-inventory immutability is not proven.**
+restore or overwrite these files. The counts, changes and aggregate digests
+below describe only the old collector's selected entries, not omitted payloads
+or the corrected collector's coverage. **Whole protected-inventory immutability
+is not proven**, even apart from the nine changes.
+
+PR #617 R2 restricts runtime exclusions to known roots for each host; nested
+skill/plugin payloads with those names are now included. Only disposable-HOME
+offline regressions exercised the correction. No real-home inventory was
+remeasured, and the historical comparison does not certify corrected coverage.
 
 Private inventory aggregate digests:
 
@@ -203,11 +218,13 @@ R009 is `codex exec --help` and is excluded from model attempts. Five
 early app-server attempts produced no usable response and are explicitly
 excluded from discovery conclusions. None of the offline tests use network.
 
-## Post-measurement revision (PR #617 R1)
+## Post-measurement revisions (PR #617 R1/R2)
 
 The MCP fixture now validates the advertised tool name and empty-object
 arguments and returns JSON-RPC errors for invalid requests. The integration
 token is emitted only by a valid tool call, rather than also as server metadata.
+R2 adds an empty-result `ping` response, preserves request IDs and notification
+silence, and rejects explicit null request IDs. Pings never emit the sentinel.
 This is an executable behavior/schema revision after the measurement, not a
 byte- or behavior-equivalent copy of the measured fixture. Offline subprocess
 tests exercise the revised oracle; they do not certify host wiring. Existing

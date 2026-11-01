@@ -33,6 +33,7 @@ def respond(line: str) -> dict[str, Any] | None:
         or request.get("jsonrpc") != "2.0"
         or not isinstance(request.get("method"), str)
         or type(request.get("id")) not in (str, int, float, type(None))
+        or ("id" in request and request["id"] is None)
         or (isinstance(request.get("id"), float) and not math.isfinite(request["id"]))
     ):
         return error(request_id=None, code=-32600, message="Invalid Request")
@@ -50,6 +51,8 @@ def respond(line: str) -> dict[str, Any] | None:
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "probe-sentinel", "version": "1.0.0"},
         }
+    elif method == "ping":
+        result = {}
     elif method == "tools/list":
         result = {
             "tools": [

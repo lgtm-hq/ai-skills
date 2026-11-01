@@ -91,10 +91,10 @@ def test_initialize_list_and_call(
     )
 
 
-@pytest.mark.parametrize("request_id", [0, "request", None])
+@pytest.mark.parametrize("request_id", [0, "request"])
 def test_call_without_optional_arguments(
     mcp_process: Callable[[list[str]], list[dict[str, Any]]],
-    request_id: int | str | None,
+    request_id: int | str,
 ) -> None:
     """MCP permits omitted arguments for an empty object schema; IDs survive."""
     replies = mcp_process(
@@ -113,6 +113,64 @@ def test_call_without_optional_arguments(
     assert_that(replies[0]["result"]["content"][0]["text"]).is_equal_to(
         "PROBE-7f3a-integration",
     )
+
+
+@pytest.mark.parametrize("request_id", [0, 7, "ping-request"])
+@pytest.mark.parametrize("fields", [{}, {"params": {}}])
+def test_ping_preserves_id_without_sentinel(
+    mcp_process: Callable[[list[str]], list[dict[str, Any]]],
+    request_id: int | str,
+    fields: dict[str, Any],
+) -> None:
+    """A health check returns an empty result and leaves notifications silent."""
+    messages = [
+        {"jsonrpc": "2.0", "id": request_id, "method": "ping", **fields},
+        {"jsonrpc": "2.0", "method": "ping", **fields},
+        {"jsonrpc": "2.0", "id": "next", "method": "tools/list"},
+    ]
+    replies = mcp_process([json.dumps(message) for message in messages])
+    assert_that(replies).is_length(2)
+    assert_that(replies[0]).is_equal_to(
+        {"jsonrpc": "2.0", "id": request_id, "result": {}},
+    )
+    assert_that(replies[1]["id"]).is_equal_to("next")
+    assert_that(replies[1]).contains_key("result")
+    assert_that(json.dumps(replies)).does_not_contain("PROBE-7f3a-integration")
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["initialize", "ping", "tools/list", "tools/call", "unknown"],
+)
+def test_null_ids_are_invalid(
+    mcp_process: Callable[[list[str]], list[dict[str, Any]]],
+    method: str,
+) -> None:
+    """An explicit null ID is invalid in MCP, including for an otherwise valid call."""
+    replies = mcp_process(
+        [
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "method": method,
+                    "params": {"name": "probe_integration"},
+                },
+            ),
+            '{"jsonrpc":"2.0","id":"next","method":"tools/list"}',
+        ],
+    )
+    assert_that(replies).is_length(2)
+    assert_that(replies[0]).is_equal_to(
+        {
+            "jsonrpc": "2.0",
+            "id": None,
+            "error": {"code": -32600, "message": "Invalid Request"},
+        },
+    )
+    assert_that(replies[1]["id"]).is_equal_to("next")
+    assert_that(replies[1]).contains_key("result")
+    assert_that(json.dumps(replies)).does_not_contain("PROBE-7f3a-integration")
 
 
 @pytest.mark.parametrize(
