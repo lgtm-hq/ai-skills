@@ -241,7 +241,9 @@ def test_adversarial_index_cli(
     index_path.write_text(raw, encoding="utf-8")
     bun = shutil.which("bun")
     if variant == "ts" and bun is None:
-        pytest.fail("Bun required for adversarial CLI parity")
+        if os.environ.get("SPIKE_REQUIRE_BUN") == "1":
+            pytest.fail("Bun required for adversarial CLI parity")
+        pytest.skip("Bun unavailable for adversarial CLI parity")
     argv = (
         [sys.executable, "-I", "-B", str(SPIKE / "py/prototype.py")]
         if variant == "py"
@@ -279,11 +281,118 @@ def test_path_profile_inclusive_boundaries(prototype: ModuleType, name: str) -> 
     assert_that(prototype.safe_path(name)).is_equal_to(name)
 
 
+@pytest.mark.parametrize("required", [False, True])
+def test_adversarial_bun_policy_without_bun(tmp_path: Path, required: bool) -> None:
+    """Real pytest runs keep Python checks and skip or fail only Bun cases."""
+    env = {
+        key: value for key, value in os.environ.items() if key != "SPIKE_REQUIRE_BUN"
+    }
+    env["PATH"] = str(tmp_path)  # Empty tool directory; Python uses its absolute path.
+    if required:
+        env["SPIKE_REQUIRE_BUN"] = "1"
+    result = subprocess.run(  # nosec B603 - fixed local pytest, no tools or network
+        args=[
+            sys.executable,
+            "-m",
+            "pytest",
+            str(Path(__file__).resolve()),
+            "-q",
+            "-o",
+            "addopts=",
+            "-k",
+            "test_adversarial_index_cli",
+        ],
+        cwd=SPIKE.parents[1],
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+    output = result.stdout + result.stderr
+    assert_that(result.returncode).described_as(output).is_equal_to(
+        1 if required else 0
+    )
+    assert_that(output).contains("5 passed", "5 failed" if required else "5 skipped")
+    assert_that(output).does_not_contain("FileNotFoundError", "Traceback")
+    if required:
+        assert_that(output).contains("Bun required for adversarial CLI parity")
+
+
+@pytest.mark.parametrize("variant", ["py", "ts"])
+@pytest.mark.parametrize(
+    "raw_type",
+    [
+        tarfile.XHDTYPE,
+        tarfile.XGLTYPE,
+        tarfile.GNUTYPE_LONGNAME,
+        tarfile.GNUTYPE_LONGLINK,
+    ],
+)
+def test_empty_extension_before_valid_ustar_is_rejected(
+    prototype: ModuleType,
+    spike_fixture: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    variant: str,
+    raw_type: bytes,
+) -> None:
+    """An empty raw extension cannot hide behind an inventoried regular member."""
+    extension = tarfile.TarInfo("keep/extension")
+    extension.type = raw_type
+    extension.size = 0
+    archive_path = spike_fixture / "artifact.tar"
+    archive = extension.tobuf(format=tarfile.USTAR_FORMAT) + archive_path.read_bytes()
+    assert_that(len(archive)).is_less_than(16384)
+    archive_path.write_bytes(archive)
+    index_path = spike_fixture / "index.json"
+    index = json.loads(index_path.read_bytes())
+    index["sha256"] = hashlib.sha256(archive).hexdigest()
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    if variant == "py":
+
+        def interpreted(*args: object, **kwargs: object) -> None:
+            """Forbid interpreting extensions even when tarfile would hide them."""
+            pytest.fail("raw extension reached tarfile interpretation")
+
+        monkeypatch.setattr(prototype.tarfile, "open", interpreted)
+        with pytest.raises(ValueError, match="invalid archive inventory"):
+            prototype.install(
+                fixture=spike_fixture, home=tmp_path, exclude="fixture:drop"
+            )
+    else:
+        bun = shutil.which("bun")
+        if bun is None:
+            if os.environ.get("SPIKE_REQUIRE_BUN") == "1":
+                pytest.fail("Bun required for empty-extension parity")
+            pytest.skip("Bun unavailable for empty-extension parity")
+        result = subprocess.run(  # nosec B603 - fixed local CLI, bounded fixture
+            args=[
+                bun,
+                "run",
+                str(SPIKE / "ts/prototype.ts"),
+                str(spike_fixture),
+                "fixture:drop",
+            ],
+            env={**os.environ, "HOME": str(tmp_path)},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=10,
+            check=False,
+        )
+        assert_that(result.returncode).is_equal_to(1)
+        assert_that(result.stderr).contains("invalid archive inventory")
+    assert_that((tmp_path / ".spike-target").exists()).is_false()
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
         "bom-index",
         "bad-trailer",
+        "bad-checksum",
         "extra-member",
         "pax-header",
         "gnu-header",
@@ -312,6 +421,8 @@ def test_shared_malformed_inputs_fail_closed(
         index = json.loads(index_path.read_text(encoding="utf-8"))
         if mutation == "bad-trailer":
             archive = archive[:-1] + b"x"
+        elif mutation == "bad-checksum":
+            archive = b"x" + archive[1:]  # Keep the stored checksum unchanged.
         elif mutation == "short-zero-tail":
             archive += b"\0"
         elif mutation in {
@@ -420,26 +531,25 @@ def test_shared_malformed_inputs_fail_closed(
             "nul-prefix-suffix": "invalid archive inventory",
             "nul-number-suffix": "invalid archive number",
             "empty-size": "invalid archive number",
+            "pax-header": "invalid archive inventory",
+            "gnu-header": "invalid archive inventory",
+            "high-bit-header": "non-ASCII archive header",
         }
         runtime_reasons = {
             "py": {
                 "bom-index": "UTF-8 BOM",
                 "extra-member": "invalid archive inventory",
-                "pax-header": "invalid archive trailer",
-                "gnu-header": "end of file header",
-                "high-bit-header": "invalid path",
+                "bad-checksum": "invalid archive checksum",
             },
             "ts": {
                 "bom-index": "JSON Parse error",
                 "extra-member": "incomplete archive",
-                "pax-header": "invalid archive inventory",
-                "gnu-header": "invalid archive inventory",
-                "high-bit-header": "non-ASCII archive header",
+                "bad-checksum": "invalid archive inventory",
             },
         }
         reason = common_reasons.get(mutation) or runtime_reasons[variant].get(mutation)
         if reason is None:
-            reason = "invalid header" if variant == "py" else "invalid archive number"
+            reason = "invalid archive number"
         assert_that(result.stderr).described_as(variant + ":" + mutation).contains(
             reason
         ).does_not_contain("Traceback")

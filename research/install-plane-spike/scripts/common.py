@@ -295,6 +295,52 @@ def export_evidence(path: Path) -> None:
             output.write(f"\n### {path.name}\n\n```json\n{raw}\n```\n")
 
 
+def installed_tree_matches(*, root: Path, expected: dict[str, str]) -> bool:
+    """Compare the exact disposable output tree without traversing symlinks.
+
+    Args:
+        root: Target created by the now-stopped payload.
+        expected: Trusted golden regular-file paths and UTF-8 contents.
+
+    Returns:
+        Whether the root, required directories, regular files and bytes match.
+        Unexpected entries are rejected before descent or content reads. This
+        post-execution check does not provide a concurrent filesystem sandbox.
+    """
+    directories = {
+        parent.as_posix()
+        for name in expected
+        for parent in Path(name).parents
+        if parent != Path(".")
+    }
+    seen_files: set[str] = set()
+    seen_directories: set[str] = set()
+    pending = [root]
+    try:
+        if not stat.S_ISDIR(root.lstat().st_mode):
+            return False
+        while pending:
+            with os.scandir(pending.pop()) as entries:
+                for entry in entries:
+                    path = Path(entry.path)
+                    name = path.relative_to(root).as_posix()
+                    mode = path.lstat().st_mode
+                    if stat.S_ISDIR(mode) and name in directories:
+                        seen_directories.add(name)
+                        pending.append(path)
+                    elif stat.S_ISREG(mode) and name in expected:
+                        wanted = expected[name].encode("utf-8")
+                        with path.open("rb") as stream:
+                            if stream.read(len(wanted) + 1) != wanted:
+                                return False
+                        seen_files.add(name)
+                    else:
+                        return False
+    except OSError:
+        return False
+    return seen_files == set(expected) and seen_directories == directories
+
+
 def run_payload(
     *,
     root: Path,
@@ -357,11 +403,7 @@ def run_payload(
         (root / "fixtures/expected-output.json").read_text(encoding="utf-8")
     )
     destination = home / ".spike-target"
-    actual = {
-        p.relative_to(destination).as_posix(): p.read_bytes().decode("utf-8")
-        for p in destination.rglob("*")
-        if p.is_file()
-    }
+    tree_matches = installed_tree_matches(root=destination, expected=expected)
     try:
         stdout_matches = json.loads(result["stdout"]) == expected
     except (ValueError, TypeError):
@@ -386,7 +428,7 @@ def run_payload(
             "pass"
             if result["exit"] == 0
             and stdout_matches
-            and actual == expected
+            and tree_matches
             and not other_home_files
             and cache_blocked
             else "fail"
@@ -395,6 +437,7 @@ def run_payload(
         "exit": result["exit"],
         "PATH": env["PATH"],
         "resolved_tools": resolved_tools,
+        "installed_tree_matches": tree_matches,
         "cache_directory_blocked": cache_blocked,
         "other_HOME_files": other_home_files,
         "cache_scope": (

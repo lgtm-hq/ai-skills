@@ -47,7 +47,7 @@ fingerprints. Pins are Bun **1.4.0**, uv **0.11.26**, CPython **3.14.6** and
 Verdaccio **6.2.0**. Verdaccio's transitive setup tree is not locked; launcher
 `--bun` flags or Node-style warnings do not certify its entire runtime tree.
 
-## Inspected R4 evidence (not R5 validation)
+## Historical R4 evidence
 
 The R4 [PR run 41295866082][r4-pr] and genuine
 [workflow_dispatch run 41295968562][r4-dispatch] both completed **successfully**
@@ -89,7 +89,7 @@ POSIX registry owned-group absence is verified. The R5 source replaces Windows
 PID-tree cleanup with suspended launch into a non-breakaway Job Object, shared
 by commands and registry startup. Its failure/success lifecycle tests and
 parent-exits/child-keeps-pipes smoke are wired into the native CI test step;
-**no R5 hosted Windows outcome is claimed**.
+R4 artifacts do not validate that replacement. R5 is separately inspected below.
 
 Both dedicated R4 observations per run remain U: Harden Runner alone has no
 same-host unrestricted baseline, and probe/installer denial are false. Their
@@ -101,6 +101,48 @@ for the reviewed head plus disposition of every required failure/unknown.
 The footprint timings and detailed quarantine command/output tables below remain
 **R3-only historical measurements** at ca2db52. They are not R4 or R5 timings.
 Neither earlier artifact set has been modified or relabeled.
+
+## Inspected R5 evidence (not R6 validation)
+
+The R5 [PR run 41299584188][r5-pr] and genuine
+[workflow_dispatch run 41299627797][r5-dispatch] completed **successfully** at
+exact clean `6d2d86bdfd9a68d6dd9f36ca3fd16619b53c1069`.
+Each [PR artifact list][r5-pr-artifacts] / [dispatch artifact list][r5-artifacts]
+contains **12 unique schema-3 result JSONs**: ten native plus two dedicated Linux
+offline observations. All 24 raw documents were inspected for exact matching
+source/expected heads, empty source status, event/run identity and attempt **1**.
+The five `build.json` files per run remain setup logs, not scenario cells.
+
+Both runs agree for **both variants**. Client pairs are **Bun / npm**; U means
+unverified. These are R5 observations, separate from the historical R3 tables.
+
+| Target       | Registry clients | Registry overall | No Node | Local-file control / restricted clients | Offline overall |
+| ------------ | ---------------- | ---------------- | ------- | --------------------------------------- | --------------- |
+| linux-x64    | Pass / pass      | Pass             | Pass    | Fail / pass in both                     | Fail            |
+| linux-arm64  | Pass / pass      | Pass             | Pass    | Fail / pass in both                     | Fail            |
+| darwin-arm64 | Pass / pass      | Pass             | Pass    | Fail / pass in both                     | Fail            |
+| darwin-x64   | Pass / pass      | Pass             | Pass    | Fail / pass in both                     | Fail            |
+| windows-x64  | Pass / pass      | Pass             | Pass    | Fail / pass in both                     | U (probe only)  |
+
+Windows registry cleanup now records an **owned non-breakaway Windows Job
+Object**, successful termination, `active_processes=0`, `parent_reaped=true` and
+`job_handle_closed=true`. This establishes the observed R5 registry cleanup
+result, replacing R4's unverified descendant absence. It does not prove Windows
+installer egress denial: offline remains U with probe true, installer false and
+verified exact firewall rule removal. POSIX offline remains fail because Bun
+selects all five local-file platform packages; npm selects its target. Both
+dedicated observations remain U without a same-host unrestricted Harden Runner
+baseline. Payload-source binding remains explicitly unverified in every cell.
+
+The separate [Python-only CI run 41299584834][r5-python] failed five adversarial
+TypeScript cases because Bun was absent (821 passed, 16 skipped, 5 failed).
+R6 restores the optional-Bun test contract while keeping dedicated parity required,
+rejects raw empty extension headers before Python tarfile interpretation, checks
+exact nonsymlink output trees, and preserves completed registry evidence on close
+failure. These source corrections have local regressions; **R5 artifacts do not
+validate R6**, and no R6 hosted proof is claimed. Existing raw evidence is unchanged.
+Green R5 spike collection supplies the dispatch/link evidence at **6d2d86b only**;
+it does not establish scenario acceptance, owner approval or ADR acceptance.
 
 ## R3 restricted-scenario comparison
 
@@ -278,7 +320,7 @@ macOS/Windows security observation; it remains unverified for third-party EDR to
 The R2 runs [41288233178][r2] and [41290059704][r2-dispatch] predate these R3
 observations; R2 Windows stopped at firewall Error 87 without restricted installs.
 The R3 green dispatch now satisfies the dispatch collection/link criterion at
-`ca2db52`. R4 collection is separately inspected above; neither run validates R5.
+`ca2db52`. R4 and R5 collection are separately inspected above; none validates R6.
 
 R4's schema **3** enforces a clean checkout and required matching expected head in
 hosted mode, records `GITHUB_RUN_ATTEMPT`, and labels local runs as local
@@ -303,8 +345,9 @@ The [public owner-policy gate][owner-policy] remains unanswered: both clients an
 all required signing/security/offline/control criteria remain required, with no
 waiver inferred. This work is **Part of #562** and does not close it.
 
-1. Inspect hosted evidence for the final reviewed source, including the R5
-   Windows owned-job launch/cleanup smoke. Windows installer denial remains
+1. Inspect hosted evidence for the final reviewed source; R5's Windows registry
+   owned-job cleanup is inspected, while R6 hosted validation remains pending.
+   Windows installer denial remains
    unverified until each relevant executable has matched same-program controls,
    or the owner explicitly disposes of the unmet criterion.
 2. Isolate the Bun local-file wrapper selection failure and obtain an explicit
@@ -316,7 +359,7 @@ waiver inferred. This work is **Part of #562** and does not close it.
    observed assessment failures/unsigned artifacts. Test appropriately signed
    artifacts and the required security route before accepting that route.
 5. Bind transferred payload hashes/build metadata to expected source identity
-   before claiming verified provenance. This remains explicitly unverified in R4.
+   before claiming verified provenance. This remains explicitly unverified in R5.
 6. Apply the existing Python-first decision rule only after these failures and
    owner requirements have dispositions. Update ADR/index together and reconcile
    #566/#567/#578/#386 then. ADR acceptance and #562 completion remain open.
@@ -328,6 +371,11 @@ conservatively. These do not replace #562 acceptance. Required process ownership
 security, controls, provenance and ADR finalization are not deferred to #614.
 
 [owner-policy]: https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6556223222
+[r5-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41299584188
+[r5-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41299627797
+[r5-pr-artifacts]: https://github.com/lgtm-hq/ai-skills/actions/runs/41299584188#artifacts
+[r5-artifacts]: https://github.com/lgtm-hq/ai-skills/actions/runs/41299627797#artifacts
+[r5-python]: https://github.com/lgtm-hq/ai-skills/actions/runs/41299584834/job/124828308430
 [r4-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41295866082
 [r4-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41295968562
 [r4-pr-artifacts]: https://github.com/lgtm-hq/ai-skills/actions/runs/41295866082#artifacts

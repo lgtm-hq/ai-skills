@@ -22,6 +22,8 @@ NUL, nonzero prefix bytes and invalid or empty mode/uid/gid/size/mtime octal fie
 Device-number slots (devmajor/devminor) are ignored for regular files; device
 entries themselves are forbidden. This is a narrow profile, not validation of
 every USTAR metadata field.
+Python validates raw headers, checksums, payload bounds and the zero trailer before
+tarfile interpretation; even empty PAX/global/GNU extension records are rejected.
 
 Generate fixture bytes with `scripts/fixture.py`; `--check` is its byte-drift gate.
 Scoped Git attributes preserve fixture bytes and LF script lines on Windows.
@@ -63,6 +65,12 @@ bunx resolution or unexpected HOME files fail the runtime observation. Filtering
 and detection share aliases and PATHEXT suffixes. The cache blocker must remain
 an unchanged nonsymlink regular file after execution; deletion, overwrite or
 replacement makes the observation fail.
+The installed target and every entry are checked without following symlinks.
+Only the expected regular files and their required ancestor directories may exist;
+unexpected empty directories and other types fail. Content reads are bounded by
+golden length plus one byte. This post-execution check is not a filesystem sandbox.
+Python-only pytest runs skip TypeScript cases when Bun is absent; setting
+`SPIKE_REQUIRE_BUN=1` makes missing Bun fail, as required by dedicated spike CI.
 
 ## CI and raw evidence
 
@@ -90,7 +98,9 @@ Ownership survives root exit. Timeout/server cleanup terminates the job, queries
 active membership and reaps within bounded waits; only observed empty membership
 and successful reap/handle cleanup pass. Setup/assignment failures execute no
 target code. Native CI includes an exited-parent/pipe-holding-child smoke; live
-R5 Windows behavior remains unverified until that hosted run is inspected.
+R5 Windows registry evidence observes empty job membership, parent reap and closed
+handles. Cleanup errors preserve completed client measurements and sanitized
+server logs, downgrade overall status and remain in durable registry evidence.
 
 Before native isolation, both clients install the **same local tarballs** with
 identical flags and fresh caches as a package-manager control. Per-client control
@@ -124,8 +134,9 @@ Windows direct CreateProcess does not test MotW shell/SmartScreen enforcement;
 macOS CLI execution does not establish Finder behavior. Defender engine failures,
 disabled Gatekeeper, third-party EDR, deliberate deep paths, unsigned fleet policy,
 non-AVX2 baseline, musl and older Linux compatibility remain unverified.
-The report links inspected R3 PR/dispatch evidence at ca2db52 and complete R4
-PR/green workflow_dispatch evidence at d77da01. Those runs do not validate R5.
-Windows R4 registry overall remains unverified despite passing client installs.
+The report links inspected R3 evidence at ca2db52, R4 at d77da01 and complete R5
+PR/green workflow_dispatch evidence at 6d2d86b. R5 registry overall passes on all
+five targets, including Windows owned-job cleanup; R4's Windows cleanup limitation
+remains historical. These runs do not validate R6; R6 hosted proof remains pending.
 ADR 0008 stays Proposed
 pending scenario and owner dispositions, including required quarantine/security.

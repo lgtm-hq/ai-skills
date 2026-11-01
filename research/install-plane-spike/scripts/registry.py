@@ -309,8 +309,18 @@ def measure_registry(*, build: Path, work: Path) -> dict[str, Any]:
         if server is not None:
             try:
                 termination = stop_process_tree(server)
+            except OSError as error:
+                termination = {"status": "unverified", "error": str(error)}
             finally:
-                close_process(server)
+                try:
+                    close_process(server)
+                    termination["process_handles_closed"] = True
+                except OSError as error:
+                    termination.update(
+                        status="unverified",
+                        process_handles_closed=False,
+                        close_error=str(error),
+                    )
             if termination["status"] != "pass":
                 for variant in ("ts", "py"):
                     results[variant].update(

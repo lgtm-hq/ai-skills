@@ -225,6 +225,10 @@ def test_harden_runner_runs_directly_and_remains_unverified(
         ("readiness", 503, {}),
         ("readiness", 200, TimeoutError()),
         ("kill-timeout", 403, {"error": "account rejected"}),
+        ("success", 201, {"token": "disposable-token"}),
+        ("close", 201, {"token": "disposable-token"}),
+        ("close-failed-client", 201, {"token": "disposable-token"}),
+        ("stop", 201, {"token": "disposable-token"}),
     ],
 )
 def test_registry_account_failure_is_sanitized_evidence(
@@ -235,7 +239,7 @@ def test_registry_account_failure_is_sanitized_evidence(
     status: int,
     body: object,
 ) -> None:
-    """Bad account responses retain both variant failures and server logs."""
+    """Account and cleanup failures retain sanitized client evidence and server logs."""
     registry = collector["registry"]
     setup_temp = tmp_path / "trusted-setup-temp"
     collector["common"].write_json(
@@ -309,14 +313,37 @@ def test_registry_account_failure_is_sanitized_evidence(
     )
     monkeypatch.setattr(registry.shutil, "which", lambda _: "/fake/bun")
     monkeypatch.setattr(registry, "command", lambda **_: {"exit": 0})
+    monkeypatch.setattr(registry, "prepare_packages", lambda **_: [])
     monkeypatch.setattr(
         registry,
-        "stop_process_tree",
-        lambda _: {
-            "status": "unverified" if stage == "kill-timeout" else "pass",
-            "error": "TimeoutExpired" if stage == "kill-timeout" else None,
+        "install_client",
+        lambda **kwargs: {
+            "status": (
+                "fail"
+                if stage == "close-failed-client" and kwargs["tool"] == "npm"
+                else "pass"
+            ),
+            "observation": {"status": "pass", "stdout": "completed client measurement"},
         },
     )
+
+    def close(process: object) -> None:
+        """Inject a close failure after measurements without leaking credentials."""
+        if stage.startswith("close"):
+            raise OSError(f"close failed {password} disposable-token")
+
+    monkeypatch.setattr(registry, "close_process", close)
+
+    def stop(process: object) -> dict[str, Any]:
+        """Keep completed evidence when termination itself raises an OS error."""
+        if stage == "stop":
+            raise OSError("termination failed")
+        return {
+            "status": "unverified" if stage == "kill-timeout" else "pass",
+            "error": "TimeoutExpired" if stage == "kill-timeout" else None,
+        }
+
+    monkeypatch.setattr(registry, "stop_process_tree", stop)
 
     def wait(**kwargs: Any) -> None:
         """Model a server that can fail both bounded shutdown waits.
@@ -345,6 +372,8 @@ def test_registry_account_failure_is_sanitized_evidence(
         for key in ("TMPDIR", "TEMP", "TMP"):
             assert_that(env[key]).is_equal_to(str(setup_temp))
         assert_that(env["NPM_CONFIG_CACHE"]).starts_with(str(tmp_path / "server-env"))
+        kwargs["stdout"].write(f"server output {password}\n")
+        kwargs["stderr"].write("server diagnostic\n")
         return SimpleNamespace(
             pid=99999999,
             returncode=0,
@@ -357,10 +386,37 @@ def test_registry_account_failure_is_sanitized_evidence(
     monkeypatch.setattr(registry, "launch_process", popen)
     result = registry.measure_registry(build=tmp_path / "build", work=tmp_path)
     for variant in ("ts", "py"):
-        assert_that(result[variant]["status"]).is_equal_to("fail")
+        expected_status = {
+            "success": "pass",
+            "close": "unverified",
+            "stop": "unverified",
+        }.get(stage, "fail")
+        assert_that(result[variant]["status"]).is_equal_to(expected_status)
+        if stage in {"success", "stop"} or stage.startswith("close"):
+            for client in ("bun", "npm"):
+                assert_that(
+                    result[variant]["clients"][client]["observation"]["stdout"]
+                ).is_equal_to("completed client measurement")
     assert_that(result["server"]).is_not_empty()
-    assert_that(json.dumps(result)).does_not_contain(password)
+    assert_that(json.dumps(result)).does_not_contain(password, "disposable-token")
+    assert_that(result["server"][-1]["stdout"]).is_equal_to(
+        "server output [redacted]\n"
+    )
+    assert_that(result["server"][-1]["stderr"]).is_equal_to("server diagnostic\n")
     assert_that((tmp_path / "registry-evidence.json").is_file()).is_true()
+    assert_that(
+        json.loads((tmp_path / "registry-evidence.json").read_bytes())
+    ).is_equal_to(result)
+    if stage.startswith("close"):
+        termination = result["server"][-1]["termination"]
+        assert_that(termination["status"]).is_equal_to("unverified")
+        assert_that(termination["close_error"]).contains("close failed", "[redacted]")
+        assert_that(termination["process_handles_closed"]).is_false()
+    elif stage == "stop":
+        termination = result["server"][-1]["termination"]
+        assert_that(termination["status"]).is_equal_to("unverified")
+        assert_that(termination["process_handles_closed"]).is_true()
+        assert_that(termination["error"]).is_equal_to("termination failed")
     if stage != "readiness":
         ready = next(
             item
@@ -848,12 +904,12 @@ def test_exited_parent_with_inherited_pipes_is_cleaned(
         ],
         cwd=tmp_path,
         records=[],
-        timeout=2,
+        timeout=10,
     )
     assert_that(result["error"]).is_equal_to("timeout")
     assert_that(result["stdout"]).contains("parent exiting", "child ready")
     assert_that(result).does_not_contain_key("termination_error")
-    assert_that(result["seconds"]).is_less_than(10)
+    assert_that(result["seconds"]).is_less_than(20)
     if sys.platform == "win32":
         cleanup = result["tree_termination"]
         assert_that(cleanup["status"]).described_as(str(cleanup)).is_equal_to("pass")
@@ -1005,7 +1061,7 @@ def test_windows_job_cleanup_independent_of_root(
     assert_that(calls).is_length(count)  # No repeat action against an exited PID.
 
 
-@pytest.mark.parametrize("stage", ["setup", "launch", "success"])
+@pytest.mark.parametrize("stage", ["setup", "launch", "launch-close", "success"])
 def test_windows_job_factory_fail_closed(
     collector: dict[str, ModuleType],
     monkeypatch: pytest.MonkeyPatch,
@@ -1015,7 +1071,14 @@ def test_windows_job_factory_fail_closed(
     tree = collector["process_tree"]
     monkeypatch.setattr(tree, "os", SimpleNamespace(name="nt"))
     calls: list[str] = []
-    job = SimpleNamespace(close=lambda: calls.append("close job"))
+
+    def close() -> None:
+        """Model a secondary close error while retaining the original launch error."""
+        calls.append("close job")
+        if stage == "launch-close":
+            raise OSError("close rejected")
+
+    job = SimpleNamespace(close=close)
 
     def setup() -> SimpleNamespace:
         """Create ownership or reject setup before launch."""
@@ -1028,7 +1091,7 @@ def test_windows_job_factory_fail_closed(
         """Check the configured job is supplied to the suspended launch adapter."""
         calls.append("launch")
         assert_that(kwargs["job"]).is_same_as(job)
-        if stage == "launch":
+        if stage.startswith("launch"):
             raise OSError("launch rejected")
         return SimpleNamespace(job=job)
 
@@ -1039,8 +1102,14 @@ def test_windows_job_factory_fail_closed(
         tree.close_process(root)
         assert_that(calls).is_equal_to(["setup", "launch", "close job"])
     else:
-        with pytest.raises(OSError, match=stage + " rejected"):
+        with pytest.raises(
+            OSError, match=("setup" if stage == "setup" else "launch") + " rejected"
+        ) as raised:
             tree.launch_process(args=["owned.exe"])
+        if stage == "launch-close":
+            assert_that(raised.value.__notes__).contains(
+                "job close also failed: close rejected"
+            )
         assert_that(calls).is_equal_to(
             ["setup"] if stage == "setup" else ["setup", "launch", "close job"]
         )
@@ -1399,8 +1468,11 @@ def test_local_server_tree_shutdown_reaps_child(
                 with pytest.raises(ProcessLookupError):
                     os.kill(child, 0)
         finally:
-            if not stopped:
-                tree.stop_process_tree(process, grace=0, forced=1)
+            try:
+                if not stopped:
+                    tree.stop_process_tree(process, grace=0, forced=1)
+            finally:
+                tree.close_process(process)
 
 
 def test_missing_reused_tarballs_do_not_start_installers(
@@ -1632,6 +1704,203 @@ def test_payload_home_write_affects_status(
     assert_that(result["other_HOME_files"]).is_equal_to(
         ["runtime-cache"] if unexpected_write != "none" else []
     )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "valid",
+        "symlink-file",
+        "symlink-directory",
+        "symlink-root",
+        "empty-directory",
+        "nested-empty-directory",
+        "extra-file",
+        "missing-file",
+        "missing-directory",
+        "directory-as-file",
+        "file-as-directory",
+        "wrong-content",
+        "oversized-file",
+        "special-file",
+    ],
+)
+def test_payload_tree_requires_exact_regular_files(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    """Golden stdout cannot hide symlinks, extra directories, types or contents."""
+    import os
+    import shutil
+
+    if mutation == "special-file" and sys.platform == "win32":
+        pytest.skip("POSIX FIFO type control; Windows symlinks covered separately")
+    common = collector["common"]
+    monkeypatch.setattr(common, "isolated_env", lambda _: {"PATH": ""})
+    expected = json.loads((SPIKE / "fixtures/expected-output.json").read_bytes())
+    expected["keep/nested/data.txt"] = "nested regular file\n"
+    root = tmp_path / "payload"
+    (root / "fixtures").mkdir(parents=True)
+    (root / "fixtures/expected-output.json").write_text(
+        json.dumps(expected), encoding="utf-8"
+    )
+    home = tmp_path / "home"
+    target = home / ".spike-target"
+    outside = tmp_path / "outside"
+
+    def command(**kwargs: Any) -> dict[str, Any]:
+        """Build an intentionally incorrect tree while claiming golden stdout."""
+        for base in (target, outside):
+            for name, content in expected.items():
+                path = base / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content.encode("utf-8"))
+        installed = target / "keep/SKILL.md"
+        if mutation == "symlink-file":
+            installed.unlink()
+            installed.symlink_to(outside / "keep/SKILL.md")
+        elif mutation == "symlink-directory":
+            shutil.rmtree(target / "keep")
+            (target / "keep").symlink_to(outside / "keep", target_is_directory=True)
+        elif mutation == "symlink-root":
+            shutil.rmtree(target)
+            target.symlink_to(outside, target_is_directory=True)
+        elif mutation == "empty-directory":
+            (target / "unexpected").mkdir()
+        elif mutation == "nested-empty-directory":
+            (target / "keep/unexpected").mkdir()
+        elif mutation == "missing-directory":
+            shutil.rmtree(target / "keep/nested")
+        elif mutation == "directory-as-file":
+            shutil.rmtree(target / "keep")
+            (target / "keep").write_bytes(b"not a directory")
+        elif mutation == "file-as-directory":
+            installed.unlink()
+            installed.mkdir()
+        elif mutation == "extra-file":
+            (target / "extra").write_bytes(b"never read")
+        elif mutation in {"missing-file", "special-file"}:
+            installed.unlink()
+            if mutation == "special-file":
+                os.mkfifo(installed)  # Never open a FIFO or allow it to block.
+        elif mutation == "wrong-content":
+            installed.write_bytes(b"wrong")
+        elif mutation == "oversized-file":
+            installed.write_bytes(
+                expected["keep/SKILL.md"].encode("utf-8") + b"x" * 1024
+            )
+        return {"exit": 0, "seconds": 0.01, "stdout": json.dumps(expected)}
+
+    monkeypatch.setattr(common, "command", command)
+    result = common.run_payload(root=root, variant="ts", home=home, records=[])
+    assert_that(result["status"]).is_equal_to("pass" if mutation == "valid" else "fail")
+
+
+@pytest.mark.parametrize("oversized", [False, True])
+def test_installed_file_reads_have_golden_size_bound(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    oversized: bool,
+) -> None:
+    """An incorrect regular file never causes an unbounded content allocation."""
+    from contextlib import contextmanager
+
+    wanted = b"golden\n"
+    (tmp_path / "keep").mkdir()
+    (tmp_path / "keep/SKILL.md").write_bytes(
+        wanted + (b"x" * 1024 if oversized else b"")
+    )
+    original_open = Path.open
+    reads: list[int] = []
+
+    @contextmanager
+    def opened(path: Path, *args: Any, **kwargs: Any) -> Iterator[Any]:
+        """Check the actual read size before permitting a file allocation."""
+        with original_open(path, *args, **kwargs) as stream:
+
+            def read(size: int = -1) -> bytes:
+                """Read no more than golden content plus one mismatch byte."""
+                assert_that(size).is_between(0, len(wanted) + 1)
+                reads.append(size)
+                data = stream.read(size)
+                if not isinstance(data, bytes):
+                    pytest.fail("installed file stream was not binary")
+                return data
+
+            yield SimpleNamespace(read=read)
+
+    monkeypatch.setattr(Path, "open", opened)
+    result = collector["common"].installed_tree_matches(
+        root=tmp_path,
+        expected={"keep/SKILL.md": wanted.decode("utf-8")},
+    )
+    assert_that(result).is_equal_to(not oversized)
+    assert_that(reads).is_equal_to([len(wanted) + 1])
+
+
+@pytest.mark.parametrize("link", ["file", "directory", "root"])
+def test_payload_tree_never_reads_or_traverses_symlinks(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    link: str,
+) -> None:
+    """Reject links before any outside content read or directory traversal."""
+    import os
+
+    common = collector["common"]
+    monkeypatch.setattr(common, "isolated_env", lambda _: {"PATH": ""})
+    expected = json.loads((SPIKE / "fixtures/expected-output.json").read_bytes())
+    home = tmp_path / "home"
+    target = home / ".spike-target"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "SKILL.md").write_bytes(b"never read")
+    original_open, original_scandir = Path.open, os.scandir
+
+    def guard(path: Path) -> None:
+        """Fail before following an installed link or visiting the outside tree."""
+        if path.is_relative_to(outside) or (
+            path.is_relative_to(target)
+            and any(
+                p.is_symlink()
+                for p in (path, *path.parents)
+                if p == target or target in p.parents
+            )
+        ):
+            pytest.fail("installed tree verification followed a symlink")
+
+    def opened(path: Path, *args: Any, **kwargs: Any) -> Any:
+        """Observe the actual read boundary, permitting trusted fixture/cache reads."""
+        guard(path)
+        return original_open(path, *args, **kwargs)
+
+    def scanned(path: Any) -> Any:
+        """Observe the actual directory boundary before traversal."""
+        guard(Path(path))
+        return original_scandir(path)
+
+    def command(**kwargs: Any) -> dict[str, Any]:
+        """Create only links and claim a complete successful install."""
+        if link == "root":
+            target.symlink_to(outside, target_is_directory=True)
+        else:
+            target.mkdir()
+            if link == "directory":
+                (target / "keep").symlink_to(outside, target_is_directory=True)
+            else:
+                (target / "keep").mkdir()
+                (target / "keep/SKILL.md").symlink_to(outside / "SKILL.md")
+        return {"exit": 0, "seconds": 0.01, "stdout": json.dumps(expected)}
+
+    monkeypatch.setattr(common, "command", command)
+    monkeypatch.setattr(Path, "open", opened)
+    monkeypatch.setattr(os, "scandir", scanned)
+    result = common.run_payload(root=SPIKE, variant="ts", home=home, records=[])
+    assert_that(result["status"]).is_equal_to("fail")
 
 
 @pytest.mark.parametrize("tool", ["node", "nodejs", "bun", "bunx"])

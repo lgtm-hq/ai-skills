@@ -21,15 +21,26 @@ DEVICE_PATTERN = re.compile(
 )
 
 
-def validate_header(header: bytes) -> None:
+def validate_header(header: bytes) -> int:
     """Reject ambiguous fields outside the shared tiny USTAR profile.
 
     Args:
         header: One raw 512-byte regular-file header.
 
+    Returns:
+        Regular-file payload size from the validated raw header.
+
     Raises:
-        ValueError: For hidden string suffixes or empty/invalid octal fields.
+        ValueError: For unsupported types, ambiguous fields or invalid checksums.
     """
+    if (
+        header[156:157] not in {tarfile.REGTYPE, tarfile.AREGTYPE}
+        or header[257:263] != b"ustar\0"
+        or any(header[345:500])
+    ):
+        raise ValueError("invalid archive inventory")
+    if any(byte >= 0x80 for byte in header):
+        raise ValueError("non-ASCII archive header")
     for start, end in ((0, 100), (157, 257), (265, 297), (297, 329)):
         field = header[start:end]
         if b"\0" in field and any(field[field.index(0) :]):
@@ -45,6 +56,35 @@ def validate_header(header: bytes) -> None:
     ):
         if not re.fullmatch(rb" *[0-7]+[ \0]*", header[start:end]):
             raise ValueError("invalid archive number")
+    checksum = sum(header[:148]) + 8 * 32 + sum(header[156:])
+    if checksum != int(header[148:156].rstrip(b" \0"), 8):
+        raise ValueError("invalid archive checksum")
+    return int(header[124:136].rstrip(b" \0"), 8)
+
+
+def validate_archive(archive: bytes) -> None:
+    """Validate every raw header before tarfile can consume extension records.
+
+    Args:
+        archive: Already bounded and digest-verified fixture bytes.
+
+    Raises:
+        ValueError: If headers, payload bounds or the zero trailer are invalid.
+    """
+    if len(archive) % 512:
+        raise ValueError("invalid archive length")
+    offset = 0
+    while offset + 512 <= len(archive):
+        header = archive[offset : offset + 512]
+        if not any(header):
+            if len(archive) - offset < 1024 or any(archive[offset:]):
+                raise ValueError("invalid archive trailer")
+            return
+        size = validate_header(header)
+        if offset + 512 + size > len(archive):
+            raise ValueError("invalid archive inventory")
+        offset += 512 + ((size + 511) // 512) * 512
+    raise ValueError("incomplete archive")
 
 
 def safe_path(value: object) -> str:
@@ -157,23 +197,15 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
             raise ValueError("retained closure contains exclusion")
 
     contents: dict[str, str] = {}
-    if len(archive) % 512:
-        raise ValueError("invalid archive length")
+    validate_archive(archive)
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tar:
         for member in tar:
-            validate_header(archive[member.offset : member.offset + 512])
             name = safe_path(member.name)
             if (
                 member.type not in {tarfile.REGTYPE, tarfile.AREGTYPE}
-                or any(
-                    byte >= 0x80
-                    for byte in archive[member.offset : member.offset + 512]
-                )
                 or member.pax_headers
                 or name not in files
                 or name in contents
-                or archive[member.offset + 257 : member.offset + 263] != b"ustar\0"
-                or any(archive[member.offset + 345 : member.offset + 500])
             ):
                 raise ValueError("invalid archive inventory")
             stream = tar.extractfile(member)

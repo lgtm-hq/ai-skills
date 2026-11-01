@@ -27,8 +27,11 @@ def launch_process(**kwargs: Any) -> subprocess.Popen[Any]:
     job = WindowsJob()
     try:
         return JobPopen(job=job, **kwargs)
-    except BaseException:
-        job.close()
+    except BaseException as error:
+        try:
+            job.close()
+        except OSError as close_error:
+            error.add_note(f"job close also failed: {close_error}")
         raise
 
 

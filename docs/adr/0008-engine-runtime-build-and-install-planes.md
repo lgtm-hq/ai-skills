@@ -110,6 +110,24 @@ Dedicated Harden Runner denial still lacks a same-host baseline and is unverifie
 The report keeps detailed numeric/quarantine tables explicitly bound to R3;
 no R3 numbers or raw artifacts have been relabeled as R4.
 
+The inspected R5 [PR run 41299584188](https://github.com/lgtm-hq/ai-skills/actions/runs/41299584188)
+and genuine [workflow_dispatch run 41299627797](https://github.com/lgtm-hq/ai-skills/actions/runs/41299627797)
+both succeeded at exact clean `6d2d86bdfd9a68d6dd9f36ca3fd16619b53c1069`.
+Each contains twelve unique schema-3 result JSONs (ten native plus two dedicated),
+with matching source/expected heads, exact event/run identity and attempt 1.
+Registry clients, registry overall and no-Node pass for both variants on all five
+targets. Windows registry cleanup now observes an empty owned non-breakaway Job
+Object, parent reap and closed job handle; R4's cleanup limitation is historical.
+POSIX offline still fails Bun platform selection; npm passes. Windows offline
+remains unverified with probe denial true, installer denial false and exact
+firewall cleanup. Dedicated Harden Runner and payload-source binding remain
+unverified. Numeric/quarantine tables remain explicitly R3-only historical data.
+The separate Python-only CI failed five Bun cases; R6 corrects that availability
+contract and three validation/evidence bugs with local regressions. R5 artifacts
+do not validate R6, and no R6 hosted proof is claimed. Green R5 collection meets
+the dispatch/link criterion at **6d2d86b only**, without accepting scenarios or
+waiving owner security, offline/control, provenance or ADR requirements.
+
 R4 requires clean, matching expected source identity in hosted collection and
 records the run attempt. Downloaded payload/build identity remains explicitly
 unverified: archive hashes alone do not bind payloads to the expected source.
