@@ -1,0 +1,2 @@
+# Shared bootstrap helpers must be analyzed when sourced by their consumers.
+external-sources=true
