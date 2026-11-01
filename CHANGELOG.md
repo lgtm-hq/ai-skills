@@ -21,6 +21,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.30.6] - 2026-11-01
+
+### Changed
+
+- **deps**: update lintro (#600) (4425495)
+- **deps**: update lintro (#597) (dfc9d63)
+- **deps**: update lintro (#560) (718466e)
+- **deps**: update lintro (#559) (7e9c91f)
+- restore block egress policy and pin lgtm-ci v0.79.2 (#558) (c9a4015)
+- adopt lgtm-ci v0.79.0 and map CODEX_AUTH_JSON for subscription reviews (#556)
+  (0b21c94)
+- **deps**: update dependency node to 26.12.1 (major) (#555) (be86d8a)
+- **deps**: update lgtm-hq/lgtm-ci to v0.78.1 (#553) (7a5dfe7)
+
+### Fixed
+
+- **security**: verify shared uv and bun installer pins (#603) (8ec7cf6)
+- **vendors**: open signed vendor pin PRs that run CI (#522) (#598) (bf09c63)
+
 ## [0.30.5] - 2026-10-27
 
 ### Fixed
@@ -1117,7 +1136,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.5...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.6...HEAD
+[0.30.6]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.5...v0.30.6
 [0.30.5]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.4...v0.30.5
 [0.30.4]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.3...v0.30.4
 [0.30.3]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.2...v0.30.3
