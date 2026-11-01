@@ -37,33 +37,68 @@ def adr_files(adr_dir: Path) -> list[Path]:
 
 
 @pytest.fixture
-def index_rows(adr_dir: Path) -> list[tuple[str, str]]:
-    """Read ADR filenames and statuses from README table rows.
+def index_rows(adr_dir: Path) -> list[tuple[str, str, str]]:
+    """Read ADR filenames, titles and statuses from README table rows.
 
     Args:
         adr_dir: Directory containing the README index.
 
     Returns:
-        Linked filenames and trimmed status cells.
+        Linked filenames with trimmed title and status cells.
     """
     readme = (adr_dir / "README.md").read_text(encoding="utf-8")
     rows = re.findall(
         pattern=(
             r"^\|\s*\[\d{4}\]\((?:\./)?(\d{4}-[^)\s]+\.md)\)"
-            r"\s*\|[^|\n]+\|\s*([^|\n]+)\|\s*$"
+            r"\s*\|\s*([^|\n]+)\|\s*([^|\n]+)\|\s*$"
         ),
         string=readme,
         flags=re.MULTILINE,
     )
-    return [(filename, status.strip()) for filename, status in rows]
+    return [
+        (filename, title.strip(), status.strip()) for filename, title, status in rows
+    ]
+
+
+@pytest.fixture(
+    params=[
+        pytest.param(
+            "0001-plugin-canonical-atomic-selection.md",
+            id="package-selection",
+        ),
+        pytest.param(
+            "0004-doctor-capability-probe.md",
+            id="capability-and-policy",
+        ),
+        pytest.param(
+            "0005-collision-doctrine.md",
+            id="identity-and-conflicts",
+        ),
+    ],
+)
+def amended_adr(
+    adr_dir: Path,
+    request: pytest.FixtureRequest,
+) -> Path:
+    """Locate each ADR amended for the capability engine.
+
+    Args:
+        adr_dir: Directory containing the architecture decisions.
+        request: Parametrized filename for an amended ADR.
+
+    Returns:
+        Path to one of the three amended ADRs.
+    """
+    filename: str = request.param
+    return adr_dir / filename
 
 
 def test_adr_index_lists_every_adr_once(
     adr_files: list[Path],
-    index_rows: list[tuple[str, str]],
+    index_rows: list[tuple[str, str, str]],
 ) -> None:
     """Every numbered ADR has one table link, with no stale entries."""
-    filenames = [filename for filename, _ in index_rows]
+    filenames = [filename for filename, _, _ in index_rows]
 
     assert_that(filenames).does_not_contain_duplicates()
     assert_that(filenames).contains_only(*[path.name for path in adr_files])
@@ -71,10 +106,10 @@ def test_adr_index_lists_every_adr_once(
 
 def test_adr_index_status_matches_document(
     adr_files: list[Path],
-    index_rows: list[tuple[str, str]],
+    index_rows: list[tuple[str, str, str]],
 ) -> None:
     """Index statuses match document statuses, allowing parenthetical detail."""
-    statuses = dict(index_rows)
+    statuses = {filename: status for filename, _, status in index_rows}
     for path in adr_files:
         document = path.read_text(encoding="utf-8")
         declared = re.findall(
@@ -85,9 +120,54 @@ def test_adr_index_status_matches_document(
         assert_that(declared).described_as(path.name).is_length(1)
         assert_that(statuses).described_as(path.name).contains_key(path.name)
         status_prefix = declared[0].split(" (", maxsplit=1)[0]
-        assert_that(statuses[path.name]).described_as(path.name).is_equal_to(
+        assert_that(statuses[path.name]).described_as(path.name).is_in(
+            declared[0],
             status_prefix,
         )
+
+
+def test_amended_adrs_remove_obsolete_decisions(amended_adr: Path) -> None:
+    """Reject retired selection, delivery and collision rules, even when wrapped."""
+    document = amended_adr.read_text(encoding="utf-8").casefold()
+    normalized = " ".join(
+        re.sub(pattern=r"[-*_`]", repl=" ", string=document).split(),
+    )
+
+    assert_that(normalized).described_as(amended_adr.name).does_not_contain(
+        "post v1",
+        "backlog",
+        "deferred",
+        "unconditionally",
+        "first wins",
+        "event append",
+        "wipe and reinstall",
+    )
+
+
+def test_amended_adrs_record_amendment(amended_adr: Path) -> None:
+    """Amended decisions retain acceptance with a dated status and explanation."""
+    document = amended_adr.read_text(encoding="utf-8")
+
+    assert_that(document).described_as(amended_adr.name).matches(
+        r"(?m)^- Status: Accepted \(amended \d{4}-\d{2}-\d{2}\)$",
+    )
+    assert_that(document).described_as(amended_adr.name).matches(
+        r"(?m)^- Amends: \S[^\n]+$",
+    )
+
+
+def test_amended_adr_index_matches_document(
+    amended_adr: Path,
+    index_rows: list[tuple[str, str, str]],
+) -> None:
+    """The index preserves each amended title and the complete dated status."""
+    document = amended_adr.read_text(encoding="utf-8")
+    title = document.splitlines()[0].split(": ", maxsplit=1)[1]
+    status = document.split("- Status: ", maxsplit=1)[1].splitlines()[0]
+
+    assert_that(index_rows).described_as(amended_adr.name).contains(
+        (amended_adr.name, title, status),
+    )
 
 
 def test_adrs_have_required_sections(adr_files: list[Path]) -> None:
