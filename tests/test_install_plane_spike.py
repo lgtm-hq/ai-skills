@@ -11,7 +11,7 @@ import shutil
 import subprocess  # nosec B404 - fixed local prototypes, no shell or network
 import sys
 import tarfile
-from collections.abc import Iterator
+from collections.abc import Buffer, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
@@ -20,6 +20,117 @@ import pytest
 from assertpy import assert_that
 
 SPIKE = Path(__file__).resolve().parents[1] / "research" / "install-plane-spike"
+
+
+@pytest.mark.parametrize("variant", ["py", "ts"])
+@pytest.mark.parametrize("escaped", [False, True])
+@pytest.mark.parametrize(
+    "case", json.loads((SPIKE / "invalid-index-keys.json").read_bytes())
+)
+def test_duplicate_index_keys_rejected(
+    spike_fixture: Path,
+    tmp_path: Path,
+    variant: str,
+    escaped: bool,
+    case: dict[str, str],
+) -> None:
+    """Both CLIs reject duplicate fields, including escaped-equivalent keys."""
+    bun = shutil.which("bun")
+    if variant == "ts" and bun is None:
+        if os.environ.get("SPIKE_REQUIRE_BUN") == "1":
+            pytest.fail("Bun required for duplicate-index parity")
+        pytest.skip("Bun unavailable for duplicate-index parity")
+    path = spike_fixture / "index.json"
+    key = case["key"]
+    repeated = f"\\u{ord(key[0]):04x}{key[1:]}" if escaped else key
+    raw = path.read_text(encoding="utf-8").replace(
+        f'"{key}":', f'"{key}": {case["previous"]}, "{repeated}":', 1
+    )
+    path.write_text(raw, encoding="utf-8")
+    argv = (
+        [sys.executable, "-I", "-B", str(SPIKE / "py/prototype.py")]
+        if variant == "py"
+        else [str(bun), "run", str(SPIKE / "ts/prototype.ts")]
+    )
+    result = subprocess.run(  # nosec B603 - fixed offline CLI and bounded fixture
+        args=[*argv, str(spike_fixture), "fixture:drop"],
+        env={**os.environ, "HOME": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+        check=False,
+    )
+    assert_that(result.returncode).is_equal_to(1)
+    assert_that(result.stderr).contains("duplicate index key").does_not_contain(
+        "Traceback"
+    )
+    assert_that(result.stdout).is_empty()
+    assert_that((tmp_path / ".spike-target").exists()).is_false()
+
+
+@pytest.mark.parametrize("failure", ["mkdir", "write"])
+def test_failed_output_cleans_and_retries(
+    prototype: ModuleType,
+    spike_fixture: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    """Reachable output I/O failures leave neither final nor staging residue."""
+    home = tmp_path / "home"
+    home.mkdir()
+    original_mkdir, original_write = Path.mkdir, Path.write_bytes
+
+    def mkdir(
+        path: Path, mode: int = 0o777, parents: bool = False, exist_ok: bool = False
+    ) -> None:
+        """Fail at the output directory boundary after staging starts."""
+        if path.is_relative_to(home) and path.name == "keep":
+            raise OSError("injected output failure")
+        original_mkdir(path, mode=mode, parents=parents, exist_ok=exist_ok)
+
+    def write(path: Path, data: Buffer) -> int:
+        """Fail after writing partial output bytes to exercise rollback."""
+        if path.is_relative_to(home) and path.name == "SKILL.md":
+            original_write(path, b"partial bytes before failure")
+            raise OSError("injected output failure")
+        return original_write(path, data)
+
+    with monkeypatch.context() as patch:
+        if failure == "mkdir":
+            patch.setattr(Path, "mkdir", mkdir)
+        else:
+            patch.setattr(Path, "write_bytes", write)
+        with pytest.raises(OSError, match="injected output failure"):
+            prototype.install(fixture=spike_fixture, home=home, exclude="fixture:drop")
+    assert_that(list(home.iterdir())).is_empty()
+    expected = json.loads((spike_fixture / "expected-output.json").read_bytes())
+    assert_that(
+        prototype.install(fixture=spike_fixture, home=home, exclude="fixture:drop")
+    ).is_equal_to(expected)
+    assert_that([path.name for path in home.iterdir()]).is_equal_to([".spike-target"])
+
+
+@pytest.mark.parametrize("occupied", [False, True])
+def test_existing_target_is_preserved(
+    prototype: ModuleType, spike_fixture: Path, tmp_path: Path, occupied: bool
+) -> None:
+    """A pre-existing empty or owned target is never overwritten or removed."""
+    target = tmp_path / ".spike-target"
+    target.mkdir()
+    if occupied:
+        (target / "owned").write_bytes(b"preserve me")
+    with pytest.raises(FileExistsError):
+        prototype.install(fixture=spike_fixture, home=tmp_path, exclude="fixture:drop")
+    assert_that(target.is_dir()).is_true()
+    assert_that([p.name for p in tmp_path.iterdir()]).contains_only(
+        "fixture", ".spike-target"
+    )
+    if occupied:
+        assert_that((target / "owned").read_bytes()).is_equal_to(b"preserve me")
+    else:
+        assert_that(list(target.iterdir())).is_empty()
 
 
 @pytest.fixture
@@ -223,7 +334,7 @@ def test_adversarial_index_cli(
         # 200001 bytes triggers the actual 3.14 C parser's stack guard, while
         # older CPython reaches its recursion guard substantially earlier.
         raw = "[" * 100000 + "0" + "]" * 100000
-        reason = "index nesting too deep" if variant == "py" else "invalid object"
+        reason = "index nesting too deep"
     else:
         name = {
             "long": "a/" + "b" * 9999,
@@ -387,6 +498,7 @@ def test_empty_extension_before_valid_ustar_is_rejected(
     assert_that((tmp_path / ".spike-target").exists()).is_false()
 
 
+@pytest.mark.parametrize("variant", ["py", "ts"])
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -409,7 +521,7 @@ def test_empty_extension_before_valid_ustar_is_rejected(
     ],
 )
 def test_shared_malformed_inputs_fail_closed(
-    spike_fixture: Path, tmp_path: Path, mutation: str
+    spike_fixture: Path, tmp_path: Path, mutation: str, variant: str
 ) -> None:
     """Both source CLIs reject malformed index/archive bytes before writing."""
     index_path = spike_fixture / "index.json"
@@ -502,58 +614,57 @@ def test_shared_malformed_inputs_fail_closed(
         index["sha256"] = hashlib.sha256(archive).hexdigest()
         index_path.write_text(json.dumps(index), encoding="utf-8", newline="\n")
     bun = shutil.which("bun")
-    if bun is None:
+    if variant == "ts" and bun is None:
         if os.environ.get("SPIKE_REQUIRE_BUN") == "1":
             pytest.fail("Bun required for shared malformed-input parity")
         pytest.skip("Bun unavailable for shared malformed-input parity")
-    for variant, argv in {
-        "py": [sys.executable, "-I", str(SPIKE / "py/prototype.py")],
-        "ts": [bun, "run", str(SPIKE / "ts/prototype.ts")],
-    }.items():
-        home = tmp_path / variant
-        home.mkdir()
-        result = subprocess.run(  # nosec B603 - local fail-closed prototypes
-            args=[*argv, str(spike_fixture), "fixture:drop"],
-            env={**os.environ, "HOME": str(home)},
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=30,
-            check=False,
-        )
-        assert_that(result.returncode).described_as(
-            variant + result.stdout
-        ).is_not_zero()
-        common_reasons = {
-            "bad-trailer": "invalid archive trailer",
-            "short-zero-tail": "invalid archive length",
-            "nul-name-suffix": "nonzero bytes after archive string terminator",
-            "nul-prefix-suffix": "invalid archive inventory",
-            "nul-number-suffix": "invalid archive number",
-            "empty-size": "invalid archive number",
-            "pax-header": "invalid archive inventory",
-            "gnu-header": "invalid archive inventory",
-            "high-bit-header": "non-ASCII archive header",
-        }
-        runtime_reasons = {
-            "py": {
-                "bom-index": "UTF-8 BOM",
-                "extra-member": "invalid archive inventory",
-                "bad-checksum": "invalid archive checksum",
-            },
-            "ts": {
-                "bom-index": "JSON Parse error",
-                "extra-member": "incomplete archive",
-                "bad-checksum": "invalid archive inventory",
-            },
-        }
-        reason = common_reasons.get(mutation) or runtime_reasons[variant].get(mutation)
-        if reason is None:
-            reason = "invalid archive number"
-        assert_that(result.stderr).described_as(variant + ":" + mutation).contains(
-            reason
-        ).does_not_contain("Traceback")
-        assert_that((home / ".spike-target").exists()).is_false()
+    argv = (
+        [sys.executable, "-I", str(SPIKE / "py/prototype.py")]
+        if variant == "py"
+        else [str(bun), "run", str(SPIKE / "ts/prototype.ts")]
+    )
+    home = tmp_path / variant
+    home.mkdir()
+    result = subprocess.run(  # nosec B603 - local fail-closed prototypes
+        args=[*argv, str(spike_fixture), "fixture:drop"],
+        env={**os.environ, "HOME": str(home)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+    assert_that(result.returncode).described_as(variant + result.stdout).is_not_zero()
+    common_reasons = {
+        "bad-trailer": "invalid archive trailer",
+        "short-zero-tail": "invalid archive length",
+        "nul-name-suffix": "nonzero bytes after archive string terminator",
+        "nul-prefix-suffix": "invalid archive inventory",
+        "nul-number-suffix": "invalid archive number",
+        "empty-size": "invalid archive number",
+        "pax-header": "invalid archive inventory",
+        "gnu-header": "invalid archive inventory",
+        "high-bit-header": "non-ASCII archive header",
+    }
+    runtime_reasons = {
+        "py": {
+            "bom-index": "UTF-8 BOM",
+            "extra-member": "invalid archive inventory",
+            "bad-checksum": "invalid archive checksum",
+        },
+        "ts": {
+            "bom-index": "JSON Parse error",
+            "extra-member": "incomplete archive",
+            "bad-checksum": "invalid archive inventory",
+        },
+    }
+    reason = common_reasons.get(mutation) or runtime_reasons[variant].get(mutation)
+    if reason is None:
+        reason = "invalid archive number"
+    assert_that(result.stderr).described_as(variant + ":" + mutation).contains(
+        reason
+    ).does_not_contain("Traceback")
+    assert_that((home / ".spike-target").exists()).is_false()
 
 
 @pytest.fixture

@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdir, open, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const LIMIT = 1024 * 1024;
 const PATH_LIMIT = 100; // ASCII bytes/characters; tiny USTAR name field.
 const PATH_DEPTH = 16;
+const JSON_DEPTH = 64;
 interface Capability {
   id: string;
   closure: string[];
@@ -111,6 +112,36 @@ function untar(archive: Buffer): Map<string, Buffer> {
   throw new Error("incomplete archive");
 }
 
+function parseIndex(raw: string): unknown {
+  // Scan JSON strings/containers before native parsing discards duplicate keys.
+  // JSON.parse still validates the complete grammar; it decodes key escapes here.
+  const containers: (Set<string> | null)[] = [];
+  const stringToken = /"(?:[^"\\]|\\.)*"/y;
+  for (let offset = 0; offset < raw.length; offset++) {
+    const char = raw[offset];
+    if (char === '"') {
+      stringToken.lastIndex = offset;
+      const token = stringToken.exec(raw)?.[0];
+      if (token === undefined) throw new SyntaxError("invalid index JSON");
+      let next = offset + token.length;
+      while (/\s/.test(raw[next] ?? "") && next < raw.length) next++;
+      const keys = containers.at(-1);
+      if (keys && raw[next] === ":") {
+        const key = JSON.parse(token) as string;
+        if (keys.has(key)) throw new Error("duplicate index key");
+        keys.add(key);
+      }
+      offset += token.length - 1;
+    } else if (char === "{" || char === "[") {
+      containers.push(char === "{" ? new Set<string>() : null);
+      if (containers.length > JSON_DEPTH) throw new Error("index nesting too deep");
+    } else if (char === "}" || char === "]") {
+      containers.pop();
+    }
+  }
+  return JSON.parse(raw) as unknown;
+}
+
 export async function install({
   fixture,
   home,
@@ -122,7 +153,7 @@ export async function install({
 }): Promise<Record<string, string>> {
   const indexBytes = await readFixture(join(fixture, "index.json"));
   const archive = await readFixture(join(fixture, "artifact.tar"));
-  const index = record(JSON.parse(indexBytes.toString("utf8")) as unknown);
+  const index = record(parseIndex(indexBytes.toString("utf8")));
   keys(index, ["sha256", "capabilities"]);
   if (digest(archive) !== index.sha256) throw new Error("archive digest mismatch");
   if (!Array.isArray(index.capabilities) || index.capabilities.length === 0) {
@@ -191,11 +222,26 @@ export async function install({
     output[name] = content;
   }
   const target = join(home, ".spike-target");
-  await mkdir(target);
-  for (const [name, content] of Object.entries(output)) {
-    const destination = join(target, name);
-    await mkdir(join(destination, ".."), { recursive: true });
-    await writeFile(destination, content);
+  const staging = await mkdtemp(join(home, ".spike-stage-"));
+  let ownsTarget = false;
+  try {
+    for (const [name, content] of Object.entries(output)) {
+      const destination = join(staging, name);
+      await mkdir(join(destination, ".."), { recursive: true });
+      await writeFile(destination, content);
+    }
+    // Reserve without replacing an existing target; publish only completed writes.
+    // Roll back only our reservation on publication failure (also on Windows).
+    await mkdir(target);
+    ownsTarget = true;
+    for (const child of await readdir(staging)) {
+      await rename(join(staging, child), join(target, child));
+    }
+  } catch (error: unknown) {
+    if (ownsTarget) await rm(target, { recursive: true });
+    throw error;
+  } finally {
+    await rm(staging, { recursive: true });
   }
   return output;
 }

@@ -316,19 +316,29 @@ def installed_tree_matches(*, root: Path, expected: dict[str, str]) -> bool:
     seen_files: set[str] = set()
     seen_directories: set[str] = set()
     pending = [root]
+
+    def mode(path: Path) -> int:
+        """Reject Windows junctions/reparse points before reading or descending."""
+        metadata = path.lstat()
+        if getattr(
+            metadata, "st_file_attributes", 0
+        ) & stat.FILE_ATTRIBUTE_REPARSE_POINT or getattr(metadata, "st_reparse_tag", 0):
+            return 0
+        return metadata.st_mode
+
     try:
-        if not stat.S_ISDIR(root.lstat().st_mode):
+        if not stat.S_ISDIR(mode(root)):
             return False
         while pending:
             with os.scandir(pending.pop()) as entries:
                 for entry in entries:
                     path = Path(entry.path)
                     name = path.relative_to(root).as_posix()
-                    mode = path.lstat().st_mode
-                    if stat.S_ISDIR(mode) and name in directories:
+                    entry_mode = mode(path)
+                    if stat.S_ISDIR(entry_mode) and name in directories:
                         seen_directories.add(name)
                         pending.append(path)
-                    elif stat.S_ISREG(mode) and name in expected:
+                    elif stat.S_ISREG(entry_mode) and name in expected:
                         wanted = expected[name].encode("utf-8")
                         with path.open("rb") as stream:
                             if stream.read(len(wanted) + 1) != wanted:
@@ -359,6 +369,11 @@ def run_payload(
     Returns:
         Verified outcome and observed HOME cache writes.
     """
+    # Snapshot the collector's trusted fixture before invoking measured code.
+    # The payload's fixture tree can be changed by that code and is no oracle.
+    expected = json.loads(
+        (SPIKE / "fixtures/expected-output.json").read_text(encoding="utf-8")
+    )
     home.mkdir(parents=True, exist_ok=True)
     cache = home / ".cache"
     blocker = b"cache directory intentionally unavailable"
@@ -398,9 +413,6 @@ def run_payload(
         cwd=home,
         env=env,
         records=records,
-    )
-    expected = json.loads(
-        (root / "fixtures/expected-output.json").read_text(encoding="utf-8")
     )
     destination = home / ".spike-target"
     tree_matches = installed_tree_matches(root=destination, expected=expected)

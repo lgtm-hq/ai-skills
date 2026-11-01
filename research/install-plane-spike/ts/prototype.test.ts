@@ -8,6 +8,73 @@ import * as fs from "node:fs/promises";
 
 let root: string;
 let fixture: string;
+
+const duplicateCases = JSON.parse(
+  await readFile(join(import.meta.dir, "../invalid-index-keys.json"), "utf8"),
+) as { key: string; previous: string }[];
+for (const { key, previous } of duplicateCases) {
+  test.each([false, true])(`duplicate ${key} (escaped=%s) is rejected`, async (escaped) => {
+    const path = join(fixture, "index.json");
+    const repeated = escaped
+      ? `\\u${key.charCodeAt(0).toString(16).padStart(4, "0")}${key.slice(1)}`
+      : key;
+    const raw = (await readFile(path, "utf8")).replace(
+      `"${key}":`,
+      `"${key}": ${previous}, "${repeated}":`,
+    );
+    await writeFile(path, raw);
+    await expect(install({ fixture, home: root, exclude: "fixture:drop" })).rejects.toThrow(
+      "duplicate index key",
+    );
+    await expect(access(join(root, ".spike-target"))).rejects.toThrow();
+  });
+}
+
+test.each(["mkdir", "write"])("%s failure cleans output and permits retry", async (failure) => {
+  const home = join(root, "home");
+  await fs.mkdir(home);
+  const originalMkdir = fs.mkdir;
+  const originalWrite = fs.writeFile;
+  // The forwarding wrapper preserves mkdir overloads on non-failure paths.
+  const injected =
+    failure === "mkdir"
+      ? spyOn(fs, "mkdir").mockImplementation((async (...args: Parameters<typeof fs.mkdir>) => {
+          if (String(args[0]).includes("keep")) throw new Error("injected output failure");
+          return originalMkdir(...args);
+        }) as typeof fs.mkdir)
+      : spyOn(fs, "writeFile").mockImplementation(
+          async (...args: Parameters<typeof fs.writeFile>) => {
+            if (String(args[0]).includes("SKILL.md")) {
+              await originalWrite(args[0], "partial bytes before failure");
+              throw new Error("injected output failure");
+            }
+            return originalWrite(...args);
+          },
+        );
+  try {
+    await expect(install({ fixture, home, exclude: "fixture:drop" })).rejects.toThrow(
+      "injected output failure",
+    );
+    expect(await fs.readdir(home)).toEqual([]);
+  } finally {
+    injected.mockRestore();
+  }
+  const expected = JSON.parse(
+    await readFile(join(fixture, "expected-output.json"), "utf8"),
+  ) as Record<string, string>;
+  expect(await install({ fixture, home, exclude: "fixture:drop" })).toEqual(expected);
+  expect(await fs.readdir(home)).toEqual([".spike-target"]);
+});
+
+test.each([false, true])("existing target is preserved (occupied=%s)", async (occupied) => {
+  const target = join(root, ".spike-target");
+  await fs.mkdir(target);
+  if (occupied) await writeFile(join(target, "owned"), "preserve me");
+  await expect(install({ fixture, home: root, exclude: "fixture:drop" })).rejects.toThrow();
+  expect((await fs.readdir(root)).sort()).toEqual([".spike-target", "fixture"]);
+  expect(await fs.readdir(target)).toEqual(occupied ? ["owned"] : []);
+  if (occupied) expect(await readFile(join(target, "owned"), "utf8")).toBe("preserve me");
+});
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "spike-ts-"));
   fixture = join(root, "fixture");

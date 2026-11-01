@@ -144,6 +144,34 @@ validate R6**, and no R6 hosted proof is claimed. Existing raw evidence is uncha
 Green R5 spike collection supplies the dispatch/link evidence at **6d2d86b only**;
 it does not establish scenario acceptance, owner approval or ADR acceptance.
 
+## R7 source corrections (local verification only)
+
+Fresh review findings exposed four reachable failures after R6: missing evidence
+when empty-allowlist checkout fails, silently discarded duplicate index keys,
+a payload-mutable golden oracle, and partial output that prevents installation
+retry. R7 records acquisition step outcomes without checkout, exports them to the
+runner log/summary before best-effort artifact upload, rejects decoded duplicate
+keys in both runtimes, snapshots the collector's trusted golden before execution,
+and stages writes with cleanup before publishing into a fresh reserved target.
+Acquisition-only evidence stays **unverified**, with no source-head or denial
+claim; unavailable artifacts never count as passing scenario evidence.
+
+Offline regressions cover blocked checkout/upload, literal and escaped-equivalent
+duplicate keys, a real subprocess rewriting its fixture and printing `{}` with an
+empty target, and injected mkdir/write failures followed by successful retries.
+Existing targets are preserved. The touched tree verifier also rejects Windows
+reparse metadata, and malformed-input Python tests run without Bun. Four fixture
+token literals that triggered B105 in quality run 41303889058 (job 124840243729)
+are replaced with generated disposable values while retaining redaction checks.
+Local command logs are retained under `.lintro/562-r7-*.log`.
+
+No R7 hosted validation is claimed. R6 PR run 41303888697 and dispatch 41304035426
+apply only to `10205e3519ab610c97fd2a846bfc54e9ecbe3048`, regardless of their
+eventual results. Historical R3/R4/R5 tables and raw JSON remain unchanged.
+ADR 0008 stays Proposed; owner security/signing policy, the dual-client offline
+disposition, Windows installer denial, the Harden Runner baseline and payload
+provenance remain required on #562. Optional NITs remain on #614.
+
 ## R3 restricted-scenario comparison
 
 Each client gets fresh HOME, temp, config and caches. The private registry has no

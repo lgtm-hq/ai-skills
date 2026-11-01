@@ -7,13 +7,16 @@ import io
 import json
 import os
 import re
+import shutil
 import sys
 import tarfile
+import tempfile
 from pathlib import Path
 
 LIMIT = 1024 * 1024
 PATH_LIMIT = 100  # ASCII bytes/characters; fits the tiny USTAR name field.
 PATH_DEPTH = 16
+JSON_DEPTH = 64
 PATH_PATTERN = re.compile(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)+")
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
 DEVICE_PATTERN = re.compile(
@@ -114,6 +117,51 @@ def safe_path(value: object) -> str:
     return value
 
 
+def parse_index(raw: str) -> object:
+    """Reject excessive nesting and duplicate decoded keys before interpretation.
+
+    Args:
+        raw: Size-bounded UTF-8 index text.
+
+    Returns:
+        Parsed JSON with unique keys in every object.
+
+    Raises:
+        ValueError: On malformed JSON, duplicate keys or excessive nesting.
+    """
+    depth, quoted, escaped = 0, False, False
+    for char in raw:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char in "[{":
+            depth += 1
+            if depth > JSON_DEPTH:
+                raise ValueError("index nesting too deep")
+        elif char in "]}":
+            depth -= 1
+
+    def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        """Reject repeated decoded object names instead of losing earlier values."""
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate index key")
+            result[key] = value
+        return result
+
+    try:
+        return json.loads(raw, object_pairs_hook=unique)
+    except RecursionError as error:
+        raise ValueError("index nesting too deep") from error
+
+
 def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
     """Validate the complete artifact before materializing retained files.
 
@@ -131,10 +179,7 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
     """
     index_bytes = read_fixture(fixture / "index.json")
     archive = read_fixture(fixture / "artifact.tar")
-    try:
-        index = json.loads(index_bytes.decode("utf-8"))
-    except RecursionError as error:
-        raise ValueError("index nesting too deep") from error
+    index = parse_index(index_bytes.decode("utf-8"))
     if not isinstance(index, dict) or set(index) != {"sha256", "capabilities"}:
         raise ValueError("invalid index")
     if hashlib.sha256(archive).hexdigest() != index["sha256"]:
@@ -222,11 +267,22 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
         raise ValueError("incomplete archive")
     output = {name: contents[name] for name in sorted(retained)}
     target = home / ".spike-target"
-    target.mkdir()  # A fresh disposable destination avoids overwrite/symlink traversal.
-    for name, content in output.items():
-        destination = target / name
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(content.encode("utf-8"))
+    with tempfile.TemporaryDirectory(prefix=".spike-stage-", dir=home) as temporary:
+        staging = Path(temporary)
+        for name, content in output.items():
+            destination = staging / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content.encode("utf-8"))
+        # Reserve a fresh target without replacing any existing file, link or
+        # directory. Only publish after all writes succeed. Move failures roll
+        # back only this invocation's reservation, never a pre-existing target.
+        target.mkdir()
+        try:
+            for child in staging.iterdir():
+                child.rename(target / child.name)
+        except OSError:
+            shutil.rmtree(target)
+            raise
     return output
 
 

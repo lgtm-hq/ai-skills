@@ -17,6 +17,174 @@ from assertpy import assert_that
 SPIKE = Path(__file__).resolve().parents[1] / "research/install-plane-spike"
 
 
+@pytest.mark.parametrize("rewrite_trusted", [False, True])
+def test_payload_cannot_rewrite_oracle(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    rewrite_trusted: bool,
+) -> None:
+    """Snapshot the trusted golden before a payload rewrites fixtures and prints {}."""
+    common = collector["common"]
+    trusted = tmp_path / "trusted"
+    payload = tmp_path / "payload"
+    expected = (SPIKE / "fixtures/expected-output.json").read_bytes()
+    for base in (trusted, payload):
+        (base / "fixtures").mkdir(parents=True)
+        (base / "fixtures/expected-output.json").write_bytes(expected)
+    monkeypatch.setattr(common, "SPIKE", trusted)
+    home = tmp_path / "home"
+    script = payload / "forge.py"
+    trusted_oracle = trusted / "fixtures/expected-output.json"
+    rewrite = (
+        f"Path({str(trusted_oracle)!r}).write_bytes(b'{{}}')\n"
+        if rewrite_trusted
+        else ""
+    )
+    script.write_text(
+        "import os, sys\nfrom pathlib import Path\n"
+        "Path(sys.argv[1], 'expected-output.json').write_bytes(b'{}')\n"
+        + rewrite
+        + "Path(os.environ['HOME'], '.spike-target').mkdir()\nprint('{}')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        common, "runtime", lambda **_: [sys.executable, "-I", "-B", str(script)]
+    )
+    records: list[dict[str, Any]] = []
+    result = common.run_payload(root=payload, variant="py", home=home, records=records)
+    assert_that(records[0]["exit"]).is_zero()
+    assert_that(records[0]["stdout"]).is_equal_to("{}\n")
+    assert_that((payload / "fixtures/expected-output.json").read_bytes()).is_equal_to(
+        b"{}"
+    )
+    assert_that(result["status"]).is_equal_to("fail")
+    assert_that(result["installed_tree_matches"]).is_false()
+
+
+@pytest.mark.parametrize("entry", ["root", "directory", "file"])
+@pytest.mark.parametrize("attribute", ["st_file_attributes", "st_reparse_tag"])
+def test_output_tree_rejects_reparse_points(
+    collector: dict[str, ModuleType],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    entry: str,
+    attribute: str,
+) -> None:
+    """Reject Windows junction/reparse metadata before descent or content reads."""
+    import os
+    import stat
+
+    root = tmp_path / "target"
+    (root / "keep").mkdir(parents=True)
+    (root / "keep/file").write_bytes(b"expected")
+    blocked = {"root": root, "directory": root / "keep", "file": root / "keep/file"}[
+        entry
+    ]
+    original_lstat, original_open, original_scandir = Path.lstat, Path.open, os.scandir
+
+    def lstat(path: Path, *args: Any, **kwargs: Any) -> Any:
+        """Model lstat metadata that Windows reports for a reparse point."""
+        metadata = original_lstat(path, *args, **kwargs)
+        if path == blocked:
+            return SimpleNamespace(
+                st_mode=metadata.st_mode,
+                **{attribute: stat.FILE_ATTRIBUTE_REPARSE_POINT},
+            )
+        return metadata
+
+    def opened(path: Path, *args: Any, **kwargs: Any) -> Any:
+        """Fail if verification tries to read a rejected file."""
+        if path == blocked:
+            pytest.fail("read a reparse point")
+        return original_open(path, *args, **kwargs)
+
+    def scanned(path: Any) -> Any:
+        """Fail if verification tries to traverse a rejected directory."""
+        if Path(path) == blocked:
+            pytest.fail("traversed a reparse point")
+        return original_scandir(path)
+
+    monkeypatch.setattr(Path, "lstat", lstat)
+    monkeypatch.setattr(Path, "open", opened)
+    monkeypatch.setattr(os, "scandir", scanned)
+    assert_that(
+        collector["common"].installed_tree_matches(
+            root=root, expected={"keep/file": "expected"}
+        )
+    ).is_false()
+
+
+def test_checkout_failure_has_source_independent_evidence(tmp_path: Path) -> None:
+    """Run the actual fallback in an empty checkout with blocked acquisition/upload."""
+    import os
+    import subprocess  # nosec B404 - fixed workflow fallback, no network
+
+    import yaml
+
+    workflow = yaml.safe_load(
+        (SPIKE.parents[1] / ".github/workflows/install-plane-spike.yml").read_bytes()
+    )
+    steps = workflow["jobs"]["offline-linux"]["steps"]
+    fallback = next(step for step in steps if step.get("id") == "acquisition")
+    assert_that(fallback["if"]).contains("always()")
+    env = {
+        **os.environ,
+        "SPIKE_SOURCE_SHA": "a" * 40,
+        "GITHUB_EVENT_NAME": "pull_request",
+        "GITHUB_RUN_ID": "1234",
+        "GITHUB_RUN_ATTEMPT": "2",
+        "GITHUB_REPOSITORY": "lgtm-hq/ai-skills",
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
+        "SPIKE_HARDEN_OUTCOME": "success",
+        "SPIKE_CHECKOUT_OUTCOME": "failure",
+        "SPIKE_DOWNLOAD_OUTCOME": "skipped",
+        "SPIKE_UNPACK_OUTCOME": "skipped",
+        "SPIKE_MEASURE_OUTCOME": "skipped",
+    }
+    result = subprocess.run(  # nosec B603 - literal shell; repository-owned workflow
+        args=["bash", "-e", "-c", fallback["run"]],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert_that(result.returncode).described_as(result.stderr).is_zero()
+    path = tmp_path / "build/spike/results/acquisition.json"
+    saved = json.loads(path.read_bytes())
+    assert_that(saved["status"]).is_equal_to("unverified")
+    assert_that(saved["source_head"]).is_none()
+    assert_that(saved["expected_source_head"]).is_equal_to("a" * 40)
+    assert_that(saved["workflow_event"]).is_equal_to("pull_request")
+    assert_that(saved["workflow_run_id"]).is_equal_to("1234")
+    assert_that(saved["workflow_run_attempt"]).is_equal_to("2")
+    assert_that(saved["acquisition"]["SPIKE_CHECKOUT_OUTCOME"]).is_equal_to("failure")
+    assert_that(saved["acquisition"]["SPIKE_MEASURE_OUTCOME"]).is_equal_to("skipped")
+    assert_that(saved["probe_denial_proven"]).is_false()
+    assert_that(saved["installer_denial_proven"]).is_false()
+    raw = path.read_text(encoding="utf-8")
+    assert_that(result.stdout).contains(raw)
+    assert_that((tmp_path / "summary").read_text(encoding="utf-8")).contains(raw)
+    upload = next(step for step in steps if step.get("id") == "evidence")
+    assert_that(upload["with"]["path"]).contains("build/spike/results/*.json")
+    assert_that(upload["with"]["if-no-files-found"]).is_equal_to("error")
+    retention = next(step for step in steps if step.get("id") == "retention")
+    result = subprocess.run(  # nosec B603 - literal shell; no artifact network needed
+        args=["bash", "-e", "-c", retention["run"]],
+        cwd=tmp_path,
+        env={**env, "SPIKE_UPLOAD_OUTCOME": "failure"},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert_that(result.returncode).is_zero()
+    assert_that(result.stdout).contains("failure", "unverified")
+    assert_that((tmp_path / "summary").read_text(encoding="utf-8")).contains("failure")
+
+
 @pytest.fixture
 def collector(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ModuleType]]:
     """Import collector modules from this checkout with reversible search paths.
@@ -225,10 +393,10 @@ def test_harden_runner_runs_directly_and_remains_unverified(
         ("readiness", 503, {}),
         ("readiness", 200, TimeoutError()),
         ("kill-timeout", 403, {"error": "account rejected"}),
-        ("success", 201, {"token": "disposable-token"}),
-        ("close", 201, {"token": "disposable-token"}),
-        ("close-failed-client", 201, {"token": "disposable-token"}),
-        ("stop", 201, {"token": "disposable-token"}),
+        ("success", 201, None),
+        ("close", 201, None),
+        ("close-failed-client", 201, None),
+        ("stop", 201, None),
     ],
 )
 def test_registry_account_failure_is_sanitized_evidence(
@@ -251,6 +419,10 @@ def test_registry_account_failure_is_sanitized_evidence(
         },
     )
     monkeypatch.setattr(registry.time, "sleep", lambda _: None)
+    # Disposable generated fixture credentials exercise redaction without literals.
+    token = secrets.token_urlsafe(24)
+    if stage in {"success", "stop"} or stage.startswith("close"):
+        body = {"token": token}
     password = secrets.token_urlsafe(24)
     monkeypatch.setattr(registry.secrets, "token_urlsafe", lambda _: password)
     requests: list[str] = []
@@ -330,7 +502,7 @@ def test_registry_account_failure_is_sanitized_evidence(
     def close(process: object) -> None:
         """Inject a close failure after measurements without leaking credentials."""
         if stage.startswith("close"):
-            raise OSError(f"close failed {password} disposable-token")
+            raise OSError(f"close failed {password} {token}")
 
     monkeypatch.setattr(registry, "close_process", close)
 
@@ -398,7 +570,7 @@ def test_registry_account_failure_is_sanitized_evidence(
                     result[variant]["clients"][client]["observation"]["stdout"]
                 ).is_equal_to("completed client measurement")
     assert_that(result["server"]).is_not_empty()
-    assert_that(json.dumps(result)).does_not_contain(password, "disposable-token")
+    assert_that(json.dumps(result)).does_not_contain(password, token)
     assert_that(result["server"][-1]["stdout"]).is_equal_to(
         "server output [redacted]\n"
     )
@@ -1742,10 +1914,12 @@ def test_payload_tree_requires_exact_regular_files(
     expected = json.loads((SPIKE / "fixtures/expected-output.json").read_bytes())
     expected["keep/nested/data.txt"] = "nested regular file\n"
     root = tmp_path / "payload"
-    (root / "fixtures").mkdir(parents=True)
-    (root / "fixtures/expected-output.json").write_text(
+    trusted = tmp_path / "trusted"
+    (trusted / "fixtures").mkdir(parents=True)
+    (trusted / "fixtures/expected-output.json").write_text(
         json.dumps(expected), encoding="utf-8"
     )
+    monkeypatch.setattr(common, "SPIKE", trusted)
     home = tmp_path / "home"
     target = home / ".spike-target"
     outside = tmp_path / "outside"
