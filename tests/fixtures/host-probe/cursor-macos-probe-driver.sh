@@ -66,7 +66,7 @@ cleanup() {
   local status=0
   if declare -F stop_cursor >/dev/null; then stop_cursor quiet || status=1; fi
   if declare -F restore_keychains >/dev/null; then restore_keychains || status=1; fi
-  # Keep the private keychain if restoring the real search list failed.
+  # Retain scratch if process termination or keychain restoration is unverified.
   [ "$status" -eq 0 ] || return "$status"
   if [ "$KEEP" -eq 0 ]; then
     rm -rf "$ROOT" || status=1
@@ -309,7 +309,20 @@ snapshot >"$LOGS/real-before.txt"
 REPORT_REASON=checks-interrupted
 
 # ---------------------------------------------------------------- launch/stop
-running() { pgrep -f -- "--user-data-dir=$UDATA" >/dev/null 2>&1 || pgrep -f -- "$UDATA" >/dev/null 2>&1; }
+CURSOR_PROCESS_PATTERN="$(
+  python3 - "$APP" "$UDATA" <<'PY'
+import sys
+def literal_ere(value: str) -> str:
+    """Escape POSIX ERE metacharacters, leaving spaces and quotes literal."""
+    return "".join("\\" + char if char in r".^$*+?{}[]\|()" else char for char in value)
+app, udata = map(literal_ere, sys.argv[1:])
+# Anchor to this app's executables so shells mentioning the path cannot match.
+# ps/pgrep flatten argv with spaces; accept both flag forms and bound its value.
+print(r"^" + app + r"/Contents/.*[[:space:]]--user-data-dir(=|[[:space:]])"
+      + udata + r"([[:space:]]|$)")
+PY
+)"
+running() { pgrep -f -- "$CURSOR_PROCESS_PATTERN" >/dev/null 2>&1; }
 
 start_cursor() {
   env -i PATH="$PATH" HOME="$PHOME" TMPDIR="$ROOT/tmp" \
@@ -350,7 +363,7 @@ stop_cursor() {
     i=$((i + 1))
   done
   if running; then
-    pkill -f -- "$UDATA" 2>/dev/null || true
+    pkill -f -- "$CURSOR_PROCESS_PATTERN" 2>/dev/null || true
     sleep 2
   fi
   if running; then

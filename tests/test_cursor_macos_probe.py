@@ -410,6 +410,141 @@ def test_exit_cleanup_only_removes_owned_scratch(
     assert_that(ambient.read_text()).is_equal_to("ambient\n")
 
 
+@pytest.mark.parametrize(
+    "parent",
+    [
+        r"scratch\backslash",
+        "scratch[]()+.*^$?{|}",
+        "scratch.*",
+        "scratch with spaces",
+        "scratch'quote",
+        'scratch"quote',
+        "scratch mixed '\"\\ []()+.*^$?{|}",
+    ],
+    ids=["backslash", "ere", "wildcard", "spaces", "apostrophe", "quote", "mixed"],
+)
+@pytest.mark.parametrize("behavior", ["terminate", "resist", "absent"])
+@pytest.mark.parametrize("separator", ["=", " "])
+def test_process_matching_preserves_literal_paths_and_owned_cleanup(
+    tmp_path: Path,
+    parent: str,
+    behavior: str,
+    separator: str,
+) -> None:
+    """Evaluate real POSIX EREs over synthetic commands; never signal any process."""
+    bash, grep = shutil.which("bash"), shutil.which("grep")
+    if bash is None or grep is None:
+        pytest.skip("Offline process matching requires Bash and POSIX grep")
+    source = SCRIPT.read_text()
+    launch_stop = re.search(
+        r"^# -+ launch/stop\n(.*?)^restart\(\)",
+        source,
+        re.MULTILINE | re.DOTALL,
+    )
+    cleanup = re.search(r"^cleanup\(\) \{\n.*?^\}", source, re.MULTILINE | re.DOTALL)
+    if launch_stop is None or cleanup is None:
+        pytest.fail("Expected process and cleanup functions are missing")
+    root = tmp_path / parent / "ai-skills-563-cursor.synthetic"
+    udata = root / "user-data"
+    udata.mkdir(parents=True)
+    (root / "private.log").write_text("retain while owned process is live\n")
+    app = tmp_path / "fake Cursor [test].app"
+    executable = f"{app}/Contents/MacOS/Cursor"
+    owned = f"{executable} --user-data-dir{separator}{udata} --new-window"
+    others = {
+        "nearby": owned.replace(str(udata), str(udata) + "-neighbor"),
+        "regex-neighbor": owned.replace(parent, "scratchZZZ"),
+        "shell": f"/bin/bash -c '{owned}'",
+        "unrelated": f"/usr/bin/unrelated --user-data-dir={udata}",
+        "mention": f"{executable} --log={udata}",
+        "other-app": owned.replace(str(app), str(tmp_path / "other.app")),
+    }
+    table = tmp_path / "processes.json"
+    table.write_text(
+        json.dumps({**others, **({} if behavior == "absent" else {"owned": owned})}),
+    )
+    audit = tmp_path / "matches.jsonl"
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    (tools / "python3").symlink_to(sys.executable)
+    matcher = tools / "matcher"
+    matcher.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, subprocess, sys\n"
+        "from pathlib import Path\n"
+        "if sys.argv[1:-1] != ['-f', '--']:\n"
+        "    sys.exit(2)\n"
+        "table = Path(os.environ['MATCH_TABLE'])\n"
+        "commands = json.loads(table.read_text())\n"
+        "matched = []\n"
+        "for key, command in commands.items():\n"
+        f"    result = subprocess.run([{grep!r}, '-E', '-q', '--', sys.argv[-1]],\n"
+        "        input=command + '\\n', text=True, capture_output=True, check=False)\n"
+        "    if result.returncode not in (0, 1):\n"
+        "        sys.exit(2)\n"
+        "    if result.returncode == 0:\n"
+        "        matched.append(key)\n"
+        "name = Path(sys.argv[0]).name\n"
+        "with open(os.environ['MATCH_AUDIT'], 'a') as stream:\n"
+        "    stream.write(json.dumps({'tool': name, 'pattern': sys.argv[-1],\n"
+        "        'matched': matched}) + '\\n')\n"
+        "if name == 'pkill' and os.environ['MATCH_BEHAVIOR'] != 'resist':\n"
+        "    table.write_text(json.dumps({key: value for key, value in\n"
+        "        commands.items() if key not in matched}))\n"
+        "sys.exit(0 if matched else 1)\n",
+    )
+    matcher.chmod(0o700)
+    for command in ("pgrep", "pkill"):
+        (tools / command).symlink_to(matcher)
+    sleep = tools / "sleep"
+    sleep.write_text("#!/bin/sh\nexit 0\n")
+    sleep.chmod(0o700)
+    result = subprocess.run(  # nosec B603 - exact functions, fake process tools only
+        [bash, "--noprofile", "--norc", "-eu"],
+        input=(
+            launch_stop.group(1)
+            + "\n"
+            + cleanup.group(0)
+            + "\nif running; then echo detected; else echo absent; fi\ncleanup\n"
+        ),
+        cwd=tmp_path,
+        env={
+            "PATH": f"{tools}:/usr/bin:/bin",
+            "APP": str(app),
+            "ROOT": str(root),
+            "UDATA": str(udata),
+            "KEEP": "0",
+            "MATCH_TABLE": str(table),
+            "MATCH_AUDIT": str(audit),
+            "MATCH_BEHAVIOR": behavior,
+        },
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert_that(result.stdout.splitlines()).is_equal_to(
+        ["absent" if behavior == "absent" else "detected"],
+    )
+    assert_that(result.returncode).described_as(result.stderr).is_equal_to(
+        1 if behavior == "resist" else 0,
+    )
+    remaining = json.loads(table.read_text())
+    assert_that(remaining).is_equal_to(
+        {**others, **({"owned": owned} if behavior == "resist" else {})},
+    )
+    assert_that(root.exists()).is_equal_to(behavior == "resist")
+    if behavior == "resist":
+        assert_that((root / "private.log").read_text()).contains("retain")
+    calls = [json.loads(line) for line in audit.read_text().splitlines()]
+    for call in calls:
+        assert_that(set(call["matched"]) - {"owned"}).is_empty()
+    assert_that({call["pattern"] for call in calls}).is_length(1)
+    assert_that([call for call in calls if call["tool"] == "pkill"]).is_length(
+        0 if behavior == "absent" else 1,
+    )
+
+
 def test_supplied_script_bash_syntax() -> None:
     """Parse the complete stock-Bash script without executing it."""
     bash = shutil.which("bash")
