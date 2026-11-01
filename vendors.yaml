@@ -85,7 +85,7 @@ vendors:
         skills: "*"
   - id: caveman
     repo: JuliusBrussee/caveman
-    sha: "15581d14007fd01fb3f132016741962f34936ca2"
+    sha: "9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4"
     branch: main
     displayRef: latest
     skillRoots:
