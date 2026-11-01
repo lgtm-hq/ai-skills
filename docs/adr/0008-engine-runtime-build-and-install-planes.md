@@ -1,6 +1,6 @@
 # ADR 0008: Engine runtime: Python build plane, TypeScript install plane
 
-- Status: Proposed (finalized by #562)
+- Status: Proposed (#562 live distribution evidence pending)
 - Date: 2026-11-01
 - Scope: [#561](https://github.com/lgtm-hq/ai-skills/issues/561), part of
   [engine v2 (#596)](https://github.com/lgtm-hq/ai-skills/issues/596)
@@ -73,3 +73,19 @@ provisional until that spike concludes.
   Host evidence follows in
   [#563](https://github.com/lgtm-hq/ai-skills/issues/563); this ADR runs
   neither spike and changes no runtime behavior.
+
+## Distribution evidence gate (#562)
+
+The throwaway prototypes and collector now live under
+`research/install-plane-spike/`; method, local Linux observations, limitations and
+the remaining acceptance criteria are recorded in
+`docs/research/install-plane-distribution.md`. Local results establish neither
+macOS nor Windows deployability. The hosted multi-OS workflow has not yet run.
+
+This status stays Proposed until the parent records live per-scenario evidence
+and its green collection-run link, then applies the decision rule. Evaluate the
+Python escape hatch first when measured deployability is equal; otherwise accept
+TypeScript only if it is no worse on every restricted criterion. Unknown security
+or platform results do not count as equality or superiority. If neither result is
+supported, retain Proposed and identify the missing experiment. The ADR index must
+change with any final status revision. No production runtime changes in this spike.

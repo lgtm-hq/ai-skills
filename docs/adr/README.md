@@ -8,6 +8,9 @@ Consequences sections. Accepted decisions guide implementation; proposed
 decisions remain subject to their stated follow-up. Engine v2 work is
 tracked in epic [#596](https://github.com/lgtm-hq/ai-skills/issues/596).
 
+ADR 0008 remains Proposed pending #562's live multi-OS distribution evidence;
+the initial local Linux experiment does not finalize its runtime choice.
+
 | ID                                                        | Title                                                              | Status   |
 | --------------------------------------------------------- | ------------------------------------------------------------------ | -------- |
 | [0001](./0001-plugin-canonical-atomic-selection.md)       | Plugin as the canonical artifact; atomic plugin-only selection     | Accepted |
