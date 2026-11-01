@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -63,6 +64,13 @@ def test_spike_golden(
         if p.is_file()
     }
     assert_that(actual).is_equal_to(expected)
+    index = json.loads((spike_fixture / "index.json").read_text())
+    digest = next(c for c in index["capabilities"] if c["id"] == "fixture:keep")[
+        "files"
+    ]["keep/SKILL.md"]
+    installed = (target / "keep/SKILL.md").read_bytes()
+    assert_that(installed.startswith(b"\xef\xbb\xbf")).is_true()
+    assert_that(hashlib.sha256(installed).hexdigest()).is_equal_to(digest)
 
 
 @pytest.mark.parametrize(
@@ -75,6 +83,11 @@ def test_spike_golden(
         "unknown-closure",
         "path",
         "duplicate",
+        "case-file",
+        "case-directory",
+        "file-directory",
+        "reserved-file",
+        "reserved-directory",
     ],
 )
 def test_spike_rejects_before_writing(
@@ -101,6 +114,16 @@ def test_spike_rejects_before_writing(
         keep["files"] = {"../escape": "0" * 64}
     elif mutation == "duplicate":
         index["capabilities"].append(keep)
+    elif mutation == "case-file":
+        index["capabilities"][0]["files"]["keep/skill.MD"] = "0" * 64
+    elif mutation == "case-directory":
+        keep["files"]["KEEP/other.md"] = "0" * 64
+    elif mutation == "file-directory":
+        keep["files"]["keep/SKILL.md/child"] = "0" * 64
+    elif mutation == "reserved-file":
+        keep["files"]["keep/nUl.txt"] = "0" * 64
+    elif mutation == "reserved-directory":
+        keep["files"]["COM1/child.md"] = "0" * 64
     path.write_text(json.dumps(index))
     with pytest.raises(ValueError):
         prototype.install(fixture=spike_fixture, home=tmp_path, exclude="fixture:drop")
@@ -111,6 +134,8 @@ def test_spike_runtime_parity(spike_fixture: Path, tmp_path: Path) -> None:
     """Both CLIs emit and write the same golden fixture, with isolated HOME."""
     bun = shutil.which("bun")
     if bun is None:
+        if os.environ.get("SPIKE_REQUIRE_BUN") == "1":
+            pytest.fail("Bun required for spike CI parity")
         pytest.skip("Bun not installed; dispatch workflow requires the parity check")
     expected = json.loads((spike_fixture / "expected-output.json").read_text())
     for variant, command in {
@@ -126,6 +151,7 @@ def test_spike_runtime_parity(spike_fixture: Path, tmp_path: Path) -> None:
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
             timeout=30,
         )
@@ -138,6 +164,9 @@ def test_spike_runtime_parity(spike_fixture: Path, tmp_path: Path) -> None:
             if p.is_file()
         }
         assert_that(actual).is_equal_to(expected)
+        assert_that((target / "keep/SKILL.md").read_bytes()).is_equal_to(
+            expected["keep/SKILL.md"].encode("utf-8")
+        )
 
 
 @pytest.fixture

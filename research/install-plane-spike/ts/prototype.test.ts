@@ -3,6 +3,7 @@ import { cp, mkdtemp, readFile, rm, writeFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { install } from "./prototype";
+import { createHash } from "node:crypto";
 
 let root: string;
 let fixture: string;
@@ -24,6 +25,14 @@ test("shared golden fixture is materialized after set subtraction", async () => 
     String(expected["keep/SKILL.md"]),
   );
   await expect(access(join(root, ".spike-target/drop"))).rejects.toThrow();
+  const installed = await readFile(join(root, ".spike-target/keep/SKILL.md"));
+  const index = JSON.parse(await readFile(join(fixture, "index.json"), "utf8")) as {
+    capabilities: { id: string; files: Record<string, string> }[];
+  };
+  expect(installed.subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf]));
+  const hash = index.capabilities.find((cap) => cap.id === "fixture:keep")?.files["keep/SKILL.md"];
+  if (!hash) throw new Error("fixture missing digest");
+  expect(createHash("sha256").update(installed).digest("hex")).toBe(hash);
 });
 
 test.each([
@@ -34,6 +43,11 @@ test.each([
   "unknown-closure",
   "path",
   "duplicate",
+  "case-file",
+  "case-directory",
+  "file-directory",
+  "reserved-file",
+  "reserved-directory",
 ])("%s fails before writes", async (mutation) => {
   const index = JSON.parse(await readFile(join(fixture, "index.json"), "utf8")) as {
     sha256: string;
@@ -48,6 +62,13 @@ test.each([
   if (mutation === "unknown-closure") keep.closure = ["fixture:missing"];
   if (mutation === "path") keep.files = { "../escape": "0".repeat(64) };
   if (mutation === "duplicate") index.capabilities.push(keep);
+  const first = index.capabilities[0];
+  if (!first) throw new Error("fixture missing capability");
+  if (mutation === "case-file") first.files["keep/skill.MD"] = "0".repeat(64);
+  if (mutation === "case-directory") keep.files["KEEP/other.md"] = "0".repeat(64);
+  if (mutation === "file-directory") keep.files["keep/SKILL.md/child"] = "0".repeat(64);
+  if (mutation === "reserved-file") keep.files["keep/nUl.txt"] = "0".repeat(64);
+  if (mutation === "reserved-directory") keep.files["COM1/child.md"] = "0".repeat(64);
   await writeFile(join(fixture, "index.json"), JSON.stringify(index));
   await expect(install({ fixture, home: root, exclude: "fixture:drop" })).rejects.toThrow();
   await expect(access(join(root, ".spike-target"))).rejects.toThrow();

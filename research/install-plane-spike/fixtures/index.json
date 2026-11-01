@@ -1,5 +1,5 @@
 {
-  "sha256": "8607bf6bd8e65f1915e3aeeebbbc87acd0e54f9219a83025a50ac580516d5621",
+  "sha256": "f6d9372bea3653cc2b88aab834a89bdf7475e3e0d55bff7600829c043656d64d",
   "capabilities": [
     {
       "id": "fixture:drop",
@@ -12,7 +12,7 @@
       "id": "fixture:keep",
       "closure": [],
       "files": {
-        "keep/SKILL.md": "0156f8844e38a6c931cf06e0f01b0a73b1c13775cb2a0ccc09668cac237fc4b4"
+        "keep/SKILL.md": "8396eb1a734b9965b23150d000a30db7f8b183be91cc53fdfadd96ba46f3e64d"
       }
     }
   ]

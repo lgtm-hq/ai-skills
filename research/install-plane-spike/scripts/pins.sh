@@ -4,6 +4,5 @@ source scripts/tool-versions.sh
 {
   echo "bun=$BUN_VERSION"
   echo "uv=$UV_VERSION"
-  sed -n 's/^  "python": "\([^"]*\)",$/python=\1/p' \
-    research/install-plane-spike/settings.json
+  python3 research/install-plane-spike/scripts/pins.py
 } >>"$GITHUB_OUTPUT"

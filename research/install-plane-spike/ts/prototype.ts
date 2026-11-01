@@ -25,7 +25,15 @@ function keys(value: Record<string, unknown>, expected: string[]): void {
 function safePath(value: string): string {
   if (
     !/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_.-]+)+$/.test(value) ||
-    value.split("/").some((part) => part === "." || part === ".." || part.endsWith("."))
+    value
+      .split("/")
+      .some(
+        (part) =>
+          part === "." ||
+          part === ".." ||
+          part.endsWith(".") ||
+          /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(part),
+      )
   ) {
     throw new Error("invalid path");
   }
@@ -121,6 +129,19 @@ export async function install({
     return { id: cap.id, closure: cap.closure as string[], files: validated };
   });
   if (!ids.has(exclude)) throw new Error("unknown exclusion");
+  const identities = new Map<string, string>();
+  for (const name of files.keys()) {
+    const parts = name.split("/");
+    for (let count = 1; count <= parts.length; count++) {
+      const path = parts.slice(0, count).join("/");
+      const key = path.toLowerCase();
+      const identity = `${count === parts.length ? "file" : "directory"}:${path}`;
+      if (identities.has(key) && identities.get(key) !== identity) {
+        throw new Error("portable path collision");
+      }
+      identities.set(key, identity);
+    }
+  }
   for (const cap of capabilities) {
     if (new Set(cap.closure).size !== cap.closure.length || cap.closure.some((x) => !ids.has(x))) {
       throw new Error("invalid closure");
@@ -135,7 +156,7 @@ export async function install({
     if (digest(payload) !== files.get(name)) throw new Error("file digest mismatch");
   }
   const output: Record<string, string> = {};
-  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
   const decoded = new Map([...contents].map(([name, payload]) => [name, decoder.decode(payload)]));
   for (const name of [...retained].sort()) {
     const content = decoded.get(name);

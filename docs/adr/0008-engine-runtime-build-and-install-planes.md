@@ -82,6 +82,14 @@ the remaining acceptance criteria are recorded in
 `docs/research/install-plane-distribution.md`. Local results establish neither
 macOS nor Windows deployability. The hosted multi-OS workflow has not yet run.
 
+Revision 1 adds narrow PR-head collection and required source parity gates. It
+withdraws the earlier extraction-only offline result as package-manager evidence.
+A PR-trigger run is not the required green workflow_dispatch run; default-branch
+registration is still needed for that dispatch. First-step empty-allowlist
+collection has no same-host unrestricted baseline and cannot prove Harden Runner
+denial by configuration alone. These limits and the acceptance hold remain explicit
+in the report; this revision makes no runtime decision.
+
 This status stays Proposed until the parent records live per-scenario evidence
 and its green collection-run link, then applies the decision rule. Evaluate the
 Python escape hatch first when measured deployability is equal; otherwise accept

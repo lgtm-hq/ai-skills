@@ -3,6 +3,13 @@ name: Install plane distribution spike
 
 'on':
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/install-plane-spike.yml'
+      - 'research/install-plane-spike/**'
+      - 'tests/test_install_plane_spike.py'
+      - 'tests/test_install_plane_collector.py'
+      - '.gitattributes'
 
 permissions:
   contents: read
@@ -30,6 +37,8 @@ jobs:
         shell: bash
     env:
       PYTHONPATH: ''
+      SPIKE_REQUIRE_BUN: '1'
+      SPIKE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Harden runner (setup network; no offline claim)
         # yamllint disable-line rule:line-length
@@ -37,10 +46,12 @@ jobs:
         with:
           egress-policy: audit
       - name: Checkout experiment
+        id: checkout
         # yamllint disable-line rule:line-length
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Read shared tool pins
         id: pins
         run: bash research/install-plane-spike/scripts/pins.sh
@@ -56,15 +67,22 @@ jobs:
           version: ${{ steps.pins.outputs.uv }}
           enable-cache: false
       - name: Test shared Python fixture and cross-runtime parity
+        env:
+          SPIKE_PYTHON: ${{ steps.pins.outputs.python }}
         # Dependencies belong to setup, never to a measured runtime process.
         # yamllint disable-line rule:line-length
-        run: uv run --no-project --with pytest==9.0.3 --with assertpy==1.1 pytest tests/test_install_plane_spike.py
+        run: bash research/install-plane-spike/scripts/test-ci.sh
       - name: Build native payloads and prime local registry tooling
+        id: build
+        env:
+          SPIKE_PYTHON: ${{ steps.pins.outputs.python }}
         # yamllint disable-line rule:line-length
-        run: uv run --no-project --python '${{ steps.pins.outputs.python }}' research/install-plane-spike/scripts/build.py --output build/spike
+        run: uv run --no-project --python "$SPIKE_PYTHON" research/install-plane-spike/scripts/build.py --output build/spike
       - name: Measure restrictions and preserve unavailable capabilities
+        env:
+          SPIKE_PYTHON: ${{ steps.pins.outputs.python }}
         # yamllint disable-line rule:line-length
-        run: uv run --no-project --python '${{ steps.pins.outputs.python }}' research/install-plane-spike/scripts/measure.py --build build/spike --results build/spike/results
+        run: uv run --no-project --python "$SPIKE_PYTHON" research/install-plane-spike/scripts/measure.py --build build/spike --results build/spike/results
       - name: Upload raw evidence even on collection failure
         if: always()
         # yamllint disable-line rule:line-length
@@ -77,7 +95,9 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Upload Linux payloads for separate empty-allowlist job
-        if: matrix.runner == 'ubuntu-24.04'
+        # Explicit status guard allows upload after an independent measurement fails.
+        # yamllint disable-line rule:line-length
+        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' && steps.build.outcome == 'success' }}
         # yamllint disable-line rule:line-length
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -85,6 +105,7 @@ jobs:
           path: |
             build/spike/ts.tgz
             build/spike/py.tgz
+            build/spike/tooling.tgz
           retention-days: 3
           if-no-files-found: error
 
@@ -97,22 +118,11 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      SPIKE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      # Acquire all data before activating the empty allowlist. No setup/build
-      # network call is part of the measured offline interval.
-      - name: Checkout experiment
-        # yamllint disable-line rule:line-length
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Download already built local-file payloads
-        # yamllint disable-line rule:line-length
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: spike-linux-payloads
-          path: build/spike
-      - name: Unpack local payloads before network denial
-        run: bash research/install-plane-spike/scripts/unpack-ci.sh
+      # First step as required by Harden Runner. Acquisition may be blocked;
+      # this is recorded as a collection limitation, never an allowlist expansion.
       - name: Deny egress with an empty allowlist
         # yamllint disable-line rule:line-length
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -120,10 +130,33 @@ jobs:
           egress-policy: block
           allowed-endpoints: ''
           disable-telemetry: true
+      - name: Checkout experiment
+        id: checkout
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Download already built local-file payloads
+        id: payloads
+        # yamllint disable-line rule:line-length
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: spike-linux-payloads
+          path: build/spike
+      - name: Unpack already built local payloads and tooling
+        id: unpack
+        run: bash research/install-plane-spike/scripts/unpack-ci.sh
       - name: Measure local-file installs with bundled tooling only
+        # Preserve failed acquisition as JSON when the collector source is available.
+        if: ${{ always() && steps.checkout.outcome == 'success' }}
+        env:
+          SPIKE_DOWNLOAD_OUTCOME: ${{ steps.payloads.outcome }}
+          SPIKE_UNPACK_OUTCOME: ${{ steps.unpack.outcome }}
         run: bash research/install-plane-spike/scripts/offline-ci.sh
       - name: Upload offline evidence
         if: always()
+        continue-on-error: true
         # yamllint disable-line rule:line-length
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

@@ -14,6 +14,9 @@ from pathlib import Path
 LIMIT = 1024 * 1024
 PATH_PATTERN = re.compile(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)+")
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
+DEVICE_PATTERN = re.compile(
+    r"(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?", re.IGNORECASE
+)
 
 
 def safe_path(value: object) -> str:
@@ -31,7 +34,10 @@ def safe_path(value: object) -> str:
     if (
         not isinstance(value, str)
         or not PATH_PATTERN.fullmatch(value)
-        or any(part in {".", ".."} or part.endswith(".") for part in value.split("/"))
+        or any(
+            part in {".", ".."} or part.endswith(".") or DEVICE_PATTERN.fullmatch(part)
+            for part in value.split("/")
+        )
     ):
         raise ValueError("invalid path")
     return value
@@ -98,6 +104,19 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
                 retained.add(name)
     if exclude not in ids:
         raise ValueError("unknown exclusion")
+    # Include excluded files and directory components: all names must represent
+    # distinct portable filesystem identities before any destination is created.
+    identities: dict[str, str] = {}
+    for name in files:
+        parts = name.split("/")
+        for count in range(1, len(parts) + 1):
+            path = "/".join(parts[:count])
+            key = path.lower()
+            kind = "file" if count == len(parts) else "directory"
+            identity = f"{kind}:{path}"
+            if key in identities and identities[key] != identity:
+                raise ValueError("portable path collision")
+            identities[key] = identity
     for capability in capabilities:
         closure = capability["closure"]
         if len(set(closure)) != len(closure) or not set(closure) <= ids:

@@ -48,7 +48,7 @@ def main() -> None:
         )
         checked(argv=["bun", "test", "--coverage"], records=records, cwd=SPIKE / "ts")
         checked(
-            argv=["bunx", "--no-install", "tsc", "--noEmit"],
+            argv=["bun", "x", "--no-install", "tsc", "--noEmit"],
             records=records,
             cwd=SPIKE / "ts",
         )
@@ -116,9 +116,23 @@ def main() -> None:
                 )
         # Prime Verdaccio now. The scenario uses --no-install and has no uplinks.
         checked(
-            argv=["bunx", "--bun", f"verdaccio@{SETTINGS['verdaccio']}", "--version"],
+            argv=[
+                "bun",
+                "x",
+                "--bun",
+                f"verdaccio@{SETTINGS['verdaccio']}",
+                "--version",
+            ],
             records=records,
         )
+        # Transfer build tooling as data for the independent block-mode job;
+        # setup/download may be blocked there. No runtime bootstrap is measured.
+        if sys.platform == "linux" and target() == "linux-x64":
+            bun = shutil.which("bun")
+            if bun is None:
+                raise ValueError("build Bun unavailable")
+            with tarfile.open(name=output / "tooling.tgz", mode="w:gz") as archive:
+                archive.add(name=Path(bun).resolve(), arcname="bun")
     finally:
         write_json(
             path=output / "build.json",

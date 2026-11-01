@@ -1,195 +1,196 @@
 # Install-plane distribution experiment (#562)
 
 Date: 2026-11-01. **Evidence incomplete; ADR 0008 remains Proposed.** This is the
-throwaway distribution experiment after #561/#613 (`032ee309`), not the M6 engine.
-There has been no push, workflow dispatch, or GitHub mutation from this session.
+throwaway distribution experiment after #561/#613, not the M6 engine. Revision 1
+enables safe PR-head collection; it does not complete the hosted evidence gate.
 
 ## Method and scope
 
 [Sources and reproduction](../../research/install-plane-spike/README.md) include:
 
-- One generated, data-only USTAR fixture, two qualified capability IDs, file hashes,
-  an archive hash, embedded closures, and golden output after excluding one ID.
-- A strict TypeScript prototype, compiled using `bun build --compile` for native
-  `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`, and `windows-x64` targets.
-- A stdlib-only Python prototype bundled with the entire uv-managed
-  python-build-standalone distribution as a relocatable directory. `uv python find
---managed-python` selects it; `uv python install` is CI setup only. The directory
-  is carried in an archive, with no self-extractor, pip, uv or dependency fetch at
-  execution. Python runs with `-I -B`. Symlinks are dereferenced because npm pack
-  omits them. This increases size and file count; it is a conservative untrimmed
-  baseline, not a minimum possible Python footprint. Runtime licenses and notices
-  remain in the copied distribution; production redistribution needs its own audit.
+- One generated, data-only USTAR fixture with two qualified capability IDs,
+  closures, archive/file SHA-256 values and golden output after subtracting one ID.
+  The retained file starts with a UTF-8 BOM; tests compare actual installed bytes
+  with the verified digest. Scoped Git attributes preserve fixture bytes on Windows.
+- Strict TypeScript compiled with `bun build --compile` for native `darwin-arm64`,
+  `darwin-x64`, `linux-x64`, `linux-arm64`, and `windows-x64` targets.
+- Stdlib-only Python bundled as the entire uv-managed python-build-standalone
+  directory. No self-extractor, consumer Python, uv, pip or runtime fetch is needed.
+  Python runs with `-I -B`. Symlinks are dereferenced because npm pack omits them.
+  Keeping the full tree is a conservative untrimmed baseline, not a minimum Python
+  footprint. Runtime licenses remain in the tree; redistribution needs its own audit.
 
-Both runtimes verify tar/file digests and complete file inventories before writes,
-filter by ID set membership, and reject missing/unknown/removed closure entries.
-They perform no resolution, policy discovery, vendor execution or network access.
-The index is **not authenticated** by this experiment: a co-located digest detects
-corruption, not a maliciously replaced index and archive. Attestation, lineage,
-schema evolution, journaling and production archive handling remain M6/M7 work.
+Both prototypes validate the complete inventory before writes, including excluded
+files. They reject reserved Windows device basenames, case aliases, directory case
+aliases and file/directory collisions. They reject missing/removed closure entries.
+The co-located index is **not authenticated**: hashes detect corruption, not a
+maliciously replaced index and archive. Production contracts remain M6/M7 work.
 
-The [dispatch workflow](../../.github/workflows/install-plane-spike.yml) builds and
-runs natively on five hosted runner labels. Setup may fetch tools/runtimes; measured
-offline workers use already acquired archives and bundled Python tooling. Each
-scenario has full command/stdout/stderr/exit/timing JSON. Archive SHA-256 and dirty
-checkout status identify local preview evidence; live evidence must name a clean,
-committed source head and the workflow run URL.
+Pytest parity compares the Python and Bun **source CLIs**. Bun tests and typecheck
+are required by the spike workflow; `SPIKE_REQUIRE_BUN=1` makes missing Bun a failure.
+Compiled TypeScript and the bundled Python runtime are exercised separately by the
+collector's golden stdout **and actual written tree** checks. They are not inferred
+from source parity alone.
 
-## Current observations
+CI uses the repository's shared uv/Bun pins. uv 0.11.26's upstream
+[download metadata](https://github.com/astral-sh/uv/blob/0.11.26/crates/uv-python/download-metadata.json)
+was inspected: it includes CPython **3.14.6 for all five targets**, but not 3.14.7.
+The spike pin now selects 3.14.6 without changing shared toolchain pins.
 
-Only local Linux x64 has been measured. Local versions: Bun 1.4.3, uv 0.13.1,
-standalone CPython 3.14.7, Verdaccio 6.2.0. CI uses the repository's shared Bun/uv
-pins, so its results must be assessed separately. The machine reports
-Linux 7.0.0-42 with glibc 2.43. Nothing here establishes older Linux compatibility.
+## Scenario observations and limits
 
-| Criterion                                           | A: compiled TypeScript, local Linux x64          | B: standalone Python directory, local Linux x64  |
-| --------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------ |
-| Golden stdout and written tree                      | Pass                                             | Pass                                             |
-| No Node/Bun on PATH                                 | Pass, PATH empty                                 | Pass, PATH empty                                 |
-| Local-file install with egress denied               | Pass in `sudo -n unshare --net`                  | Pass in the same network namespace               |
-| Default Verdaccio publication                       | Fail: HTTP 413 Payload Too Large                 | Fail: HTTP 413 Payload Too Large                 |
-| Private registry, explicit 512 MB request allowance | Pass, ignore-scripts install + installed runtime | Pass, ignore-scripts install + installed runtime |
-| Unpacked bytes / files                              | 90,812,917 / 4                                   | 207,917,967 / 4,966                              |
-| Archive bytes                                       | 41,897,811                                       | 73,984,429                                       |
-| Fresh process wall times, 3 samples (ms)            | 20.563, 22.017, 22.190                           | 141.109, 41.908, 42.230                          |
-| HOME cache directory unavailable                    | Pass; no other HOME files observed               | Pass; no other HOME files observed               |
-| Native quarantine / EDR                             | Unverified on Linux                              | Unverified on Linux                              |
+Private-registry setup starts a pinned cached Verdaccio using `bun x`, with no
+uplinks and an explicit 512 MB request limit. A random disposable account is used
+only for publication. HTTP status, JSON and token are validated. Errors retain
+sanitized HTTP/server evidence; credentials never enter retained command output.
+Bun and npm are separate measured install clients, each with fresh HOME, config
+and caches and `--ignore-scripts`. The wrapper has exact optional platform
+dependencies and no lifecycle scripts or authored JavaScript. Other platforms are
+empty stand-ins. Each installed payload's SHA-256 inventory and executable bits
+are compared with the build before direct execution. Installed platform packages
+are inventoried; incompatible platform selection is a failure. This measures configuration
+and registry traffic, not an OS firewall around the registry client.
 
-The first namespace attempt failed with `write failed /proc/self/uid_map: Operation
-not permitted`. The root network namespace worked. The negative controls returned
-IPv4 `ENETUNREACH` and IPv6 `EADDRNOTAVAIL`, after which both local archives were
-installed and executed. This local run did **not** use Harden Runner; the separate
-empty-allowlist CI job remains unverified.
+Offline collection uses **real package-manager installations**, not a custom
+Python extractor. Bun packs local wrapper and platform tarballs without scripts;
+the wrapper's optional dependencies refer to those local files. Both clients use
+fresh caches, local tarballs, `--offline` and `--ignore-scripts`. Unsupported flags,
+omitted optional packages and transport differences are observed failures. npm is
+an explicit consumer scenario, not this repository's development package manager.
 
-The default registry failure is material: registry request limits can prevent either
-runtime from being mirrored. The second configuration raises the stand-in's limit
-explicitly; success there does not prove deployment through a default or corporate
-registry. The wrapper has optional platform dependencies but no lifecycle scripts
-or npm launcher. Publication uses a disposable local account because Bun refuses
-anonymous publication even when server policy permits it. Client installs use
-`--ignore-scripts`, a new cache, explicit loopback registry and no Verdaccio uplinks.
-There is no firewall around that client; the test shows registry configuration and
-server fetch logs, not universal enforcement against a malicious package manager.
+A successful unrestricted IPv4 connection must precede explicit denial of the
+**same endpoint on the same host**. IPv6 is informational. Missing routes before
+isolation, unavailable tools, DROP timeouts and missing controls remain unverified.
+Native Linux uses network namespaces; macOS attempts `sandbox-exec`; Windows uses
+per-program outbound firewall rules for the probe, package managers and installed
+entry executables. These are **separate from Harden Runner**. Windows records
+firewall profiles and verifies rule removal in `finally`, including partial-create
+failures. The runner agent is outside the rule scope. Cleanup failure is unverified.
 
-No-node means PATH removal as requested, not physical uninstallation. Fresh-process
-times include fixture verification, writes and subprocess launch, with warm OS page
-caches; they are not disk-cold measurements. The blocked `.cache` path and HOME
-inventory constrain only observed HOME cache behavior, not every system directory.
-Host load was not controlled; three samples do not establish a performance
-distribution. Publication and install exited zero for both variants at the raised
-limit; each installed payload produced the expected stdout and on-disk tree.
+The dedicated Linux job starts Harden Runner block mode with an empty allowlist
+as its **first step**. Probe and installers run directly under it, with no unshare
+prefix. The configuration flag never counts as an observation. Starting first
+means there is no unrestricted same-host baseline: this row therefore remains
+**unverified**, even if the probe reports explicit denial and installation succeeds.
+An independently controlled follow-up experiment is needed to establish Harden
+Runner denial itself. Native namespace controls cannot establish it.
 
-| Target             | Private registry A/B | No Node A/B | Offline A/B | Quarantine A/B             |
-| ------------------ | -------------------- | ----------- | ----------- | -------------------------- |
-| Hosted Linux x64   | Unverified           | Unverified  | Unverified  | Third-party EDR unverified |
-| Hosted Linux arm64 | Unverified           | Unverified  | Unverified  | Third-party EDR unverified |
-| Hosted macOS arm64 | Unverified           | Unverified  | Unverified  | Unverified                 |
-| Hosted macOS x64   | Unverified           | Unverified  | Unverified  | Unverified                 |
-| Hosted Windows x64 | Unverified           | Unverified  | Unverified  | Unverified                 |
+First-step block mode may prevent checkout or artifact download; in that case no
+payload measurement is possible. If checkout succeeded, the runner's existing
+Python exports failed acquisition as JSON; if checkout itself failed, the setup
+log is the only available record. No
+application allowlist is broadened to make collection green. If acquisition works,
+all offline JSON is printed to the job log and step summary before a best-effort
+artifact upload; blocked upload does not erase the local/log/summary evidence.
+GitHub's own log/summary retention and summary size limits still apply. Built Bun
+is transferred as setup data; npm comes from the runner. No tooling fetch belongs
+to the measured interval. Native Linux payload upload uses an explicit status
+condition plus successful build outcome, so later measurement errors cannot hide
+usable archives from the independent job.
+
+No-Node control removes PATH directories containing Node/Bun, retaining Windows
+loader variables, PATHEXT and disposable AppData locations. Neither tool is
+physically uninstalled. Footprint records bytes, files, three fresh-process times
+and HOME cache writes with an unavailable cache directory. OS caches are not
+flushed; writes outside HOME and read-only payload operation remain unverified.
 
 ## Platform security collection
 
-Harden Runner v2.22.3 documents **audit only** on hosted macOS/Windows in its
+Harden Runner v2.22.3 supports only audit mode on hosted macOS/Windows; see its
 [compatibility matrix](https://github.com/step-security/harden-runner/blob/46b06cea07f9e64621fdf066ba77ac6915163d43/README.md#environment-compatibility-matrix).
-Audit mode cannot establish offline success. The collector attempts `sandbox-exec`
-network denial on macOS and an outbound firewall rule on disposable Windows runners.
-Permission/tool failures and inconclusive connection timeouts become `unverified`
-with the exact command output. The Windows rule is removed in `finally`.
+Audit mode does not prove denial.
 
-For macOS, the collector copies each payload, runs recursive
-`xattr -w com.apple.quarantine`, reads the attribute, then records
+macOS records recursive quarantine xattrs, `spctl --status`, exact
 `spctl --assess --type execute --verbose=4`, `codesign --display --verbose=4`,
-`codesign --verify --deep --strict --verbose=4`, and direct CLI execution. For
-Windows, it writes and reads `Zone.Identifier` (ZoneId=3), records
-`Get-AuthenticodeSignature`, locates `MpCmdRun.exe`, scans the copied payload with
-`-Scan -ScanType 3 -File`, then executes it. JSON retains complete commands and
-outputs, including nonzero security assessments separately from execution status.
+`codesign --verify --deep --strict --verbose=4` and direct CLI execution outputs.
+Disabled/unavailable Gatekeeper remains unverified. CLI launch alone does not
+prove Finder/Gatekeeper enforcement, notarization or organizational signing needs.
 
-Signing/notarization needs for **both variants remain unverified** until those
-outputs exist. Even then, CLI invocation is insufficient evidence for Finder launch,
-SmartScreen reputation, organizational allowlisting or third-party EDR. Quarantine
-collection uses `measured`, not a synthetic overall security pass. Unavailable
-Defender tooling is explicitly unverified, not a passing scan.
+Windows records `Get-MpComputerStatus`, exact `MpCmdRun -Scan -ScanType 3 -File`
+output, Authenticode status, `LongPathsEnabled`, and the actual longest installed
+path. Clean requires an enabled engine and explicit no-threat output. Threat
+requires matching threat output; service/engine errors and inconclusive return
+codes are unverified. `Zone.Identifier` is set/read on the entry executable only,
+not the whole Python tree. Direct CreateProcess does **not** exercise MotW shell
+or SmartScreen enforcement. That enforcement, reputation, signing requirements
+and third-party EDR remain unverified for both variants.
+
+The longest observed path does not prove deliberately deep/MAX_PATH behavior.
+Unsigned binaries, non-AVX2 Bun baseline targets, musl and older Linux systems need
+separate evidence; this spike neither expands its target matrix nor extrapolates.
+
+## Current comparison
+
+Initial local Linux x64 exploration used Bun 1.4.3, uv 0.13.1 and CPython 3.14.7,
+on Linux 7.0.0-42/glibc 2.43. These historical sizes/timings do not describe the
+revised collector or the newly pinned runtime; they need fresh hosted collection.
+
+| Initial local observation              | A: compiled TypeScript                    | B: standalone Python                      |
+| -------------------------------------- | ----------------------------------------- | ----------------------------------------- |
+| Unpacked bytes / files                 | 90,812,917 / 4                            | 207,917,967 / 4,966                       |
+| Archive bytes                          | 41,897,811                                | 73,984,429                                |
+| Three fresh process times (ms)         | 20.563, 22.017, 22.190                    | 141.109, 41.908, 42.230                   |
+| Default Verdaccio publication          | HTTP 413                                  | HTTP 413                                  |
+| Raised-limit Bun-only registry install | Initial functional observation            | Initial functional observation            |
+| Old extraction-only offline result     | Unverified for package-manager acceptance | Unverified for package-manager acceptance |
+
+The old network probes lacked positive controls, and the old offline worker only
+extracted tar files. Their prior offline “pass” cannot satisfy #562. The old registry
+run did not measure npm or verify transported payload digests. Its size-limit finding
+is useful, but it cannot substitute for revision 1's full registry scenario.
+
+| Hosted target | Private registry A/B | No Node A/B | Offline A/B | Quarantine A/B             |
+| ------------- | -------------------- | ----------- | ----------- | -------------------------- |
+| Linux x64     | Unverified           | Unverified  | Unverified  | Third-party EDR unverified |
+| Linux arm64   | Unverified           | Unverified  | Unverified  | Third-party EDR unverified |
+| macOS arm64   | Unverified           | Unverified  | Unverified  | Unverified                 |
+| macOS x64     | Unverified           | Unverified  | Unverified  | Unverified                 |
+| Windows x64   | Unverified           | Unverified  | Unverified  | Unverified                 |
 
 ## Raw evidence and dispatch handoff
 
-No green dispatch run exists yet. No live result link can honestly be provided.
-The local parent's workspace retains the full initial attempts and real command
-outputs in `562-initial-sol.log` under the session's supplied log directory. Local
-builds and JSON were collected under `/tmp/ai-skills-562-final2/`; earlier
-default-registry failure JSON was retained separately. Compiled payloads are removed
-after collection. Small raw JSON/log copies are retained under `562-local-evidence/`
-and `562-default-registry-limit/` in the task log directory for the parent. These
-are local evidence, not portable public links. The final local collection exited
-zero and retains archive hashes and source-file fingerprints with the raw commands.
+No green hosted run or portable hosted JSON exists yet. Each independent scenario
+is saved before the next begins, including collector errors. Evidence names the
+actual checked-out source SHA, expected PR head, event, run URL, commands, UTF-8
+stdout/stderr, exit code and timing. Build metadata retains source fingerprints.
+Inspect statuses and exact outputs; a green collection badge is not a scenario pass.
 
-The workflow uploads `spike-evidence-<runner>` containing `build.json` and scenario
-JSON; a separate Linux artifact carries empty-allowlist evidence. A green run means
-collection succeeded; inspect every scenario's `status`, not just the job badge.
-The empty allowlist may also prevent artifact-service egress: preserve the job logs
-and namespace evidence if upload fails, then revise the export path without adding
-an application egress exception. Runner capabilities and label availability have
-not been live-verified by this local session.
+The workflow keeps `workflow_dispatch` and adds narrow `pull_request` paths for the
+spike, workflow, tests and scoped attributes. It has no secrets, `contents: read`
+and `persist-credentials: false`, and checks out the actual PR head. Parent can
+push this revision and inspect PR-head collection **before merge**, without seeding
+a workflow stub on main. Runner labels, ARM availability and Harden Runner support
+still require a live run.
 
-GitHub requires a dispatchable workflow to exist on the default branch. Pushing
-this new workflow only to the research branch may therefore be insufficient. Safe
-parent-owned paths are a reviewed workflow-only bootstrap on the default branch,
-followed by dispatch with this research ref, or an isolated public research fork
-whose default branch is the exact experiment commit. Record the repository, ref,
-head and security environment of the run; fork evidence needs that qualification.
-Neither route requires accepting ADR 0008 before measuring. This agent performs
-neither route and has not dispatched anything.
-
-After the parent obtains results, the revision must:
-
-1. Link the green collection run and raw artifacts; populate every hosted row and
-   footprint metric with exact observations, retaining unsupported cells and errors.
-2. Describe actual macOS and Windows assessment output and any demonstrated signing
-   or notarization needs, keeping interactive/reputation/third-party EDR unverified.
-3. Apply the decision rule below; edit ADR 0008 and its README status together.
-4. Amend downstream specifications if the chosen runtime contradicts them, before
-   implementing M6/M7. The parent owns issue edits/comments and all remote actions.
+A PR-trigger run does **not** satisfy the explicit green `workflow_dispatch`
+acceptance criterion. A new dispatch-only workflow requires default-branch
+registration. Safe follow-through: inspect the PR evidence first, then let the
+parent reconcile a reviewed registration path with the existing merge/evidence
+hold and run dispatch at the exact reviewed ref once registered. Registration,
+dispatch and any remote edits belong to the parent; no bootstrap writes are part
+of this revision. The hold is not waived by adding PR coverage.
 
 ## Recommendation and decision rule
 
-**Defer the runtime decision.** The local evidence establishes that both designs
-can run without consumer Node/Python tooling and can install offline on this Linux
-machine. It does not establish cross-platform equality or superiority. Python's
-untrimmed directory costs more bytes/files here; trimming it was not measured.
-
-The issue's two branches overlap when the candidates tie. Apply ADR 0008's explicit
-escape hatch first: if B is equally deployable across the measured private-registry,
-no-Node and offline restrictions, revise to a single Python engine behind a thin
-TypeScript npm launcher. Otherwise accept A only if A is no worse on **every**
-restricted criterion, including demonstrated quarantine and footprint limitations.
-Missing evidence never satisfies either condition. If neither branch is supported,
-retain Proposed and specify the next experiment. Do not invent quantitative
-acceptability thresholds or infer notarization approval from an exit-zero CLI.
-
-Read-only inspection of #566, #567, #578 and #386 found no **disproven** downstream
-runtime assumption yet. #566 and #578 explicitly assume TypeScript installation;
-the Python escape hatch would require their scope/module/fixture expectations to
-change. #386 already defers runtime packaging to this decision; its registry limits
-and signing work need the eventual evidence. #567's build-plane extraction remains
-compatible with either outcome. No issue body was edited. The epic's M6 TypeScript
-assumption and #562's demand to change ADR status are provisional against this
-evidence gate, not permission to accept a runtime without live measurements.
+**Defer the runtime decision.** Missing hosted observations establish neither
+cross-platform equality nor superiority. Apply ADR 0008's explicit Python escape
+hatch first when B is equally deployable across the measured private-registry,
+no-Node and offline restrictions; otherwise accept A only if it is no worse on
+every restricted criterion. Unknown results never satisfy either branch. Parent
+will reconcile the measured decision rule and downstream #566/#567/#578/#386
+specifications before changing ADR status or implementing M6/M7.
 
 ## Acceptance accounting
 
-| #562 criterion                                     | State in this initial implementation                              |
-| -------------------------------------------------- | ----------------------------------------------------------------- |
-| Equivalent golden fixture and fail-closed tests    | Implemented locally; workflow runs both suites and parity         |
-| Dispatchable multi-OS build/run and JSON uploads   | Implemented; live run/link outstanding                            |
-| Private registry, ignore-scripts, no postinstall   | Default upload failure and raised-limit success measured locally  |
-| No-Node/offline per OS and variant                 | Local Linux measured; every hosted cell outstanding               |
-| Exact quarantine commands/output and signing needs | Collector implemented; macOS/Windows evidence outstanding         |
-| Comparison and recommendation                      | Local comparison; defer final runtime selection                   |
-| ADR status change and matching index               | Intentionally outstanding under owner evidence requirement        |
-| Spike isolated from npm publication                | Research directory outside the package's positive files allowlist |
-| No authored JavaScript in prototypes               | TypeScript/Python/shell only; fixture tar contains Markdown data  |
+- [x] Shared golden fixture and fail-closed source tests; required PR CI gates wired.
+- [x] Spike remains outside the published npm `files`; no authored JavaScript.
+- [ ] Inspect native hosted JSON, including both install clients, every OS and variant.
+- [ ] Resolve empty-allowlist collection/control limits without attributing namespace
+      denial to Harden Runner or silently adding application endpoints.
+- [ ] Link a green **workflow_dispatch** run and retained raw evidence.
+- [ ] Record demonstrated quarantine/signing needs and all unverified scopes.
+- [ ] Populate hosted comparison/footprint table and apply the evidence decision rule.
+- [ ] Update ADR 0008 and its index together after evidence inspection.
 
-Local verification: `uv run pytest` passed all 684 tests (85% aggregate coverage;
-12 spike tests). `bash scripts/validate.sh` passed. The spike's `bun test --coverage`
-passed eight tests (86.62% lines, 100% functions), and `bunx tsc --noEmit` passed.
-`bun pm pack --dry-run` in the existing gateway listed 29 files, none from research.
+These live acceptance items remain a merge hold. Local regressions validate the
+collector's boundaries; they do not fabricate hosted evidence or complete #562.

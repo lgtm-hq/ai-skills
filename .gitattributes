@@ -1,2 +1,8 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# The spike verifies fixture bytes, including JSON, on Windows checkouts.
+research/install-plane-spike/fixtures/* -text
+research/install-plane-spike/**/*.py text eol=lf
+research/install-plane-spike/**/*.sh text eol=lf
+research/install-plane-spike/settings.json text eol=lf

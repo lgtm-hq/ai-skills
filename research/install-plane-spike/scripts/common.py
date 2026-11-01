@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
@@ -44,6 +45,7 @@ def command(
     cwd: Path = REPO,
     env: dict[str, str] | None = None,
     timeout: int = 120,
+    redactions: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Execute a command without hiding failures or trimming output.
 
@@ -53,6 +55,7 @@ def command(
         cwd: Working directory.
         env: Child environment; None retains the setup environment.
         timeout: Maximum wall-clock seconds.
+        redactions: Ephemeral secrets to remove before logging or retaining output.
 
     Returns:
         Command, exit code (None if not launched/completed), output and duration.
@@ -66,6 +69,7 @@ def command(
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             errors="replace",
             timeout=timeout,
             check=False,
@@ -85,6 +89,10 @@ def command(
             exit=None, stdout="", stderr=str(error), error=type(error).__name__
         )
     result["seconds"] = time.perf_counter() - start
+    for key in ("stdout", "stderr"):
+        for secret in redactions:
+            if secret:
+                result[key] = result[key].replace(secret, "[redacted]")
     records.append(result)
     print(json.dumps(result), flush=True)
     return result
@@ -133,15 +141,35 @@ def isolated_env(home: Path) -> dict[str, str]:
         home: Disposable HOME containing writable temporary directories.
 
     Returns:
-        Minimal environment, retaining Windows system loader information.
+        Credential-free environment retaining Windows loader necessities and a
+        control PATH with directories containing Node/Bun removed.
     """
     env = {
-        key: os.environ[key] for key in ("SYSTEMROOT", "WINDIR") if key in os.environ
+        key: os.environ[key]
+        for key in ("SYSTEMROOT", "WINDIR", "SYSTEMDRIVE", "PATHEXT")
+        if key in os.environ
     }
     env.update(
         HOME=str(home),
         USERPROFILE=str(home),
-        PATH="",
+        PATH=os.pathsep.join(
+            directory
+            for directory in os.environ.get("PATH", "").split(os.pathsep)
+            if directory
+            and not any(
+                (Path(directory.strip('"')) / name).is_file()
+                for name in (
+                    "node",
+                    "node.exe",
+                    "node.cmd",
+                    "bun",
+                    "bun.exe",
+                    "bun.cmd",
+                )
+            )
+        ),
+        LOCALAPPDATA=str(home / "AppData/Local"),
+        APPDATA=str(home / "AppData/Roaming"),
         TMP=str(home),
         TEMP=str(home),
         TMPDIR=str(home),
@@ -158,6 +186,40 @@ def write_json(*, path: Path, value: object) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def payload_inventory(root: Path) -> dict[str, dict[str, object]]:
+    """Hash actual package contents and executable bits for transport comparison.
+
+    Args:
+        root: Built or installed payload tree.
+
+    Returns:
+        Relative filenames mapped to SHA-256 and portable executable-bit state.
+    """
+    return {
+        path.relative_to(root).as_posix(): {
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "executable": (
+                bool(path.stat().st_mode & 0o111) if os.name != "nt" else None
+            ),
+        }
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
+def export_evidence(path: Path) -> None:
+    """Publish raw JSON through runner log/summary without artifact egress.
+
+    Args:
+        path: Completed evidence JSON.
+    """
+    raw = path.read_text(encoding="utf-8")
+    print(f"EVIDENCE {path.name}\n{raw}", flush=True)
+    if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
+        with Path(summary).open("a", encoding="utf-8") as output:
+            output.write(f"\n### {path.name}\n\n```json\n{raw}\n```\n")
 
 
 def run_payload(
@@ -196,7 +258,7 @@ def run_payload(
     expected = json.loads((root / "fixtures/expected-output.json").read_text())
     destination = home / ".spike-target"
     actual = {
-        p.relative_to(destination).as_posix(): p.read_text(encoding="utf-8")
+        p.relative_to(destination).as_posix(): p.read_bytes().decode("utf-8")
         for p in destination.rglob("*")
         if p.is_file()
     }

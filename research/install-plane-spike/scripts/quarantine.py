@@ -12,6 +12,35 @@ from typing import Any
 from common import command, run_payload, runtime
 
 
+def defender_status(*, scan: dict[str, Any], engine: dict[str, Any]) -> str:
+    """Classify scan evidence conservatively, separating threats from engine errors.
+
+    Args:
+        scan: MpCmdRun command/output record.
+        engine: Get-MpComputerStatus JSON command/output record.
+
+    Returns:
+        clean, threat or unverified. Exit 2 alone can also mean remediation failure.
+    """
+    import json
+
+    try:
+        health = json.loads(engine["stdout"])
+        enabled = engine["exit"] == 0 and all(
+            health.get(key) is True for key in ("AMServiceEnabled", "AntivirusEnabled")
+        )
+    except (KeyError, TypeError, ValueError):
+        return "unverified"
+    text = (scan.get("stdout", "") + scan.get("stderr", "")).lower()
+    if not enabled:
+        return "unverified"
+    if scan["exit"] == 0 and "found no threats" in text:
+        return "clean"
+    if scan["exit"] == 2 and ("threat detected" in text or "found threats" in text):
+        return "threat"
+    return "unverified"
+
+
 def measure_quarantine(*, root: Path, variant: str, home: Path) -> dict[str, Any]:
     """Mark a disposable payload and measure available platform controls.
 
@@ -35,6 +64,11 @@ def measure_quarantine(*, root: Path, variant: str, home: Path) -> dict[str, Any
         if any(path is None for path in required):
             result["reason"] = "xattr, spctl or codesign absent on this runner"
             return result
+        gatekeeper = command(argv=[str(required[1]), "--status"], records=records)
+        result["gatekeeper_enabled"] = (
+            gatekeeper["exit"] == 0
+            and "assessments enabled" in gatekeeper["stdout"].lower()
+        )
         mark = command(
             argv=[
                 str(required[0]),
@@ -79,7 +113,7 @@ def measure_quarantine(*, root: Path, variant: str, home: Path) -> dict[str, Any
             result["reason"] = "quarantine attribute could not be set/read"
             return result
         result.update(
-            status="measured",
+            status="measured" if result["gatekeeper_enabled"] else "unverified",
             execution=run_payload(
                 root=root, variant=variant, home=home, records=records
             ),
@@ -96,6 +130,36 @@ def measure_quarantine(*, root: Path, variant: str, home: Path) -> dict[str, Any
             )
             return result
         literal = "'" + binary.replace("'", "''") + "'"
+        engine = command(
+            argv=[
+                powershell,
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Get-MpComputerStatus | ConvertTo-Json -Depth 4",
+            ],
+            records=records,
+        )
+        command(
+            argv=[
+                powershell,
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                (
+                    "Get-ItemProperty -LiteralPath "
+                    "'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem' "
+                    "-Name LongPathsEnabled | Select-Object LongPathsEnabled | "
+                    "ConvertTo-Json"
+                ),
+            ],
+            records=records,
+        )
+        paths = [str(path) for path in root.rglob("*") if path.is_file()]
+        result["longest_installed_path"] = max(paths, key=len, default="")
+        result["longest_installed_path_characters"] = len(
+            result["longest_installed_path"]
+        )
         mark = command(
             argv=[
                 powershell,
@@ -137,7 +201,7 @@ def measure_quarantine(*, root: Path, variant: str, home: Path) -> dict[str, Any
                 records=records,
                 timeout=300,
             )
-            result["defender"] = "pass" if scan["exit"] == 0 else "fail"
+            result["defender"] = defender_status(scan=scan, engine=engine)
         else:
             result["defender"] = (
                 f"unverified: no MpCmdRun.exe under {defender_dir} or {fallback}"
@@ -154,6 +218,11 @@ def measure_quarantine(*, root: Path, variant: str, home: Path) -> dict[str, Any
         result["signing"] = (
             "Authenticode status recorded; SmartScreen interactive reputation "
             "and corporate signing requirements unverified."
+        )
+        result["motw_scope"] = (
+            "Zone.Identifier set/read on entry executable only, not the runtime tree. "
+            "Direct CreateProcess execution does not exercise shell/SmartScreen MotW "
+            "enforcement; that enforcement remains unverified. Defender scans the tree."
         )
     else:
         result["reason"] = (
