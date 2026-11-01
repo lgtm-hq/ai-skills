@@ -289,7 +289,11 @@ A single sticky PR comment contains skill, coverage, and collision deltas.
 The `publish` job checks out the exact base SHA. Only this job mints the release
 App token. Both jobs use Python 3.15, matching npm publication. The publisher
 uses stdlib-only helpers with `uv run --no-project`, without dependency installs
-or caches shared with regeneration. No PR-head code runs with the App token.
+or caches shared with regeneration. Executed repository helpers come from the
+trusted base checkout, but the workflow definition is selected by the PR and is
+not base-trusted. This boundary assumes workflow-editing writers and the allowed
+bot identities are trusted; it does not protect against a writer changing the
+workflow YAML.
 
 The handoff is a single `publication.json` data envelope containing base64
 additions, path-only deletions, the head SHA, summary, and collision status.

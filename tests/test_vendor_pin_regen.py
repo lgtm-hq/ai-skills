@@ -209,6 +209,22 @@ def test_renovate_captures_every_explicit_vendor_branch(
         assert_that(vendor.branch).is_equal_to("main")
 
 
+def test_renovate_vendor_pattern_uses_re2_subset(
+    renovate_vendor_manager: dict[str, Any],
+) -> None:
+    """Keep the Python matching smoke tests free of RE2-unsupported constructs."""
+    assert_that(renovate_vendor_manager["matchStrings"][0]).does_not_contain(
+        "(?=",
+        "(?!",
+        "(?<=",
+        "(?<!",
+        "(?>",
+        r"\1",
+        r"\k",
+        r"\g",
+    )
+
+
 @pytest.mark.parametrize(
     "branch",
     [
@@ -271,12 +287,23 @@ def test_renovate_captures_registry_writer_branch(
 @pytest.mark.parametrize(
     "branch_scalar", ["release/next", "'release/next'", '"release/next"']
 )
+@pytest.mark.parametrize(
+    "comment",
+    ["", " # upstream default", "\t # upstream 'default' (\"main\")"],
+    ids=["no-comment", "space-comment", "tab-comment-with-quotes"],
+)
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
 def test_renovate_captures_yaml_branch_quote_styles(
     renovate_vendor_manager: dict[str, Any],
     branch_scalar: str,
+    comment: str,
+    line_ending: str,
 ) -> None:
-    """Accept plain, single-quoted, and double-quoted YAML branch scalars."""
-    text = f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n    branch: {branch_scalar}\n'
+    """Capture complete YAML scalars with optional comments and line endings."""
+    text = (
+        f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
+        f"    branch: {branch_scalar}{comment}{line_ending}"
+    )
     pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
     matches = list(re.finditer(pattern, text))
 
@@ -469,6 +496,9 @@ def test_workflow_isolates_credentials_from_pr_head_code() -> None:
         for step in actions:
             assert_that(step["uses"]).matches(r"@[0-9a-f]{40}$")
         assert_that(actions[0]["with"]["egress-policy"]).is_equal_to("block")
+        assert_that(actions[0]["with"]["allowed-endpoints"].split()).contains(
+            "raw.githubusercontent.com:443",
+        )
         checkouts = [
             step for step in actions if step["uses"].startswith("actions/checkout@")
         ]
@@ -864,12 +894,38 @@ def test_collision_report_posts_without_commit_then_fails(
 
 
 @pytest.mark.parametrize("branch", ["it's", 'embedded"quote', "both'\"quotes"])
+@pytest.mark.parametrize("comment", ["", " # upstream default"])
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
 def test_renovate_never_truncates_unsupported_branch_quotes(
     renovate_vendor_manager: dict[str, Any],
     branch: str,
+    comment: str,
+    line_ending: str,
 ) -> None:
     """Quoted branch names must never silently become a shorter upstream ref."""
     pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
     for scalar in [branch, f"'{branch}'", json.dumps(branch)]:
-        text = f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n    branch: {scalar}\n'
+        text = (
+            f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
+            f"    branch: {scalar}{comment}{line_ending}"
+        )
         assert_that(list(re.finditer(pattern, text))).is_empty()
+
+
+@pytest.mark.parametrize(
+    "branch_scalar",
+    ["'main''suffix'", '"main"suffix"', "main'bad", '"main"#no-separation'],
+)
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
+def test_renovate_rejects_malformed_scalar_boundaries(
+    renovate_vendor_manager: dict[str, Any],
+    branch_scalar: str,
+    line_ending: str,
+) -> None:
+    """Embedded quotes and unseparated comments cannot truncate the captured ref."""
+    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
+    text = (
+        f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
+        f"    branch: {branch_scalar}{line_ending}"
+    )
+    assert_that(list(re.finditer(pattern, text))).is_empty()

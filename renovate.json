@@ -20,7 +20,7 @@
         "/^vendors\\.yaml$/"
       ],
       "matchStrings": [
-        "repo:\\s*(?<depName>[^\\s]+)\\s+sha:\\s*[\"']?(?<currentDigest>[0-9a-f]{40})[\"']?\\s+branch:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?[ \t]*(?:\\r?\\n|$)"
+        "repo:\\s*(?<depName>[^\\s]+)\\s+sha:\\s*[\"']?(?<currentDigest>[0-9a-f]{40})[\"']?\\s+branch:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?(?:[ \t]+#[^\\r\\n]*)?[ \t]*(?:\\r?\\n|$)"
       ],
       "datasourceTemplate": "git-refs",
       "packageNameTemplate": "https://github.com/{{{depName}}}"
