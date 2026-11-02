@@ -174,3 +174,33 @@ def test_shim_cli_explicit_root(
     assert_that((cli.returncode, cli.stdout, cli.stderr)).is_equal_to(
         (shim.returncode, shim.stdout, shim.stderr),
     )
+
+
+@pytest.mark.parametrize(("script", "command", "flags", "stale_path"), COMMANDS)
+def test_executable_shim_parity(
+    engine_repo: Path,
+    script: str,
+    command: list[str],
+    flags: list[str],
+    stale_path: str | None,
+) -> None:
+    """Direct executable scripts preserve the original shebang-based invocation."""
+    del stale_path
+    env = dict(os.environ)
+    env["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{env['PATH']}"
+    shim = subprocess.run(  # nosec B603 - fixed local compatibility script argv
+        args=[str(REPO / "scripts" / script), *flags],
+        cwd=engine_repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    cli = run_engine(
+        args=["-m", "ai_skills_engine.cli", *command, *flags], cwd=engine_repo
+    )
+    assert_that(shim.returncode).described_as(shim.stderr).is_zero()
+    assert_that((cli.returncode, cli.stdout, cli.stderr)).is_equal_to(
+        (shim.returncode, shim.stdout, shim.stderr),
+    )
