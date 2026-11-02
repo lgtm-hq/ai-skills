@@ -6,6 +6,7 @@ from __future__ import annotations
 import ast
 import fnmatch
 import os
+import shlex
 from pathlib import Path
 
 MANIFEST = Path("research/install-plane-spike/harness-inputs.txt")
@@ -126,12 +127,15 @@ def local_inputs(repo: Path, entrypoints: set[Path]) -> set[Path]:
     Returns:
         Resolved repository files in the transitive local input closure.
     """
+    repo = repo.resolve()
     files: set[Path] = set()
     modules: dict[str, set[Path]] = {}
     for directory, dirs, names in os.walk(repo):
         dirs[:] = [name for name in dirs if name not in IGNORED]
         for name in names:
-            path = Path(directory) / name
+            path = (Path(directory) / name).resolve()
+            if not path.is_relative_to(repo):
+                continue
             files.add(path)
             if path.suffix == ".py":
                 parts = list(path.relative_to(repo).with_suffix("").parts)
@@ -140,6 +144,7 @@ def local_inputs(repo: Path, entrypoints: set[Path]) -> set[Path]:
                 for offset in range(len(parts)):
                     modules.setdefault(".".join(parts[offset:]), set()).add(path)
 
+    trees: dict[Path, list[ast.AST]] = {}
     contexts: dict[Path, dict[str, Value]] = {}
     dependencies: dict[Path, set[Path]] = {}
 
@@ -170,7 +175,10 @@ def local_inputs(repo: Path, entrypoints: set[Path]) -> set[Path]:
                     roots.insert(0, Path(directory))
         for root in roots:
             base = root.joinpath(*name.split("."))
-            candidates = {base.with_suffix(".py"), base / "__init__.py"} & files
+            candidates = {
+                base.with_suffix(".py").resolve(),
+                (base / "__init__.py").resolve(),
+            } & files
             if candidates:
                 return candidates
         return modules.get(name, set())
@@ -184,12 +192,11 @@ def local_inputs(repo: Path, entrypoints: set[Path]) -> set[Path]:
         Returns:
             Known literal bindings, with cycles stopped at the current context.
         """
-        if path in contexts:
-            return contexts[path]
-        env: dict[str, Value] = {"__file__": path}
-        contexts[path] = env
+        env = contexts.setdefault(path, {"__file__": path})
         found = dependencies.setdefault(path, set())
-        nodes = list(ast.walk(ast.parse(path.read_text(encoding="utf-8"))))
+        if path not in trees:
+            trees[path] = list(ast.walk(ast.parse(path.read_text(encoding="utf-8"))))
+        nodes = trees[path]
         path_calls = [
             node
             for node in nodes
@@ -197,6 +204,13 @@ def local_inputs(repo: Path, entrypoints: set[Path]) -> set[Path]:
             and isinstance(node.func, ast.Attribute)
             and node.func.attr in {"syspath_prepend", "insert", "append"}
         ]
+        import_module_names = {"import_module"} | {
+            alias.asname or alias.name
+            for node in nodes
+            if isinstance(node, ast.ImportFrom) and node.module == "importlib"
+            for alias in node.names
+            if alias.name == "import_module"
+        }
         for node in nodes:
             names: list[str] = []
             if isinstance(node, ast.Import):
@@ -205,13 +219,24 @@ def local_inputs(repo: Path, entrypoints: set[Path]) -> set[Path]:
                 module = node.module or ""
                 names = [module, *[f"{module}.{alias.name}" for alias in node.names]]
                 for imported in sorted(imports(module, path, env, path_calls)):
-                    imported_env = context(imported)
+                    found.add(imported)
+                    imported_env = contexts.get(imported, {})
                     for alias in node.names:
-                        env[alias.asname or alias.name] = imported_env.get(alias.name)
+                        value = imported_env.get(alias.name)
+                        if value is not None:
+                            env[alias.asname or alias.name] = value
             elif (
                 isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "import_module"
+                and (
+                    (
+                        isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "import_module"
+                    )
+                    or (
+                        isinstance(node.func, ast.Name)
+                        and node.func.id in import_module_names
+                    )
+                )
                 and node.args
             ):
                 name = _value(node.args[0], env, repo)
@@ -234,8 +259,8 @@ def local_inputs(repo: Path, entrypoints: set[Path]) -> set[Path]:
                     if isinstance(target, ast.Name) and value is not None:
                         env[target.id] = value
             value = _value(node, env, repo)
-            if isinstance(value, Path) and value in files:
-                found.add(value)
+            if isinstance(value, Path) and value.resolve() in files:
+                found.add(value.resolve())
             if isinstance(node, ast.Call):
                 function = node.func
                 name = (
@@ -250,7 +275,7 @@ def local_inputs(repo: Path, entrypoints: set[Path]) -> set[Path]:
                             found.update(
                                 candidate
                                 for base in (repo, path.parent)
-                                if (candidate := base / literal) in files
+                                if (candidate := (base / literal).resolve()) in files
                             )
             if (
                 isinstance(node, ast.Call)
@@ -264,19 +289,38 @@ def local_inputs(repo: Path, entrypoints: set[Path]) -> set[Path]:
                 for source in sources:
                     directory = _value(source, env, repo)
                     if isinstance(directory, Path):
+                        directory = directory.resolve()
                         found.update(
                             file for file in files if file.is_relative_to(directory)
                         )
         return env
 
-    resolved: set[Path] = set()
-    pending = set(entrypoints)
-    while pending:
-        path = pending.pop()
-        if path in resolved:
-            continue
-        resolved.add(path)
-        if path.suffix == ".py":
-            context(path)
-            pending.update(dependencies[path] - resolved)
-    return resolved
+    resolved = {path.resolve() for path in entrypoints}
+    # Revisit both bindings and dependencies: imported constants, forward aliases
+    # and cycles may become known only after another module has been inspected.
+    # A nonconvergent self-referential expression fails closed rather than looping.
+    iterations = 0
+    while iterations <= len(files) + sum(len(nodes) for nodes in trees.values()):
+        iterations += 1
+        before = {path: dict(env) for path, env in contexts.items()}
+        previous = set(resolved)
+        for path in sorted(previous):
+            if path.suffix == ".py":
+                context(path)
+                resolved.update(dependencies[path])
+            elif path.suffix == ".sh":
+                # Tokenize only; never expand variables or run shell code. Literal
+                # source/dot/script/data arguments are conservative input edges.
+                lexer = shlex.shlex(path.read_text(encoding="utf-8"), posix=True)
+                lexer.whitespace_split = True
+                for token in lexer:
+                    if any(char in token for char in "$`\n"):
+                        continue
+                    literal = token.rstrip(";)")
+                    for base in (repo, path.parent):
+                        candidate = (base / literal).resolve()
+                        if candidate in files:
+                            resolved.add(candidate)
+        if resolved == previous and contexts == before:
+            return resolved
+    raise ValueError("local input bindings did not converge")

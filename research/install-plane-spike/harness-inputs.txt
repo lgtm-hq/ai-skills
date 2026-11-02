@@ -2,10 +2,13 @@
 research/install-plane-spike/**
 tests/test_install_plane_parity.py
 tests/test_install_plane_inputs.py
+tests/test_install_plane_gates.py
 tests/conftest.py
 scripts/ci/install_plane_*.py
 scripts/tool-versions.sh
 .github/workflows/install-plane-spike.yml
+.github/workflows/all-checks-gate.yml
+.github/workflows/install-plane-release-gate.yml
 .gitattributes
 pyproject.toml
 uv.lock

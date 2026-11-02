@@ -1,0 +1,42 @@
+---
+name: Install plane release gate
+
+'on':
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+  merge_group:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: >-
+    install-plane-release-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Keep this outside all-checks-gate.yml: that required gate excludes its own
+# workflow, and a failed needs dependency can turn a required job into a skip.
+jobs:
+  release-spike:
+    name: Require current-head release harness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Harden runner
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - name: Checkout gate
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Enforce mandatory release and queue evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/install_plane_release_gate.py
