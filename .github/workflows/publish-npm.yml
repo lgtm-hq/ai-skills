@@ -49,7 +49,28 @@ jobs:
         # yamllint disable-line rule:line-length
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >-
+            github.com:443
+            api.github.com:443
+            actions.githubusercontent.com:443
+            token.actions.githubusercontent.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            pipelines.actions.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            registry.npmjs.org:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            releases.astral.sh:443
+            nodejs.org:443
+            fulcio.sigstore.dev:443
+            rekor.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
+            oauth2.sigstore.dev:443
 
       - name: Checkout release tag
         # yamllint disable-line rule:line-length
@@ -65,6 +86,15 @@ jobs:
         with:
           node-version: '26'
           registry-url: https://registry.npmjs.org
+
+      - name: Read canonical Bun version
+        id: bun-version
+        run: bash scripts/ci/npm/read_bun_version.sh
+      - name: Set up Bun
+        # yamllint disable-line rule:line-length
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ steps.bun-version.outputs.bun-version }}
 
       - name: Set up Python
         # yamllint disable-line rule:line-length
@@ -82,6 +112,9 @@ jobs:
       - name: Bake vendor plugins
         run: bash scripts/ci/bake_vendor_plugins_gate.sh
 
+      - name: Build and verify gateway package
+        run: bash scripts/ci/npm/check_ai_skills_package.sh
+
       - name: Synchronize package version and catalog
         run: >-
           uv run python scripts/ci/npm/sync_ai_skills_package.py
@@ -91,6 +124,14 @@ jobs:
         run: >-
           uv run python scripts/ci/npm/sync_ai_skills_package.py
           --check --version "$RELEASE_TAG"
+
+      - name: Build release launcher
+        working-directory: npm/ai-skills
+        run: bun run build
+
+      - name: Verify release tarball
+        working-directory: npm/ai-skills
+        run: bun scripts/check-pack.ts
 
       - name: Publish package
         run: scripts/ci/npm/publish_ai_skills_package.sh

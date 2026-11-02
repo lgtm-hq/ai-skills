@@ -44,8 +44,8 @@ jobs:
     permissions:
       contents: read
       packages: read
-    # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-quality-lint.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+    # The upstream workflow has no prerequisite hook for nested TS projects.
+    uses: ./.github/workflows/quality.yml
     with:
       egress-policy: block
       job-name: '🛠️ Lintro Code Quality'
@@ -200,3 +200,50 @@ jobs:
         azure.archive.ubuntu.com:80
         security.ubuntu.com:80
         security.ubuntu.com:443
+
+  gateway:
+    name: Gateway TypeScript and parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          allowed-endpoints: >-
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            raw.githubusercontent.com:443
+            pipelines.actions.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            registry.npmjs.org:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            releases.astral.sh:443
+      - name: Checkout repository
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read canonical Bun version
+        id: bun-version
+        run: bash scripts/ci/npm/read_bun_version.sh
+      - name: Set up Bun
+        # yamllint disable-line rule:line-length
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ steps.bun-version.outputs.bun-version }}
+      - name: Set up uv
+        # yamllint disable-line rule:line-length
+        uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+      - name: Install Python test prerequisites
+        run: uv sync --frozen
+      - name: Check gateway package
+        run: bash scripts/ci/npm/check_ai_skills_package.sh

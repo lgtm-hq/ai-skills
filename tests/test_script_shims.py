@@ -333,3 +333,100 @@ def test_stdlib_manifest_checkout(engine_repo: Path) -> None:
         timeout=30,
     )
     assert_that(result.returncode).described_as(result.stderr).is_zero()
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "clean",
+        "source-later",
+        "cached-checkout",
+        "cached-foreign-package",
+        "cached-foreign-submodule",
+        "foreign-package-path",
+    ],
+)
+def test_bootstrap_checkout_identity(engine_repo: Path, mode: str) -> None:
+    """Real bootstrap dispatch uses checkout code or rejects cached conflicts."""
+    foreign = engine_repo / "foreign"
+    package = foreign / "ai_skills_engine"
+    (package / "generate").mkdir(parents=True)
+    for path in (package, package / "generate"):
+        (path / "__init__.py").touch()
+    (package / "generate" / "skills_manifest.py").write_text(
+        'def main():\n    print("FOREIGN_ENGINE_SENTINEL")\n    return 73\n',
+        encoding="utf-8",
+    )
+    program = """
+import importlib
+import sys
+from pathlib import Path
+
+repo, foreign, mode = sys.argv[1:]
+source = str(Path(repo) / "src")
+sys.path.insert(0, str(Path(repo) / "scripts/ci/npm"))
+from _engine_bootstrap import run
+
+target = "ai_skills_engine.generate.skills_manifest"
+if mode == "source-later":
+    sys.path.extend([foreign, source])
+elif mode == "cached-foreign-package":
+    sys.path.insert(0, foreign)
+    importlib.import_module("ai_skills_engine")
+elif mode == "cached-foreign-submodule":
+    sys.path.insert(0, foreign)
+    foreign_module = importlib.import_module(target)
+    for name in list(sys.modules):
+        if name == "ai_skills_engine" or name.startswith("ai_skills_engine."):
+            del sys.modules[name]
+    sys.path.insert(0, source)
+    importlib.import_module("ai_skills_engine.generate")
+    sys.modules[target] = foreign_module
+elif mode in {"cached-checkout", "foreign-package-path"}:
+    sys.path.insert(0, source)
+    importlib.import_module(target)
+    if mode == "foreign-package-path":
+        sys.modules["ai_skills_engine"].__path__ = [
+            str(Path(foreign) / "ai_skills_engine")
+        ]
+    sys.path.insert(0, foreign)
+
+cached = {
+    name: value for name, value in sys.modules.items()
+    if name == "ai_skills_engine" or name.startswith("ai_skills_engine.")
+}
+sys.argv = ["generate_skills_manifest.py", "--check", "manifest.json"]
+try:
+    status = run(target)
+except RuntimeError as error:
+    print(str(error), file=sys.stderr)
+    status = 78
+if any(sys.modules.get(name) is not value for name, value in cached.items()):
+    raise RuntimeError("Cached module identity changed")
+print("CACHE_IDENTITIES_PRESERVED")
+if status == 0:
+    print(sys.modules[target].__file__)
+raise SystemExit(status)
+"""
+    result = subprocess.run(  # nosec B603 - offline local import-state regression
+        args=[sys.executable, "-S", "-c", program, str(REPO), str(foreign), mode],
+        cwd=engine_repo,
+        env=checkout_env(Path(sys.executable)),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    conflict = mode.startswith("cached-foreign") or mode == "foreign-package-path"
+    assert_that(result.returncode).described_as(result.stderr).is_equal_to(
+        78 if conflict else 0,
+    )
+    assert_that(result.stdout).contains("CACHE_IDENTITIES_PRESERVED").does_not_contain(
+        "FOREIGN_ENGINE_SENTINEL",
+    )
+    if conflict:
+        assert_that(result.stderr).contains("Cached engine module", str(REPO / "src"))
+    else:
+        assert_that(result.stdout).contains(
+            str(REPO / "src/ai_skills_engine/generate/skills_manifest.py"),
+        )
