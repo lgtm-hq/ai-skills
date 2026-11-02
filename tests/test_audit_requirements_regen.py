@@ -1,11 +1,13 @@
 """Exercise trusted offline audit regeneration without GitHub or network access."""
 
+import ast
 import json
 import os
 import re
 import shutil
 import subprocess  # nosec B404 - fixed shell entry point with offline command shims
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -140,7 +142,6 @@ def test_regeneration_workflow_uses_trusted_code_and_signed_append() -> None:
         "github.repository == 'lgtm-hq/ai-skills'",
         "github.event.pull_request.user.login == 'renovate[bot]'",
         "github.event.pull_request.head.repo.full_name == github.repository",
-        "github.triggering_actor",
     )
     steps = job["steps"]
     checkout = next(
@@ -159,3 +160,133 @@ def test_regeneration_workflow_uses_trusted_code_and_signed_append() -> None:
         "${{ github.event.pull_request.head.sha }}"
     )
     assert_that(signer["if"]).contains("steps.regenerate.outputs.changed == 'true'")
+    token = next(step for step in steps if step.get("id") == "app-token")
+    assert_that(token["if"]).is_equal_to("steps.regenerate.outputs.changed == 'true'")
+    assert_that(token["with"]["permission-contents"]).is_equal_to("write")
+    assert_that(steps.index(token)).is_greater_than(
+        steps.index(next(step for step in steps if step.get("id") == "regenerate"))
+    )
+    assert_that(steps.index(token)).is_less_than(steps.index(signer))
+
+
+@pytest.mark.parametrize(
+    ("repository", "head_repository", "author", "branch", "actor", "allowed"),
+    [
+        (
+            "lgtm-hq/ai-skills",
+            "lgtm-hq/ai-skills",
+            "renovate[bot]",
+            "renovate/pin",
+            "renovate[bot]",
+            True,
+        ),
+        (
+            "lgtm-hq/ai-skills",
+            "lgtm-hq/ai-skills",
+            "renovate[bot]",
+            "renovate/pin",
+            "maintainer",
+            True,
+        ),
+        (
+            "lgtm-hq/ai-skills",
+            "lgtm-hq/ai-skills",
+            "renovate[bot]",
+            "renovate/pin",
+            "lgtm-release-bot[bot]",
+            True,
+        ),
+        (
+            "lgtm-hq/ai-skills",
+            "fork/ai-skills",
+            "renovate[bot]",
+            "renovate/pin",
+            "maintainer",
+            False,
+        ),
+        (
+            "lgtm-hq/ai-skills",
+            "lgtm-hq/ai-skills",
+            "someone",
+            "renovate/pin",
+            "renovate[bot]",
+            False,
+        ),
+        (
+            "lgtm-hq/ai-skills",
+            "lgtm-hq/ai-skills",
+            "renovate[bot]",
+            "fix/pin",
+            "maintainer",
+            False,
+        ),
+        (
+            "fork/ai-skills",
+            "fork/ai-skills",
+            "renovate[bot]",
+            "renovate/pin",
+            "renovate[bot]",
+            False,
+        ),
+    ],
+    ids=[
+        "bot",
+        "maintainer-sync-or-rerun",
+        "app",
+        "fork",
+        "arbitrary-author",
+        "wrong-branch",
+        "wrong-repo",
+    ],
+)
+def test_regeneration_authorization_policy(
+    repository: str,
+    head_repository: str,
+    author: str,
+    branch: str,
+    actor: str,
+    allowed: bool,
+) -> None:
+    """Evaluate the actual job policy with maintainer recovery and hostile controls."""
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/audit-requirements-regen.yml").read_text(),
+    )
+    expression = workflow["jobs"]["regenerate"]["if"]
+    values = {
+        "github.repository": repository,
+        "github.head_ref": branch,
+        "github.event.pull_request.head.repo.full_name": head_repository,
+        "github.event.pull_request.user.login": author,
+        "github.triggering_actor": actor,
+    }
+    for key in sorted(values, key=len, reverse=True):
+        expression = expression.replace(key, repr(values[key]))
+    expression = expression.replace("&&", " and ")
+
+    # This closed evaluator only accepts constants, equality, and the two Actions
+    # functions used by this workflow; no Python eval or repository code runs.
+    def evaluate(node: ast.AST) -> Any:
+        """Interpret the deliberately small authorization-expression subset."""
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.And):
+            return all(evaluate(value) for value in node.values)
+        if (
+            isinstance(node, ast.Compare)
+            and len(node.ops) == 1
+            and isinstance(node.ops[0], ast.Eq)
+        ):
+            return evaluate(node.left) == evaluate(node.comparators[0])
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            args = [evaluate(arg) for arg in node.args]
+            if node.func.id == "startsWith":
+                return str(args[0]).startswith(str(args[1]))
+            if node.func.id == "fromJSON":
+                return json.loads(str(args[0]))
+            if node.func.id == "contains":
+                return args[1] in args[0]
+        raise ValueError(f"unsupported policy expression: {ast.dump(node)}")
+
+    assert_that(evaluate(ast.parse(expression.strip(), mode="eval").body)).is_equal_to(
+        allowed
+    )

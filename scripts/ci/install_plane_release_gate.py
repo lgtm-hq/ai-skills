@@ -12,6 +12,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+QUEUE_ALLOWANCE_SECONDS = 30 * 60
+# changes (5), native matrix (40), offline-linux (15), final gate (5), plus
+# 30 minutes total for runner queues/concurrency. The job allows setup overhead.
+DEFAULT_TIMEOUT_SECONDS = 95 * 60
+MAX_READ_FAILURES = 3
+
 
 def required_head(event: dict[str, Any], event_name: str) -> str | None:
     """Return the mandatory immutable head; ordinary PRs need no extra run."""
@@ -51,7 +57,7 @@ def latest_result(
 def main() -> int:
     """Poll the read-only Actions API with a bounded deadline and fail closed."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--timeout", type=float, default=3000)
+    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--interval", type=float, default=15)
     args = parser.parse_args()
     event_name = os.environ["GITHUB_EVENT_NAME"]
@@ -73,19 +79,55 @@ def main() -> int:
     branch = (
         event["pull_request"]["head"]["ref"] if event_name == "pull_request" else None
     )
-    while True:
-        response = subprocess.run(  # nosec B603 B607 - fixed read-only gh API argv
-            args=["gh", "api", "--paginate", "--slurp", endpoint],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        result = latest_result(json.loads(response.stdout), head, event_name, branch)
+    failures = 0
+    first = True
+    while first or time.monotonic() < deadline:
+        first = False
+        try:
+            response = subprocess.run(  # nosec B603 B607 - fixed read-only gh API argv
+                args=["gh", "api", "--paginate", "--slurp", endpoint],
+                check=True,
+                capture_output=True,
+                text=True,
+                # Zero is a single snapshot with no polling, not a 100ms API
+                # deadline. Timed polls remain bounded by their total budget.
+                timeout=(
+                    60
+                    if args.timeout <= 0
+                    else min(60, max(0.1, deadline - time.monotonic()))
+                ),
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            failures += 1
+            transient = isinstance(error, subprocess.TimeoutExpired) or bool(
+                re.search(
+                    r"HTTP (?:429|5\d\d)\b|connection reset|TLS handshake timeout|"
+                    r"temporary failure|i/o timeout|unexpected EOF",
+                    str(error.stderr or ""),
+                    flags=re.IGNORECASE,
+                )
+            )
+            if not transient or failures >= MAX_READ_FAILURES:
+                print(f"Mandatory harness API read failed ({failures} attempts)")
+                return 1
+            print(
+                f"Transient harness API read failure ({failures}/{MAX_READ_FAILURES})"
+            )
+            result = "pending"
+        else:
+            failures = 0
+            result = latest_result(
+                json.loads(response.stdout), head, event_name, branch
+            )
+            if args.timeout > 0 and time.monotonic() > deadline:
+                result = "expired"
         if result != "pending" or time.monotonic() >= deadline:
             print(f"Mandatory install-plane harness on {head}: {result}")
             return 0 if result == "success" else 1
-        time.sleep(min(max(0.1, args.interval), max(0, deadline - time.monotonic())))
+        delay = min(args.interval, 5) if failures else args.interval
+        time.sleep(min(max(0.1, delay), max(0, deadline - time.monotonic())))
+    print(f"Mandatory install-plane harness on {head}: deadline expired")
+    return 1
 
 
 if __name__ == "__main__":

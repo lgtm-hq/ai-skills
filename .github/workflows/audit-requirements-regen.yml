@@ -20,8 +20,8 @@ jobs:
       && startsWith(github.head_ref, 'renovate/')
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.user.login == 'renovate[bot]'
-      && contains(fromJSON('["renovate[bot]","lgtm-release-bot[bot]"]'),
-      github.triggering_actor)
+    # Eligibility follows the PR identity, so maintainers can correct its lock
+    # data or rerun a failed export without changing the trusted execution path.
     permissions:
       contents: read
     runs-on: ubuntu-26.04
