@@ -67,6 +67,8 @@ def rendered_files(version: str, *, repo_root: Path | None = None) -> dict[Path,
         project_root / "bundles.yaml": data_root / "bundles.yaml",
         project_root / "NOTICE.md": package_root / "NOTICE.md",
     }
+    for schema in sorted((project_root / "schemas").glob("*.schema.json")):
+        source_data[schema] = data_root / "schema" / schema.name
     manifest = json.loads(package_manifest.read_text(encoding="utf-8"))
     manifest["version"] = version
     files = {

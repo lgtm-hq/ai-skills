@@ -13,7 +13,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-GENERATED_FILES = frozenset({"NOTICE.md", "npm/ai-skills/NOTICE.md"})
+GENERATED_FILES = frozenset(
+    {"NOTICE.md", "npm/ai-skills/NOTICE.md", "bundles.yaml", "vendors.yaml"}
+)
 GENERATED_DIRS = ("vendor-indexes/", "npm/ai-skills/data/")
 # Conservative local budget, not a measured GitHub API limit.
 MAX_BASE64_BYTES = 20 * 1024 * 1024

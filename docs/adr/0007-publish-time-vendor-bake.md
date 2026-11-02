@@ -43,7 +43,7 @@ what shipped.
 absent, `--check` succeeds after confirming no leftover bake sidecars.
 When the tree is present (after a local bake or the CI/publish gate),
 `--check` re-validates it offline. First-party npm sync checks
-(`vendors.yaml`, bundles, vendor-indexes, `NOTICE.md`) are unchanged.
+(`vendors.yaml`, `bundles.yaml`, vendor-indexes, `NOTICE.md`) are unchanged.
 
 ## Consequences
 

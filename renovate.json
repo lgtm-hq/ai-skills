@@ -17,10 +17,10 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
-        "/^vendors\\.yaml$/"
+        "/^ai-skills\\.yaml$/"
       ],
       "matchStrings": [
-        "repo:\\s*(?<depName>[^\\s]+)\\s+sha:\\s*[\"']?(?<currentDigest>[0-9a-f]{40})[\"']?\\s+branch:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?(?:[ \t]+#[^\\r\\n]*)?[ \t]*(?:\\r?\\n|$)"
+        "(?:^|\\r?\\n[ ]{4})repo:\\s*(?<depName>[^\\s]+)\\s+sha:\\s*[\"']?(?<currentDigest>[0-9a-f]{40})[\"']?\\s+branch:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?(?:[ \t]+#[^\\r\\n]*)?[ \t]*(?:\\r?\\n|$)"
       ],
       "datasourceTemplate": "git-refs",
       "packageNameTemplate": "https://github.com/{{{depName}}}"

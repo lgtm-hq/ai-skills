@@ -13,6 +13,8 @@ from assertpy import assert_that
 import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
 import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
 import ai_skills_engine.vendors.repin as repin_vendor
+from ai_skills_engine.manifest.load import read_document
+from ai_skills_engine.manifest.migrate import migrate
 from ai_skills_engine.registry.registry import load_registry
 from ai_skills_engine.registry.vendor import Vendor
 from ai_skills_engine.registry.vendor_repin_diff import (
@@ -33,6 +35,77 @@ _PLUGINS_YAML = (
     "        skillsRoot: skills\n"
     '        skills: "*"\n'
 )
+
+
+def test_manifest_repin_and_failure_restore(
+    repo_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Re-pin production declarations and restore source plus outputs on failure."""
+    migrate(repo_root)
+    repin_vendor.manage_vendors.refresh(repo_root=repo_root)
+    diff = repin_vendor.repin_vendor(
+        repo_root=repo_root, vendor_id="example-vendor", resolve_sha=_fixed_new_sha
+    )
+    assert_that(diff.new_sha).is_equal_to(_NEW_SHA)
+    assert_that(
+        read_document(repo_root / "ai-skills.yaml")["vendors"][0]["sha"]
+    ).is_equal_to(_NEW_SHA)
+    assert_that(
+        load_registry(registry_path=repo_root / "vendors.yaml")[0].sha
+    ).is_equal_to(_NEW_SHA)
+    before = {
+        name: (repo_root / name).read_bytes()
+        for name in ("ai-skills.yaml", "vendors.yaml", "bundles.yaml")
+    }
+
+    def fail_bake(*, repo_root: Path) -> None:
+        """Simulate a failed downstream bake after editing the source pin."""
+        raise RuntimeError("index bake failed")
+
+    monkeypatch.setattr(bake_vendor_indexes, "bake", fail_bake)
+    with pytest.raises(RuntimeError, match="index bake failed"):
+        repin_vendor.repin_vendor(
+            repo_root=repo_root,
+            vendor_id="example-vendor",
+            resolve_sha=lambda vendor: _EXISTING_SHA,
+        )
+    assert_that({name: (repo_root / name).read_bytes() for name in before}).is_equal_to(
+        before
+    )
+
+
+def test_manifest_renovate_summary_uses_selected_pin(
+    repo_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Actual summary CLI regenerates stale legacy pins after a Renovate edit."""
+    migrate(repo_root)
+    repin_vendor.manage_vendors.refresh(repo_root=repo_root)
+    baseline = (repo_root / "vendors.yaml").read_text()
+    path = repo_root / "ai-skills.yaml"
+    path.write_text(path.read_text().replace(_EXISTING_SHA, _NEW_SHA, 1))
+    monkeypatch.setattr(
+        repin_vendor, "_registry_text_at_ref", lambda **kwargs: baseline
+    )
+    summary = repo_root / "summary.md"
+    assert_that(
+        repin_vendor.main(
+            [
+                "--repo-root",
+                str(repo_root),
+                "--all",
+                "--keep-sha",
+                "--baseline-ref",
+                "base",
+                "--summary-path",
+                str(summary),
+            ]
+        )
+    ).is_zero()
+    assert_that(summary.read_text()).contains(_EXISTING_SHA, _NEW_SHA)
+    assert_that(read_document(path)["vendors"][0]["sha"]).is_equal_to(_NEW_SHA)
+    assert_that(
+        load_registry(registry_path=repo_root / "vendors.yaml")[0].sha
+    ).is_equal_to(_NEW_SHA)
 
 
 def _fixed_new_sha(_vendor: object) -> str:

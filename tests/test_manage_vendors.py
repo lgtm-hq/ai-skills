@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -13,12 +14,95 @@ from assertpy import assert_that
 import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
 import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
 import ai_skills_engine.vendors.manage as manage_vendors
+from ai_skills_engine.manifest.load import read_document
+from ai_skills_engine.manifest.migrate import migrate
 from ai_skills_engine.registry.registry import load_registry
 from ai_skills_engine.registry.vendor import Vendor
 
 _EXISTING_SHA = "0123456789abcdef0123456789abcdef01234567"
 _NEW_SHA = "89abcdef0123456789abcdef0123456789abcdef"
 _FETCHED_TREE = ["skills/alpha/SKILL.md", "skills/beta/SKILL.md"]
+
+
+def test_manifest_update_add_and_rollback(
+    repo_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Real management operations persist canonical fields and roll back both files."""
+    migrate(repo_root)
+    manage_vendors.refresh(repo_root=repo_root)
+    assert_that(
+        manage_vendors.main(
+            [
+                "update",
+                "--repo-root",
+                str(repo_root),
+                "--id",
+                "existing",
+                "--sha",
+                _NEW_SHA,
+                "--branch",
+                "main",
+            ]
+        )
+    ).is_zero()
+    assert_that(
+        read_document(repo_root / "ai-skills.yaml")["vendors"][0]["sha"]
+    ).is_equal_to(_NEW_SHA)
+    manage_vendors.add(
+        repo_root=repo_root,
+        vendor_id="brand-new",
+        repo="owner/brand-new",
+        sha=_NEW_SHA,
+        skill_roots=("skills",),
+        license_name="MIT",
+        homepage="https://example.test",
+        display_ref=None,
+        branch="main",
+    )
+    assert_that(
+        read_document(repo_root / "ai-skills.yaml")["vendors"][-1]["id"]
+    ).is_equal_to("brand-new")
+    config = json.loads(
+        (Path(__file__).resolve().parents[1] / "renovate.json").read_text()
+    )
+    manager = next(
+        item
+        for item in config["customManagers"]
+        if item.get("datasourceTemplate") == "git-refs"
+    )
+    matches = list(
+        re.finditer(
+            manager["matchStrings"][0].replace("(?<", "(?P<"),
+            (repo_root / "ai-skills.yaml").read_text(),
+        )
+    )
+    assert_that([item["depName"] for item in matches]).is_equal_to(
+        ["owner/existing", "owner/brand-new"]
+    )
+    before = {
+        name: (repo_root / name).read_bytes()
+        for name in ("ai-skills.yaml", "vendors.yaml", "bundles.yaml")
+    }
+
+    def fail_refresh(*, repo_root: Path) -> None:
+        """Simulate a partial downstream failure."""
+        raise RuntimeError("refresh failed")
+
+    monkeypatch.setattr(manage_vendors, "refresh", fail_refresh)
+    with pytest.raises(RuntimeError, match="refresh failed"):
+        manage_vendors.update(
+            repo_root=repo_root,
+            vendor_id="existing",
+            repo=None,
+            sha=_EXISTING_SHA,
+            skill_roots=None,
+            license_name=None,
+            homepage=None,
+            display_ref=None,
+        )
+    assert_that({name: (repo_root / name).read_bytes() for name in before}).is_equal_to(
+        before
+    )
 
 
 def _fake_tree(*, vendor: Vendor) -> list[str]:

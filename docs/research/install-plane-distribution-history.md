@@ -499,7 +499,7 @@ Local logs are outside the worktree at the coder profile's
 actual `test-ci.sh` invocation fails interpreter discovery with downloads disabled.
 The installed **3.14.7** interpreter is used for the isolated local smoke and is
 not interchangeable with pinned hosted evidence. Only the small locked test
-dependencies may be fetched; no runtime/toolchain bundle is installed.
+dependencies may be fetched; no runtime/toolchain payload is installed.
 
 The actual [R8 PR run 41310148490][r8-pr] at
 `623c0988fb486a28a0fc8a9c0e8049d0a08da09d` exposed two further Windows test
@@ -728,7 +728,7 @@ For A, sign the final compiled Mach-O with Developer ID Application, hardened
 runtime and reviewed Bun/JIT entitlements. B needs its interpreter and nested
 Mach-O extensions/dylibs signed inside-out with reviewed entitlements. Notarize
 the final container using `notarytool` and verify it with `spctl`. Bare binaries
-and directory/zip bundles cannot receive stapled tickets; supported pkg/app/dmg
+and directory/zip archives cannot receive stapled tickets; supported pkg/app/dmg
 containers can. Exact entitlements, notarization, stapling and Finder validation
 are human-secret-gated #619 work. Both Windows variants need Authenticode for a
 signed route; #618 is cost-gated and SmartScreen reputation is still a separate

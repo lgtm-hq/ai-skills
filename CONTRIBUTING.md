@@ -13,13 +13,39 @@ document:
 
 ## What belongs in this repo
 
+- **Manifest:** `ai-skills.yaml` is the source of truth for publication and
+  pinned imports. Run `uv run ai-skills-engine manifest validate --terminology`
+  to validate it. The v1 JSON Schema is published at
+  `schemas/ai-skills.v1.schema.json`. `bundles.yaml` and `vendors.yaml` are derived
+  compatibility files; regenerate them with
+  `uv run ai-skills-engine manifest legacy`. CI uses the same writer with
+  `--check` to fail on byte drift. `manifest migrate` is a one-shot migration
+  from legacy registries and refuses to overwrite an existing manifest.
+  The `x-legacy-format` extension retains original bytes as hexadecimal layout
+  snapshots (short chunks avoid interpreting embedded YAML as prose), while
+  every generated value comes from manifest declarations. The `other` package
+  preserves the old ungrouped selection without adding it to host marketplaces.
+  Legacy output rejects payload roles/paths it cannot represent; it never
+  invents install behavior for newer declarations.
+  Local capabilities require an explicit `id` alongside `path`; migration
+  records the legacy skill name as that ID. This follows ADR 0011's stable
+  identity contract so moving a payload never silently changes its identity.
+- **Offline vendor validation:** use `manifest validate --vendor-root ID=PATH`
+  for each locally available vendor checkout. Its own `publisher.id` identifies
+  its packages. Consumer mapping is rejected when that checkout supplies a
+  manifest. Imported policy, overrides and extensions produce ignored-authority
+  diagnostics and are removed from the imported model; consumer policy is never
+  merged with them. Validation performs no fetches or vendor execution. Without
+  local vendor manifests, only consumer-mapped package exports can be resolved.
+  In v1, persisted collision records use `capability`, `action` (`keep`, `rename`
+  or `skip`) and a required `name` for `rename`.
 - **Skills:** each skill is `skills/<name>/SKILL.md` with YAML frontmatter (`name`,
   `description`, …) following the conventions used by existing skills.
 - **Index:** after adding, renaming, or removing skills, **`AGENTS.md` must stay in
   sync**. CI runs `scripts/generate_agents_md.py` / validation; run the same checks
   locally before opening a PR (see below).
-- **Plugins:** assign each skill to a plugin group in **`bundles.yaml`** (or
-  list it under `ungrouped` until it joins a plugin). Each group needs a
+- **Plugins:** assign each skill to a package in **`ai-skills.yaml`** (or
+  to package `other` until it joins a named publication). Each package needs a
   kebab-case **`id`** (the installable plugin name). Regenerate
   **`.claude-plugin/marketplace.json`** and
   **`.cursor-plugin/marketplace.json`** with

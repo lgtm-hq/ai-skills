@@ -24,6 +24,8 @@ import yaml
 import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
 import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
 from ai_skills_engine import package_sync
+from ai_skills_engine.manifest import legacy, pins
+from ai_skills_engine.manifest.load import load_manifest, read_document
 from ai_skills_engine.paths import resolve_repo_root
 from ai_skills_engine.registry.registry import load_registry
 
@@ -49,6 +51,19 @@ _PLUGIN_FIELD_ORDER = (
     "agents",
 )
 _DEFAULT_DISPLAY_REF = "latest"
+
+
+def _author_registry(repo_root: Path) -> Path:
+    """Select the manifest, retaining compatibility for unmigrated repositories.
+
+    Args:
+        repo_root: Author repository root.
+
+    Returns:
+        Authoritative declaration file.
+    """
+    manifest = repo_root / "ai-skills.yaml"
+    return manifest if manifest.is_file() else repo_root / "vendors.yaml"
 
 
 def _sync_artifacts(*, repo_root: Path, check_only: bool) -> int:
@@ -262,6 +277,13 @@ def _read_raw_registry(*, registry_path: Path) -> list[dict[str, Any]]:
         TypeError: If the registry or a vendor entry has an invalid type.
         ValueError: If the registry violates its schema or lacks a list.
     """
+    if registry_path.name == "ai-skills.yaml":
+        load_manifest(registry_path)
+        return list(
+            legacy.legacy_documents(read_document(registry_path))["vendors.yaml"][
+                "vendors"
+            ]
+        )
     load_registry(registry_path=registry_path)
     data = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
     if (
@@ -299,6 +321,8 @@ def _write_registry(
         TypeError: If the serialized registry fails type validation.
         ValueError: If the serialized registry violates its schema.
     """
+    if registry_path.name == "ai-skills.yaml":
+        return pins.write_vendors(registry_path, vendors)
     original = (
         registry_path.read_text(encoding="utf-8") if registry_path.is_file() else None
     )
@@ -452,6 +476,8 @@ def _refresh_or_restore(
                 registry_path.write_text(original, encoding="utf-8")
             elif registry_path.is_file():
                 registry_path.unlink()
+            if registry_path.name == "ai-skills.yaml" and registry_path.is_file():
+                legacy.write_legacy(repo_root)
             _restore_artifacts(
                 paths=artifact_paths,
                 snapshot=snapshot,
@@ -624,6 +650,15 @@ def set_sha(*, repo_root: Path, vendor_id: str, sha: str) -> None:
         ValueError: If the vendor id is unknown or the SHA is invalid.
         TypeError: If the rewritten registry fails type validation.
     """
+    manifest_path = repo_root / "ai-skills.yaml"
+    if manifest_path.is_file():
+        vendors = _read_raw_registry(registry_path=manifest_path)
+        target = next((vendor for vendor in vendors if vendor["id"] == vendor_id), None)
+        if target is None:
+            raise ValueError(f"Unknown vendor id: {vendor_id}")
+        target["sha"] = sha
+        pins.write_vendors(manifest_path, vendors)
+        return
     registry_path = repo_root / "vendors.yaml"
     original = registry_path.read_text(encoding="utf-8")
     vendors = _read_raw_registry(registry_path=registry_path)
@@ -653,6 +688,8 @@ def refresh(*, repo_root: Path) -> None:
     Args:
         repo_root: Repository root containing ``vendors.yaml``.
     """
+    if (repo_root / "ai-skills.yaml").is_file():
+        legacy.write_legacy(repo_root)
     bake_vendor_indexes.bake(repo_root=repo_root)
     bake_vendor_plugins.bake(repo_root=repo_root)
     _sync_artifacts(repo_root=repo_root, check_only=False)
@@ -670,10 +707,15 @@ def check(*, repo_root: Path) -> int:
     Returns:
         ``0`` when nothing is stale, otherwise ``1``.
     """
+    legacy_status = (
+        legacy.write_legacy(repo_root, check=True)
+        if (repo_root / "ai-skills.yaml").is_file()
+        else 0
+    )
     bake_status = int(bake_vendor_indexes.check(repo_root=repo_root))
     plugin_status = int(bake_vendor_plugins.check(repo_root=repo_root))
     sync_status = _sync_artifacts(repo_root=repo_root, check_only=True)
-    return max(bake_status, plugin_status, sync_status)
+    return max(legacy_status, bake_status, plugin_status, sync_status)
 
 
 def add(
@@ -704,7 +746,7 @@ def add(
     Raises:
         ValueError: If the vendor id already exists in the registry.
     """
-    registry_path = repo_root / "vendors.yaml"
+    registry_path = _author_registry(repo_root)
     vendors = _read_raw_registry(registry_path=registry_path)
     if any(vendor.get("id") == vendor_id for vendor in vendors):
         msg = f"Vendor id already exists: {vendor_id}"
@@ -763,7 +805,7 @@ def update(
     if clear_branch and branch is not None:
         msg = "branch and clear_branch are mutually exclusive"
         raise ValueError(msg)
-    registry_path = repo_root / "vendors.yaml"
+    registry_path = _author_registry(repo_root)
     vendors = _read_raw_registry(registry_path=registry_path)
     target = next(
         (vendor for vendor in vendors if vendor.get("id") == vendor_id),

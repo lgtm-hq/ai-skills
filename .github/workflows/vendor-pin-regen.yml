@@ -4,7 +4,7 @@ name: Vendor pin regeneration
 'on':
   pull_request:
     types: [opened, synchronize]
-    paths: [vendors.yaml]
+    paths: [ai-skills.yaml, vendors.yaml]
 
 permissions:
   contents: read

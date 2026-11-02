@@ -24,6 +24,7 @@ from urllib.parse import quote
 import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
 import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
 import ai_skills_engine.vendors.manage as manage_vendors
+from ai_skills_engine.manifest import legacy
 from ai_skills_engine.paths import resolve_repo_root
 from ai_skills_engine.registry.registry import load_registry
 from ai_skills_engine.registry.vendor import Vendor
@@ -300,6 +301,10 @@ def repin_vendor(
         msg = "baseline_ref and baseline_registry_text are mutually exclusive"
         raise ValueError(msg)
     vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
+    manifest_path = repo_root / "ai-skills.yaml"
+    manifest_bytes = manifest_path.read_bytes() if manifest_path.is_file() else None
+    if manifest_bytes is not None:
+        legacy.write_legacy(repo_root)
     registry_path = repo_root / "vendors.yaml"
     working_text = registry_path.read_text(encoding="utf-8")
     if baseline_ref is not None:
@@ -370,6 +375,8 @@ def repin_vendor(
         return diff_snapshots(before=before, after=after)
     finally:
         if not completed:
+            if manifest_bytes is not None:
+                manifest_path.write_bytes(manifest_bytes)
             registry_path.write_text(working_text, encoding="utf-8")
             manage_vendors._restore_artifacts(
                 paths=artifact_paths,
@@ -441,6 +448,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--json requires --id")
     repo_root = resolve_repo_root(override=args.repo_root, parser=parser)
     try:
+        if (repo_root / "ai-skills.yaml").is_file():
+            legacy.write_legacy(repo_root)
         vendor_ids = list_vendor_ids(repo_root=repo_root)
         if args.vendor_id is not None and args.vendor_id not in vendor_ids:
             msg = f"Unknown vendor id: {args.vendor_id}"

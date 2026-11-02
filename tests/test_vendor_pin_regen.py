@@ -434,7 +434,7 @@ def test_graphql_failure_does_not_retry_or_comment(
 
 @pytest.mark.parametrize(
     "name",
-    ["vendors.yaml", "scripts/unsafe.py", "plugins-baked/file"],
+    ["ai-skills.yaml", "scripts/unsafe.py", "plugins-baked/file"],
 )
 def test_non_generated_change_is_rejected(git_tree: Path, name: str) -> None:
     """Commit publication is restricted to generated catalog data."""
@@ -487,7 +487,10 @@ def test_workflow_isolates_credentials_from_pr_head_code() -> None:
         (_ROOT / ".github/workflows/vendor-pin-regen.yml").read_text(encoding="utf-8"),
     )
     assert_that(workflow["on"]["pull_request"]).is_equal_to(
-        {"types": ["opened", "synchronize"], "paths": ["vendors.yaml"]},
+        {
+            "types": ["opened", "synchronize"],
+            "paths": ["ai-skills.yaml", "vendors.yaml"],
+        },
     )
     for name, ref in [("regenerate", "head"), ("publish", "base")]:
         job = workflow["jobs"][name]
@@ -572,7 +575,7 @@ def test_symlink_directory_inside_repo_is_rejected(git_tree: Path) -> None:
     [
         "scripts/ci/create_signed_commit.py",
         ".venv/bin/python",
-        "vendors.yaml",
+        "ai-skills.yaml",
         "/NOTICE.md",
         "vendor-indexes/../scripts/unsafe.py",
         "vendor-indexes/./x",

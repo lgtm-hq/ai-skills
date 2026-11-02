@@ -19,7 +19,7 @@ Replaces: none.
 The unit of publication and default selection, containing capabilities and their
 resources. A package is independent of its generated host envelopes.
 
-Replaces: bundle, bundles.
+Replaces: bundle, bundles, skill pack, skill packs.
 
 ## capability
 
