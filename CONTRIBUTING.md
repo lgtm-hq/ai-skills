@@ -43,6 +43,7 @@ git clone https://github.com/lgtm-hq/ai-skills.git
 cd ai-skills
 uv sync
 uv run lintro fmt
+# Exit 0 alone is not audit coverage; inspect scanner results and limits below.
 uv run lintro chk
 uv run lintro tst
 bash scripts/validate.sh
@@ -74,6 +75,21 @@ Python dependency auditing runs through lintro's `pip_audit` and `osv_scanner`.
 pip-audit's project reader does not audit dev groups. After changing `uv.lock`, run
 `bash scripts/export-audit-requirements.sh`; `validate.sh` checks freshness offline.
 Keep pip-audit out of dev dependencies so it cannot reintroduce `pip` into `uv.lock`.
+Linux pip-audit evaluates environment markers on Linux, so Windows-only packages
+such as `colorama` and `win32-setctime` are excluded. A successful Linux audit does
+not establish Windows dependency coverage. A Lintro exit code alone does not prove
+dependency scan coverage; inspect each scanner's result and skips.
+
+Renovate ignores only the generated root `requirements-audit.txt` for its
+`pip_requirements` manager. The org uses Mend-hosted Renovate, which does not run
+`postUpgradeTasks`; `allowedCommands` is a self-hosted global option, not a
+repository permission (see [py-lintro #2436](https://github.com/lgtm-hq/py-lintro/issues/2436)).
+The audit-requirements regeneration workflow instead reads `pyproject.toml` and
+`uv.lock` as data from same-repository Renovate PRs, runs the trusted base's offline
+export helper, and appends only the generated audit file through the release App's
+GitHub-signed commit action with an expected-head guard. This starts fresh CI;
+freshness checks remain blocking if regeneration fails. No project dependencies
+or PR scripts execute with App credentials.
 
 Parity evidence has two narrow archival exceptions in `.lintro-ignore`:
 `docs/parity/evidence/cursor/raw/` contains WRITE-ONCE returned probe bytes, and

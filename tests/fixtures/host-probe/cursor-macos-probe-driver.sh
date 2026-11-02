@@ -31,24 +31,20 @@ KEEP=0
 TOKEN="PROBE-7f3a"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 RESULTS="$PWD/cursor-probe-results-$STAMP.json"
-ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ai-skills-563-cursor.XXXXXX")"
+# Resolve the parent before allocating scratch: a failed cd cannot leak a root.
 # Cursor resolves /var to /private/var; use one physical project identity.
-ROOT="$(cd "$ROOT" && pwd -P)"
+PROBE_TEMP_PARENT="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+ROOT="$(mktemp -d "$PROBE_TEMP_PARENT/ai-skills-563-cursor.XXXXXX")"
 PHOME="$ROOT/home"
 PROJ="$ROOT/project"
 UDATA="$ROOT/user-data"
 EXTS="$ROOT/extensions"
 LOGS="$ROOT/logs"
 SENT="$ROOT/sentinels"
-mkdir -p "$PHOME" "$PROJ" "$UDATA" "$EXTS" "$LOGS" "$SENT" "$ROOT/tmp"
 HOOK_LOG="$ROOT/tmp/probe-hook.log"
 MCP_LOG="$LOGS/mcp.log"
-: >"$HOOK_LOG"
-: >"$MCP_LOG"
 REC="$LOGS/records.jsonl"
-: >"$REC"
 REMOVALS="$LOGS/hook-removals.jsonl"
-: >"$REMOVALS"
 RUN_STATUS=incomplete
 REPORT_REASON=preflight-incomplete
 COMPARISON_STATUS=unverified
@@ -171,33 +167,52 @@ finish() {
   set +e
   if [ "$status" -ne 0 ]; then
     RUN_STATUS=incomplete
+    REPORT_REASON="${REPORT_REASON:-driver-command-failed}"
     COMPARISON_STATUS=unverified
     COMPARISON_REASON="$REPORT_REASON"
   fi
   # Save observations before deleting any private records, logs or fingerprints.
-  write_report || report_status=$?
+  local fallback_json=""
+  fallback_json="$(write_report)" || report_status=$?
   cleanup || cleanup_status=$?
   # Update only the already sanitized artifact, never recollect purged inputs.
-  python3 - "$RESULTS" "$KEEP" "$cleanup_status" <<'PY' || report_status=1
+  python3 - "$RESULTS" "$KEEP" "$cleanup_status" "$fallback_json" <<'PY' || report_status=1
 import json, sys, os
-path, keep, failed = sys.argv[1:]
-with open(path, encoding="utf-8") as stream:
-    doc = json.load(stream)
+path, keep, failed, fallback = sys.argv[1:]
+if fallback:
+    doc = json.loads(fallback)
+else:
+    with open(path, encoding="utf-8") as stream:
+        doc = json.load(stream)
 doc["cleanup"]["status"] = "unverified" if failed != "0" else ("retained" if keep == "1" else "purged")
 if failed != "0":
     doc["runStatus"], doc["incompleteReason"] = "incomplete", "cleanup-unverified"
-with open(path + ".tmp", "w", encoding="utf-8") as stream:
-    json.dump(doc, stream, indent=2)
-    stream.write("\n")
-os.replace(path + ".tmp", path)
+try:
+    with open(path + ".tmp", "w", encoding="utf-8") as stream:
+        json.dump(doc, stream, indent=2)
+        stream.write("\n")
+    os.replace(path + ".tmp", path)
+except OSError:
+    print(json.dumps(doc, indent=2))
+    sys.exit(1)
 PY
   if [ "$status" -eq 0 ] && { [ "$report_status" -ne 0 ] || [ "$cleanup_status" -ne 0 ]; }; then status=1; fi
-  printf 'Sanitized results (review runStatus and comparison status): %s\n' "$RESULTS"
+  if [ -f "$RESULTS" ]; then
+    printf 'Sanitized results (review runStatus and comparison status): %s\n' "$RESULTS"
+  else
+    printf 'Sanitized results are on stdout; no results file was written.\n' >&2
+  fi
   exit "$status"
 }
 trap finish EXIT
 trap 'RUN_STATUS=incomplete; REPORT_REASON=interrupted-int; exit 130' INT
 trap 'RUN_STATUS=incomplete; REPORT_REASON=interrupted-term; exit 143' TERM
+
+mkdir -p "$PHOME" "$PROJ" "$UDATA" "$EXTS" "$LOGS" "$SENT" "$ROOT/tmp"
+: >"$HOOK_LOG"
+: >"$MCP_LOG"
+: >"$REC"
+: >"$REMOVALS"
 
 # ---------------------------------------------------------------- preflight
 select_cursor_app() { # <global-candidate> <home-candidate>
@@ -225,6 +240,7 @@ select_cursor_app() { # <global-candidate> <home-candidate>
     echo "Cursor app directory not found at $APP" >&2
     return 1
   }
+  APP="$(cd "$APP" && pwd -P)" || return 1
   CLI="$APP/Contents/Resources/app/bin/cursor"
   [ -f "$CLI" ] && [ -x "$CLI" ] || {
     echo "Cursor CLI launcher not found or not executable at $CLI" >&2
@@ -298,10 +314,10 @@ snapshot() {
   done
   for d in ${roots[@]+"${roots[@]}"}; do
     # Relative traversal prevents an ancestor named cache from excluding HOME.
-    (cd "$HOME" && find "$d" -type f \
-      -not -path '*/extensions/*' -not -path '*/logs/*' -not -path '*/cache*' \
-      -not -path '*/Cache*' -not -path '*/projects/*' -not -path '*/sessions/*' \
-      -size -5M -exec shasum -a 256 {} +) || return 1
+    (cd "$HOME" && find "$d" \
+      \( -path "$d/extensions" -o -path "$d/logs" -o -path "$d/cache" \
+      -o -path "$d/Cache" -o -path "$d/projects" -o -path "$d/sessions" \) -prune \
+      -o -type f -size -5M -exec shasum -a 256 {} +) || return 1
   done | sort
 }
 REPORT_REASON=baseline-snapshot-failed
@@ -564,8 +580,13 @@ import json, sys
 log, evidence, records, tag, scope, mode, boundary, line_boundary, human = sys.argv[1:]
 boundary, line_boundary = int(boundary), int(line_boundary)
 count = None
+invocation_control = "s"
 status, answer = "unverified", "s"
 try:
+    with open(records, encoding="utf-8") as stream:
+        checks = [json.loads(line) for line in stream if line.strip()]
+    invocation_control = next((check["answer"] for check in checks
+        if check["check"] == tag + "-lifecycle"), "s")
     with open(log, "rb") as stream:
         data = stream.read()
     if len(data) >= boundary:
@@ -573,13 +594,13 @@ try:
         count = sum(line.startswith(prefix) for line in data[boundary:].splitlines())
         if count:
             status, answer = "still-firing", "n"
-        elif human in ("y", "n"):
+        elif human in ("y", "n") and invocation_control == "y":
             status, answer = "verified-absent", "y"
-except OSError:
+except (OSError, ValueError, UnicodeError):
     pass
 event = {"tag": tag, "scope": scope, "mode": mode, "phase": "after-restart-fresh-prompt",
          "byteBoundary": boundary, "lineBoundary": line_boundary,
-         "newRemovedTagEntries": count, "status": status}
+         "newRemovedTagEntries": count, "status": status, "invocationControl": invocation_control}
 with open(evidence, "a", encoding="utf-8") as stream:
     stream.write(json.dumps(event) + "\n")
 with open(records, "a", encoding="utf-8") as stream:
@@ -700,7 +721,7 @@ CHANGED="$(grep -c '^[<>]' "$LOGS/config.diff" || test "$?" -eq 1)"
 COMPARISON_STATUS=complete
 COMPARISON_REASON=""
 REPORT_REASON=report-collection-failed
-LEFT="$(find "$PHOME" -path '*probe*' | wc -l | tr -d ' ')"
+LEFT="$(cd "$PHOME" && find . -name '*probe*' | wc -l | tr -d ' ')"
 RUN_STATUS=complete
 REPORT_REASON=""
 

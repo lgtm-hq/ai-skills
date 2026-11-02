@@ -213,11 +213,11 @@ def test_invalid_tool_calls_never_return_sentinel(
         ('{"jsonrpc":"2.0","id":1e999,"method":"tools/call"}', -32600, None),
         ("null", -32600, None),
         ("[]", -32600, None),
-        ('{"jsonrpc":"2.0","id":1}', -32600, None),
-        ('{"jsonrpc":"1.0","id":1,"method":"tools/call"}', -32600, None),
+        ('{"jsonrpc":"2.0","id":1}', -32600, 1),
+        ('{"jsonrpc":"1.0","id":1,"method":"tools/call"}', -32600, 1),
         ('{"jsonrpc":"2.0","id":[],"method":"tools/call"}', -32600, None),
         ('{"jsonrpc":"2.0","id":true,"method":"tools/call"}', -32600, None),
-        ('{"jsonrpc":"2.0","id":1,"method":42}', -32600, None),
+        ('{"jsonrpc":"2.0","id":1,"method":42}', -32600, 1),
         ('{"jsonrpc":"2.0","id":0,"method":"unknown"}', -32601, 0),
         ('{"jsonrpc":"2.0","id":"x","method":"unknown"}', -32601, "x"),
         ('{"jsonrpc":"2.0","id":"x","method":"initialize","params":[]}', -32602, "x"),
@@ -256,3 +256,11 @@ def test_notifications_are_silent(
         },
     ]
     assert_that(mcp_process([json.dumps(message) for message in messages])).is_empty()
+
+
+def test_blank_lines_are_ignored_between_requests(
+    mcp_process: Callable[[list[str]], list[dict[str, Any]]],
+) -> None:
+    """Transport whitespace is silent and does not corrupt the next request ID."""
+    replies = mcp_process(["", "  ", '{"jsonrpc":"2.0","id":"ok","method":"ping"}'])
+    assert_that(replies).is_equal_to([{"jsonrpc": "2.0", "id": "ok", "result": {}}])

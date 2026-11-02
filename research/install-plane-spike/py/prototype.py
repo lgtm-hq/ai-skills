@@ -39,7 +39,7 @@ def validate_header(header: bytes) -> int:
     if (
         header[156:157] not in {tarfile.REGTYPE, tarfile.AREGTYPE}
         or header[257:263] != b"ustar\0"
-        or any(header[345:500])
+        or any(header[345:512])
     ):
         raise ValueError("invalid archive inventory")
     if any(byte >= 0x80 for byte in header):
@@ -271,7 +271,7 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
     staging = Path(temporary.name)
     owns_target = False
     is_published = False
-    failures: list[OSError] = []
+    failures: list[Exception] = []
     try:
         for name, content in output.items():
             destination = staging / name
@@ -285,7 +285,7 @@ def install(*, fixture: Path, home: Path, exclude: str) -> dict[str, str]:
         for child in staging.iterdir():
             child.rename(target / child.name)
         is_published = True
-    except OSError as error:
+    except (OSError, ValueError, RuntimeError, TypeError) as error:
         failures.append(error)
         if owns_target:
             try:

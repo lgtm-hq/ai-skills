@@ -4,7 +4,8 @@ Throwaway code, separate from the gateway and future M6 engine. See the
 [report](../../docs/research/install-plane-distribution.md) for evidence and limits.
 Nothing here is in the gateway's npm publication allowlist.
 
-**Final decision:** [ADR 0008](../../docs/adr/0008-engine-runtime-build-and-install-planes.md)
+**Final decision:** [ADR
+0008](../../docs/adr/0008-engine-runtime-build-and-install-planes.md)
 is Accepted: one bundled Python engine behind a thin strict TypeScript npm
 launcher. Both candidates pass the required five-target registry/no-Node/offline
 comparison. The selected Python directory includes its interpreter; consumers do
@@ -91,8 +92,9 @@ No-Node control removes tool directories from PATH while preserving Windows load
 necessities and using disposable AppData/HOME locations. Node, nodejs, Bun and
 bunx resolution or unexpected HOME files fail the runtime observation. Filtering
 and detection share aliases and PATHEXT suffixes. The cache blocker must remain
-an unchanged nonsymlink regular file after execution; deletion, overwrite or
-replacement makes the observation fail.
+an unchanged nonsymlink regular file with its original inode, mode, mtime and
+attributes after execution; deletion, overwrite, touching or replacement fails.
+Unexpected empty HOME directories are counted alongside other HOME entries.
 The installed target and every entry are checked without following symlinks.
 Only the expected regular files and their required ancestor directories may exist;
 unexpected empty directories and other types fail. Content reads are bounded by
@@ -111,8 +113,18 @@ file-reference closure and fails if an input lacks a trigger pattern.
 
 The same matrix also runs nightly at 03:17 UTC, on workflow dispatch, and on every
 PR whose head branch starts with `release/`, regardless of changed files. A release
-PR is mergeable only with a green spike run on its current head; the orchestrator
-enforces this at merge time. These runs retain the same evidence artifacts.
+PR is mergeable only with a green spike run on its current head. The repository's
+separate release-gate workflow polls the read-only Actions API for a successful
+exact-head PR
+run (latest attempt); dispatch, stale, skipped and failed runs cannot satisfy it.
+The existing required all-checks gate observes that separate workflow; no failed
+prerequisite can silently turn the required job into a skip. Merge-queue heads
+run the same mandatory harness. Change-detection failures run
+the matrix conservatively and fail the final harness gate; they cannot yield a
+green workflow via skipped native jobs. A stable harness-gate check reports the
+aggregate result, including deliberate no-input skips on ordinary PRs. These runs retain
+the same evidence artifacts, including `acquisition.json` for
+acquisition-only unknowns; this record never certifies a missing scenario.
 
 The workflow checks out the exact PR head (the default branch for scheduled runs)
 and runs the full harness in `research/install-plane-spike/tests/` plus
@@ -163,14 +175,21 @@ Linux requires passwordless noninteractive `sudo`, iproute2 `ip` with network
 namespace/policy-rule support, util-linux `setpriv`, and `env`. Setup creates one
 owned `install-plane-<uuid>` namespace, brings up only loopback, and adds
 `ip route add 1.1.1.1/32 dev lo` using the canonical probe address. Inside that
-namespace, `ip -4 rule add priority 1 prohibit` and its `-6` counterpart establish
-an explicit kernel permission policy. Both the probe and the existing direct/npm
+namespace, `ip -4 rule add priority 1 prohibit` establishes the required IPv4
+kernel permission policy. The `-6` counterpart/readback is still required for a
+complete scenario: on failure the IPv4 setup records are retained with an
+explicit limitation, while complete offline verification stays unverified. Both the
+probe and the existing direct/npm
 worker enter the **same namespace**, after groups and all capability sets are
 dropped with `setpriv` and `no-new-privs` is set. No host routes/firewall or runner
 control-plane processes are changed. Setup/route/rule errors, unavailable tools,
 failed sudo, an inconclusive baseline or restricted probe, and unverified removal
-cannot pass. Raw setup, route/rule readbacks, worker commands and namespace deletion
-plus absence checks are retained. This is separate from dedicated Harden Runner.
+cannot pass. Namespace creation first verifies the generated name is absent;
+even a failed creation attempt receives owned-name cleanup. Cleanup reads owned
+namespace membership before deletion and retains a live/unknown namespace rather
+than hiding descendants by deleting its name. Raw setup, route/rule readbacks,
+worker privilege readbacks and namespace deletion plus absence checks are retained. This
+is separate from dedicated Harden Runner.
 
 A local disposable-namespace experiment observed connected unrestricted IPv4,
 then `connect` EACCES/errno 13 under this policy. A worker-boundary child had
@@ -197,7 +216,8 @@ the measured allowlist. If measurement runs, raw JSON is printed to log and summ
 before a best-effort artifact upload, which can itself be blocked. Native namespace
 evidence cannot be credited to Harden Runner. See the report's explicit limits.
 
-The [binding offline policy](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557886641)
+The [binding offline
+policy](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557886641)
 makes the standalone compiled binary primary transport with no install step;
 npm-only local-file wrapper install is the documented fallback. Both variants
 each run directly before their wrapper packing/install step, in a fresh HOME
@@ -219,7 +239,8 @@ disabled Gatekeeper, third-party EDR, deliberate deep paths, unsigned fleet poli
 non-AVX2 baseline, musl and older Linux compatibility remain unverified.
 The [final report](../../docs/research/install-plane-distribution.md) links green
 [PR 41332673633](https://github.com/lgtm-hq/ai-skills/actions/runs/41332673633) and
-[genuine dispatch 41332723822](https://github.com/lgtm-hq/ai-skills/actions/runs/41332723822),
+[genuine dispatch
+41332723822](https://github.com/lgtm-hq/ai-skills/actions/runs/41332723822),
 exact clean source `fb4d21bbc68579606a283afa69af3eee664dab61`, all 24 raw JSON
 identities/digests, current footprint and unsigned security commands/results.
 Both variants pass registry (Bun and npm), no-Node, direct offline and npm fallback
@@ -232,7 +253,8 @@ change among the executed-source directories. Dispatch 41335569949 belongs to
 `7909883` and must be collected separately; older JSON is not assigned to it.
 Older R11/R12 and route-loss results remain historical, without altered raw files.
 
-Apply the [merged Python-first escape hatch](https://github.com/lgtm-hq/ai-skills/blob/032ee309817813a9ef81bb2450cbed646a625222/docs/adr/0008-engine-runtime-build-and-install-planes.md):
+Apply the [merged Python-first escape
+hatch](https://github.com/lgtm-hq/ai-skills/blob/032ee309817813a9ef81bb2450cbed646a625222/docs/adr/0008-engine-runtime-build-and-install-planes.md):
 B is equally deployable under required registry/no-Node/offline restrictions, so
 one typed Python package owns build and install semantics. Install still cannot
 resolve new sources, versions or edges; strict TypeScript only selects/invokes
@@ -242,10 +264,44 @@ before implementation. No production engine is implemented in this spike.
 Dedicated Harden Runner's absent same-host baseline, independent payload-source
 binding, Finder/SmartScreen and fleet enforcement, deliberate long paths and
 read-only runtime limits remain U, not universal-green decision gates. The
-[security policy](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942)
+[security
+policy](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942)
 is resolved: unsigned observations/documented signing needs suffice for #562;
 free checksums, artifact/npm attestations, SLSA provenance and Sigstore/cosign
 keyless signing remain production obligations. Developer ID/notarization is #619's
 human-secret gate; Windows Authenticode is cost-gated #618. No paid or third-party
 EDR experiment is required. Optional spike hardening stays in #614 under the
-[owner review cap](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6561604904).
+[owner review
+cap](https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6561604904).
+
+## #614 guard changes and measurement boundary
+
+Fatal UTF-8 index decoding retains BOM rejection, both tiny USTAR readers reject
+nonzero header padding, and both parsers bound nesting before native parsing.
+Rollback preserves original failures, including non-OS exceptions, and successful
+publication remains the commit point even if staging cleanup warns. This spike
+writes synchronously into an isolated throwaway HOME; atomic no-replace
+publication to concurrent readers and paused-writer acceptance belong to the
+production installer and are not promised here.
+
+POSIX command completion now also cleans its owned process group on normal root
+exit; escaped sessions remain unverified. Windows records pretermination job
+membership, always attempts termination and retains query/close errors. Cache
+and HOME checks run after execution and provide no filesystem sandbox.
+The bundled A research diagnostic remains callable with
+`--spike-network-control`; the default install argv has no network path. The
+fixed-endpoint diagnostic's bytes are included in payload footprints. Production
+launchers must omit this research-only diagnostic. Node's diagnostic bounds even
+a missing close event; Python preserves an unexpected original socket error
+when cleanup also fails. Deferred Winsock SO_ERROR is authoritative; immediate
+last-error capture crosses the JS/FFI boundary and cannot upgrade unknowns.
+
+These guards have offline synthetic coverage only. The native report remains
+bound to historical source/run identities. Verdaccio's own transitive resolution
+and runtime attribution are not locked by this spike; new runtimes, caches, CPUs,
+OS versions, deliberate long paths and read-only runtime trees remain unverified.
+
+The TypeScript diagnostic currently reports only its required IPv4 endpoint;
+Python additionally records informational IPv6. Array shape is not a cross-runtime
+network-parity claim. Only matched IPv4 permission controls can establish the
+recorded denial, and unavailable IPv6 is never promoted into measured coverage.

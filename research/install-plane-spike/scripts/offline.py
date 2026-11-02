@@ -41,12 +41,27 @@ def identity() -> dict[str, Any]:
             "effective_uid": None,
             "privilege": "Windows token elevation unverified",
         }
-    return {
+    observed: dict[str, Any] = {
         "uid": os.getuid(),
         "effective_uid": os.geteuid(),
         "effective_gid": os.getegid(),
         "groups": os.getgroups(),
     }
+    if platform.system() == "Linux":
+        try:
+            observed["linux_privilege_readback"] = {
+                key: value.strip()
+                for line in Path("/proc/self/status")
+                .read_text(encoding="utf-8")
+                .splitlines()
+                if ":" in line
+                for key, value in [line.split(":", maxsplit=1)]
+                if key
+                in {"CapEff", "CapBnd", "CapInh", "CapPrm", "CapAmb", "NoNewPrivs"}
+            }
+        except OSError as error:
+            observed["linux_privilege_readback_error"] = type(error).__name__
+    return observed
 
 
 def isolation_argv(
@@ -349,7 +364,13 @@ def measure_offline(
             if shell:
                 try:
                     program_controls = prepare_windows_controls(build=build, work=work)
-                except OSError as error:
+                except (
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    RuntimeError,
+                ) as error:
                     for result in results.values():
                         result["program_control_error"] = str(error)
                 firewall = [shell, "-NoProfile", "-NonInteractive", "-Command"]
@@ -510,7 +531,10 @@ def measure_offline(
                         same_launcher = bool(
                             len(launcher) == 2
                             and npm_commands
-                            and npm_commands[0].get("argv", [])[:2] == launcher
+                            and all(
+                                item.get("argv", [])[:2] == launcher
+                                for item in npm_commands
+                            )
                         )
                         results[variant].update(
                             program_controls=program_controls,
@@ -549,6 +573,10 @@ def measure_offline(
                         )
             else:
                 for result in results.values():
+                    result["status_before_cleanup"] = result["status"]
+                    result["direct_execution"]["status_before_cleanup"] = result[
+                        "direct_execution"
+                    ]["status"]
                     result["installation_error"] = (
                         "worker failed; partial worker JSON retained where available"
                     )
@@ -599,6 +627,10 @@ def measure_offline(
             )
             if removed["exit"] != 0:
                 for result in results.values():
+                    result["status_before_cleanup"] = result["status"]
+                    result["direct_execution"]["status_before_cleanup"] = result[
+                        "direct_execution"
+                    ]["status"]
                     result["direct_execution"].update(
                         status="unverified",
                         denial_proven=False,

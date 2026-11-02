@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess  # nosec B404 - fixed local prototypes, no shell or network
 import sys
@@ -194,6 +195,7 @@ def test_postpublication_cleanup_failure_reports_cli_success(
         ("existing", False),
     ],
 )
+@pytest.mark.parametrize("error_type", [OSError, ValueError])
 def test_prepublication_failures_retain_evidence_and_cli_status(
     prototype: ModuleType,
     spike_fixture: Path,
@@ -202,9 +204,10 @@ def test_prepublication_failures_retain_evidence_and_cli_status(
     capsys: pytest.CaptureFixture[str],
     boundary: str,
     rollback_fails: bool,
+    error_type: type[Exception],
 ) -> None:
     """Original, rollback and cleanup errors survive, with honest state and retry."""
-    original_error = OSError("injected original installation failure")
+    original_error = error_type("injected original installation failure")
     rollback_error = OSError("injected target rollback failure")
     cleanup_error = OSError("injected staging cleanup failure")
     rmtree = shutil.rmtree
@@ -454,7 +457,16 @@ def test_adversarial_bun_policy_without_bun(tmp_path: Path, required: bool) -> N
     assert_that(result.returncode).described_as(output).is_equal_to(
         1 if required else 0
     )
-    assert_that(output).contains("5 passed", "5 failed" if required else "5 skipped")
+    summary = re.search(r"^(?:=+ )?(\d+ .+?) in [\d.]+s(?: =+)?$", output, re.MULTILINE)
+    if summary is None:
+        pytest.fail("Missing exact pytest summary: " + output)
+    counts = {
+        status: int(count)
+        for count, status in re.findall(r"(\d+) (passed|failed|skipped)", summary[1])
+    }
+    assert_that(counts).is_equal_to(
+        {"passed": 5, "failed" if required else "skipped": 5}
+    )
     assert_that(output).does_not_contain("FileNotFoundError", "Traceback")
     if required:
         assert_that(output).contains("Bun required for adversarial CLI parity")
@@ -532,6 +544,8 @@ def test_empty_extension_before_valid_ustar_is_rejected(
     "mutation",
     [
         "bom-index",
+        "invalid-utf8-id",
+        "trailing-header",
         "bad-trailer",
         "bad-checksum",
         "extra-member",
@@ -554,8 +568,13 @@ def test_shared_malformed_inputs_fail_closed(
 ) -> None:
     """Both source CLIs reject malformed index/archive bytes before writing."""
     index_path = spike_fixture / "index.json"
-    if mutation == "bom-index":
-        index_path.write_bytes(b"\xef\xbb\xbf" + index_path.read_bytes())
+    if mutation in {"bom-index", "invalid-utf8-id"}:
+        raw = index_path.read_bytes()
+        index_path.write_bytes(
+            b"\xef\xbb\xbf" + raw
+            if mutation == "bom-index"
+            else raw.replace(b"fixture:keep", b"fixture:\xffkeep")
+        )
     else:
         archive_path = spike_fixture / "artifact.tar"
         archive = archive_path.read_bytes()
@@ -576,6 +595,7 @@ def test_shared_malformed_inputs_fail_closed(
             "invalid-mtime",
             "nul-number-suffix",
             "empty-size",
+            "trailing-header",
         }:
             if mutation == "empty-size":
                 # A real zero-length member with a matching inventory would pass
@@ -602,6 +622,8 @@ def test_shared_malformed_inputs_fail_closed(
             header = bytearray(archive[:512])
             if mutation == "high-bit-header":
                 header[0] |= 0x80
+            elif mutation == "trailing-header":
+                header[511] = ord("x")
             elif mutation == "nul-name-suffix":
                 header[99] = ord("x")
             elif mutation == "nul-prefix-suffix":
@@ -674,15 +696,18 @@ def test_shared_malformed_inputs_fail_closed(
         "pax-header": "invalid archive inventory",
         "gnu-header": "invalid archive inventory",
         "high-bit-header": "non-ASCII archive header",
+        "trailing-header": "invalid archive inventory",
     }
     runtime_reasons = {
         "py": {
             "bom-index": "UTF-8 BOM",
+            "invalid-utf8-id": "utf-8",
             "extra-member": "invalid archive inventory",
             "bad-checksum": "invalid archive checksum",
         },
         "ts": {
             "bom-index": "JSON Parse error",
+            "invalid-utf8-id": "utf-8",
             "extra-member": "incomplete archive",
             "bad-checksum": "invalid archive inventory",
         },

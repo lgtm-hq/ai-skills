@@ -4,6 +4,7 @@ name: Install plane distribution spike
 'on':
   workflow_dispatch:
   pull_request:
+  merge_group:
   schedule:
     - cron: '17 3 * * *'
 
@@ -34,18 +35,26 @@ jobs:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+      - name: Set up change-detector Python
+        # yamllint disable-line rule:line-length
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
       - name: Compare changed files with harness inputs
         id: inputs
         run: python3 scripts/ci/install_plane_changes.py
 
   native:
-    name: Native evidence (${{ matrix.runner }})
+    name: Native evidence
     needs: changes
     if: >-
+      !cancelled() && (
+      needs.changes.result != 'success' ||
       needs.changes.outputs.changed == 'true' ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
-      startsWith(github.head_ref, 'release/')
+      github.event_name == 'merge_group' ||
+      startsWith(github.head_ref, 'release/'))
     strategy:
       fail-fast: false
       matrix:
@@ -245,3 +254,29 @@ jobs:
           "${{ steps.helper.outcome == 'success' && '.spike-evidence-helper'
           || '.' }}/research/install-plane-spike/scripts/retain-ci.py"
           upload
+
+  gate:
+    name: Install plane harness gate
+    needs: [changes, native, offline-linux]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Harden runner
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - name: Checkout gate
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Require all mandatory harness jobs
+        env:
+          SPIKE_JOB_RESULTS: ${{ toJSON(needs) }}
+          SPIKE_MANDATORY: >-
+            ${{ github.event_name != 'pull_request' ||
+                startsWith(github.head_ref, 'release/') }}
+        run: python3 scripts/ci/install_plane_gate.py

@@ -273,3 +273,38 @@ def test_unreadable_protected_path_is_not_skipped(
     monkeypatch.setattr(Path, operation, deny)
     with pytest.raises(PermissionError, match="Injected protected-path denial"):
         collect(home)
+
+
+def test_concurrent_file_change_fails_collection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A mutation during the real read cannot publish an unchanged inventory."""
+    source = Path(__file__).resolve().parent / "fixtures/host-probe/config_snapshot.py"
+    collect = runpy.run_path(str(source))["snapshot"]
+    payload = tmp_path / ".agents/skills/example/SKILL.md"
+    payload.parent.mkdir(parents=True)
+    payload.write_text("before", encoding="utf-8")
+    read = Path.read_bytes
+
+    def change(path: Path) -> bytes:
+        """Change only the disposable payload at its read boundary."""
+        data = read(path)
+        if path == payload:
+            path.write_text("changed contents", encoding="utf-8")
+        return data
+
+    monkeypatch.setattr(Path, "read_bytes", change)
+    with pytest.raises(ValueError, match="changed during read"):
+        collect(tmp_path)
+
+
+def test_summary_does_not_publish_auth_derived_digest(
+    snapshot_command: Callable[[Path], subprocess.CompletedProcess[str]], tmp_path: Path
+) -> None:
+    """Auth-file fingerprints remain private even when the config comparison passes."""
+    auth = tmp_path / "home/.codex/auth.json"
+    auth.parent.mkdir()
+    auth.write_text('{"token":"synthetic-private"}', encoding="utf-8")
+    result = snapshot_command(tmp_path / "home")
+    assert_that(result.returncode).is_zero()
+    assert_that(json.loads(result.stdout)).contains_only("files")

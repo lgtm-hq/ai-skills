@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -101,7 +103,18 @@ def prepare(*, build: Path, work: Path) -> dict[str, Any]:
                 home=work / "program-controls" / name,
             )
     finally:
-        shutil.rmtree(seeded)
+        original = sys.exception()
+        for attempt in range(3):
+            try:
+                shutil.rmtree(seeded)
+                break
+            except OSError as cleanup_error:
+                if attempt < 2:
+                    time.sleep(0.1)
+                elif original is not None:
+                    original.add_note(f"Seed cleanup also failed: {cleanup_error}")
+                else:
+                    raise
     return controls
 
 

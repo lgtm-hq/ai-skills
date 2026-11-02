@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 from assertpy import assert_that
+from lintro.config.config_loader import load_config
 from lintro.config.tool_config import LintroToolConfig
 from pydantic import ValidationError
 from yaml.nodes import MappingNode, Node, ScalarNode
@@ -134,13 +135,19 @@ def _policy_violations(source: str) -> list[str]:
     tools = config.get("tools", {})
     if not isinstance(tools, dict):
         return [*violations, "tools must be a mapping"]
+    # Lintro normalizes before parsing: the last spelling owns the whole entry.
+    # Keep nonstring names so malformed configuration still fails closed.
+    tools = {
+        (name.lower() if isinstance(name, str) else name): settings
+        for name, settings in tools.items()
+    }
     raw_sections = {
         key.value: value for key, value in document.value if isinstance(key, ScalarNode)
     }
     raw_tools = raw_sections.get("tools")
     tool_nodes = (
         {
-            key.value: (key, value)
+            key.value.lower(): (key, value)
             for key, value in raw_tools.value
             if isinstance(key, ScalarNode)
         }
@@ -190,6 +197,55 @@ def _policy_violations(source: str) -> list[str]:
 def test_repository_lintro_policy(lintro_source: str) -> None:
     """Keep every future tool enabled and require documented exceptions."""
     assert_that(_policy_violations(lintro_source)).is_empty()
+
+
+@pytest.mark.parametrize(
+    ("settings", "enabled", "expected"),
+    [
+        ("  Ruff: false\n  ruff: true\n", True, []),
+        ("  ruff: false\n  RUFF: {}\n", True, []),
+        (
+            "  ruff: true\n  Ruff: false\n",
+            False,
+            ["ruff: disabled without a reason"],
+        ),
+        ("  ruff: true\n  Ruff: false # Cost gate.\n", False, []),
+        (
+            "  Ruff: false # Old reason.\n  ruff: false\n",
+            False,
+            ["ruff: disabled without a reason"],
+        ),
+        (
+            "  Ruff: {enabled: false}\n  ruff: {enabled: true}\n",
+            True,
+            [],
+        ),
+    ],
+    ids=[
+        "later-enable",
+        "later-default",
+        "later-disable",
+        "local-reason",
+        "shadowed-reason",
+        "mapping-override",
+    ],
+)
+def test_policy_matches_loader_tool_key_normalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: str,
+    enabled: bool,
+    expected: list[str],
+) -> None:
+    """Compare the actual project loader with the guard, without global config."""
+    monkeypatch.setenv("LINTRO_GLOBAL_CONFIG", "off")
+    config_path = tmp_path / ".lintro-config.yaml"
+    source = f"tools:\n{settings}"
+    config_path.write_text(source, encoding="utf-8")
+    loaded = load_config(config_path=config_path, allow_pyproject_fallback=False)
+    assert_that(loaded.tools).contains_only("ruff")
+    assert_that(loaded.tools["ruff"].enabled).is_equal_to(enabled)
+    assert_that(_policy_violations(source)).is_equal_to(expected)
 
 
 def test_policy_rejects_undocumented_inherited_disable() -> None:

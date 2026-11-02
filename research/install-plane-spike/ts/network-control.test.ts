@@ -4,9 +4,9 @@ import endpoint from "../network-control.json";
 import { networkControl } from "./network-control";
 
 afterEach(() => {
-  connect.mockRestore();
+  connect?.mockRestore();
 });
-let connect = spyOn(Socket.prototype, "connect");
+let connect: { mockRestore(): void } | undefined;
 
 test.each([
   ["connect", undefined, "connected"],

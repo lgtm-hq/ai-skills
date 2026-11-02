@@ -10,7 +10,7 @@ import pytest
 from assertpy import assert_that
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
-from vendor_registry.safe_tree import _iter_markdown_destinations
+from vendor_registry.safe_tree import iter_markdown_destinations
 
 
 def _normalized(text: str) -> str:
@@ -101,7 +101,7 @@ def _retired_aliases(*, document: str, aliases: list[str]) -> list[str]:
     prose = _normalized(
         _prose(MarkdownIt("commonmark").enable("table").parse(document))
         + " "
-        + " ".join(_iter_markdown_destinations(text=document)),
+        + " ".join(iter_markdown_destinations(text=document)),
     )
     return [
         alias
@@ -126,7 +126,7 @@ def engine_adrs() -> list[Path]:
     """Locate the complete engine ADR range covered by the alias contract.
 
     Returns:
-        All four ADR paths, including the proposed runtime decision.
+        All four ADR paths, including the accepted runtime decision.
     """
     root = Path(__file__).resolve().parents[1] / "docs/adr"
     paths = sorted(
@@ -186,7 +186,7 @@ def test_engine_adrs_use_no_retired_aliases(
     glossary_entries: list[tuple[str, list[str]]],
     engine_adrs: list[Path],
 ) -> None:
-    """Inspect every engine ADR's prose without exempting the proposed ADR."""
+    """Inspect every engine ADR's prose without exempting the runtime ADR."""
     aliases = [alias for _, replaced in glossary_entries for alias in replaced]
     for path in engine_adrs:
         assert_that(

@@ -38,6 +38,15 @@ def prepare(
     admin = [tools["sudo"], "-n", tools["ip"], "netns"]
     inside = [*admin, "exec", name]
     state.update(name=name, admin=admin, setup={}, consumer=consumer)
+    existing = command(argv=[*admin, "list"], records=records)
+    if existing["exit"] != 0 or name in {
+        line.split()[0]
+        for line in existing.get("stdout", "").splitlines()
+        if line.strip()
+    }:
+        state["reason"] = "Cannot establish fresh namespace ownership"
+        return None
+    state["fresh_name"] = True
     # Every route/rule mutation runs behind `ip netns exec <owned-name>`.
     # A valid loopback-only route avoids accidental ENETUNREACH proof. Explicit
     # policy-routing prohibit returns EACCES; nft OUTPUT DROP can merely time out.
@@ -58,9 +67,16 @@ def prepare(
         ("rules_ipv6", [*inside, tools["ip"], "-6", "rule", "show"]),
     ]
     for stage, argv in steps:
+        if stage == "create":
+            state["creation_attempted"] = True
         result = command(argv=argv, records=records)
         state["setup"][stage] = result
         if result["exit"] != 0:
+            if stage in {"filter_ipv6", "rules_ipv6"}:
+                state["ipv6_limitation"] = (
+                    "IPv4 setup records retained; complete offline verification "
+                    "unverified because IPv6 setup is unavailable"
+                )
             state["reason"] = f"Linux namespace setup failed at {stage}"
             return None
         if stage == "create":
@@ -95,8 +111,17 @@ def cleanup(*, state: dict[str, Any], records: list[dict[str, Any]]) -> dict[str
     Returns:
         Verified removal or an explicit failure; never deletes preexisting names.
     """
-    if not state.get("created"):
+    if not state.get("created") and not (
+        state.get("fresh_name") and state.get("creation_attempted")
+    ):
         return {"status": "not created"}
+    members = command(argv=[*state["admin"], "pids", state["name"]], records=records)
+    if members["exit"] != 0 or members.get("stdout", "").strip():
+        return {
+            "status": "unverified removal",
+            "members": members,
+            "reason": "namespace membership not empty/verified; name retained",
+        }
     removed = command(argv=[*state["admin"], "delete", state["name"]], records=records)
     remaining = command(argv=[*state["admin"], "list"], records=records)
     absent = state["name"] not in {
@@ -112,4 +137,5 @@ def cleanup(*, state: dict[str, Any], records: list[dict[str, Any]]) -> dict[str
         ),
         "remove": removed,
         "remaining": remaining,
+        "members": members,
     }

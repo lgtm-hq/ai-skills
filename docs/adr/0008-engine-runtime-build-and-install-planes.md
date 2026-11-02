@@ -18,7 +18,7 @@ The original proposal split Python build and TypeScript install planes. Its
 [merged escape hatch](https://github.com/lgtm-hq/ai-skills/blob/032ee309817813a9ef81bb2450cbed646a625222/docs/adr/0008-engine-runtime-build-and-install-planes.md)
 requires one Python engine behind a thin TypeScript npm launcher if bundled
 Python is equally deployable under the same private-registry, no-Node and offline
-restrictions. The [distribution report](https://github.com/lgtm-hq/ai-skills/blob/research/562-install-plane-spike/docs/research/install-plane-distribution.md)
+restrictions. The [distribution report](../research/install-plane-distribution.md)
 now establishes that comparison on all five native targets.
 
 ## Decision
@@ -54,7 +54,8 @@ now establishes that comparison on all five native targets.
   outside this gate ([oven-sh/bun#47640](https://github.com/oven-sh/bun/issues/47640));
   both clients remain required for registry installs.
 - **No Rust adoption.** Reopening the runtime or install-resolution boundary
-  requires a superseding ADR.
+  requires a superseding ADR. Rust may be reopened by that ADR only if the
+  install plane needs resolution logic.
 
 ## Evidence and applied rule
 
@@ -84,8 +85,9 @@ The report records the source diff proving prototype, collector, build and pin
 bytes unchanged from `fb4d21b` through `7909883621f726eb26806f23ab075b91c6153064`
 and this documentation/main integration. The intervening changes move tests and
 change workflow triggers. Historical R11/R12 artifacts are never relabeled.
-Dispatch 41335569949 belongs to `7909883`; collect its completion and results
-separately rather than assigning it older JSON.
+[Dispatch 41335569949](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949)
+completed successfully at `7909883`. The report records its separately inspected
+twelve schema-3 JSONs; they are never assigned the older run identity.
 
 ## Security policy and limits
 

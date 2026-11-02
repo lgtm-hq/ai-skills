@@ -1,0 +1,86 @@
+---
+name: Regenerate audit requirements
+
+'on':
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: [pyproject.toml, uv.lock]
+
+permissions: {}
+
+concurrency:
+  group: audit-requirements-regen-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    name: Regenerate locked audit input
+    if: >-
+      github.repository == 'lgtm-hq/ai-skills'
+      && startsWith(github.head_ref, 'renovate/')
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'renovate[bot]'
+      && contains(fromJSON('["renovate[bot]","lgtm-release-bot[bot]"]'),
+      github.triggering_actor)
+    permissions:
+      contents: read
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          allowed-endpoints: >-
+            github.com:443
+            api.github.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            raw.githubusercontent.com:443
+            astral.sh:443
+            releases.astral.sh:443
+
+      - name: Checkout trusted base
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Set up uv without installing project dependencies
+        # yamllint disable-line rule:line-length
+        uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        with:
+          enable-cache: false
+
+      - name: Export exact-head lock data using trusted code
+        id: regenerate
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          UV_OFFLINE: '1'
+        run: bash scripts/ci/audit_requirements_regen.sh
+
+      - name: Create release App token only for changed output
+        if: steps.regenerate.outputs.changed == 'true'
+        id: app-token
+        # yamllint disable-line rule:line-length
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      - name: Append GitHub-signed generated file with head-race protection
+        if: steps.regenerate.outputs.changed == 'true'
+        # yamllint disable-line rule:line-length
+        uses: lgtm-hq/lgtm-ci/.github/actions/create-signed-commit@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: ${{ github.head_ref }}
+          mode: append
+          expected-head: ${{ github.event.pull_request.head.sha }}
+          message: 'chore(deps): regenerate locked audit requirements'
+          files: requirements-audit.txt
