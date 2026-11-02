@@ -241,12 +241,134 @@ def test_shell_closure_retains_unquoted_heredoc_execution(
     assert_that(local_inputs(entry.parent, {entry})).contains(helper, data)
 
 
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "cat <<EOF\n$(source lib/setup.sh)\nEOF\n",
+        "cat <<EOF\n$(source lib/set\\\nup.sh)\nEOF\n",
+        'cat <<EOF\n$(source "lib/set\\\nup.sh")\nEOF\n',
+        "cat <<EOF\nit's $(source lib/se\\\nt\\\nup.sh)\nEOF\n",
+        "cat <<EOF\n$(sou\\\nrce \\\nlib/set\\\nup.sh)\nEOF\n",
+        "cat <<-EOF\n\t$(source lib/set\\\nup.sh)\n\tEOF\n",
+        "cat <<-EOF\n\t$(source lib/set\\\n\tup.sh)\n\tEOF\n",
+        (
+            "cat <<'FIRST' <<-SECOND\nit's literal\nFIRST\n"
+            "\t$(source lib/set\\\nup.sh)\n\tSECOND\n"
+        ),
+        "cat <<EOF\n$(source lib/set\\\nup.sh)\\\n\nEOF\n",
+        "cat <<EOF\n$(source lib/set\\\nup.sh)\nE\\\nOF\n",
+    ],
+    ids=[
+        "unsplit-control",
+        "split-word",
+        "double-quoted-word",
+        "repeated-with-apostrophe",
+        "command-and-argument",
+        "tab-stripped",
+        "tab-stripped-continuation",
+        "multiple-heredocs",
+        "continued-line-end",
+        "continued-delimiter",
+    ],
+)
+def test_shell_closure_follows_expandable_heredoc_continuations(
+    shell_closure: tuple[Path, Path, Path], statement: str
+) -> None:
+    """Only the heredoc command names the helper and its transitive data."""
+    entry, helper, data = shell_closure
+    entry.write_text(statement, encoding="utf-8")
+    assert_that(local_inputs(entry.parent, {entry})).contains(helper, data)
+
+
+@pytest.mark.parametrize("marker", ["'EOF'", '"EOF"', "E'OF'", "\\EOF", "-'EOF'"])
+def test_shell_closure_keeps_quoted_heredoc_continuations_literal(
+    shell_closure: tuple[Path, Path, Path], marker: str
+) -> None:
+    """Quoted heredocs cannot manufacture a joined executable filename."""
+    entry, helper, data = shell_closure
+    entry.write_text(
+        f"cat <<{marker}\n$(source lib/se\\\nt\\\nup.sh)\nEOF\n",
+        encoding="utf-8",
+    )
+    assert_that(local_inputs(entry.parent, {entry})).does_not_contain(helper, data)
+
+
+@pytest.mark.parametrize("backslashes", [2, 3, 4])
+def test_shell_closure_preserves_escaped_heredoc_backslashes(
+    shell_closure: tuple[Path, Path, Path], backslashes: int
+) -> None:
+    """Escaped backslashes cannot turn a different path into the helper."""
+    entry, helper, data = shell_closure
+    body = "$(source lib/set" + "\\" * backslashes + "\nup.sh)\n"
+    entry.write_text("cat <<EOF\n" + body + "EOF\n", encoding="utf-8")
+    assert_that(local_inputs(entry.parent, {entry})).does_not_contain(helper, data)
+
+
+@pytest.mark.parametrize("backslashes", [2, 4])
+def test_shell_closure_keeps_heredoc_boundary_after_escaped_backslashes(
+    shell_closure: tuple[Path, Path, Path], backslashes: int
+) -> None:
+    """An escaped backslash cannot join the delimiter and hide the next command."""
+    entry, helper, data = shell_closure
+    body = "literal" + "\\" * backslashes + "\n"
+    entry.write_text(
+        "cat <<EOF\n" + body + "EOF\nsource lib/setup.sh\n", encoding="utf-8"
+    )
+    assert_that(local_inputs(entry.parent, {entry})).contains(helper, data)
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "[ $# -gt 0 ] && ",
+        "echo ${#x};",
+        "echo word#suffix;",
+        "echo \\#;",
+        "echo '#';",
+        'echo "#";',
+        "echo $\\\n#;",
+        "# ordinary comment\n",
+        "true;# adjacent operator comment\n",
+    ],
+    ids=[
+        "positional-count",
+        "parameter-length",
+        "word-hash",
+        "escaped-hash",
+        "single-quoted-hash",
+        "double-quoted-hash",
+        "continued-special-parameter",
+        "comment-newline",
+        "operator-comment-newline",
+    ],
+)
+def test_shell_closure_follows_source_after_literal_hashes(
+    shell_closure: tuple[Path, Path, Path], prefix: str
+) -> None:
+    """A literal hash cannot hide the only helper reference later on the line."""
+    entry, helper, data = shell_closure
+    entry.write_text(prefix + "source lib/setup.sh\n", encoding="utf-8")
+    assert_that(local_inputs(entry.parent, {entry})).contains(helper, data)
+
+
+@pytest.mark.parametrize("prefix", ["#", "echo ok #", "true;#", "true&&#", "true|#"])
+def test_shell_closure_ignores_source_inside_comments(
+    shell_closure: tuple[Path, Path, Path], prefix: str
+) -> None:
+    """Genuine comments still hide paths after whitespace or shell operators."""
+    entry, helper, data = shell_closure
+    entry.write_text(prefix + " source lib/setup.sh\n", encoding="utf-8")
+    assert_that(local_inputs(entry.parent, {entry})).does_not_contain(helper, data)
+
+
+@pytest.mark.parametrize("body", ["source lib/setup.sh\n", "$(source lib/set\\\n"])
 def test_shell_closure_rejects_unterminated_heredoc(
     shell_closure: tuple[Path, Path, Path],
+    body: str,
 ) -> None:
     """An unknown heredoc boundary fails closed instead of dropping the rest."""
     entry, _, _ = shell_closure
-    entry.write_text("cat <<EOF\nsource lib/setup.sh\n", encoding="utf-8")
+    entry.write_text("cat <<EOF\n" + body, encoding="utf-8")
     with pytest.raises(ValueError, match="heredoc"):
         local_inputs(entry.parent, {entry})
 
@@ -274,15 +396,17 @@ def test_shell_closure_preserves_quoted_words_and_multiple_heredocs(
 
 @pytest.mark.parametrize("prefix", ["", "echo $((1 << 2));", "echo '(('; "])
 @pytest.mark.parametrize("marker", ["EOF", "E\\\nOF"])
+@pytest.mark.parametrize("variable", ["$UNKNOWN", "$\\\nUNKNOWN", "$\\\nUN\\\nKNOWN"])
 def test_shell_closure_fails_closed_on_dynamic_heredoc_inputs(
     shell_closure: tuple[Path, Path, Path],
     prefix: str,
     marker: str,
+    variable: str,
 ) -> None:
     """Expandable heredocs cannot silently hide unknown executable inputs."""
     entry, _, _ = shell_closure
     entry.write_text(
-        prefix + f'cat <<{marker}\n$(source "$UNKNOWN")\nEOF\n', encoding="utf-8"
+        prefix + f'cat <<{marker}\n$(source "{variable}")\nEOF\n', encoding="utf-8"
     )
     with pytest.raises(ValueError, match="dynamic heredoc"):
         local_inputs(entry.parent, {entry})

@@ -41,6 +41,7 @@ class _ShellSource(StringIO):
     """
 
     lexer: _ShellLexer
+    previous = ""
 
     def read(self, size: int | None = -1) -> str:
         """Remove unquoted/double-quoted continuations before token boundaries."""
@@ -54,11 +55,16 @@ class _ShellSource(StringIO):
         ):
             super().read(1)
             char = super().read(1)
-        # A hash starts a comment only at a word boundary, including directly
-        # after an operator. Hashes in words/parameter expansions are literal.
-        if char == "#" and self.lexer.state in {" ", "c"}:
+        # shlex also resets to whitespace state after '$' and '{', so quote
+        # state alone cannot distinguish $# or ${#name} from a shell comment.
+        if (
+            char == "#"
+            and self.lexer.state in {" ", "c"}
+            and (not self.previous or self.previous in " \t\r\n;&|()<>")
+        ):
             super().readline()
-            return "\n"
+            char = "\n"
+        self.previous = char
         return char
 
 
@@ -125,6 +131,17 @@ def _shell_literals(source: str) -> Iterator[str]:
                     line = stream.readline()
                     if not line:
                         raise ValueError(f"unterminated heredoc: {delimiter}")
+                    # Expandable heredocs join unescaped backslash-newlines
+                    # before delimiter matching and dependency extraction.
+                    # An even run of backslashes escapes the final backslash;
+                    # quoted heredocs always keep their physical lines literal.
+                    while expands and re.search(r"(?<!\\)(?:\\\\)*\\\n\Z", line):
+                        following = stream.readline()
+                        if not following:
+                            raise ValueError(f"unterminated heredoc: {delimiter}")
+                        line = line[:-2] + (
+                            following.lstrip("\t") if strip_tabs else following
+                        )
                     if (line.lstrip("\t") if strip_tabs else line).rstrip(
                         "\r\n"
                     ) == delimiter:
