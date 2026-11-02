@@ -1,9 +1,10 @@
-# Draft host evidence format
+# Host evidence format
 
-This is the #563 research format, pending ADR 0009 (#565) and the #585
-implementation. It changes no gateway support table. A record describes one
-tested envelope and its semantics, on one host version and interface, rather
-than promising support for every possible payload of that role.
+This is the #563 research format, ratified by
+[ADR 0009](../adr/0009-capabilities-and-parity.md); production schema implementation
+belongs to issue #585. It changes no gateway support table. Each record describes
+one tested envelope and its semantics on one host version and interface, rather
+than promising support for every payload of that role.
 
 The original CLI set has 108 records: three hosts × six roles × two scopes ×
 three modes. The separate Cursor IDE extension below adds 72 records, for 180
@@ -28,7 +29,7 @@ not proposed routes. User and project are distinct from Claude's additional
 | `policyMarkers` | CLI: observed markers; Cursor IDE policy: public setting name only                                      |
 | `checkedOn`     | ISO date of observation or explicit assessment of why no probe ran                                      |
 | `recheckBy`     | ISO date after `checkedOn`, at most six calendar months later                                           |
-| `steps`         | Nonempty list of `{phase, command, exitCode, output}` mappings                                          |
+| `steps`         | CLI: nonempty `{phase, command, exitCode, output}` list; IDE exceptions below                           |
 | `notes`         | Scope, semantic limits, cleanup caveats; `unverified` includes `Reason:`                                |
 
 Step phases are `install`, `reload`, `invoke`, `remove`, `verify`. Commands may
@@ -48,7 +49,7 @@ server process shutdown exit codes were not captured.
 | `partial`              | Some behavior observed, but a semantic loss, discovery-only result, or incomplete semantic verification remains |
 | `unverified`           | Not safely or conclusively tested; a reason is mandatory                                                        |
 | `platform-unavailable` | Tested prerequisite absent on this platform; no inference from another OS                                       |
-| `policy-blocked`       | Demonstrated denial, or the explicitly sourced Cursor owner definition below                                    |
+| `policy-blocked`       | Engine policy guard, demonstrated host denial, or sourced owner definition below                                |
 | `source-unportable`    | Demonstrated source requirement cannot survive the projection                                                   |
 | `adapter-missing`      | The tested host route is absent, or its necessary projection does not exist                                     |
 
@@ -76,14 +77,16 @@ decision](https://github.com/lgtm-hq/ai-skills/issues/563#issuecomment-655853054
 defines Cursor policy outcomes using public documentation and personal-Cursor
 results, as described below and in the [checklist](cursor-probe-checklist.md).
 No employer-managed machine is probed or organization policy data collected.
-No `tier` field is ratified here;
-Issue #587's proposed `tier: verified` belongs to #565/#585, not an invented
-spike field.
+Adapter tiers follow ADR 0009. This historical format has no `tier` field;
+Issue #585 implements production adapter qualification. An engine tracked-file guard
+can yield `policy-blocked` under [ADR 0010](../adr/0010-adapters-and-delivery-modes.md).
+That engine decision is separate from a host-policy claim, which still requires
+measured denial or an explicit sourced owner attestation.
 
 ## Cursor IDE and policy extension
 
-This is the minimal draft addition needed for the owner's answered decision,
-flagged for #565 ratification and #585 implementation, not a production redesign.
+ADR 0009 adopts this minimal IDE/policy extension from the owner's answered
+decision. Production schema implementation remains #585.
 Original filenames remain `evidence/<host>/<role>-<scope>-<mode>.yaml`, with
 implicit `interface: cli` and policy unassessed. New filenames are
 `evidence/cursor/ide/<policy>/<role>-<scope>-<mode>.yaml`, where policy is
@@ -160,12 +163,15 @@ adapter change, or the six-month maximum, whichever comes first. Re-probe only
 the affected cells; #585 implements these triggers and expiry handling. The
 2026-11-01 Cursor assessments use `recheckBy: 2027-05-01`. #620 adds the unattended
 `cursor-agent` probe, with a separate CLI identity; it does not replace this IDE
-evidence. Issue #565 must ratify the minimal `interface: ide` and policy extension.
+evidence. ADR 0009 ratifies the minimal `interface: ide` and policy extension.
 
 Paths in committed evidence are home-relative aliases (`~/probe/...`) or
 repository-relative paths. Tokens, auth contents, personal absolute paths,
-account information and machine names are excluded. Private snapshots contain
-only paths, mtimes and SHA-256 digests and must never be committed.
+account information and machine names are excluded. Private snapshots contain paths,
+mtimes and SHA-256 digests, including
+credential-file fingerprints. Never publish these inventories or their aggregate
+digests; publish counts and scoped limitations only. Delete private inventories
+promptly after comparing and retaining sanitized evidence.
 
 The original run's protected-config counts (5,372 matching of 5,381 selected
 entries, nine changes) apply only to the old collector, which omitted paths
@@ -188,6 +194,11 @@ publishing contents. Successful collection covers only the documented selected
 suffixes/names and is not atomic against concurrent writes. Link/error handling
 was verified only offline in disposable homes, with no live remeasurement or
 upgrade to the old counts, records or D001–D003 traces.
+
+The maintained driver requires a prior invocation of each removed hook tag
+before absence can be verified; a never-fired hook stays unverified. Its
+post-exit isolation/scope checks do not certify host caches or same-version
+updates. These offline changes never upgrade the returned snapshot.
 
 `uv run pytest tests/test_parity_evidence.py` checks the complete field set,
 types, vocabulary, dates, redaction, filename identities, Cartesian coverage,

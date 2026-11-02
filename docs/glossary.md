@@ -190,3 +190,52 @@ The assessed parity outcome: `supported`, `partial`, `unverified`,
 It is separate from adapter tier and constrained by evidence freshness.
 
 Replaces: none.
+
+## projection
+
+The mapping of a capability and its resources to a host representation, preserving
+declared semantics or explicitly rejecting losses.
+
+Replaces: none.
+
+## bake
+
+The build-time construction of deterministic, resolved artifacts and generated host
+envelopes from pinned inputs.
+
+Replaces: none.
+
+## journal
+
+A durable machine-local record of planned operations and recovery progress, used with
+receipts to resume or compensate an interrupted installation.
+
+Replaces: none.
+
+## generation
+
+One recorded installation state that can be restored or undone subject to ownership and
+hash guards.
+
+Replaces: none.
+
+## publisher
+
+The identity publishing a package or artifact, distinct from its transport location and
+from the original publisher retained in provenance.
+
+Replaces: none.
+
+## closure
+
+The complete transitive set of declared hard dependencies needed by a capability or
+resource. Install filtering consumes the embedded closure without resolving new edges.
+
+Replaces: none.
+
+## attestation
+
+An authenticated statement bound to an artifact digest, describing claims such as build
+inputs or provenance. It does not by itself grant execution trust.
+
+Replaces: none.

@@ -12,6 +12,7 @@ import ctypes
 import importlib
 import os
 import subprocess  # nosec B404 - explicit argv, owned suspended launch only
+import sys
 from ctypes import wintypes
 from typing import Any
 
@@ -254,9 +255,12 @@ class JobPopen(subprocess.Popen[bytes]):
         else:
             handles = []
         try:
+            executable = os.fsdecode(executable) if executable is not None else None
+            command_line = subprocess.list2cmdline(args)
+            sys.audit("subprocess.Popen", executable, command_line, cwd, env)
             hp, ht, pid, _ = native.CreateProcess(
                 executable,
-                subprocess.list2cmdline(args),
+                command_line,
                 None,
                 None,
                 bool(handles),

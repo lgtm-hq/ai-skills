@@ -41,7 +41,7 @@ def retain_acquisition() -> None:
         "probe_denial_proven": False,
         "installer_denial_proven": False,
         "reason": "No same-host unrestricted control or payload provenance; "
-        "missing scenario evidence is not a pass",
+        "this acquisition-only record does not assess separately retained scenarios",
     }
     raw = json.dumps(result, indent=2) + "\n"
     print(raw, flush=True)
@@ -60,7 +60,7 @@ def main() -> None:
     else:
         outcome = os.environ.get("SPIKE_UPLOAD_OUTCOME", "unknown")
         message = (
-            f"Artifact upload outcome: {outcome}; " "acquisition remains unverified.\n"
+            f"Artifact upload outcome: {outcome}; acquisition remains unverified.\n"
         )
         print(message, end="", flush=True)
         append_summary(message)

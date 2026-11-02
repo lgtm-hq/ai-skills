@@ -20,7 +20,8 @@ references only the public setting name. Do not invent on-disk detection keys.
 
 - [x] Personal Cursor IDE 3.27.22, darwin-arm64/macOS 27.2, 2026-11-01.
 - [x] 41 checks and hook/MCP logs recorded in the immutable
-      [raw snapshot](evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json).
+      [raw
+      snapshot](evidence/cursor/raw/2026-11-01-ide-darwin-arm64/cursor-probe-results-20261101T150149Z.json).
 - [x] Defined IDE cells populated and file-policy cells derived from exact matches.
 - [x] Project-native route absent after two restarts; user-native roles invoked.
 - [x] Cross-reads and removal checked; invocation-restriction result marked unconfirmed.
@@ -76,12 +77,15 @@ boundaries. Complete the displayed fresh-chat prompt before answering the
 removal question. The automatic removal check inspects only new entries for
 the exact removed tag; old entries and the next phase's tag do not count.
 `hookRemovalEvidence` retains the boundaries and actual removal status. A
-skipped prompt or unreadable/truncated log leaves hook removal unverified.
+prior invocation of the removed tag is required. A never-fired hook, skipped
+prompt or unreadable/truncated log leaves hook removal unverified.
 
 Use a new agent chat for each check. Type only the prompt/invocation shown,
 not the expected token. `y` means the stated check succeeded, `d` means listed
 only, `n` means no, and `s` means skipped. Record uncertainties in a short note
-without personal information. The script's JSON is a transcript, not an
+without personal information. For invocation questions, `y` reports token-returning
+semantics; it is not
+a verbatim model transcript. The script's JSON records answers, not an
 automatic `supported` verdict: invocation semantics, removal, caches and config
 must all be reviewed per cell. A failed request can still trigger a hook;
 credit the independent hook log only to lifecycle. MCP process startup is not
@@ -160,7 +164,7 @@ observation. File records derive only from the matching `ide/none` cell and
 cite the owner decision. The defined file routes now cite that cell's measured personal
 JSON checks
 (`ue-<role>` or `rm-<role>`); undefined pairs remain unverified under #581.
-CLI records remain separate. #565 must ratify this minimal extension; #585
+CLI records remain separate. ADR 0009 ratifies this minimal extension; #585
 owns its production schema.
 
 The script fingerprints selected real `.cursor`, `.claude` and `.agents`
@@ -180,7 +184,8 @@ an unverified comparison has a null `realConfigChangedEntries` count.
 it does not establish host cache removal. Failures and handled interruptions
 still exit nonzero. If writing the result file fails, sanitized JSON is printed
 to stdout as a fallback. Inspect deletion and cache/config removal separately.
-These transcript fields are input to #565, not a production schema redesign.
+These historical transcript fields are adopted by ADR 0009; production schema
+implementation remains #585.
 
 The personal-evidence requirement is satisfied. The parent handles publication
 and review, with the owner's merge order after #562 still binding; this revision

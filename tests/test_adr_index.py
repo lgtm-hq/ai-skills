@@ -9,8 +9,9 @@ import pytest
 from assertpy import assert_that
 from markdown_it import MarkdownIt
 from vendor_registry.safe_tree import (
-    _assert_relative_markdown_target,
-    _iter_markdown_destinations,
+    assert_relative_markdown_target,
+    iter_markdown_destinations,
+    validate_internal_references,
 )
 
 
@@ -65,8 +66,7 @@ def adr_files(adr_dir: Path) -> list[Path]:
     return paths
 
 
-@pytest.fixture
-def index_rows(adr_dir: Path) -> list[tuple[str, str, str]]:
+def read_index_rows(adr_dir: Path) -> list[tuple[str, str, str]]:
     """Read ADR filenames, titles and statuses from README table rows.
 
     Args:
@@ -78,15 +78,24 @@ def index_rows(adr_dir: Path) -> list[tuple[str, str, str]]:
     readme = (adr_dir / "README.md").read_text(encoding="utf-8")
     rows = re.findall(
         pattern=(
-            r"^\|\s*\[\d{4}\]\((?:\./)?(\d{4}-[^)\s]+\.md)\)"
+            r"^\|\s*\[(\d{4})\]\((?:\./)?(\d{4}-[^)\s]+\.md)\)"
             r"\s*\|\s*([^|\n]+)\|\s*([^|\n]+)\|\s*$"
         ),
         string=readme,
         flags=re.MULTILINE,
     )
+    for displayed, filename, _, _ in rows:
+        if displayed != filename[:4]:
+            raise ValueError(f"displayed ADR ID {displayed} differs from {filename}")
     return [
-        (filename, title.strip(), status.strip()) for filename, title, status in rows
+        (filename, title.strip(), status.strip()) for _, filename, title, status in rows
     ]
+
+
+@pytest.fixture
+def index_rows(adr_dir: Path) -> list[tuple[str, str, str]]:
+    """Read and validate each displayed ID before exposing index rows."""
+    return read_index_rows(adr_dir)
 
 
 @pytest.fixture(
@@ -131,6 +140,45 @@ def test_adr_index_lists_every_adr_once(
 
     assert_that(filenames).does_not_contain_duplicates()
     assert_that(filenames).contains_only(*[path.name for path in adr_files])
+
+
+def test_index_rejects_displayed_id_mismatch(tmp_path: Path) -> None:
+    """A valid filename cannot hide a misleading displayed ADR number."""
+    (tmp_path / "README.md").write_text(
+        "| [9999](./0001-example.md) | Example | Accepted |\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="displayed ADR ID"):
+        read_index_rows(tmp_path)
+
+
+@pytest.mark.parametrize("target", ["./sibling.md", "../../README.md"])
+def test_adr_repository_links_and_plugin_boundary(tmp_path: Path, target: str) -> None:
+    """ADR links may reach the repository root; packaged links stay contained."""
+    adr = tmp_path / "docs/adr"
+    adr.mkdir(parents=True)
+    document = adr / "0001-example.md"
+    document.write_text(f"[evidence]({target})\n", encoding="utf-8")
+    (adr / "sibling.md").write_text("evidence", encoding="utf-8")
+    (tmp_path / "README.md").write_text("[unrelated](missing.md)", encoding="utf-8")
+    (adr / "README.md").write_text("index", encoding="utf-8")
+    check_internal_links(adr, [document])
+    if target.startswith("../"):
+        with pytest.raises(ValueError):
+            validate_internal_references(root=adr)
+
+
+@pytest.mark.parametrize("target", ["missing.md", "../../../outside.md"])
+def test_adr_links_reject_missing_and_repository_escape(
+    tmp_path: Path, target: str
+) -> None:
+    """Missing targets and escapes stay fail closed despite a wider ADR boundary."""
+    adr = tmp_path / "docs/adr"
+    adr.mkdir(parents=True)
+    document = adr / "0001-example.md"
+    with pytest.raises(ValueError):
+        assert_relative_markdown_target(
+            raw_target=target, file_path=document, root=tmp_path
+        )
 
 
 def test_adr_index_status_matches_document(
@@ -351,7 +399,7 @@ def test_engine_adr_acceptance_and_index(
 def test_engine_adrs_cross_link_contracts(accepted_engine_adr: Path) -> None:
     """Each accepted contract links the glossary and the other two contracts."""
     document = accepted_engine_adr.read_text(encoding="utf-8")
-    targets = set(_iter_markdown_destinations(text=document))
+    targets = set(iter_markdown_destinations(text=document))
     assert_that(targets).contains("../glossary.md")
     for number in range(9, 12):
         if f"{number:04d}" != accepted_engine_adr.name[:4]:
@@ -362,14 +410,17 @@ def test_engine_adrs_cross_link_contracts(accepted_engine_adr: Path) -> None:
             ).is_true()
 
 
-def test_adr_internal_links_resolve(adr_dir: Path, adr_files: list[Path]) -> None:
+def check_internal_links(adr_dir: Path, adr_files: list[Path]) -> None:
     """Reuse the offline bake link checks with the repository as containment root."""
     for path in [*adr_files, adr_dir / "README.md"]:
-        for target in _iter_markdown_destinations(
-            text=path.read_text(encoding="utf-8")
-        ):
-            _assert_relative_markdown_target(
+        for target in iter_markdown_destinations(text=path.read_text(encoding="utf-8")):
+            assert_relative_markdown_target(
                 raw_target=target,
                 file_path=path,
                 root=adr_dir.parents[1],
             )
+
+
+def test_adr_internal_links_resolve(adr_dir: Path, adr_files: list[Path]) -> None:
+    """Scan ADR documents and the glossary within repository containment only."""
+    check_internal_links(adr_dir, [*adr_files, adr_dir.parent / "glossary.md"])

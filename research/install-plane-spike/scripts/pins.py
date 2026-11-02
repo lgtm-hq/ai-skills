@@ -38,7 +38,12 @@ def test_dependencies(path: Path) -> list[str]:
     import tomllib
 
     packages = tomllib.loads(path.read_text(encoding="utf-8"))["package"]
-    versions = {item["name"]: item["version"] for item in packages}
+    versions = {}
+    for name in ("pytest", "assertpy", "pyyaml"):
+        candidates = {item["version"] for item in packages if item["name"] == name}
+        if len(candidates) != 1:
+            raise ValueError(f"expected one locked version for {name}")
+        versions[name] = candidates.pop()
     return [f"{name}=={versions[name]}" for name in ("pytest", "assertpy", "pyyaml")]
 
 

@@ -8,6 +8,7 @@ import json
 import socket
 import sys
 from pathlib import Path
+from sys import exception
 from typing import Any
 
 ENDPOINT = json.loads(
@@ -65,12 +66,15 @@ def probe() -> list[dict[str, Any]]:
             )
         finally:
             if connection is not None:
+                original = exception()
                 try:
                     connection.close()
                 except OSError as error:
+                    if original is not None:
+                        original.add_note(f"Socket close also failed: {error}")
                     raw = socket_error(error=error, stage="close")
                     item["cleanup_error"] = raw
-                    item["outcome_before_cleanup"] = item["outcome"]
+                    item["outcome_before_cleanup"] = item.get("outcome", "inconclusive")
                     if "error" not in item:
                         item.update(raw)
                     item["outcome"] = "inconclusive"

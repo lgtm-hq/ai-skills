@@ -82,6 +82,10 @@ def stop_windows_job(
         return result
     deadline = time.monotonic() + budget
     try:
+        try:
+            result["active_processes_before_termination"] = job.active()
+        except OSError as error:
+            result["membership_before_error"] = str(error)
         job.terminate()
         result["actions"].append({"operation": "TerminateJobObject", "success": True})
         while (active := job.active()) and time.monotonic() < deadline:

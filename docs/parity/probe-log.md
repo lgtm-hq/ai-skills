@@ -41,7 +41,7 @@ omitted evidence from that run, not measurements with the revised MCP fixture.
 Paths are sanitized with the same aliases as R001–R112. `r`, `base`, `FIX` and
 `setup` below are original driver variables, not shell environment variables.
 
-D001–D003 are in-process driver operations, **not additional process attempts**.
+D001–D004 are in-process driver operations, **not additional process attempts**.
 They have no separately captured exit codes. The enclosing `follow.py` and
 `filemodes.py` commands completed successfully; their saved output reported
 `succeeded in 76997ms` and `succeeded in 14044ms`, respectively. No source/cache
@@ -109,6 +109,34 @@ driver performed these operations before the next `claude -p` and `mcp list`:
 
 The edits emitted no independent output. R061/R064 preserve the observed
 paths; neither is evidence of a `probe_integration` tool call.
+
+### D004: pre-removal Claude file-mode hook reads after R060/R063
+
+Recovered from the same original `563-sol.log`, lines 11939–11941 and
+11949–11958 (`filemodes.py`, enclosing command succeeded in 14044ms). After each
+model request and before the subsequent MCP list and later cleanup, the driver
+read the existing isolated hook log:
+
+```python
+run(name,['claude','-p','--model','haiku','--max-turns','1','/probe-skill'],timeout=20)
+print(name,'HOOK', (r/'tmp/probe-hook.log').read_text() if (r/'tmp/probe-hook.log').exists() else 'absent',flush=True)
+run(name,['claude','mcp','list'],timeout=20)
+```
+
+Captured output immediately after R060 and R063, respectively:
+
+```text
+claude-files-user HOOK PROBE-7f3a-lifecycle
+
+claude-files-project HOOK PROBE-7f3a-lifecycle
+```
+
+These are original in-process file reads with no separate process exit code.
+They strengthen the pre-removal lifecycle trace for Claude Code 2.1.310 on
+linux-x86_64, package 1.0.0, source `032ee309`. They do not turn the exit-1 model
+requests into skill invocations or establish post-removal noninvocation.
+R110/R112 remain later reads of the same logs; no raw output was rewritten or
+probe replayed. D004 adds no process attempts to R001–R112.
 
 ## Commands
 

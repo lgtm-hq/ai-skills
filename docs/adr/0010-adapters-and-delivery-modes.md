@@ -22,9 +22,10 @@ verification and recovery guarantees. Its support report uses
 contract at registration time; the core contains no host-specific branches.
 Unsupported or policy-denied plans fail before writes.
 
-The modes are `native-plugin`, `user-explode` and `repo-materialize`. Scope is
-always explicit; the adapter honors it or rejects the plan without substituting
-another scope. Policy selects the permitted delivery as in ADR 0004.
+The modes are `native-plugin`, `user-explode` and `repo-materialize`. The canonical
+scope rule is
+[ADR 0001](./0001-plugin-canonical-atomic-selection.md); adapters apply that rule.
+Policy selects the permitted delivery as in ADR 0004.
 
 Native delivery installs only the resolved, filtered and pinned artifact as a
 generated plugin, never an upstream plugin. First-party content goes through

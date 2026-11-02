@@ -10,6 +10,7 @@ export async function networkControl({
   arch = process.arch,
   windows = windowsNetworkControl,
   createSocket = () => new Socket(),
+  completionBudgetMs = 3000,
 } = {}): Promise<unknown[]> {
   if (platform === "win32" && isBun) {
     if (arch !== "x64")
@@ -18,6 +19,11 @@ export async function networkControl({
   }
   return new Promise((resolve) => {
     let socket: Socket | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settle = () => {
+      clearTimeout(timer);
+      resolve([observation]);
+    };
     let stage = "create";
     let finishing = false;
     const observation: Record<string, unknown> = { ...endpoint, outcome: "inconclusive" };
@@ -45,7 +51,7 @@ export async function networkControl({
       observation.outcome = outcome;
       if (error !== undefined) Object.assign(observation, failure(error, stage));
       if (!socket) {
-        resolve([observation]);
+        settle();
         return;
       }
       stage = "close";
@@ -54,7 +60,7 @@ export async function networkControl({
         // Resolve on close, so an asynchronous destroy error also invalidates proof.
       } catch (error: unknown) {
         cleanupFailure(error);
-        resolve([observation]);
+        settle();
       }
     };
     const connectionError = (error: unknown) => {
@@ -67,9 +73,18 @@ export async function networkControl({
         (raw.code === "EACCES" || (platform !== "win32" && raw.code === "EPERM"));
       finish(denied ? "explicit-denial" : "inconclusive", error);
     };
+    timer = setTimeout(() => {
+      cleanupFailure(new Error("socket diagnostic completion deadline exceeded"));
+      try {
+        socket?.destroy();
+      } catch (error: unknown) {
+        cleanupFailure(error);
+      }
+      settle();
+    }, completionBudgetMs);
     try {
       socket = createSocket();
-      socket.once("close", () => resolve([observation]));
+      socket.once("close", settle);
       socket.on("error", connectionError);
       stage = "settimeout";
       socket.setTimeout(2000);

@@ -76,8 +76,31 @@ integration also leaves those executed inputs unchanged. Thus these results
 support the runtime decision for unchanged source; they are not relabeled as new
 runs or new byte measurements. Source equivalence does not claim rebuilt archive
 hashes or timings would be identical. Dispatch **41335569949** is separately associated
-with exact `7909883`; its actual completion/artifacts must be collected separately
-by the parent. This report does not assign it the `fb4d21b` JSON.
+with exact `7909883` and completed **SUCCESS**. Its twelve actual schema-3 JSONs
+were independently checked for source/expected head, clean source, event/run and
+attempt 1, and their digests are recorded below. All ten native cells pass both
+registry clients, no Node, direct offline and npm fallback. The two dedicated
+Harden Runner results and independent payload provenance remain **unverified**.
+This is separate evidence; the historical `fb4d21b` comparison above is unchanged.
+
+| JSON                      | Artifact                                                                                           | SHA-256                                                            |
+| ------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| darwin-arm64-py.json      | [13094489784](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13094489784) | `c2775a1905e9f30a14bc91f80ef5c25bed6cef86e525d8221c06410fc8687435` |
+| darwin-arm64-ts.json      | [13094489784](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13094489784) | `b69beed944d959824e9a38688ef9d27410c600eccd5119ae93f6fef85ff53df0` |
+| darwin-x64-py.json        | [13094894240](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13094894240) | `0dac63df579ed947c56383f6b3a37c4c886eb6ccccd1b0a786dc92bd3d0de5ee` |
+| darwin-x64-ts.json        | [13094894240](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13094894240) | `dc4642e50b69c9268f5918a7d285e5b797787cb1da80ad2b7dad6efc23c065b6` |
+| linux-arm64-py.json       | [13095216667](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095216667) | `d4d5b2447850d15eb1fb30cc35e3609483e40a716ff050577d248faa5b6bbdf3` |
+| linux-arm64-ts.json       | [13095216667](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095216667) | `0ed1401d4658fb31875ea53f41c48198820bae5c2dc74d7b01dca64450c39f6e` |
+| linux-x64-py.json         | [13095228033](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095228033) | `f44b65ebda11acf8609ef04591b76922500190ea92bfeec8f0c6ace71204a7d5` |
+| linux-x64-ts.json         | [13095228033](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095228033) | `cbb78193e30604f15b7a32cf611a6ca1ea4a9f7cbef609d919e0e5b1be1e3322` |
+| linux-x64-py-offline.json | [13095591042](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095591042) | `34b0e19456f3d6fb64b15b1a84f074e1d0a49cf0792677c308fc0480479dc5cb` |
+| linux-x64-ts-offline.json | [13095591042](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095591042) | `3fca78cd1a0b3237ec307d419844ebdf3d514030bd15e6930284844aca23535b` |
+| windows-x64-py.json       | [13095635752](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095635752) | `da59d0818888c02fc431c50df4c414253c6846f33dc1127cadf2971513e52822` |
+| windows-x64-ts.json       | [13095635752](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095635752) | `b24bc2d74391d3c595d861bff90123f84c7a30464a0a1c19fe0b7589925285a9` |
+
+The #614 hardening changes prototype/collector code after these runs. These
+historical results certify only their bound source, not the modified #614 head;
+new offline regressions establish guards, not fresh native measurements.
 
 ## Required native comparison
 

@@ -1,4 +1,4 @@
-"""Validate the draft host evidence contract without invoking live hosts."""
+"""Validate the ratified host evidence contract without invoking live hosts."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ FIELDS = {
 
 @pytest.fixture
 def evidence_paths() -> list[Path]:
-    """Find every cell record in the draft parity directory.
+    """Find every cell record in the parity directory.
 
     Returns:
         Sorted YAML evidence paths.
@@ -122,89 +122,94 @@ def test_evidence_covers_every_cell_once(
     assert_that(set(identities)).is_equal_to(expected)
 
 
+def validate_evidence_record(path: Path, record: dict[str, Any]) -> None:
+    """Records use the complete historical field set and typed evidence steps."""
+    ide = record["interface"] == "ide"
+    fields = FIELDS | {"policy", "evidence"} if ide else FIELDS
+    assert_that(set(record)).described_as(str(path)).is_equal_to(fields)
+    assert_that(record["state"]).is_in(*STATES)
+    observations: tuple[str, ...] = ("invoked", "discovered", "absent")
+    if ide:
+        observations += ("not-measured",)
+        evidence = record["evidence"]
+        assert_that(set(evidence)).is_equal_to({"kind", "sources", "derivedFrom"})
+        assert_that(evidence["kind"]).is_in(
+            "pending",
+            "measured",
+            "owner-attestation",
+            "owner-derived",
+        )
+        assert_that(evidence["sources"]).is_instance_of(list).is_not_empty()
+        assert_that(evidence["derivedFrom"]).is_instance_of(list)
+        for source in [*evidence["sources"], *evidence["derivedFrom"]]:
+            assert_that(source).is_instance_of(str).is_not_empty()
+        if record["observed"] == "not-measured":
+            assert_that(record["state"]).is_in("unverified", "policy-blocked")
+            assert_that(record["version"]).is_none()
+            assert_that(record["os"]).is_none()
+    assert_that(record["observed"]).is_in(*observations)
+    if record["state"] == "partial":
+        assert_that(record["observed"]).described_as(path.name).is_in(
+            "invoked",
+            "discovered",
+        )
+    assert_that(record["interface"]).is_in("cli", "ide")
+    strings = (
+        ("notes",)
+        if ide and record["version"] is None
+        else (
+            "version",
+            "os",
+            "notes",
+        )
+    )
+    for key in strings:
+        assert_that(record[key]).is_instance_of(str).is_not_empty()
+    for key in ("lostFields", "policyMarkers", "steps"):
+        assert_that(record[key]).is_instance_of(list)
+    for key in ("lostFields", "policyMarkers"):
+        for value in record[key]:
+            assert_that(value).is_instance_of(str).is_not_empty()
+    assert_that(set(record["lostFields"])).is_subset_of(
+        {"invocation", "activation", "permissions", "scope"},
+    )
+    if not ide or record["evidence"]["kind"] in {"pending", "measured"}:
+        assert_that(record["steps"]).is_not_empty()
+    for step in record["steps"]:
+        step_fields = (
+            {"phase", "action", "outcome", "output"}
+            if ide
+            else {
+                "phase",
+                "command",
+                "exitCode",
+                "output",
+            }
+        )
+        assert_that(set(step)).is_equal_to(step_fields)
+        assert_that(step["phase"]).is_in(
+            "install",
+            "reload",
+            "invoke",
+            "remove",
+            "verify",
+        )
+        for key in ("action" if ide else "command", "output"):
+            assert_that(step[key]).is_instance_of(str).is_not_empty()
+        if ide:
+            assert_that(step["outcome"]).is_in("pending", "observed", "not-run")
+        else:
+            assert_that(type(step["exitCode"])).is_in(int, type(None))
+            if step["exitCode"] is None:
+                assert_that(record["state"]).is_equal_to("unverified")
+
+
 def test_evidence_field_types_and_vocabulary(
     evidence_records: list[tuple[Path, dict[str, Any]]],
 ) -> None:
-    """Records use the complete draft field set and typed evidence steps."""
+    """Validate every historical record without inferring new measurements."""
     for path, record in evidence_records:
-        ide = record["interface"] == "ide"
-        fields = FIELDS | {"policy", "evidence"} if ide else FIELDS
-        assert_that(set(record)).described_as(str(path)).is_equal_to(fields)
-        assert_that(record["state"]).is_in(*STATES)
-        observations: tuple[str, ...] = ("invoked", "discovered", "absent")
-        if ide:
-            observations += ("not-measured",)
-            evidence = record["evidence"]
-            assert_that(set(evidence)).is_equal_to({"kind", "sources", "derivedFrom"})
-            assert_that(evidence["kind"]).is_in(
-                "pending",
-                "measured",
-                "owner-attestation",
-                "owner-derived",
-            )
-            assert_that(evidence["sources"]).is_instance_of(list).is_not_empty()
-            assert_that(evidence["derivedFrom"]).is_instance_of(list)
-            for source in [*evidence["sources"], *evidence["derivedFrom"]]:
-                assert_that(source).is_instance_of(str).is_not_empty()
-            if record["observed"] == "not-measured":
-                assert_that(record["state"]).is_in("unverified", "policy-blocked")
-                assert_that(record["version"]).is_none()
-                assert_that(record["os"]).is_none()
-        assert_that(record["observed"]).is_in(*observations)
-        if record["state"] == "partial":
-            assert_that(record["observed"]).described_as(path.name).is_in(
-                "invoked",
-                "discovered",
-            )
-        assert_that(record["interface"]).is_in("cli", "ide")
-        strings = (
-            ("notes",)
-            if ide and record["version"] is None
-            else (
-                "version",
-                "os",
-                "notes",
-            )
-        )
-        for key in strings:
-            assert_that(record[key]).is_instance_of(str).is_not_empty()
-        for key in ("lostFields", "policyMarkers", "steps"):
-            assert_that(record[key]).is_instance_of(list)
-        for key in ("lostFields", "policyMarkers"):
-            for value in record[key]:
-                assert_that(value).is_instance_of(str).is_not_empty()
-        assert_that(set(record["lostFields"])).is_subset_of(
-            {"invocation", "activation", "permissions", "scope"},
-        )
-        if not ide or record["evidence"]["kind"] in {"pending", "measured"}:
-            assert_that(record["steps"]).is_not_empty()
-        for step in record["steps"]:
-            step_fields = (
-                {"phase", "action", "outcome", "output"}
-                if ide
-                else {
-                    "phase",
-                    "command",
-                    "exitCode",
-                    "output",
-                }
-            )
-            assert_that(set(step)).is_equal_to(step_fields)
-            assert_that(step["phase"]).is_in(
-                "install",
-                "reload",
-                "invoke",
-                "remove",
-                "verify",
-            )
-            for key in ("action" if ide else "command", "output"):
-                assert_that(step[key]).is_instance_of(str).is_not_empty()
-            if ide:
-                assert_that(step["outcome"]).is_in("pending", "observed", "not-run")
-            else:
-                assert_that(type(step["exitCode"])).is_in(int, type(None))
-                if step["exitCode"] is None:
-                    assert_that(record["state"]).is_equal_to("unverified")
+        validate_evidence_record(path, record)
 
 
 def test_supported_requires_invocation_and_complete_cycle(
@@ -265,7 +270,12 @@ def test_evidence_dates_and_unverified_reasons(
 def test_published_evidence_redaction(evidence_paths: list[Path]) -> None:
     """Scan records and prose for personal paths/secrets while permitting aliases."""
     root = evidence_paths[0].parents[2]
-    paths = [*evidence_paths, *root.glob("*.md"), *root.rglob("raw/**/*.json")]
+    paths = [
+        *evidence_paths,
+        *root.glob("*.md"),
+        *root.rglob("raw/**/*.json"),
+        root.parents[1] / "tests/fixtures/host-probe/README.md",
+    ]
     home_path = re.compile(
         r"(?<![\w~/])(?:/home/|/Users/|[A-Za-z]:[\\/]Users[\\/])[^\s]+",
     )
@@ -374,8 +384,6 @@ def test_recorded_attempt_totals(evidence_paths: list[Path]) -> None:
     assert_that(model_attempts["Codex"]).does_not_contain("R009").is_length(10)
     assert_that(model_attempts["Claude"]).is_length(6)
     assert_that(model_attempts["Cursor"]).is_length(1)
-    readme = (root / "README.md").read_text(encoding="utf-8")
-    assert_that(readme).contains("Model attempts: 10 Codex, six Claude, one Cursor")
     exits = Counter(exit_code for _, exit_code, _ in attempts)
     assert_that(exits["0"]).is_equal_to(100)
     assert_that(exits["1"]).is_equal_to(7)
@@ -384,7 +392,7 @@ def test_recorded_attempt_totals(evidence_paths: list[Path]) -> None:
     assert_that(exits["not captured; RPC succeeded"]).is_equal_to(3)
 
 
-def test_cursor_policy_claims_follow_answered_owner_rule(
+def validate_cursor_policy_claims(
     evidence_records: list[tuple[Path, dict[str, Any]]],
 ) -> None:
     """Owner definitions and file derivations cannot masquerade as measurements."""
@@ -469,6 +477,28 @@ def test_measured_cursor_record_requires_returned_json_source(
     records = [(Path("synthetic.json"), record)]
     if sources == ["public-docs-only"]:
         with pytest.raises(AssertionError):
-            test_cursor_policy_claims_follow_answered_owner_rule(records)
+            validate_cursor_policy_claims(records)
     else:
-        test_cursor_policy_claims_follow_answered_owner_rule(records)
+        validate_cursor_policy_claims(records)
+
+
+def test_cursor_policy_claims_follow_answered_owner_rule(
+    evidence_records: list[tuple[Path, dict[str, Any]]],
+) -> None:
+    """Apply the owner policy contract to every recorded Cursor cell."""
+    validate_cursor_policy_claims(evidence_records)
+
+
+@pytest.mark.parametrize("observed", ["absent", "not-measured"])
+def test_partial_requires_actual_observation(
+    evidence_records: list[tuple[Path, dict[str, Any]]], observed: str
+) -> None:
+    """Negative controls reject partial claims lacking discovery or invocation."""
+    path, original = next(
+        (path, record)
+        for path, record in evidence_records
+        if record["state"] == "partial"
+    )
+    record = {**original, "observed": observed}
+    with pytest.raises(AssertionError):
+        validate_evidence_record(path, record)

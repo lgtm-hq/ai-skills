@@ -100,7 +100,7 @@ function untar(archive: Buffer): Map<string, Buffer> {
     if (
       checksum !== octal(148, 156) ||
       !header.subarray(257, 263).equals(Buffer.from("ustar\0")) ||
-      header.subarray(345, 500).some((byte) => byte !== 0) ||
+      header.subarray(345, 512).some((byte) => byte !== 0) ||
       ![0, 48].includes(header[156] ?? -1) ||
       output.has(name) ||
       offset + 512 + size > archive.length
@@ -154,7 +154,9 @@ export async function install({
 }): Promise<Record<string, string>> {
   const indexBytes = await readFixture(join(fixture, "index.json"));
   const archive = await readFixture(join(fixture, "artifact.tar"));
-  const index = record(parseIndex(indexBytes.toString("utf8")));
+  const index = record(
+    parseIndex(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(indexBytes)),
+  );
   keys(index, ["sha256", "capabilities"]);
   if (digest(archive) !== index.sha256) throw new Error("archive digest mismatch");
   if (!Array.isArray(index.capabilities) || index.capabilities.length === 0) {

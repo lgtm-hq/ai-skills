@@ -210,15 +210,15 @@ def validate_internal_references(*, root: Path) -> None:
         if file_path.suffix.lower() not in {".md", ".markdown"}:
             continue
         text = file_path.read_text(encoding="utf-8")
-        for raw_target in _iter_markdown_destinations(text=text):
-            _assert_relative_markdown_target(
+        for raw_target in iter_markdown_destinations(text=text):
+            assert_relative_markdown_target(
                 raw_target=raw_target,
                 file_path=file_path,
                 root=root,
             )
 
 
-def _iter_markdown_destinations(*, text: str) -> Iterator[str]:
+def iter_markdown_destinations(*, text: str) -> Iterator[str]:
     """Yield CommonMark link and image destinations from ``text``.
 
     Destinations come from a CommonMark parser so code spans, nested
@@ -315,7 +315,7 @@ def _local_markdown_path(*, raw_target: str) -> str | None:
     return path
 
 
-def _assert_relative_markdown_target(
+def assert_relative_markdown_target(
     *,
     raw_target: str,
     file_path: Path,
