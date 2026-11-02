@@ -21,6 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.30.9] - 2026-11-02
+
+### Changed
+
+- **engine**: extract typed Python engine package (#567) (#633) (fe78e4f)
+- **gateway**: migrate gateway to strict TypeScript (#566) (#632) (8a05c74)
+
+### Fixed
+
+- **docs**: retain durable install-plane evidence citations (#629) (#630) (fb3468e)
+
 ## [0.30.8] - 2026-11-02
 
 ### Changed
@@ -1166,7 +1177,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.8...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.9...HEAD
+[0.30.9]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.8...v0.30.9
 [0.30.8]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.7...v0.30.8
 [0.30.6]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.5...v0.30.6
 [0.30.5]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.4...v0.30.5
