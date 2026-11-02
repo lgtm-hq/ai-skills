@@ -12,21 +12,55 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
-import re
 import shutil
 import sys
 from pathlib import Path
+from string import ascii_letters, digits
 
 import yaml
 
 from ai_skills_engine.paths import find_repo_root, resolve_repo_root
 
-SEMVER_PATTERN = re.compile(
-    r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
-    r"(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]+)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]+))*)?"
-    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$",
-)
+SEMVER_IDENTIFIER_CHARS = frozenset(ascii_letters + digits + "-")
 PLUGINS_BAKED_DIRNAME = "plugins-baked"
+
+
+def _numeric_identifier(value: str) -> bool:
+    """Check an ASCII numeric SemVer identifier without leading zeroes.
+
+    Args:
+        value: One major, minor, patch or numeric prerelease identifier.
+
+    Returns:
+        Whether the identifier meets the SemVer numeric grammar.
+    """
+    return (
+        value.isascii()
+        and value.isdecimal()
+        and (value == "0" or not value.startswith("0"))
+    )
+
+
+def _version_identifiers(value: str, *, prerelease: bool) -> bool:
+    """Check dot-separated prerelease or build identifiers in linear time.
+
+    Args:
+        value: Prerelease or build metadata following its separator.
+        prerelease: Enforce the numeric leading-zero rule for prereleases.
+
+    Returns:
+        Whether all identifiers meet their SemVer grammar.
+    """
+    for identifier in value.split("."):
+        if not identifier or any(c not in SEMVER_IDENTIFIER_CHARS for c in identifier):
+            return False
+        if (
+            prerelease
+            and identifier.isdecimal()
+            and not _numeric_identifier(identifier)
+        ):
+            return False
+    return True
 
 
 def normalize_version(raw_version: str) -> str:
@@ -42,7 +76,18 @@ def normalize_version(raw_version: str) -> str:
         ValueError: If the version is not valid semantic versioning.
     """
     version = raw_version.removeprefix("v")
-    if not SEMVER_PATTERN.fullmatch(version):
+    release, has_build, build = version.partition("+")
+    core, has_prerelease, prerelease = release.partition("-")
+    numbers = core.split(".")
+    # Partition once, then scan disjoint identifiers: no regex backtracking and
+    # no length cap on otherwise valid SemVer. Numeric prereleases must not
+    # contain leading zeroes; build identifiers may (SemVer 2.0.0, sections 9–10).
+    if (
+        len(numbers) != 3
+        or not all(_numeric_identifier(number) for number in numbers)
+        or (has_prerelease and not _version_identifiers(prerelease, prerelease=True))
+        or (has_build and not _version_identifiers(build, prerelease=False))
+    ):
         msg = f"Invalid npm semver version: {raw_version}"
         raise ValueError(msg)
     return version

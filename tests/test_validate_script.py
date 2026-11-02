@@ -47,6 +47,10 @@ def _copy_validate_script(
             src=repo_root / "scripts" / helper,
             dst=script_path.parent / helper,
         )
+    bootstrap = Path("scripts/ci/npm/_engine_bootstrap.py")
+    (tmp_path / bootstrap).parent.mkdir(parents=True)
+    shutil.copy2(src=repo_root / bootstrap, dst=tmp_path / bootstrap)
+    shutil.copytree(src=repo_root / "src", dst=tmp_path / "src")
     for fixture_file in ("requirements-audit.txt", "pyproject.toml", "uv.lock"):
         shutil.copy2(src=repo_root / fixture_file, dst=tmp_path / fixture_file)
     (tmp_path / "docs").mkdir()

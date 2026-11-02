@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess  # nosec B404 - local Python entry points with explicit argv
 import sys
+import venv
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
@@ -47,6 +50,60 @@ COMMANDS = [
         "npm/ai-skills/data/vendors.json",
     ),
 ]
+
+
+@pytest.fixture(scope="session")
+def checkout_python(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Create an offline interpreter with runtime dependencies but no engine.
+
+    Args:
+        tmp_path_factory: Session-scoped scratch directories.
+
+    Returns:
+        Interpreter independent of installed/editable engine packages.
+    """
+    root = tmp_path_factory.mktemp("checkout-python")
+    venv.EnvBuilder(with_pip=False).create(root)
+    site = (
+        root
+        / "lib"
+        / f"python{sys.version_info.major}.{sys.version_info.minor}"
+        / "site-packages"
+    )
+    for name in (
+        "yaml",
+        "markdown_it",
+        "mdurl",
+        "jsonschema",
+        "jsonschema_specifications",
+        "referencing",
+        "rpds",
+        "attr",
+        "attrs",
+    ):
+        spec = find_spec(name)
+        if spec is None or spec.origin is None:
+            raise RuntimeError(f"Missing runtime dependency: {name}")
+        shutil.copytree(Path(spec.origin).parent, site / name)
+    return root / "bin" / "python3"
+
+
+def checkout_env(python: Path) -> dict[str, str]:
+    """Remove source/install overrides from a direct-invocation environment.
+
+    Args:
+        python: Clean interpreter whose bin directory supplies the shebang.
+
+    Returns:
+        Environment with no inherited Python package search overrides.
+    """
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in {"PYTHONPATH", "VIRTUAL_ENV", "PYTHONHOME"}
+    }
+    env["PATH"] = f"{python.parent}{os.pathsep}{env['PATH']}"
+    return env
 
 
 @pytest.fixture
@@ -204,3 +261,75 @@ def test_executable_shim_parity(
     assert_that((cli.returncode, cli.stdout, cli.stderr)).is_equal_to(
         (shim.returncode, shim.stdout, shim.stderr),
     )
+
+
+@pytest.mark.parametrize(("script", "command", "flags", "stale_path"), COMMANDS)
+@pytest.mark.parametrize("executable", [False, True], ids=["python3", "executable"])
+def test_fresh_checkout_shims(
+    engine_repo: Path,
+    checkout_python: Path,
+    script: str,
+    command: list[str],
+    flags: list[str],
+    stale_path: str | None,
+    executable: bool,
+) -> None:
+    """All ten shims work without an installed engine or inherited PYTHONPATH."""
+    del stale_path
+    checkout = engine_repo / "checkout"
+    for directory in ("scripts", "src"):
+        shutil.copytree(REPO / directory, checkout / directory)
+    env = checkout_env(checkout_python)
+    probe = subprocess.run(  # nosec B603 - fixed local interpreter probe
+        args=[
+            str(checkout_python),
+            "-c",
+            "import importlib.util as u; print(u.find_spec('ai_skills_engine'))",
+        ],
+        cwd=engine_repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert_that((probe.returncode, probe.stdout)).is_equal_to((0, "None\n"))
+    args = [str(checkout / "scripts" / script), *flags]
+    if not executable:
+        args.insert(0, str(checkout_python))
+    shim = subprocess.run(  # nosec B603 - trusted copied checkout script argv
+        args=args,
+        cwd=engine_repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    cli = run_engine(
+        args=["-m", "ai_skills_engine.cli", *command, *flags], cwd=engine_repo
+    )
+    assert_that(shim.returncode).described_as(shim.stderr).is_zero()
+    assert_that((shim.returncode, shim.stdout, shim.stderr)).is_equal_to(
+        (cli.returncode, cli.stdout, cli.stderr),
+    )
+
+
+def test_stdlib_manifest_checkout(engine_repo: Path) -> None:
+    """Manifest direct execution needs neither installed engine nor dependencies."""
+    env = checkout_env(Path(sys.executable))
+    result = subprocess.run(  # nosec B603 - fixed local stdlib-only script invocation
+        args=[
+            sys.executable,
+            "-S",
+            str(REPO / "scripts/generate_skills_manifest.py"),
+            "--check",
+            "manifest.json",
+        ],
+        cwd=engine_repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert_that(result.returncode).described_as(result.stderr).is_zero()

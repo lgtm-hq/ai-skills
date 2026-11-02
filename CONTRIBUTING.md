@@ -90,6 +90,20 @@ Tests import and monkeypatch the real package modules, never the script shims.
 tooling. Consumer runtime bundling and install commands are subsequent work under
 ADR 0008.
 
+Direct `python3 scripts/<name>.py` and executable shims load this checkout's
+`src/` through a single bootstrap in `scripts/ci/npm/_engine_bootstrap.py`.
+They require the same third-party runtime dependencies as their implementations;
+the manifest generator remains stdlib-only. Installed CLI imports do not use the
+checkout bootstrap. Release-manifest backfills check out tooling from the workflow
+revision separately, then generate against the selected tag: standalone Python
+for pre-package tags, or `uv run --locked --no-dev` for package tags.
+
+Package version normalization accepts SemVer 2.0.0 with an optional lowercase `v`
+prefix and no artificial length limit. Validation scans identifiers in linear
+time. It now rejects numeric prerelease identifiers with leading zeroes and
+non-ASCII digits, which the former overlapping regex erroneously accepted.
+Build metadata may still contain numeric identifiers with leading zeroes.
+
 Lintro runs all current and future bundled tools by default. Any explicit tool
 disable in `.lintro-config.yaml` needs a reason comment. AI `idiom-review` requires
 paid provider credentials and explicit opt-in under the #596 cost gate; it belongs
