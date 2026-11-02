@@ -87,6 +87,7 @@ def _run_validate(
         (cwd / "bundles.yaml").write_text(
             dump_document({"groups": {}, "ungrouped": names})
         )
+        vendors = read_document(REPO_ROOT / "ai-skills.yaml")["vendors"]
         declaration = {
             "apiVersion": "ai-skills.dev/v1",
             "publisher": {"id": "fixture"},
@@ -100,7 +101,12 @@ def _run_validate(
                     ],
                 }
             ],
-            "vendors": read_document(REPO_ROOT / "ai-skills.yaml")["vendors"],
+            "vendors": vendors,
+            "exports": [
+                f"{vendor['id']}/{package['id']}"
+                for vendor in vendors
+                for package in vendor["mapping"].get("packages", [])
+            ],
             "x-legacy-format": {
                 name: (cwd / name).read_text()
                 for name in ("bundles.yaml", "vendors.yaml")

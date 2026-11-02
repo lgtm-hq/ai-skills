@@ -7,6 +7,7 @@ import json
 import re
 import subprocess  # nosec B404 - isolated local Git fixtures, no shell
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
@@ -18,6 +19,8 @@ from ci import create_signed_commit, vendor_pin_artifact
 
 import ai_skills_engine.vendors.manage as manage_vendors
 from ai_skills_engine.registry.registry import load_registry
+
+pytest_plugins = ("manifest_helpers",)
 
 _ROOT = Path(__file__).resolve().parents[1]
 _REPOSITORY = "owner/catalog"
@@ -183,15 +186,14 @@ def renovate_vendor_manager() -> dict[str, Any]:
 
 
 def test_renovate_captures_every_explicit_vendor_branch(
+    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
     renovate_vendor_manager: dict[str, Any],
 ) -> None:
     """The actual Renovate regex extracts all pins and their branch refs."""
-    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
     matches = [
         match.groupdict()
-        for match in re.finditer(
-            pattern,
-            (_ROOT / "vendors.yaml").read_text(encoding="utf-8"),
+        for match in vendor_pin_matches(
+            (_ROOT / "vendors.yaml").read_text(encoding="utf-8")
         )
     ]
     vendors = load_registry(registry_path=_ROOT / "vendors.yaml")
@@ -215,7 +217,7 @@ def test_renovate_vendor_pattern_uses_re2_subset(
     renovate_vendor_manager: dict[str, Any],
 ) -> None:
     """Keep the Python matching smoke tests free of RE2-unsupported constructs."""
-    assert_that(renovate_vendor_manager["matchStrings"][0]).does_not_contain(
+    assert_that("".join(renovate_vendor_manager["matchStrings"])).does_not_contain(
         "(?=",
         "(?!",
         "(?<=",
@@ -254,7 +256,7 @@ def test_renovate_vendor_pattern_uses_re2_subset(
 )
 def test_renovate_captures_registry_writer_branch(
     tmp_path: Path,
-    renovate_vendor_manager: dict[str, Any],
+    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
     branch: str,
 ) -> None:
     """Capture branch names without the quotes emitted by the registry writer."""
@@ -270,8 +272,7 @@ def test_renovate_captures_registry_writer_branch(
         display_ref=None,
     )
     manage_vendors._write_registry(registry_path=registry_path, vendors=[vendor])
-    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
-    matches = list(re.finditer(pattern, registry_path.read_text(encoding="utf-8")))
+    matches = vendor_pin_matches(registry_path.read_text(encoding="utf-8"))
 
     assert_that(load_registry(registry_path=registry_path)[0].branch).is_equal_to(
         branch
@@ -296,18 +297,18 @@ def test_renovate_captures_registry_writer_branch(
 )
 @pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
 def test_renovate_captures_yaml_branch_quote_styles(
-    renovate_vendor_manager: dict[str, Any],
+    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
     branch_scalar: str,
     comment: str,
     line_ending: str,
 ) -> None:
     """Capture complete YAML scalars with optional comments and line endings."""
     text = (
-        f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
+        "vendors:\n  - id: example\n"
+        f'    repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
         f"    branch: {branch_scalar}{comment}{line_ending}"
     )
-    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
-    matches = list(re.finditer(pattern, text))
+    matches = vendor_pin_matches(text)
 
     assert_that(matches).is_length(1)
     assert_that(matches[0].groupdict()).is_equal_to(
@@ -1104,19 +1105,19 @@ def test_collision_report_posts_without_commit_then_fails(
 @pytest.mark.parametrize("comment", ["", " # upstream default"])
 @pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
 def test_renovate_never_truncates_unsupported_branch_quotes(
-    renovate_vendor_manager: dict[str, Any],
+    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
     branch: str,
     comment: str,
     line_ending: str,
 ) -> None:
     """Quoted branch names must never silently become a shorter upstream ref."""
-    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
     for scalar in [branch, f"'{branch}'", json.dumps(branch)]:
         text = (
-            f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
+            "vendors:\n  - id: example\n"
+            f'    repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
             f"    branch: {scalar}{comment}{line_ending}"
         )
-        assert_that(list(re.finditer(pattern, text))).is_empty()
+        assert_that(vendor_pin_matches(text)).is_empty()
 
 
 @pytest.mark.parametrize(
@@ -1125,17 +1126,17 @@ def test_renovate_never_truncates_unsupported_branch_quotes(
 )
 @pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
 def test_renovate_rejects_malformed_scalar_boundaries(
-    renovate_vendor_manager: dict[str, Any],
+    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
     branch_scalar: str,
     line_ending: str,
 ) -> None:
     """Embedded quotes and unseparated comments cannot truncate the captured ref."""
-    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
     text = (
-        f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
+        "vendors:\n  - id: example\n"
+        f'    repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
         f"    branch: {branch_scalar}{line_ending}"
     )
-    assert_that(list(re.finditer(pattern, text))).is_empty()
+    assert_that(vendor_pin_matches(text)).is_empty()
 
 
 @pytest.mark.parametrize(
@@ -1145,7 +1146,7 @@ def test_renovate_rejects_malformed_scalar_boundaries(
 @pytest.mark.parametrize("comment", ["", " # upstream 'default'"])
 def test_registry_rejects_unbalanced_quotes_permitted_by_renovate(
     tmp_path: Path,
-    renovate_vendor_manager: dict[str, Any],
+    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
     branch_scalar: str,
     comment: str,
 ) -> None:
@@ -1162,8 +1163,7 @@ def test_registry_rejects_unbalanced_quotes_permitted_by_renovate(
         "    homepage: https://github.com/owner/example\n",
         encoding="utf-8",
     )
-    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
-    matches = list(re.finditer(pattern, registry.read_text(encoding="utf-8")))
+    matches = vendor_pin_matches(registry.read_text(encoding="utf-8"))
     assert_that([match.groupdict() for match in matches]).is_equal_to(
         [
             {

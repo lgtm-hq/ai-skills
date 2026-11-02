@@ -11,6 +11,7 @@ import sys
 from email import message_from_bytes
 from importlib.metadata import distribution
 from pathlib import Path
+from types import SimpleNamespace
 from zipfile import ZipFile
 
 import pytest
@@ -21,6 +22,21 @@ from ai_skills_engine import cli
 from ai_skills_engine.manifest.legacy import GENERATED_HEADER
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _venv_executable(environment: Path, name: str) -> Path:
+    """Locate a uv virtual environment executable on the current platform.
+
+    Args:
+        environment: Fresh virtual environment root.
+        name: Executable basename without a platform suffix.
+
+    Returns:
+        Platform-specific interpreter or console-script path.
+    """
+    if sys.platform == "win32":
+        return environment / "Scripts" / f"{name}.exe"
+    return environment / "bin" / name
 
 
 def _run(
@@ -117,7 +133,7 @@ def installed_command(tmp_path_factory: pytest.TempPathFactory) -> Path:
         args=["uv", "venv", "--offline", "--python", sys.executable, str(environment)],
         cwd=root,
     )
-    python = environment / "bin/python"
+    python = _venv_executable(environment, "python")
     _run(
         args=[
             "uv",
@@ -197,7 +213,7 @@ def installed_command(tmp_path_factory: pytest.TempPathFactory) -> Path:
             },
         )
     )
-    return environment / "bin/ai-skills-engine"
+    return _venv_executable(environment, "ai-skills-engine")
 
 
 @pytest.mark.parametrize(
@@ -273,3 +289,64 @@ def test_installed_migration_and_legacy_match_source(
             assert_that((repository / name).read_bytes()).is_equal_to(
                 (ROOT / name).read_bytes()
             )
+
+
+@pytest.mark.parametrize(
+    ("platform", "scripts", "suffix"),
+    [("linux", "bin", ""), ("darwin", "bin", ""), ("win32", "Scripts", ".exe")],
+)
+def test_wheel_fixture_selects_platform_executables(
+    installed_command: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    scripts: str,
+    suffix: str,
+) -> None:
+    """Exercise the fixture's path boundary without executing foreign binaries."""
+    module = sys.modules[__name__]
+    wheel = next(installed_command.parents[2].glob("*.whl"))
+    calls: list[list[str]] = []
+    environments: list[Path] = []
+
+    def simulate_uv(
+        *, args: list[str], cwd: Path, expected: int = 0
+    ) -> subprocess.CompletedProcess[str]:
+        """Replay local wheel installation and probes at the subprocess boundary."""
+        calls.append(args)
+        output = ""
+        if args[:2] == ["uv", "build"]:
+            (cwd / wheel.name).write_bytes(wheel.read_bytes())
+        elif args[:2] == ["uv", "venv"]:
+            environments.append(Path(args[-1]))
+        elif args[:3] == ["uv", "pip", "install"]:
+            site = environments[0] / "site-packages"
+            with ZipFile(args[-1]) as archive:
+                for name in archive.namelist():
+                    if not name.endswith("/"):
+                        target = site / name
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(archive.read(name))
+        elif "sysconfig" in args[-1]:
+            output = str(environments[0] / "site-packages")
+        else:
+            output = str(
+                environments[0] / "site-packages/ai_skills_engine/manifest/validate.py"
+            )
+        return subprocess.CompletedProcess(args, expected, stdout=output, stderr="")
+
+    monkeypatch.setattr(module, "_run", simulate_uv)
+    monkeypatch.setattr(
+        module, "sys", SimpleNamespace(platform=platform, executable=sys.executable)
+    )
+    command = module.installed_command.__wrapped__(tmp_path_factory)
+    environment = environments[0]
+    python = environment / scripts / f"python{suffix}"
+    assert_that(command).is_equal_to(
+        environment / scripts / f"ai-skills-engine{suffix}"
+    )
+    install = next(args for args in calls if args[:3] == ["uv", "pip", "install"])
+    assert_that(install[install.index("--python") + 1]).is_equal_to(str(python))
+    probes = [args for args in calls if args[1:3] == ["-I", "-c"]]
+    assert_that(probes).is_length(2)
+    assert_that([args[0] for args in probes]).contains_only(str(python))

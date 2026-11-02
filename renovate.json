@@ -19,8 +19,10 @@
       "managerFilePatterns": [
         "/^ai-skills\\.yaml$/"
       ],
+      "matchStringsStrategy": "recursive",
       "matchStrings": [
-        "(?:^|\\r?\\n[ ]{4})repo:\\s*(?<depName>[^\\s]+)\\s+sha:\\s*[\"']?(?<currentDigest>[0-9a-f]{40})[\"']?\\s+branch:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?(?:[ \t]+#[^\\r\\n]*)?[ \t]*(?:\\r?\\n|$)"
+        "(?m)^vendors:[ \\t]*(?:#[^\\r\\n]*)?\\r?\\n(?:[ \\t]+[^\\r\\n]*(?:\\r?\\n|$)|[ \\t]*\\r?\\n|#[^\\r\\n]*\\r?\\n)*",
+        "(?:^|\\r?\\n)[ ]+-[ \\t]+id:[^\\r\\n]+\\r?\\n[ ]+repo:[ \\t]*[\"']?(?<depName>[^\\s\"'#]+/[^\\s\"'#]+)[\"']?[ \\t]*(?:#[^\\r\\n]*)?\\r?\\n[ ]+sha:[ \\t]*[\"']?(?<currentDigest>[0-9a-f]{40})[\"']?[ \\t]*(?:#[^\\r\\n]*)?\\r?\\n[ ]+branch:[ \\t]*[\"']?(?<currentValue>[^\\s\"'#]+)[\"']?(?:[ \\t]+#[^\\r\\n]*)?[ \\t]*(?:\\r?\\n|$)"
       ],
       "datasourceTemplate": "git-refs",
       "packageNameTemplate": "https://github.com/{{{depName}}}"

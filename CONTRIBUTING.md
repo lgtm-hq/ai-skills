@@ -27,6 +27,12 @@ document:
   preserves the old ungrouped selection without adding it to host marketplaces.
   Legacy output rejects payload roles/paths it cannot represent; it never
   invents install behavior for newer declarations.
+  Compatibility publication also requires explicit exports for every local
+  marketplace package and mapped vendor package. Narrowed exports or vendor
+  selectors fail before either generated registry is written. An explicit
+  include of every mapped package and an empty exclude list are supported;
+  narrower selection requires a manifest-aware publisher. Exporting the reserved
+  ungrouped package is rejected because legacy marketplaces cannot publish it.
   Local capabilities require an explicit `id` alongside `path`; migration
   records the legacy skill name as that ID. This follows ADR 0011's stable
   identity contract so moving a payload never silently changes its identity.

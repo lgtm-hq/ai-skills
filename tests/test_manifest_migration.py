@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -11,8 +12,10 @@ from ai_skills_engine import cli, package_sync
 from ai_skills_engine.manifest.edit import patch_document
 from ai_skills_engine.manifest.legacy import GENERATED_HEADER, render_legacy
 from ai_skills_engine.manifest.load import load_manifest, read_document
-from ai_skills_engine.registry.registry import load_registry
+from ai_skills_engine.registry.registry import load_registry, load_unique_yaml_text
 from ai_skills_engine.vendors import manage
+
+pytest_plugins = ("manifest_helpers",)
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).parent / "fixtures" / "manifest"
@@ -87,8 +90,8 @@ def test_actual_pin_edit_keeps_every_mapping_field(legacy_repo: Path) -> None:
         renameSkills={"teach": "teach-mapped"},
         capabilities={"teach": {"requires": ["lgtm-hq/git-pr:skill/branch"]}},
     )
-    data["vendors"][0]["include"] = []
-    data["vendors"][0]["exclude"] = ["mattpocock/mattpocock-skills:skill/skip"]
+    data["vendors"][0]["include"] = ["mattpocock/mattpocock-skills"]
+    data["vendors"][0]["exclude"] = []
     manifest.write_text(patch_document(text=manifest.read_text(), data=data))
     assert_that(
         cli.main(["--repo-root", str(legacy_repo), "manifest", "legacy"])
@@ -139,7 +142,12 @@ def test_migrated_identity_survives_a_payload_move(legacy_repo: Path) -> None:
     assert_that(after.path).is_not_equal_to(before.path)
 
 
-def test_renovate_matches_manifest_and_regeneration(legacy_repo: Path) -> None:
+@pytest.mark.parametrize("indent", [2, 4, 6, 8])
+def test_renovate_matches_manifest_and_regeneration(
+    legacy_repo: Path,
+    indent: int,
+    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
+) -> None:
     """The actual custom manager extracts and edits every authoritative pin."""
     assert_that(
         cli.main(["--repo-root", str(legacy_repo), "manifest", "migrate"])
@@ -150,10 +158,20 @@ def test_renovate_matches_manifest_and_regeneration(legacy_repo: Path) -> None:
         if item.get("datasourceTemplate") == "git-refs"
     )
     assert_that(manager["managerFilePatterns"]).is_equal_to([r"/^ai-skills\.yaml$/"])
-    pattern = manager["matchStrings"][0].replace("(?<", "(?P<")
     path = legacy_repo / "ai-skills.yaml"
     text = path.read_text()
-    matches = list(re.finditer(pattern, text))
+    lines = text.splitlines(keepends=True)
+    in_vendors = False
+    for index, line in enumerate(lines):
+        if line.startswith("vendors:"):
+            in_vendors = True
+        elif in_vendors and line.startswith(" "):
+            lines[index] = " " * (indent - 2) + line
+        elif in_vendors and line.strip():
+            in_vendors = False
+    text = "".join(lines)
+    assert_that(read_document(path)).is_equal_to(load_unique_yaml_text(text=text))
+    matches = vendor_pin_matches(text)
     vendors = load_registry(registry_path=legacy_repo / "vendors.yaml")
     assert_that(
         [
@@ -174,6 +192,26 @@ def test_renovate_matches_manifest_and_regeneration(legacy_repo: Path) -> None:
             for vendor in load_registry(registry_path=legacy_repo / "vendors.yaml")
         }
     ).is_equal_to({"f" * 40})
+
+
+def test_renovate_ignores_mapping_templates_and_unrelated_repos(
+    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
+) -> None:
+    """Only vendor item headers declare dependencies, not incidental repo fields."""
+    text = (
+        "publisher:\n    repo: irrelevant/publisher\n"
+        f"    sha: {'a' * 40}\n    branch: main\n"
+        "vendors:\n  - id: real-vendor\n    repo: example/real\n"
+        f"    sha: {'b' * 40}\n    branch: main # tracked\n"
+        "    mapping:\n      repo: irrelevant/mapping\n"
+        f"      sha: {'c' * 40}\n      branch: hidden\n"
+        "x-template: |\n    repo: irrelevant/template\n"
+        f"    sha: {'d' * 40}\n    branch: hidden\n"
+        "x-unrelated:\n  - id: unrelated\n    repo: irrelevant/other\n"
+        f"    sha: {'e' * 40}\n    branch: hidden\n"
+    )
+    matches = vendor_pin_matches(text)
+    assert_that([match["depName"] for match in matches]).is_equal_to(["example/real"])
 
 
 @pytest.mark.parametrize(

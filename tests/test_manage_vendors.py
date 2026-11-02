@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -19,13 +20,17 @@ from ai_skills_engine.manifest.migrate import migrate
 from ai_skills_engine.registry.registry import load_registry
 from ai_skills_engine.registry.vendor import Vendor
 
+pytest_plugins = ("manifest_helpers",)
+
 _EXISTING_SHA = "0123456789abcdef0123456789abcdef01234567"
 _NEW_SHA = "89abcdef0123456789abcdef0123456789abcdef"
 _FETCHED_TREE = ["skills/alpha/SKILL.md", "skills/beta/SKILL.md"]
 
 
 def test_manifest_update_add_and_rollback(
-    repo_root: Path, monkeypatch: pytest.MonkeyPatch
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
 ) -> None:
     """Real management operations persist canonical fields and roll back both files."""
     migrate(repo_root)
@@ -70,12 +75,8 @@ def test_manifest_update_add_and_rollback(
         for item in config["customManagers"]
         if item.get("datasourceTemplate") == "git-refs"
     )
-    matches = list(
-        re.finditer(
-            manager["matchStrings"][0].replace("(?<", "(?P<"),
-            (repo_root / "ai-skills.yaml").read_text(),
-        )
-    )
+    assert_that(manager["matchStringsStrategy"]).is_equal_to("recursive")
+    matches = vendor_pin_matches((repo_root / "ai-skills.yaml").read_text())
     assert_that([item["depName"] for item in matches]).is_equal_to(
         ["owner/existing", "owner/brand-new"]
     )

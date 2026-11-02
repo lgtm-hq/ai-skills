@@ -10,6 +10,67 @@ from ai_skills_engine.manifest.layout import decode_template
 from ai_skills_engine.manifest.load import load_manifest, read_document
 
 GENERATED_HEADER = "# generated from ai-skills.yaml; do not edit.\n"
+LEGACY_PACKAGE_FIELDS = frozenset(
+    {
+        "id",
+        "description",
+        "skillsRoot",
+        "skills",
+        "extraSkills",
+        "extraFiles",
+        "renameSkills",
+        "agents",
+    }
+)
+
+
+def _check_publication(data: dict[str, Any]) -> None:
+    """Reject publication narrowing that legacy readers cannot enforce.
+
+    Args:
+        data: Validated manifest declarations.
+
+    Raises:
+        ValueError: If compatibility output would silently publish extra content.
+    """
+    publisher = data["publisher"]["id"]
+    exports = {
+        value if "/" in value else f"{publisher}/{value}"
+        for value in data.get("exports", [])
+    }
+    required = set()
+    for package in data.get("packages", []):
+        qualified = f"{publisher}/{package['id']}"
+        if package.get("x-legacy-ungrouped"):
+            if qualified in exports:
+                raise ValueError(
+                    f"Legacy publication cannot represent export {qualified}: "
+                    "ungrouped content is reserved for non-marketplace selection"
+                )
+        else:
+            required.add(qualified)
+    for vendor in data.get("vendors", []):
+        packages = {
+            f"{vendor['id']}/{package['id']}"
+            for package in vendor.get("mapping", {}).get("packages", [])
+        }
+        required.update(packages)
+        if (
+            "include" in vendor and not packages.issubset(set(vendor["include"]))
+        ) or vendor.get("exclude"):
+            raise ValueError(
+                f"Legacy publication cannot represent include/exclude for vendor "
+                f"{vendor['id']}: compatibility output requires every mapped package "
+                "included and no exclusions; use manifest-aware publication "
+                "for narrowing"
+            )
+    if missing := required - exports:
+        raise ValueError(
+            "Legacy publication cannot represent unexported packages: "
+            + ", ".join(sorted(missing))
+            + ". Explicitly export these packages or use manifest-aware publication; "
+            "imports never imply re-export."
+        )
 
 
 def legacy_documents(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -24,6 +85,7 @@ def legacy_documents(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     Raises:
         ValueError: If a new declaration cannot be represented by legacy readers.
     """
+    _check_publication(data)
     bundles: dict[str, Any] = {**data.get("x-legacy-fields", {}), "groups": {}}
     for package in data.get("packages", []):
         skills = []
@@ -67,17 +129,7 @@ def legacy_documents(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
                 {
                     key: value
                     for key, value in package.items()
-                    if key
-                    in {
-                        "id",
-                        "description",
-                        "skillsRoot",
-                        "skills",
-                        "extraSkills",
-                        "extraFiles",
-                        "renameSkills",
-                        "agents",
-                    }
+                    if key in LEGACY_PACKAGE_FIELDS
                 }
                 for package in mapping["packages"]
             ]
