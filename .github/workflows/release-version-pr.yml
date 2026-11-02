@@ -21,7 +21,9 @@ jobs:
       ecosystems: python
       # Keeps README install examples pinned to the release being cut.
       version-update-script: scripts/update-readme-version.sh
-      auto-merge: true
+      # The operator merges one release PR per completed epic milestone,
+      # after normal review and CI gates pass.
+      auto-merge: false
       tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
       egress-policy: block
       egress-preset: pypi
