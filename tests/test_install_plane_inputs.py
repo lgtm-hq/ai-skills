@@ -129,3 +129,92 @@ def test_closure_follows_shell_literals_without_executing(tmp_path: Path) -> Non
     assert_that(local_inputs(tmp_path, {entry})).contains(
         entry, helper, data, *library.glob("*.sh")
     )
+
+
+@pytest.fixture
+def shell_closure(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Provide a shell dependency with a transitive data input outside the entry."""
+    library = tmp_path / "lib"
+    library.mkdir()
+    helper = library / "setup.sh"
+    helper.write_text("cat lib/data.json\nexit 99\n", encoding="utf-8")
+    data = library / "data.json"
+    data.write_text("{}", encoding="utf-8")
+    return tmp_path / "entry.sh", helper, data
+
+
+@pytest.mark.parametrize("operator", [";", "&&", "||", "|", "&"])
+def test_shell_closure_splits_adjacent_operators(
+    shell_closure: tuple[Path, Path, Path], operator: str
+) -> None:
+    """Operators adjoining a literal path cannot hide its transitive inputs."""
+    entry, helper, data = shell_closure
+    entry.write_text(f"source lib/setup.sh{operator}true\n", encoding="utf-8")
+    assert_that(local_inputs(entry.parent, {entry})).contains(helper, data)
+
+
+@pytest.mark.parametrize(
+    "marker", ["'EOF'", '"EOF"', "E'OF'", '"E"OF', "EOF", "-EOF", "- EOF", "-\\EOF"]
+)
+def test_shell_closure_handles_heredoc_data_and_expansions(
+    shell_closure: tuple[Path, Path, Path], marker: str
+) -> None:
+    """Heredoc apostrophes are data; literal and executable inputs stay covered."""
+    entry, helper, data = shell_closure
+    entry.write_text(
+        f"cat <<{marker} # header comment\n"
+        "it's data\n$(source lib/setup.sh)\n"
+        "EOF\nsource lib/setup.sh;true\n",
+        encoding="utf-8",
+    )
+    assert_that(local_inputs(entry.parent, {entry})).contains(helper, data)
+
+
+def test_shell_closure_retains_unquoted_heredoc_execution(
+    shell_closure: tuple[Path, Path, Path],
+) -> None:
+    """Command substitution inside an unquoted heredoc remains an input edge."""
+    entry, helper, data = shell_closure
+    entry.write_text("cat <<EOF\nit's $(source lib/setup.sh)\nEOF\n", encoding="utf-8")
+    assert_that(local_inputs(entry.parent, {entry})).contains(helper, data)
+
+
+def test_shell_closure_rejects_unterminated_heredoc(
+    shell_closure: tuple[Path, Path, Path],
+) -> None:
+    """An unknown heredoc boundary fails closed instead of dropping the rest."""
+    entry, _, _ = shell_closure
+    entry.write_text("cat <<EOF\nsource lib/setup.sh\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="heredoc"):
+        local_inputs(entry.parent, {entry})
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "echo '<<' '#'\n",
+        "#it's a comment\n",
+        'cat <<<"it\'s data";true\n',
+        (
+            "cat <<'FIRST' <<-SECOND\nit's literal lib/setup.sh\nFIRST\n"
+            "\t$(source lib/setup.sh)\n\tSECOND\n"
+        ),
+    ],
+)
+def test_shell_closure_preserves_quoted_words_and_multiple_heredocs(
+    shell_closure: tuple[Path, Path, Path], prefix: str
+) -> None:
+    """Only unquoted redirection operators introduce heredoc bodies."""
+    entry, helper, data = shell_closure
+    entry.write_text(prefix + "source lib/setup.sh\n", encoding="utf-8")
+    assert_that(local_inputs(entry.parent, {entry})).contains(helper, data)
+
+
+def test_shell_closure_fails_closed_on_dynamic_heredoc_inputs(
+    shell_closure: tuple[Path, Path, Path],
+) -> None:
+    """Expandable heredocs cannot silently hide unknown executable inputs."""
+    entry, _, _ = shell_closure
+    entry.write_text('cat <<EOF\n$(source "$UNKNOWN")\nEOF\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="dynamic heredoc"):
+        local_inputs(entry.parent, {entry})

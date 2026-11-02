@@ -6,7 +6,10 @@ from __future__ import annotations
 import ast
 import fnmatch
 import os
+import re
 import shlex
+from collections.abc import Iterator
+from io import StringIO
 from pathlib import Path
 
 MANIFEST = Path("research/install-plane-spike/harness-inputs.txt")
@@ -22,6 +25,76 @@ IGNORED = {
     ".ruff_cache",
 }
 type Value = Path | str | int | None
+
+
+def _shell_literals(source: str) -> Iterator[str]:
+    """Tokenize shell operators and heredoc boundaries without executing code.
+
+    Heredoc bodies are data, so their apostrophes do not open shell quotes.
+    Conservatively retain literal paths in both quoted and unquoted bodies,
+    including command substitutions in expandable bodies. This is an input
+    overapproximation, not a shell evaluator; dynamic path values stay unknown.
+    Unterminated quotes or heredocs fail closed.
+    """
+    stream = StringIO(source)
+    lexer = shlex.shlex(stream, posix=True, punctuation_chars=";&|()<>")
+    lexer.whitespace = " \t\r"
+    # Keep newlines as individual tokens so bodies start at the right boundary.
+    lexer.whitespace_split = False
+    lexer.commenters = ""
+    pending: list[tuple[str, bool, bool]] = []
+    while True:
+        # shlex may have consumed one operator lookahead character. Retain it
+        # when distinguishing an operator from a quoted word with the same text.
+        start = max(0, stream.tell() - 1)
+        lexeme = lexer.get_token()
+        if lexeme is None:
+            break
+        raw = source[start : stream.tell()].lstrip()
+        if lexeme == "#" and raw.startswith("#"):
+            stream.readline()
+            lexeme = "\n"
+        if lexeme == "<<" and raw.startswith("<<"):
+            strip_tabs = source[: stream.tell()].endswith("<<-")
+            marker_start = max(0, stream.tell() - 1)
+            delimiter = lexer.get_token()
+            if strip_tabs and delimiter == "-":
+                delimiter = lexer.get_token()
+                strip_prefix = False
+            else:
+                strip_prefix = strip_tabs
+            if delimiter is None or delimiter == "\n":
+                raise ValueError("missing heredoc delimiter")
+            expands = not any(
+                char in source[marker_start : stream.tell()] for char in "'\"\\"
+            )
+            pending.append(
+                (delimiter[1:] if strip_prefix else delimiter, strip_tabs, expands)
+            )
+        elif lexeme == "\n":
+            for delimiter, strip_tabs, expands in pending:
+                while True:
+                    line = stream.readline()
+                    if not line:
+                        raise ValueError(f"unterminated heredoc: {delimiter}")
+                    if (line.lstrip("\t") if strip_tabs else line).rstrip(
+                        "\r\n"
+                    ) == delimiter:
+                        break
+                    if expands and re.search(r"(?<!\\)\$(?:[A-Za-z_]|\{)", line):
+                        raise ValueError("dynamic heredoc input cannot be resolved")
+                    # Whole lines retain filenames with spaces. Words and quoted
+                    # fragments retain literal inputs inside data/expansions;
+                    # no contents are evaluated, even for unquoted heredocs.
+                    yield line.strip()
+                    yield from re.findall(r"['\"]([^'\"\n]+)['\"]", line)
+                    for word in re.split(r"[\s;&|()<>`]+", line):
+                        yield word.strip("'\"")
+            pending.clear()
+        else:
+            yield lexeme
+    if pending:
+        raise ValueError("unterminated heredoc header")
 
 
 def patterns(repo: Path) -> list[str]:
@@ -311,14 +384,11 @@ def local_inputs(repo: Path, entrypoints: set[Path]) -> set[Path]:
             elif path.suffix == ".sh":
                 # Tokenize only; never expand variables or run shell code. Literal
                 # source/dot/script/data arguments are conservative input edges.
-                lexer = shlex.shlex(path.read_text(encoding="utf-8"), posix=True)
-                lexer.whitespace_split = True
-                for token in lexer:
+                for token in _shell_literals(path.read_text(encoding="utf-8")):
                     if any(char in token for char in "$`\n"):
                         continue
-                    literal = token.rstrip(";)")
                     for base in (repo, path.parent):
-                        candidate = (base / literal).resolve()
+                        candidate = (base / token).resolve()
                         if candidate in files:
                             resolved.add(candidate)
         if resolved == previous and contexts == before:
