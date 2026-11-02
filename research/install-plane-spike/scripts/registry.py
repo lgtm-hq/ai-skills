@@ -291,7 +291,14 @@ def measure_registry(*, build: Path, work: Path) -> dict[str, Any]:
                 results[variant]["reason"] = str(
                     redact(value=str(error), sensitive=sensitive)
                 )
-    except (OSError, ValueError, http.client.HTTPException) as error:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        http.client.HTTPException,
+    ) as error:
         # Never include exception request/body data: timeouts and malformed HTTP
         # are failure evidence, not a reason to lose offline/quarantine results.
         for variant in ("ts", "py"):

@@ -350,6 +350,84 @@ def test_isolated_test_dependencies_use_lock(
     )
 
 
+def test_ambiguous_test_dependency_pin_fails_closed(
+    collector: dict[str, ModuleType], tmp_path: Path
+) -> None:
+    """A multi-version resolution cannot silently pick the last lock entry."""
+    path = tmp_path / "uv.lock"
+    path.write_text(
+        '[[package]]\nname="pytest"\nversion="1.0"\n'
+        '[[package]]\nname="pytest"\nversion="2.0"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="one locked version for pytest"):
+        collector["pins"].test_dependencies(path)
+
+
+def test_network_cleanup_preserves_unexpected_original_error(
+    collector: dict[str, ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A close error cannot replace a non-OS connect exception with a KeyError."""
+    original = ValueError("original connect error")
+
+    def connect(*args: Any) -> None:
+        """Inject the original socket-boundary exception without connecting."""
+        raise original
+
+    def close() -> None:
+        """Inject an independent cleanup failure."""
+        raise OSError("close failed")
+
+    network = collector["network_control"]
+    monkeypatch.setattr(
+        network.socket,
+        "socket",
+        lambda **_: SimpleNamespace(
+            settimeout=lambda _: None, connect=connect, close=close
+        ),
+    )
+    with pytest.raises(ValueError, match="original connect error") as observed:
+        network.probe()
+    assert_that(observed.value).is_same_as(original)
+    assert_that(original.__notes__).contains("Socket close also failed: close failed")
+
+
+def test_node_diagnostic_missing_close_is_bounded(tmp_path: Path) -> None:
+    """Exercise the actual TypeScript diagnostic using a synthetic Socket only."""
+    import shutil
+    import subprocess  # nosec B404 - fixed local Bun module and fake socket only
+
+    bun = shutil.which("bun")
+    if bun is None:
+        pytest.skip("Bun unavailable for diagnostic process regression")
+    source = tmp_path / "no-close.ts"
+    source.write_text(
+        'import {Socket} from "node:net";\n'
+        f"import {{networkControl}} from "
+        f'{json.dumps(str(SPIKE / "ts/network-control.ts"))};\n'
+        "const socket = new Socket();\n"
+        "socket.connect = (() => {\n"
+        '  socket.emit("connect"); return socket;\n'
+        "}) as typeof socket.connect;\n"
+        "socket.destroy = () => socket;\n"
+        "console.log(JSON.stringify(await networkControl({isBun:false,\n"
+        "createSocket:()=>socket, completionBudgetMs:10})));\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(  # nosec B603 - local TS fixture, no live connect call
+        args=[bun, "run", str(source)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    assert_that(result.returncode).described_as(result.stderr).is_zero()
+    observation = json.loads(result.stdout)[0]
+    assert_that(observation["outcome"]).is_equal_to("inconclusive")
+    assert_that(observation["outcome_before_cleanup"]).is_equal_to("connected")
+    assert_that(observation["cleanup_error"]["error"]).contains("completion deadline")
+
+
 def test_checkout_attributes_preserve_bytes(tmp_path: Path) -> None:
     """Git's effective attributes prevent CRLF conversion of exact fixture bytes."""
     import subprocess  # nosec B404 - read-only local git attribute query
@@ -782,6 +860,7 @@ def test_harden_runner_runs_directly_and_remains_unverified(
         ("close", 201, None),
         ("close-failed-client", 201, None),
         ("stop", 201, None),
+        ("bad-metadata", 201, None),
     ],
 )
 def test_registry_account_failure_is_sanitized_evidence(
@@ -798,9 +877,11 @@ def test_registry_account_failure_is_sanitized_evidence(
     collector["common"].write_json(
         path=tmp_path / "build/build.json",
         value={
-            "registry_setup_environment": {
-                key: str(setup_temp) for key in ("TMPDIR", "TEMP", "TMP")
-            }
+            "registry_setup_environment": (
+                None
+                if stage == "bad-metadata"
+                else {key: str(setup_temp) for key in ("TMPDIR", "TEMP", "TMP")}
+            )
         },
     )
     monkeypatch.setattr(registry.time, "sleep", lambda _: None)
@@ -956,9 +1037,11 @@ def test_registry_account_failure_is_sanitized_evidence(
     assert_that(result["server"]).is_not_empty()
     assert_that(json.dumps(result)).does_not_contain(password, token)
     assert_that(result["server"][-1]["stdout"]).is_equal_to(
-        "server output [redacted]\n"
+        "" if stage == "bad-metadata" else "server output [redacted]\n"
     )
-    assert_that(result["server"][-1]["stderr"]).is_equal_to("server diagnostic\n")
+    assert_that(result["server"][-1]["stderr"]).is_equal_to(
+        "" if stage == "bad-metadata" else "server diagnostic\n"
+    )
     assert_that((tmp_path / "registry-evidence.json").is_file()).is_true()
     assert_that(
         json.loads((tmp_path / "registry-evidence.json").read_bytes())
@@ -973,7 +1056,7 @@ def test_registry_account_failure_is_sanitized_evidence(
         assert_that(termination["status"]).is_equal_to("unverified")
         assert_that(termination["process_handles_closed"]).is_true()
         assert_that(termination["error"]).is_equal_to("termination failed")
-    if stage != "readiness":
+    if stage not in {"readiness", "bad-metadata"}:
         ready = next(
             item
             for item in result["server"]
@@ -1441,6 +1524,33 @@ def test_windows_controls_seed_exact_future_paths_and_remove_owned_trees(
     with pytest.raises(FileExistsError):
         module.prepare(build=build, work=work)
     assert_that(sentinel.read_bytes()).is_equal_to(b"retain")
+
+
+def test_windows_seed_cleanup_preserves_original_failure(
+    collector: dict[str, ModuleType], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed seed cleanup annotates the original error after bounded retries."""
+    control = collector["windows_control"]
+    original = ValueError("seed copy rejected")
+    attempts = []
+
+    def copy(**kwargs: Any) -> None:
+        """Reject the synthetic copy before any runtime can execute."""
+        raise original
+
+    def remove(path: Path) -> None:
+        """Model a transient scanner holding only the owned seed directory."""
+        attempts.append(path)
+        raise PermissionError("seed held open")
+
+    monkeypatch.setattr(control.shutil, "copytree", copy)
+    monkeypatch.setattr(control.shutil, "rmtree", remove)
+    monkeypatch.setattr(control.time, "sleep", lambda _: None)
+    with pytest.raises(ValueError) as observed:
+        control.prepare(build=tmp_path / "build", work=tmp_path / "work")
+    assert_that(observed.value).is_same_as(original)
+    assert_that(attempts).is_length(3)
+    assert_that(original.__notes__[0]).contains("Seed cleanup also failed")
 
 
 @pytest.mark.parametrize("available", [True, False])
@@ -1918,7 +2028,7 @@ def test_windows_job_cleanup_independent_of_root(
         wait=lambda **kwargs: operation("reap"),
     )
     result = tree.stop_process_tree(root, grace=0, forced=0)
-    assert_that(calls[0]).is_equal_to("terminate")
+    assert_that(calls[:2]).is_equal_to(["query", "terminate"])
     assert_that(calls[-1]).is_equal_to("close")
     assert_that(result["status"]).is_equal_to(
         "pass" if stage == "success" else "unverified"
@@ -2290,8 +2400,10 @@ def test_linux_namespace_fails_closed_at_command_boundaries(
                 )
         elif "delete" in argv:
             result["exit"] = 1 if case == "delete-failed" else 0
+        elif "pids" in argv:
+            pass  # Owned membership readback is empty, not another setup command.
         elif argv[-1] == "list":
-            result["exit"] = 1 if case == "list-failed" else 0
+            result["exit"] = 1 if case == "list-failed" and name else 0
             result["stdout"] = f"{name} (id: 42)\n" if case == "name-remains" else ""
         else:
             if "add" in argv and "netns" in argv and "exec" not in argv:
@@ -2313,7 +2425,7 @@ def test_linux_namespace_fails_closed_at_command_boundaries(
         "name-remains",
     }
     assert_that(any("--worker" in argv for argv in calls)).is_equal_to(worker_expected)
-    created = not (case.startswith("missing-") or case in {"root", "setup-0"})
+    created = not (case.startswith("missing-") or case in {"root"})
     assert_that(any("delete" in argv for argv in calls)).is_equal_to(created)
     for result in observed.values():
         assert_that(result["status"]).is_equal_to(
@@ -2947,9 +3059,18 @@ def test_collection_scope_and_unbound_downloads_are_explicit(
         assert_that(item["payload_source_identity"]["reason"]).contains("not bound")
 
 
-@pytest.mark.parametrize("unexpected_write", ["none", "file", "symlink"])
+@pytest.mark.parametrize("unexpected_write", ["none", "file", "symlink", "directory"])
 @pytest.mark.parametrize(
-    "cache_mutation", ["unchanged", "deleted", "overwritten", "directory", "symlink"]
+    "cache_mutation",
+    [
+        "unchanged",
+        "deleted",
+        "overwritten",
+        "directory",
+        "symlink",
+        "replaced",
+        "touched",
+    ],
 )
 def test_payload_home_write_affects_status(
     collector: dict[str, ModuleType],
@@ -2977,7 +3098,9 @@ def test_payload_home_write_affects_status(
             path = home / ".spike-target" / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(content.encode("utf-8"))
-        if unexpected_write == "file":
+        if unexpected_write == "directory":
+            (home / "runtime-cache").mkdir()
+        elif unexpected_write == "file":
             (home / "runtime-cache").write_bytes(b"unexpected")
         elif unexpected_write == "symlink":
             outside = tmp_path / "outside"
@@ -2985,7 +3108,17 @@ def test_payload_home_write_affects_status(
             (outside / "private-file").write_bytes(b"never read")
             (home / "runtime-cache").symlink_to(outside, target_is_directory=True)
         cache = home / ".cache"
-        if cache_mutation == "overwritten":
+        if cache_mutation == "touched":
+            import os
+
+            metadata = cache.stat()
+            os.utime(cache, ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1))
+        elif cache_mutation == "replaced":
+            original = cache.read_bytes()
+            cache.rename(home / "saved-cache")
+            cache.write_bytes(original)
+            (home / "saved-cache").unlink()
+        elif cache_mutation == "overwritten":
             cache.write_bytes(b"overwritten")
         elif cache_mutation != "unchanged":
             cache.unlink()

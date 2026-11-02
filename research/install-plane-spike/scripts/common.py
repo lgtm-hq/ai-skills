@@ -122,10 +122,12 @@ def command(
     finally:
         if process is not None:
             try:
-                if getattr(process, "job", None):
+                if "tree_termination" not in result:
                     result["tree_termination"] = stop_process_tree(process)
                     if result["tree_termination"]["status"] != "pass":
-                        result.update(exit=None, error="job cleanup not verified")
+                        result.update(
+                            exit=None, error="process tree cleanup not verified"
+                        )
             finally:
                 try:
                     close_process(process)
@@ -378,6 +380,7 @@ def run_payload(
     cache = home / ".cache"
     blocker = b"cache directory intentionally unavailable"
     cache.write_bytes(blocker)
+    cache_before = cache.lstat()
     env = isolated_env(home)
     env.update(XDG_CACHE_HOME=str(cache), BUN_INSTALL_CACHE_DIR=str(cache))
     # cwd=HOME below: check Windows current-directory search there too, never in
@@ -422,7 +425,20 @@ def run_payload(
         stdout_matches = False
     try:
         # lstat short-circuits before reading a replacement symlink/directory.
-        cache_blocked = stat.S_ISREG(cache.lstat().st_mode)
+        metadata = cache.lstat()
+        cache_blocked = stat.S_ISREG(metadata.st_mode) and all(
+            getattr(metadata, field, None) == getattr(cache_before, field, None)
+            for field in (
+                "st_dev",
+                "st_ino",
+                "st_mode",
+                "st_size",
+                "st_mtime_ns",
+                "st_ctime_ns",
+                "st_file_attributes",
+                "st_reparse_tag",
+            )
+        )
         if cache_blocked:
             with cache.open("rb") as stream:
                 cache_blocked = stream.read(len(blocker) + 1) == blocker
@@ -431,9 +447,7 @@ def run_payload(
     other_home_files = [
         p.relative_to(home).as_posix()
         for p in home.rglob("*")
-        if p != cache
-        and destination not in p.parents
-        and (p.is_symlink() or p.is_file())
+        if p != cache and p != destination and destination not in p.parents
     ]
     return {
         "status": (
