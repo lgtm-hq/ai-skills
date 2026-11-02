@@ -21,6 +21,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.30.8] - 2026-11-02
+
+### Changed
+
+- **adr**: define engine contracts and glossary (#565) (#624) (4fbc6d2)
+- **adr**: amend selection, delivery and collision decisions (#564) (#616) (375f213)
+- **adr**: define provisional engine runtime planes (#613) (032ee30)
+- **lint**: run every lintro tool by default (#623) (#625) (13343b8)
+- **deps**: drop unused pip-audit dev dependency (#621) (063a4b2)
+- **deps**: lock file maintenance (#550) (c03f5bf)
+- **research**: measure install-plane distribution for #562 (#615) (41e6bac)
+- **research**: record host load-path evidence (#563) (#617) (14ea565)
+
+### Fixed
+
+- **research**: complete M5 deferred review findings (#614) (#627) (079d3d1)
+
 ## [0.30.7] - 2026-11-01
 
 ### Changed
@@ -1149,7 +1166,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.6...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.8...HEAD
+[0.30.8]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.7...v0.30.8
 [0.30.6]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.5...v0.30.6
 [0.30.5]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.4...v0.30.5
 [0.30.4]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.3...v0.30.4
