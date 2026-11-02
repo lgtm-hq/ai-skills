@@ -99,7 +99,7 @@ vendors:
         skills: "*"
   - id: davidondrej
     repo: davidondrej/skills
-    sha: "7201ee3854ada65e1863f68690800aa483e6d085"
+    sha: "674b9ca866433222a332630dd89104003a47edff"
     branch: main
     displayRef: latest
     skillRoots:
