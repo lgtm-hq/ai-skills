@@ -11,7 +11,7 @@ tracked in epic [#596](https://github.com/lgtm-hq/ai-skills/issues/596).
 ADR 0008 applies #562’s measured Python-first escape hatch: one bundled Python
 engine owns build and install behavior; strict TypeScript is the thin npm launcher.
 See the
-[distribution report](https://github.com/lgtm-hq/ai-skills/blob/research/562-install-plane-spike/docs/research/install-plane-distribution.md)
+[distribution report](../research/install-plane-distribution.md)
 for the five-target comparison, exact evidence identities and unverified limits.
 
 | ID                                                          | Title                                                             | Status                        |

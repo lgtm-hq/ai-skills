@@ -74,20 +74,20 @@ externally.
 
 ### Commands
 
-| Command                       | Contract                                                                               |
-| ----------------------------- | -------------------------------------------------------------------------------------- |
-| `init`                        | Create a publishing or consumer manifest/profile.                                      |
-| `validate`                    | Validate declarations against the schema and policy.                                   |
-| `add`                         | Declare a package or pinned vendor import.                                             |
-| `lock`                        | Record resolved selection in the lock.                                                 |
-| `build`                       | Build the artifact offline from locked, locally available inputs.                      |
-| `repin`                       | Update pins with a bake diff and advisory SemVer.                                      |
-| `plan`                        | Explain the build-plane resolution and policy trace.                                   |
-| `install --dry-run`           | Show the install-plane filter result and adapter plan.                                 |
-| `install`, `update`, `remove` | Apply adapter plans under ADR 0010.                                                    |
-| `doctor`, `doctor --report`   | Inspect evidence and recorded state; report as in ADR 0004.                            |
-| `rollback`                    | Recover the last generation under ADR 0010.                                            |
-| Frozen restore                | Restore locked inputs and selection; fail rather than repin or resolve missing inputs. |
+| Command                       | Contract                                                                                         |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| `init`                        | Create a publishing or consumer manifest/profile.                                                |
+| `validate`                    | Validate declarations against the schema and policy.                                             |
+| `add`                         | Declare a package or pinned vendor import.                                                       |
+| `lock`                        | Record resolved selection in the lock.                                                           |
+| `build`                       | Build the artifact offline from locked, locally available inputs.                                |
+| `repin`                       | Update pins with a bake diff and advisory SemVer.                                                |
+| `plan`                        | Explain the build-plane resolution and policy trace.                                             |
+| `install --dry-run`           | Show the install-plane filter result and adapter plan.                                           |
+| `install`, `update`, `remove` | Apply adapter plans under ADR 0010.                                                              |
+| `doctor`, `doctor --report`   | Inspect evidence and recorded state; report as in [ADR 0004](./0004-doctor-capability-probe.md). |
+| `rollback`                    | Recover the last generation under ADR 0010.                                                      |
+| Frozen restore                | Restore locked inputs and selection; fail rather than repin or resolve missing inputs.           |
 
 ## Consequences
 

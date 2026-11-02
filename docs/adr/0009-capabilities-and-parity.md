@@ -45,15 +45,15 @@ mode × role**. Product and interface are distinct: CLI evidence does not certif
 an IDE. Policy-specific assessments retain a separate policy dimension and
 never overwrite the underlying cell identity.
 
-| Cell state             | Meaning                                                                                        |
-| ---------------------- | ---------------------------------------------------------------------------------------------- |
-| `supported`            | Invocation preserves the tested semantics, with successful removal and verification.           |
-| `partial`              | Some behavior is observed; name lost fields and remaining semantic uncertainty.                |
-| `unverified`           | No safe or conclusive verification; a reason is required.                                      |
-| `platform-unavailable` | A tested prerequisite is absent on this OS.                                                    |
-| `policy-blocked`       | Policy denies the route, supported by a measured denial or explicit sourced owner attestation. |
-| `source-unportable`    | A demonstrated source requirement cannot survive projection.                                   |
-| `adapter-missing`      | The host route or its necessary projection is absent.                                          |
+| Cell state             | Meaning                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------ |
+| `supported`            | Invocation preserves the tested semantics, with successful removal and verification.                   |
+| `partial`              | Some behavior is observed; name lost fields and remaining semantic uncertainty.                        |
+| `unverified`           | No safe or conclusive verification; a reason is required.                                              |
+| `platform-unavailable` | A tested prerequisite is absent on this OS.                                                            |
+| `policy-blocked`       | Engine policy denies a plan, or host policy denies a route with measured or sourced attested evidence. |
+| `source-unportable`    | A demonstrated source requirement cannot survive projection.                                           |
+| `adapter-missing`      | The host route or its necessary projection is absent.                                                  |
 
 Adopt the [evidence record format](../parity/evidence-format.md), including its
 minimal IDE/policy extension. Each cell retains `checkedOn`, `recheckBy`, probe
@@ -72,11 +72,10 @@ directory presence, authentication failure or an empty marker list cannot
 establish policy or an on-disk detector.
 
 `supported` requires invocation and no demonstrated field loss. Discovery-only
-results remain `partial`; an empty `lostFields` does not prove fidelity. Preserve
-the Cursor user-explode skill's partial invocation-restriction evidence: skill
-invocation versus file search is unconfirmed. Do not transfer an independently
-observed lifecycle event to skill evidence, or infer specialist invocation from
-an installed plugin. Undefined mode/scope pairs remain `unverified`.
+results remain `partial`; an empty `lostFields` does not prove fidelity. Preserve the
+[recorded semantic uncertainty](../parity/evidence-format.md).
+Evidence for one role cannot establish invocation of another role. Undefined mode/scope
+pairs remain `unverified`.
 
 Raw evidence is **write-once**: never edit, replace, normalize or reformat a
 snapshot. Add a new snapshot for a new run and append its SHA-256 and relative
