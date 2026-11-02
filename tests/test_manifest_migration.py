@@ -88,7 +88,13 @@ def test_actual_pin_edit_keeps_every_mapping_field(legacy_repo: Path) -> None:
         extraFiles=["NOTICE.md"],
         agents=["reviewer"],
         renameSkills={"teach": "teach-mapped"},
-        capabilities={"teach": {"requires": ["lgtm-hq/git-pr:skill/branch"]}},
+        capabilities={
+            "teach": {
+                "requires": [],
+                "resources": [],
+                "related": ["lgtm-hq/git-pr:skill/branch"],
+            }
+        },
     )
     data["vendors"][0]["include"] = ["mattpocock/mattpocock-skills"]
     data["vendors"][0]["exclude"] = []

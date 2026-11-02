@@ -47,6 +47,9 @@ document:
   include of every mapped package and an empty exclude list are supported;
   narrower selection requires a manifest-aware publisher. Exporting the reserved
   ungrouped package is rejected because legacy marketplaces cannot publish it.
+  Non-empty capability `requires`/`resources` and local package `resources` also
+  require manifest-aware publication. Empty declarations and advisory `related`
+  metadata remain compatible with legacy output.
   Local capabilities require an explicit `id` alongside `path`; migration
   records the legacy skill name as that ID. This follows ADR 0011's stable
   identity contract so moving a payload never silently changes its identity.
