@@ -42,6 +42,14 @@
   ],
   "packageRules": [
     {
+      "description": "Generate the audit input from uv.lock, never update it independently",
+      "matchManagers": ["pip_requirements"],
+      "matchFileNames": [
+        "/^requirements-audit\\.txt$/"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Require reviewed installer checksums alongside version updates",
       "matchManagers": ["custom.regex"],
       "matchPackageNames": [
