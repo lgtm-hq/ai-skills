@@ -130,12 +130,12 @@ fi
 
 if [[ ! -f "scripts/generate_skills_manifest.py" ]]; then
   echo "scripts/generate_skills_manifest.py not found. Skipping manifest checks."
-elif command -v python3 >/dev/null 2>&1; then
+elif command -v uv >/dev/null 2>&1; then
   manifest_tmp_dir=$(mktemp -d)
   trap 'rm -rf "$manifest_tmp_dir"' EXIT
-  if python3 scripts/generate_skills_manifest.py \
+  if uv run python scripts/generate_skills_manifest.py \
     --output "$manifest_tmp_dir/first.json" >/dev/null &&
-    python3 scripts/generate_skills_manifest.py \
+    uv run python scripts/generate_skills_manifest.py \
       --output "$manifest_tmp_dir/second.json" >/dev/null; then
     if ! diff -u "$manifest_tmp_dir/first.json" "$manifest_tmp_dir/second.json"; then
       echo "skills-manifest generator output is not deterministic."
@@ -146,7 +146,7 @@ elif command -v python3 >/dev/null 2>&1; then
     errors=$((errors + 1))
   fi
 else
-  echo "python3 is required to validate the skills-manifest generator."
+  echo "uv is required to validate the skills-manifest generator."
   errors=$((errors + 1))
 fi
 

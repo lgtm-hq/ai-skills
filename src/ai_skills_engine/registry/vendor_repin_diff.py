@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from vendor_registry.vendor_repin_snapshot import VendorRepinSnapshot
+from ai_skills_engine.registry.vendor_repin_snapshot import VendorRepinSnapshot
 
 
 @dataclass(frozen=True)

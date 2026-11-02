@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from vendor_registry.vendor_plugin import VendorPlugin
+from ai_skills_engine.registry.vendor_plugin import VendorPlugin
 
 
 @dataclass(frozen=True)

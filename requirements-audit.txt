@@ -36,6 +36,7 @@ pyyaml==6.0.3
 rich==15.0.0
 ripgrep==15.1.0
 tabulate==0.10.0
+types-pyyaml==6.0.12.20261030
 typing-extensions==4.16.0
 typing-inspection==0.4.4
 watchdog==6.0.0

@@ -2,42 +2,13 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 from assertpy import assert_that
 
-
-def _load_generate_readme_module() -> ModuleType:
-    """Load ``generate_readme`` from the scripts directory (not a package).
-
-    Returns:
-        The loaded module object.
-
-    Raises:
-        RuntimeError: If the module spec or loader cannot be constructed.
-    """
-    root = Path(__file__).resolve().parents[1]
-    path = root / "scripts" / "generate_readme.py"
-    spec = importlib.util.spec_from_file_location(
-        name="generate_readme",
-        location=path,
-    )
-    if spec is None:
-        msg = f"Could not load module spec from {path}"
-        raise RuntimeError(msg)
-    loader = spec.loader
-    if loader is None:
-        msg = f"Module spec for {path} has no loader"
-        raise RuntimeError(msg)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    loader.exec_module(module)
-    return module
+import ai_skills_engine.generate.readme as mod
 
 
 def _write_skill(*, repo_root: Path, skill_id: str, description: str) -> None:
@@ -107,7 +78,6 @@ ungrouped:
 def test_render_readme_builds_plugin_table(tmp_path: Path) -> None:
     """Groups render as a plugin table with ids and skill links."""
 
-    mod = _load_generate_readme_module()
     _write_fake_repo(repo_root=tmp_path)
 
     rendered = mod.render_readme(repo_root=tmp_path)
@@ -123,7 +93,6 @@ def test_render_readme_builds_plugin_table(tmp_path: Path) -> None:
 def test_render_readme_omits_ungrouped_from_plugin_table(tmp_path: Path) -> None:
     """Ungrouped skills are noted, not listed as marketplace plugins."""
 
-    mod = _load_generate_readme_module()
     _write_fake_repo(repo_root=tmp_path)
 
     rendered = mod.render_readme(repo_root=tmp_path)
@@ -143,7 +112,6 @@ def test_render_readme_omits_ungrouped_from_plugin_table(tmp_path: Path) -> None
 def test_render_readme_omits_ungrouped_note_when_empty(tmp_path: Path) -> None:
     """An empty ungrouped list does not emit the marketplace-plugin note."""
 
-    mod = _load_generate_readme_module()
     _write_fake_repo(repo_root=tmp_path)
     tmp_path.joinpath("bundles.yaml").write_text(
         """
@@ -218,7 +186,6 @@ def test_repo_readme_plugin_suffix_matches_marketplace_name() -> None:
 def test_render_readme_syncs_version_pins_to_pyproject(tmp_path: Path) -> None:
     """Release-tag pins are rewritten to the pyproject.toml version."""
 
-    mod = _load_generate_readme_module()
     _write_fake_repo(repo_root=tmp_path)
 
     rendered = mod.render_readme(repo_root=tmp_path)
@@ -235,7 +202,6 @@ def test_render_readme_syncs_version_pins_to_pyproject(tmp_path: Path) -> None:
 def test_render_readme_requires_markers(tmp_path: Path) -> None:
     """A README without plugin markers is rejected."""
 
-    mod = _load_generate_readme_module()
     _write_fake_repo(repo_root=tmp_path)
     tmp_path.joinpath("README.md").write_text("# fake\n", encoding="utf-8")
 
@@ -246,7 +212,6 @@ def test_render_readme_requires_markers(tmp_path: Path) -> None:
 def test_render_readme_table_cells_are_single_line(tmp_path: Path) -> None:
     """Plugin table cells collapse YAML newlines and escape pipes."""
 
-    mod = _load_generate_readme_module()
     _write_fake_repo(repo_root=tmp_path)
     tmp_path.joinpath("bundles.yaml").write_text(
         """
@@ -278,7 +243,6 @@ ungrouped:
 def test_repo_readme_is_up_to_date() -> None:
     """Production README.md must match its generated content."""
 
-    mod = _load_generate_readme_module()
     repo_root = Path(__file__).resolve().parents[1]
 
     rendered = mod.render_readme(repo_root=repo_root)

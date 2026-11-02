@@ -52,6 +52,32 @@ bash scripts/validate.sh
 Use **`uv`** for Python tooling and **`lintro`** for lint/format/check — do not bypass
 with raw **ruff**, **black**, etc.
 
+The shared typed Python engine is installed editable from `src/ai_skills_engine/`
+by `uv sync`. Its author CLI is `uv run ai-skills-engine --help`; existing
+`uv run python scripts/<name>.py` commands remain compatibility entry points.
+For example, `uv run ai-skills-engine generate marketplace --check` runs the same
+implementation as `scripts/generate_marketplace.py --check`. Commands discover a
+repository by walking up from cwd for `pyproject.toml` and `skills/`, or accept
+`--repo-root PATH`. Relative file operands retain their cwd-relative meaning.
+Tests import and monkeypatch the real package modules, never the script shims.
+`uv build` produces the typed wheel; runtime dependencies are separate from dev
+tooling. Consumer runtime bundling and install commands are subsequent work under
+ADR 0008.
+
+Direct `python3 scripts/<name>.py` and executable shims load this checkout's
+`src/` through a single bootstrap in `scripts/ci/npm/_engine_bootstrap.py`.
+They require the same third-party runtime dependencies as their implementations;
+the manifest generator remains stdlib-only. Installed CLI imports do not use the
+checkout bootstrap. Release-manifest backfills check out tooling from the workflow
+revision separately, then generate against the selected tag: standalone Python
+for pre-package tags, or `uv run --locked --no-dev` for package tags.
+
+Package version normalization accepts SemVer 2.0.0 with an optional lowercase `v`
+prefix and no artificial length limit. Validation scans identifiers in linear
+time. It now rejects numeric prerelease identifiers with leading zeroes and
+non-ASCII digits, which the former overlapping regex erroneously accepted.
+Build metadata may still contain numeric identifiers with leading zeroes.
+
 Run `bash scripts/ci/quality/prepare_node_deps.sh` before local quality checks.
 It acquires each TypeScript project's dependencies separately using its frozen
 lockfile and `--ignore-scripts`. The quality job does the same inside the pinned
@@ -69,8 +95,8 @@ on production scripts. Its other diagnostics overlap those tools or enforce
 unadopted size/complexity limits. Duplication requires 12 substantive lines so short
 CLI argument wrappers and exception tuples can remain self-contained. Tests
 deliberately repeat fixture arrangements and are excluded from this duplication
-pass. Import-linter has no contracts here:
-the Python deliverable is a collection of CLI scripts, not a layered package.
+pass. Import-linter has no contracts here: the engine extraction preserves the
+existing module dependencies and introduces no separate install layer yet.
 Buf, Checkov, cppcheck, dotenv-linter, golangci-lint, html-validate, and stylelint
 remain enabled and no-op until matching source files exist. Spectral has no API
 specifications or ruleset to check. Commitlint uses the repository's semantic commit

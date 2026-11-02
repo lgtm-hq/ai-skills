@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from vendor_registry.plugin_bake_result import PluginBakeResult
-from vendor_registry.vendor import Vendor
+from ai_skills_engine.registry.plugin_bake_result import PluginBakeResult
+from ai_skills_engine.registry.vendor import Vendor
 
 
 @dataclass(frozen=True)

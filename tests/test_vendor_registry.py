@@ -5,17 +5,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import bake_vendor_indexes
 import pytest
 from assertpy import assert_that
-from vendor_registry.registry import (
+
+import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
+from ai_skills_engine.registry.registry import (
     discover_skills,
     load_registry,
     render_index,
     render_notice,
     validate_index,
 )
-from vendor_registry.vendor import Vendor
+from ai_skills_engine.registry.vendor import Vendor
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "vendor_registry"
 

@@ -6,14 +6,15 @@ import json
 import shutil
 from pathlib import Path
 
-import bake_vendor_indexes
-import bake_vendor_plugins
-import manage_vendors
 import pytest
 import yaml
 from assertpy import assert_that
-from vendor_registry.registry import load_registry
-from vendor_registry.vendor import Vendor
+
+import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
+import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
+import ai_skills_engine.vendors.manage as manage_vendors
+from ai_skills_engine.registry.registry import load_registry
+from ai_skills_engine.registry.vendor import Vendor
 
 _EXISTING_SHA = "0123456789abcdef0123456789abcdef01234567"
 _NEW_SHA = "89abcdef0123456789abcdef0123456789abcdef"

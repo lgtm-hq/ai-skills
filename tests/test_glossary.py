@@ -10,7 +10,8 @@ import pytest
 from assertpy import assert_that
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
-from vendor_registry.safe_tree import iter_markdown_destinations
+
+from ai_skills_engine.registry.safe_tree import iter_markdown_destinations
 
 
 def _normalized(text: str) -> str:

@@ -2,33 +2,17 @@
 
 from __future__ import annotations
 
-import importlib.util
+import json
+import subprocess  # nosec B404 - bounded local regression process, no shell
+import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 from assertpy import assert_that
 
+import ai_skills_engine.package_sync as module
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_PATH = PROJECT_ROOT / "scripts" / "ci" / "npm" / "sync_ai_skills_package.py"
-
-
-def load_sync_module() -> ModuleType:
-    """Load the npm package synchronization script as a module.
-
-    Returns:
-        Loaded synchronization module.
-    """
-    specification = importlib.util.spec_from_file_location(
-        "sync_ai_skills_package",
-        SCRIPT_PATH,
-    )
-    if specification is None or specification.loader is None:
-        msg = f"Could not load {SCRIPT_PATH}"
-        raise RuntimeError(msg)
-    module = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(module)
-    return module
 
 
 def test_generated_package_is_current(
@@ -40,91 +24,167 @@ def test_generated_package_is_current(
     A local ``plugins-baked/`` leftover must not fail this first-party check;
     bake output is a publish-time artifact (ADR-0007).
     """
-    module = load_sync_module()
-    monkeypatch.setattr(module, "baked_plugin_source", lambda: tmp_path / "absent")
+    monkeypatch.setattr(
+        module, "baked_plugin_source", lambda **kwargs: tmp_path / "absent"
+    )
 
     assert_that(module.check_rendered(module.rendered_files("0.0.0-dev"))).is_zero()
 
 
 def test_check_skips_baked_plugins_when_source_absent(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """First-party --check does not require a local plugins-baked tree."""
-    module = load_sync_module()
     files = {tmp_path / "keep.txt": "ok\n"}
     (tmp_path / "keep.txt").write_text("ok\n", encoding="utf-8")
-    monkeypatch.setattr(module, "PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr(module, "DATA_ROOT", tmp_path / "data")
 
-    assert_that(module.check_rendered(files=files)).is_zero()
+    assert_that(module.check_rendered(files=files, repo_root=tmp_path)).is_zero()
 
 
 def test_write_copies_baked_plugins_into_package(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Sync copies plugins-baked into npm data when a local bake exists."""
-    module = load_sync_module()
     source = tmp_path / "plugins-baked"
-    dest_root = tmp_path / "npm-data"
+    dest_root = tmp_path / "npm" / "ai-skills" / "data"
     source.mkdir()
     (source / "COVERAGE.md").write_text("coverage\n", encoding="utf-8")
-    monkeypatch.setattr(module, "PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr(module, "DATA_ROOT", dest_root)
 
-    module.write_baked_plugins()
+    module.write_baked_plugins(repo_root=tmp_path)
 
     copied = dest_root / "plugins-baked" / "COVERAGE.md"
     assert_that(copied.read_text(encoding="utf-8")).is_equal_to("coverage\n")
-    assert_that(module.check_baked_plugins()).is_false()
+    assert_that(module.check_baked_plugins(repo_root=tmp_path)).is_false()
 
 
 def test_check_detects_stale_baked_plugin_copy(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Sync --check fails when the package copy diverges from the bake."""
-    module = load_sync_module()
     source = tmp_path / "plugins-baked"
-    dest = tmp_path / "data" / "plugins-baked"
+    dest = tmp_path / "npm" / "ai-skills" / "data" / "plugins-baked"
     source.mkdir()
     dest.mkdir(parents=True)
     (source / "COVERAGE.md").write_text("fresh\n", encoding="utf-8")
     (dest / "COVERAGE.md").write_text("stale\n", encoding="utf-8")
-    monkeypatch.setattr(module, "PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr(module, "DATA_ROOT", tmp_path / "data")
 
-    assert_that(module.check_baked_plugins()).is_true()
+    assert_that(module.check_baked_plugins(repo_root=tmp_path)).is_true()
 
 
 def test_write_removes_baked_copy_when_source_absent(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A leftover package copy is deleted when plugins-baked is missing."""
-    module = load_sync_module()
-    dest = tmp_path / "data" / "plugins-baked"
+    dest = tmp_path / "npm" / "ai-skills" / "data" / "plugins-baked"
     dest.mkdir(parents=True)
     (dest / "COVERAGE.md").write_text("leftover\n", encoding="utf-8")
-    monkeypatch.setattr(module, "PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr(module, "DATA_ROOT", tmp_path / "data")
 
-    module.write_baked_plugins()
+    module.write_baked_plugins(repo_root=tmp_path)
 
     assert_that(dest.exists()).is_false()
 
 
 def test_normalize_version_removes_tag_prefix() -> None:
     """Translate release tags into valid npm semver versions."""
-    module = load_sync_module()
 
     assert_that(module.normalize_version("v1.2.3")).is_equal_to("1.2.3")
 
 
 def test_normalize_version_rejects_invalid_release_tag() -> None:
     """Reject release tags that cannot become npm semver versions."""
-    module = load_sync_module()
 
     with pytest.raises(ValueError, match="Invalid npm semver version"):
         module.normalize_version("ai-skills-v1.2.3")
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "0.0.0",
+        "v1.2.3",
+        "1.2.3-alpha.1",
+        "1.2.3-0.3.7",
+        "1.2.3-x.7.z.92",
+        "1.2.3-01a.0-1.-",
+        "1.2.3+001",
+        "1.2.3-beta+exp.sha.5114f85",
+        "123456789012345678901234567890.0.0",
+    ],
+)
+def test_normalize_semver(version: str) -> None:
+    """Preserve valid SemVer prereleases, metadata and unbounded numbers."""
+    assert_that(module.normalize_version(version)).is_equal_to(
+        version.removeprefix("v")
+    )
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "",
+        "v",
+        "vv1.2.3",
+        "1.2",
+        "1.2.3.4",
+        "01.2.3",
+        "1.02.3",
+        "1.2.03",
+        "1.2.3-",
+        "1.2.3+",
+        "1.2.3-a..b",
+        "1.2.3+a..b",
+        "1.2.3+a+b",
+        "1.2.3-01",
+        "1.2.3-alpha.01",
+        "1.2.3-1٢",
+        "1.2.3-α",
+        "1.2.3+α",
+        "1.٢.3",
+        "1.2.3\n",
+        " 1.2.3",
+        "1.2.3 ",
+        "1.2.3-a_b",
+    ],
+)
+def test_reject_invalid_semver(version: str) -> None:
+    """Reject malformed versions, including former leading-zero/Unicode bugs."""
+    with pytest.raises(ValueError, match="Invalid npm semver version"):
+        module.normalize_version(version)
+
+
+def test_normalize_version_has_bounded_runtime() -> None:
+    """Run the real function with the ReDoS reproducer and long controls."""
+    versions = [
+        "0.0.0-" + "0." * 30 + "0",
+        "0.0.0-" + "0." * 30 + "!",
+        "1.2.3-" + "0." * 50_000 + "0",
+        "1.2.3-" + "0." * 50_000 + "!",
+        "1.2.3+" + "a" * 100_000,
+        "1.2.3+" + "a" * 100_000 + "!",
+    ]
+    process = subprocess.run(  # nosec B603 - local Python, fixed code, input as JSON
+        args=[
+            sys.executable,
+            "-c",
+            """
+import json, sys
+from ai_skills_engine.package_sync import normalize_version
+results = []
+for version in json.load(sys.stdin):
+    try:
+        results.append(normalize_version(version))
+    except ValueError:
+        results.append(None)
+print(json.dumps(results))
+""",
+        ],
+        input=json.dumps(versions),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    assert_that(process.returncode).described_as(process.stderr).is_zero()
+    assert_that(json.loads(process.stdout)).is_equal_to(
+        [versions[0], None, versions[2], None, versions[4], None],
+    )

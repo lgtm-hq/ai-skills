@@ -51,9 +51,18 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
 
+      - name: Checkout manifest tooling from the workflow revision
+        # Keep backfills independent of helpers absent from old release tags.
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .manifest-tooling
+          persist-credentials: false
+
       - name: Generate skills manifest
         run: >-
-          python3 scripts/generate_skills_manifest.py
+          bash .manifest-tooling/scripts/ci/generate_skills_manifest.sh .
           --output skills-manifest.json
 
       - name: Attest build provenance
