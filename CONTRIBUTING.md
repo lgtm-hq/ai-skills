@@ -51,6 +51,30 @@ bash scripts/validate.sh
 Use **`uv`** for Python tooling and **`lintro`** for lint/format/check — do not bypass
 with raw **ruff**, **black**, etc.
 
+Lintro runs all current and future bundled tools by default. Any explicit tool
+disable in `.lintro-config.yaml` needs a reason comment. AI `idiom-review` requires
+paid provider credentials and explicit opt-in under the #596 cost gate; it belongs
+to `lintro review`, not `chk`.
+
+Pylint complements Ruff, mypy, and pydoclint with cross-file duplicate-code checks
+on production scripts. Its other diagnostics overlap those tools or enforce
+unadopted size/complexity limits. Duplication requires 12 substantive lines so short
+CLI argument wrappers and exception tuples can remain self-contained. Tests
+deliberately repeat fixture arrangements and are excluded from this duplication
+pass. Import-linter has no contracts here:
+the Python deliverable is a collection of CLI scripts, not a layered package.
+Buf, Checkov, cppcheck, dotenv-linter, golangci-lint, html-validate, and stylelint
+remain enabled and no-op until matching source files exist. Spectral has no API
+specifications or ruleset to check. Commitlint uses the repository's semantic commit
+types. Vale uses a small offline terminology style; typos allows probe identifiers,
+shell-regex fragments, and hexadecimal hashes. Both exclude generated vendor prose.
+
+Python dependency auditing runs through lintro's `pip_audit` and `osv_scanner`.
+`requirements-audit.txt` is generated from every locked dependency group because
+pip-audit's project reader does not audit dev groups. After changing `uv.lock`, run
+`bash scripts/export-audit-requirements.sh`; `validate.sh` checks freshness offline.
+Keep pip-audit out of dev dependencies so it cannot reintroduce `pip` into `uv.lock`.
+
 Parity evidence has two narrow archival exceptions in `.lintro-ignore`:
 `docs/parity/evidence/cursor/raw/` contains WRITE-ONCE returned probe bytes, and
 `tests/fixtures/host-probe/cursor-macos-probe.sh` preserves the supplied personal-Mac

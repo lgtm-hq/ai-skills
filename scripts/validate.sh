@@ -24,8 +24,9 @@ Checks:
      uv run python scripts/check_suppressions.py
   8. Test assertions use assertpy (no bare `assert` statements in tests/;
      use assert_that(...) — pytest.raises contexts remain as-is)
-    9. vendors.yaml schema, baked vendor indexes, NOTICE.md, and
-     baked vendor indexes and NOTICE.md are current via:
+  9. requirements-audit.txt matches the offline uv.lock export used by lintro
+     (regenerate via: bash scripts/export-audit-requirements.sh)
+  10. vendors.yaml schema, baked vendor indexes, and NOTICE.md are current via:
      uv run python scripts/bake_vendor_indexes.py --check
      (vendor plugin bake is a CI/publish gate, not a committed-tree check)
 EOF
@@ -64,6 +65,9 @@ elif ! uv run python "$script_dir/validate_skills.py" skills; then
 fi
 
 if command -v uv >/dev/null 2>&1; then
+  if ! bash "$script_dir/export-audit-requirements.sh" --check; then
+    errors=$((errors + 1))
+  fi
   if ! uv run python "$script_dir/check_suppressions.py"; then
     errors=$((errors + 1))
   fi

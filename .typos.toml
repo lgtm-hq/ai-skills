@@ -1,0 +1,16 @@
+[files]
+# Baked upstream prose belongs to vendors, not to this repository's editors.
+extend-exclude = ["vendor-indexes/**", "npm/ai-skills/data/**"]
+
+[default]
+# Commit SHAs and installer checksums are identifiers, not prose.
+extend-ignore-re = ['\b[0-9a-f]{7,64}\b']
+
+[default.extend-words]
+# "ue" is the user-explode probe route; "unparseable" is valid English.
+ue = "ue"
+unparseable = "unparseable"
+# The installer safety test matches the "ba" prefix in a shell-name regex.
+ba = "ba"
+# setpriv's --inh-caps option selects inheritable capabilities.
+inh = "inh"

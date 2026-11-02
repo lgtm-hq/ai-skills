@@ -1,0 +1,9 @@
+---
+# A small offline style; no downloaded packages, dictionaries, or API calls.
+extends: substitution
+message: "Use '%s' instead of '%s'."
+level: warning
+swap:
+  Github: GitHub
+  Javascript: JavaScript
+  Typescript: TypeScript
