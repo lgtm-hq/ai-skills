@@ -35,7 +35,6 @@ def _copy_validate_script(
         "bake_vendor_indexes.py",
         "bake_vendor_plugins.py",
         "validate_skills.py",
-        "skill_frontmatter.py",
         "check_suppressions.py",
     ):
         shutil.copy2(
@@ -44,10 +43,6 @@ def _copy_validate_script(
         )
     for fixture_file in ("requirements-audit.txt", "pyproject.toml", "uv.lock"):
         shutil.copy2(src=repo_root / fixture_file, dst=tmp_path / fixture_file)
-    shutil.copytree(
-        src=repo_root / "scripts" / "vendor_registry",
-        dst=script_path.parent / "vendor_registry",
-    )
     shutil.copy2(src=repo_root / "vendors.yaml", dst=tmp_path / "vendors.yaml")
     shutil.copy2(src=repo_root / "NOTICE.md", dst=tmp_path / "NOTICE.md")
     shutil.copytree(

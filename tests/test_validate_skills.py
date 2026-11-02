@@ -2,40 +2,14 @@
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 from assertpy import assert_that
 
+import ai_skills_engine.validate_skills as mod
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
-def _load_validate_skills_module() -> ModuleType:
-    """Load ``validate_skills`` from the scripts directory (not a package).
-
-    Returns:
-        The loaded module object.
-
-    Raises:
-        RuntimeError: If the module spec or loader cannot be constructed.
-    """
-    path = REPO_ROOT / "scripts" / "validate_skills.py"
-    spec = importlib.util.spec_from_file_location(
-        name="validate_skills",
-        location=path,
-    )
-    if spec is None:
-        msg = f"Could not load module spec from {path}"
-        raise RuntimeError(msg)
-    loader = spec.loader
-    if loader is None:
-        msg = f"Module spec for {path} has no loader"
-        raise RuntimeError(msg)
-    module = importlib.util.module_from_spec(spec)
-    loader.exec_module(module)
-    return module
 
 
 def _write_skill(
@@ -64,7 +38,6 @@ def _write_skill(
 
 def test_valid_skill_passes(tmp_path: Path) -> None:
     """A well-formed SKILL.md produces no violations."""
-    mod = _load_validate_skills_module()
     skill_md = _write_skill(
         tmp_path=tmp_path,
         dir_name="example",
@@ -78,7 +51,6 @@ def test_valid_skill_passes(tmp_path: Path) -> None:
 
 def test_crlf_skill_passes(tmp_path: Path) -> None:
     """A CRLF SKILL.md is normalized before parsing and passes."""
-    mod = _load_validate_skills_module()
     skill_md = _write_skill(
         tmp_path=tmp_path,
         dir_name="example",
@@ -93,7 +65,6 @@ def test_crlf_skill_passes(tmp_path: Path) -> None:
 
 def test_one_char_description_passes(tmp_path: Path) -> None:
     """A one-character description is non-empty and therefore valid."""
-    mod = _load_validate_skills_module()
     skill_md = _write_skill(
         tmp_path=tmp_path,
         dir_name="example",
@@ -107,7 +78,6 @@ def test_one_char_description_passes(tmp_path: Path) -> None:
 
 def test_max_length_description_passes(tmp_path: Path) -> None:
     """A description of exactly 1024 characters is accepted."""
-    mod = _load_validate_skills_module()
     description = "x" * 1024
     skill_md = _write_skill(
         tmp_path=tmp_path,
@@ -186,7 +156,6 @@ def test_invalid_frontmatter_is_rejected(
     expected_fragment: str,
 ) -> None:
     """Each malformed-frontmatter variant yields a violation naming the file."""
-    mod = _load_validate_skills_module()
     skill_md = _write_skill(
         tmp_path=tmp_path,
         dir_name="example",
@@ -202,7 +171,6 @@ def test_invalid_frontmatter_is_rejected(
 
 def test_overlong_description_is_rejected(tmp_path: Path) -> None:
     """A description over 1024 characters is rejected."""
-    mod = _load_validate_skills_module()
     description = "x" * 1025
     skill_md = _write_skill(
         tmp_path=tmp_path,
@@ -224,7 +192,6 @@ def test_overlong_description_is_rejected(tmp_path: Path) -> None:
 
 def test_name_directory_mismatch_is_rejected(tmp_path: Path) -> None:
     """A ``name`` that differs from the directory basename is rejected."""
-    mod = _load_validate_skills_module()
     skill_md = _write_skill(
         tmp_path=tmp_path,
         dir_name="foo",
@@ -242,7 +209,6 @@ def test_name_directory_mismatch_is_rejected(tmp_path: Path) -> None:
 
 def test_validate_skills_tree_collects_all_violations(tmp_path: Path) -> None:
     """The tree walker aggregates violations across skill directories."""
-    mod = _load_validate_skills_module()
     _write_skill(
         tmp_path=tmp_path,
         dir_name="good",
@@ -265,7 +231,6 @@ def test_validate_skills_tree_collects_all_violations(tmp_path: Path) -> None:
 
 def test_validate_skills_tree_passes_on_real_repo() -> None:
     """The real skills tree in this repository must validate cleanly."""
-    mod = _load_validate_skills_module()
 
     violations = mod.validate_skills_tree(skills_root=REPO_ROOT / "skills")
 

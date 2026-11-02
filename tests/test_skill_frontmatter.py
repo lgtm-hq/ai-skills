@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 from assertpy import assert_that
-from skill_frontmatter import (
+
+from ai_skills_engine.frontmatter import (
     frontmatter_error,
     read_frontmatter_name,
     rewrite_frontmatter_name,

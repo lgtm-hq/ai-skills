@@ -4,17 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
 
-from skill_frontmatter import (
+from ai_skills_engine.frontmatter import (
     frontmatter_error,
     read_frontmatter_name,
     rewrite_frontmatter_name,
 )
-
-from vendor_registry.plugin_bake_result import PluginBakeResult
-from vendor_registry.plugin_manifest import write_plugin_manifests
-from vendor_registry.plugin_version import plugin_version
-from vendor_registry.registry import GLOB_METACHARS
-from vendor_registry.safe_tree import (
+from ai_skills_engine.registry.plugin_bake_result import PluginBakeResult
+from ai_skills_engine.registry.plugin_manifest import write_plugin_manifests
+from ai_skills_engine.registry.plugin_version import plugin_version
+from ai_skills_engine.registry.registry import GLOB_METACHARS
+from ai_skills_engine.registry.safe_tree import (
     _copy_file_nofollow,
     contained_path,
     copy_tree,
@@ -23,8 +22,8 @@ from vendor_registry.safe_tree import (
     validate_tree,
     walk_files,
 )
-from vendor_registry.vendor import Vendor
-from vendor_registry.vendor_plugin import VendorPlugin
+from ai_skills_engine.registry.vendor import Vendor
+from ai_skills_engine.registry.vendor_plugin import VendorPlugin
 
 _AGENTS_DIRECTORY = "agents"
 

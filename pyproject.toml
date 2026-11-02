@@ -2,6 +2,23 @@
 name = "ai-skills"
 version = "0.30.8"
 requires-python = ">=3.13"
+dependencies = ["pyyaml>=6.0.2", "markdown-it-py>=4.2.0"]
+
+[project.scripts]
+ai-skills-engine = "ai_skills_engine.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.26,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "ai_skills_engine"
+
+[tool.mypy]
+strict = true
+files = ["src"]
+mypy_path = "$MYPY_CONFIG_FILE_DIR/src"
+explicit_package_bases = true
 
 [dependency-groups]
 dev = [
@@ -15,14 +32,12 @@ dev = [
   "pytest-timeout>=2.4.0",
   "pytest-xdist>=3.8.0",
   "pytest>=9.0.3",
-  "pyyaml>=6.0.2",
   "mypy>=2.1.0",
+  "types-pyyaml>=6.0.12",
   "assertpy>=1.1",
   # validate.sh requires the rg binary; the wheel ships it so pytest is
   # self-contained on CI runners without system ripgrep.
   "ripgrep>=15.1.0",
-  # Bake validates internal markdown destinations via a CommonMark parse.
-  "markdown-it-py>=4.2.0",
 ]
 
 [tool.bandit]

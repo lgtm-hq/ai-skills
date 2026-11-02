@@ -11,12 +11,13 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
-import manage_vendors
 import pytest
 import yaml
 from assertpy import assert_that
 from ci import create_signed_commit, vendor_pin_artifact
-from vendor_registry.registry import load_registry
+
+import ai_skills_engine.vendors.manage as manage_vendors
+from ai_skills_engine.registry.registry import load_registry
 
 _ROOT = Path(__file__).resolve().parents[1]
 _REPOSITORY = "owner/catalog"

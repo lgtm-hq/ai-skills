@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 from assertpy import assert_that
 from markdown_it import MarkdownIt
-from vendor_registry.safe_tree import iter_markdown_destinations
+
+from ai_skills_engine.registry.safe_tree import iter_markdown_destinations
 
 RUNS = "https://github.com/lgtm-hq/ai-skills/actions/runs"
 ARTIFACT_URL = f"{RUNS}/41332673633/artifacts/13094420287"

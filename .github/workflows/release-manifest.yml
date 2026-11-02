@@ -53,7 +53,7 @@ jobs:
 
       - name: Generate skills manifest
         run: >-
-          python3 scripts/generate_skills_manifest.py
+          bash scripts/ci/generate_skills_manifest.sh
           --output skills-manifest.json
 
       - name: Attest build provenance

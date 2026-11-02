@@ -6,20 +6,21 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
-import bake_vendor_indexes
-import bake_vendor_plugins
 import pytest
-import repin_vendor
 import yaml
 from assertpy import assert_that
-from vendor_registry.registry import load_registry
-from vendor_registry.vendor import Vendor
-from vendor_registry.vendor_repin_diff import (
+
+import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
+import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
+import ai_skills_engine.vendors.repin as repin_vendor
+from ai_skills_engine.registry.registry import load_registry
+from ai_skills_engine.registry.vendor import Vendor
+from ai_skills_engine.registry.vendor_repin_diff import (
     diff_snapshots,
     render_json,
     render_markdown,
 )
-from vendor_registry.vendor_repin_snapshot import VendorRepinSnapshot
+from ai_skills_engine.registry.vendor_repin_snapshot import VendorRepinSnapshot
 
 _EXISTING_SHA = "0123456789abcdef0123456789abcdef01234567"
 _NEW_SHA = "89abcdef0123456789abcdef0123456789abcdef"

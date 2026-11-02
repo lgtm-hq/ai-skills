@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from vendor_registry.plugin_bake_result import PluginBakeResult
-from vendor_registry.vendor import Vendor
+from ai_skills_engine.registry.plugin_bake_result import PluginBakeResult
+from ai_skills_engine.registry.vendor import Vendor
 
 _GENERATED_HEADING = "do not edit — regenerate via scripts/bake_vendor_plugins.py"
 

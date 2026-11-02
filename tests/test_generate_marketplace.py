@@ -2,42 +2,14 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 from types import ModuleType
 
 import pytest
 from assertpy import assert_that
 
-
-def _load_generate_marketplace_module() -> ModuleType:
-    """Load ``generate_marketplace`` from the scripts directory (not a package).
-
-    Returns:
-        The loaded module object.
-
-    Raises:
-        RuntimeError: If the module spec or loader cannot be constructed.
-    """
-    root = Path(__file__).resolve().parents[1]
-    path = root / "scripts" / "generate_marketplace.py"
-    spec = importlib.util.spec_from_file_location(
-        name="generate_marketplace",
-        location=path,
-    )
-    if spec is None:
-        msg = f"Could not load module spec from {path}"
-        raise RuntimeError(msg)
-    loader = spec.loader
-    if loader is None:
-        msg = f"Module spec for {path} has no loader"
-        raise RuntimeError(msg)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    loader.exec_module(module)
-    return module
+import ai_skills_engine.generate.marketplace as mod
 
 
 def _write_skill(*, repo_root: Path, skill_id: str) -> None:
@@ -110,7 +82,6 @@ ungrouped:
 def test_generate_marketplace_builds_plugin_groups(tmp_path: Path) -> None:
     """Grouped skills become kebab-id plugins with sliced ./skills/<id> paths."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
@@ -142,7 +113,6 @@ def test_generate_marketplace_builds_plugin_groups(tmp_path: Path) -> None:
 def test_generate_cursor_marketplace_mirrors_groups(tmp_path: Path) -> None:
     """Cursor adapter lists the same plugin ids with name/owner/metadata."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
@@ -169,7 +139,6 @@ def test_generate_cursor_marketplace_mirrors_groups(tmp_path: Path) -> None:
 def test_generate_marketplace_stamps_version_from_pyproject(tmp_path: Path) -> None:
     """Without VERSION, plugin version comes from pyproject.toml."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
@@ -183,7 +152,6 @@ def test_generate_marketplace_stamps_version_from_pyproject(tmp_path: Path) -> N
 def test_generate_marketplace_stamps_version_from_version_file(tmp_path: Path) -> None:
     """A VERSION file stamps plugins when pyproject.toml is absent."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
@@ -197,7 +165,6 @@ def test_generate_marketplace_stamps_version_from_version_file(tmp_path: Path) -
 def test_generate_marketplace_rejects_version_mismatch(tmp_path: Path) -> None:
     """VERSION and pyproject.toml must agree when both are present."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
@@ -211,7 +178,6 @@ def test_generate_marketplace_rejects_version_mismatch(tmp_path: Path) -> None:
 def test_generate_marketplace_rejects_empty_version_file(tmp_path: Path) -> None:
     """An empty VERSION file is a hard error, not a fall-through."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
@@ -224,7 +190,6 @@ def test_generate_marketplace_rejects_empty_version_file(tmp_path: Path) -> None
 def test_bundle_group_requires_non_empty_kebab_plugin_id() -> None:
     """Direct construction cannot omit or empty the plugin id."""
 
-    mod = _load_generate_marketplace_module()
     with pytest.raises(TypeError):
         mod.BundleGroup(name="Core", skills=("alpha",))
     with pytest.raises(ValueError, match="plugin_id"):
@@ -244,7 +209,6 @@ def test_bundle_group_requires_non_empty_kebab_plugin_id() -> None:
 def test_generate_marketplace_rejects_missing_plugin_id(tmp_path: Path) -> None:
     """Each group must declare an explicit kebab-case id."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_pyproject(repo_root=tmp_path, version="1.0.0")
     _write_bundles(
@@ -279,7 +243,6 @@ def test_generate_marketplace_rejects_non_kebab_ids(
 ) -> None:
     """Group keys and plugin ids must be kebab-case."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_pyproject(repo_root=tmp_path, version="1.0.0")
     _write_bundles(
@@ -302,7 +265,6 @@ ungrouped: []
 def test_generate_marketplace_rejects_duplicate_plugin_ids(tmp_path: Path) -> None:
     """Two groups cannot share the same plugin id."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_pyproject(repo_root=tmp_path, version="1.0.0")
@@ -331,7 +293,6 @@ ungrouped: []
 def test_generate_marketplace_rejects_plugin_id_mismatch(tmp_path: Path) -> None:
     """A group's plugin id must match its YAML key so --bundle and marketplace agree."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_pyproject(repo_root=tmp_path, version="1.0.0")
     _write_bundles(
@@ -375,7 +336,6 @@ def _write_generated_adapters(*, repo_root: Path, mod: ModuleType) -> None:
 def test_marketplace_drift_message_detects_stale_file(tmp_path: Path) -> None:
     """Drift check fails when a marketplace adapter does not match the generator."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
@@ -395,7 +355,6 @@ def test_marketplace_drift_message_detects_stale_file(tmp_path: Path) -> None:
 def test_marketplace_drift_message_passes_when_current(tmp_path: Path) -> None:
     """Drift check is silent when every marketplace adapter matches."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
@@ -410,7 +369,6 @@ def test_marketplace_drift_message_detects_missing_cursor_adapter(
 ) -> None:
     """Drift check fails when the Cursor adapter has not been generated."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
@@ -432,7 +390,6 @@ def test_marketplace_drift_message_detects_missing_cursor_adapter(
 def test_marketplace_drift_message_detects_missing_file(tmp_path: Path) -> None:
     """Drift check fails when marketplace.json has not been generated."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="alpha")
     _write_skill(repo_root=tmp_path, skill_id="beta")
     _write_bundles(repo_root=tmp_path, body=_core_bundles_yaml())
@@ -447,7 +404,6 @@ def test_marketplace_drift_message_detects_missing_file(tmp_path: Path) -> None:
 def test_validate_bundles_rejects_missing_skill(tmp_path: Path) -> None:
     """Every skill directory must appear in bundles.yaml."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="only-one")
     _write_pyproject(repo_root=tmp_path, version="1.0.0")
     _write_bundles(
@@ -469,7 +425,6 @@ ungrouped: []
 def test_validate_bundles_rejects_duplicate_assignment(tmp_path: Path) -> None:
     """A skill cannot appear in two groups."""
 
-    mod = _load_generate_marketplace_module()
     _write_skill(repo_root=tmp_path, skill_id="dup")
     _write_pyproject(repo_root=tmp_path, version="1.0.0")
     _write_bundles(
@@ -497,7 +452,6 @@ ungrouped: []
 def test_repo_bundles_cover_all_skills() -> None:
     """Production bundles.yaml must account for every skill in skills/."""
 
-    mod = _load_generate_marketplace_module()
     repo_root = Path(__file__).resolve().parents[1]
 
     # Should not raise.
@@ -507,7 +461,6 @@ def test_repo_bundles_cover_all_skills() -> None:
 def test_repo_marketplace_is_current() -> None:
     """Committed host-adapter manifests must match the generator (drift gate)."""
 
-    mod = _load_generate_marketplace_module()
     repo_root = Path(__file__).resolve().parents[1]
 
     assert_that(mod.marketplace_drift_message(repo_root=repo_root)).is_none()
@@ -516,7 +469,6 @@ def test_repo_marketplace_is_current() -> None:
 def test_repo_plugin_ids_are_kebab_case_and_match_slicing() -> None:
     """Production plugin names are kebab-case and skills arrays match bundles."""
 
-    mod = _load_generate_marketplace_module()
     repo_root = Path(__file__).resolve().parents[1]
     bundles = mod.load_validated_bundles(repo_root=repo_root)
     manifest = json.loads(mod.generate_marketplace(repo_root=repo_root))
@@ -545,7 +497,6 @@ def test_repo_plugin_ids_are_kebab_case_and_match_slicing() -> None:
 def test_repo_cursor_marketplace_mirrors_claude_plugin_ids() -> None:
     """Cursor adapter plugin names match Claude marketplace plugin names."""
 
-    mod = _load_generate_marketplace_module()
     repo_root = Path(__file__).resolve().parents[1]
     claude = json.loads(mod.generate_marketplace(repo_root=repo_root))
     cursor = json.loads(mod.generate_cursor_marketplace(repo_root=repo_root))

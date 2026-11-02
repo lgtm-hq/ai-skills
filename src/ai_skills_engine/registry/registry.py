@@ -10,8 +10,11 @@ from urllib.parse import urlparse
 
 import yaml
 
-from vendor_registry.vendor import Vendor
-from vendor_registry.vendor_plugin import PLUGIN_ROOT_RESERVED_NAMES, VendorPlugin
+from ai_skills_engine.registry.vendor import Vendor
+from ai_skills_engine.registry.vendor_plugin import (
+    PLUGIN_ROOT_RESERVED_NAMES,
+    VendorPlugin,
+)
 
 _ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _REPO_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")

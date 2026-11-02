@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 from assertpy import assert_that
 from markdown_it import MarkdownIt
-from vendor_registry.safe_tree import (
+
+from ai_skills_engine.registry.safe_tree import (
     assert_relative_markdown_target,
     iter_markdown_destinations,
     validate_internal_references,

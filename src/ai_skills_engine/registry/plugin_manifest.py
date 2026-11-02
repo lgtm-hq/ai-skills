@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from vendor_registry.vendor import Vendor
-from vendor_registry.vendor_plugin import VendorPlugin
+from ai_skills_engine.registry.vendor import Vendor
+from ai_skills_engine.registry.vendor_plugin import VendorPlugin
 
 GENERATED_NOTICE = "do not edit — regenerate via scripts/bake_vendor_plugins.py"
 MARKETPLACE_NAME = "ai-skills-vendors"

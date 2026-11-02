@@ -9,12 +9,13 @@ import tarfile
 from io import BytesIO
 from pathlib import Path
 
-import bake_vendor_plugins
 import pytest
 from assertpy import assert_that
-from vendor_registry import safe_tree
-from vendor_registry.plugin_version import plugin_version
-from vendor_registry.safe_tree import (
+
+import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
+from ai_skills_engine.registry import safe_tree
+from ai_skills_engine.registry.plugin_version import plugin_version
+from ai_skills_engine.registry.safe_tree import (
     copy_tree,
     install_directory,
     validate_tree,

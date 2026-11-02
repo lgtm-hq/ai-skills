@@ -1,9 +1,8 @@
 """Shared pytest setup for script tests.
 
-Puts ``scripts/`` on ``sys.path`` so tests can import script helpers
-the same way the CLI entrypoints do (``python scripts/<name>.py``
-places ``scripts/`` at ``sys.path[0]``). Also exposes the shared spike test
-helpers so the small root parity check can reuse the isolated harness fixtures.
+Keeps ``scripts/`` on ``sys.path`` for repository hygiene and CI helpers only.
+Engine tests import the installed ``ai_skills_engine`` package directly. Also
+exposes the shared spike test helpers for the small root parity check.
 """
 
 from __future__ import annotations

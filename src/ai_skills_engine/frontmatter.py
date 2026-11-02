@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from vendor_registry.registry import load_unique_yaml_text
+from ai_skills_engine.registry.registry import load_unique_yaml_text
 
 _FENCE_OPEN = "---\n"
 _FENCE_CLOSE = "\n---\n"

@@ -52,6 +52,18 @@ bash scripts/validate.sh
 Use **`uv`** for Python tooling and **`lintro`** for lint/format/check — do not bypass
 with raw **ruff**, **black**, etc.
 
+The shared typed Python engine is installed editable from `src/ai_skills_engine/`
+by `uv sync`. Its author CLI is `uv run ai-skills-engine --help`; existing
+`uv run python scripts/<name>.py` commands remain compatibility entry points.
+For example, `uv run ai-skills-engine generate marketplace --check` runs the same
+implementation as `scripts/generate_marketplace.py --check`. Commands discover a
+repository by walking up from cwd for `pyproject.toml` and `skills/`, or accept
+`--repo-root PATH`. Relative file operands retain their cwd-relative meaning.
+Tests import and monkeypatch the real package modules, never the script shims.
+`uv build` produces the typed wheel; runtime dependencies are separate from dev
+tooling. Consumer runtime bundling and install commands are subsequent work under
+ADR 0008.
+
 Lintro runs all current and future bundled tools by default. Any explicit tool
 disable in `.lintro-config.yaml` needs a reason comment. AI `idiom-review` requires
 paid provider credentials and explicit opt-in under the #596 cost gate; it belongs
@@ -62,8 +74,8 @@ on production scripts. Its other diagnostics overlap those tools or enforce
 unadopted size/complexity limits. Duplication requires 12 substantive lines so short
 CLI argument wrappers and exception tuples can remain self-contained. Tests
 deliberately repeat fixture arrangements and are excluded from this duplication
-pass. Import-linter has no contracts here:
-the Python deliverable is a collection of CLI scripts, not a layered package.
+pass. Import-linter has no contracts here: the engine extraction preserves the
+existing module dependencies and introduces no separate install layer yet.
 Buf, Checkov, cppcheck, dotenv-linter, golangci-lint, html-validate, and stylelint
 remain enabled and no-op until matching source files exist. Spectral has no API
 specifications or ruleset to check. Commitlint uses the repository's semantic commit
