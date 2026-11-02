@@ -6,6 +6,14 @@ named historical revisions. The [final report](./install-plane-distribution.md)
 applies the measured Python-first rule and records current acceptance and limits.
 Historical raw JSON, run identities and measurements remain unchanged.
 
+Citation maintenance (2026-11-02): exact artifact IDs below remain code literals
+beside checked public parent-run citations. Artifact downloads require
+authentication and remain subject to retention; a public download-page 404 alone
+does not establish expiry or deletion. The [metadata and public GET
+controls](./install-plane-distribution.md#citation-and-download-boundary-checked-2026-11-02)
+record that distinction. This changes citation presentation only, not historical
+evidence, outcomes or explicit unknowns.
+
 ## Earlier report snapshot (#562)
 
 Date: 2026-11-01. **ADR 0008 remains Proposed pending corrected denial evidence.**
@@ -134,14 +142,14 @@ reported SUCCESS and inspection of all twelve historical results; this does not
 certify R13. The older green R10 dispatch below
 certifies only its executed source, not R11 or the new native diagnostic.
 
-| Target / runner                 | R11 PR artifact                                                                                    |
-| ------------------------------- | -------------------------------------------------------------------------------------------------- |
-| linux-x64 / ubuntu-24.04        | [13090026458](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015/artifacts/13090026458) |
-| linux-arm64 / ubuntu-24.04-arm  | [13089418818](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015/artifacts/13089418818) |
-| darwin-arm64 / macos-15         | [13090220931](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015/artifacts/13090220931) |
-| darwin-x64 / macos-15-intel     | [13090540153](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015/artifacts/13090540153) |
-| windows-x64 / windows-2025      | [13090770318](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015/artifacts/13090770318) |
-| Dedicated Linux empty allowlist | [13090425637](https://github.com/lgtm-hq/ai-skills/actions/runs/41322684015/artifacts/13090425637) |
+| Target / runner                 | R11 PR artifact                             |
+| ------------------------------- | ------------------------------------------- |
+| linux-x64 / ubuntu-24.04        | `13090026458` ([run `41322684015`][r11-pr]) |
+| linux-arm64 / ubuntu-24.04-arm  | `13089418818` ([run `41322684015`][r11-pr]) |
+| darwin-arm64 / macos-15         | `13090220931` ([run `41322684015`][r11-pr]) |
+| darwin-x64 / macos-15-intel     | `13090540153` ([run `41322684015`][r11-pr]) |
+| windows-x64 / windows-2025      | `13090770318` ([run `41322684015`][r11-pr]) |
+| Dedicated Linux empty allowlist | `13090425637` ([run `41322684015`][r11-pr]) |
 
 P means pass, U means unverified. Execution observations do not alone prove offline.
 Registry columns read the raw `private_registry.clients`; local-file columns read
@@ -572,18 +580,18 @@ status, correct event/run URL and attempt **1**. Build JSONs and acquisition JSO
 are separate setup records, not extra scenario results. These are R10 results,
 not R9 results or proof of the subsequent Windows-control code in this revision.
 
-The exact evidence artifact IDs are linked below. Each native artifact contains
-`results/<target>-{ts,py}.json` and `build.json`; dedicated artifacts contain
-`linux-x64-{ts,py}-offline.json` and acquisition evidence.
+The exact evidence artifact IDs and parent-run citations are below. Each native
+artifact contains `results/<target>-{ts,py}.json` and `build.json`; dedicated
+artifacts contain `linux-x64-{ts,py}-offline.json` and acquisition evidence.
 
-| Target / runner                 | PR artifact                                                                                        | Dispatch artifact                                                                                  |
-| ------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| linux-x64 / ubuntu-24.04        | [13087556167](https://github.com/lgtm-hq/ai-skills/actions/runs/41315907240/artifacts/13087556167) | [13087163219](https://github.com/lgtm-hq/ai-skills/actions/runs/41316038552/artifacts/13087163219) |
-| linux-arm64 / ubuntu-24.04-arm  | [13087037043](https://github.com/lgtm-hq/ai-skills/actions/runs/41315907240/artifacts/13087037043) | [13087845472](https://github.com/lgtm-hq/ai-skills/actions/runs/41316038552/artifacts/13087845472) |
-| darwin-arm64 / macos-15         | [13087566760](https://github.com/lgtm-hq/ai-skills/actions/runs/41315907240/artifacts/13087566760) | [13086779149](https://github.com/lgtm-hq/ai-skills/actions/runs/41316038552/artifacts/13086779149) |
-| darwin-x64 / macos-15-intel     | [13087157041](https://github.com/lgtm-hq/ai-skills/actions/runs/41315907240/artifacts/13087157041) | [13086739579](https://github.com/lgtm-hq/ai-skills/actions/runs/41316038552/artifacts/13086739579) |
-| windows-x64 / windows-2025      | [13086784287](https://github.com/lgtm-hq/ai-skills/actions/runs/41315907240/artifacts/13086784287) | [13086894360](https://github.com/lgtm-hq/ai-skills/actions/runs/41316038552/artifacts/13086894360) |
-| Dedicated Linux empty allowlist | [13087427952](https://github.com/lgtm-hq/ai-skills/actions/runs/41315907240/artifacts/13087427952) | [13087701539](https://github.com/lgtm-hq/ai-skills/actions/runs/41316038552/artifacts/13087701539) |
+| Target / runner                 | PR artifact                                 | Dispatch artifact                                 |
+| ------------------------------- | ------------------------------------------- | ------------------------------------------------- |
+| linux-x64 / ubuntu-24.04        | `13087556167` ([run `41315907240`][r10-pr]) | `13087163219` ([run `41316038552`][r10-dispatch]) |
+| linux-arm64 / ubuntu-24.04-arm  | `13087037043` ([run `41315907240`][r10-pr]) | `13087845472` ([run `41316038552`][r10-dispatch]) |
+| darwin-arm64 / macos-15         | `13087566760` ([run `41315907240`][r10-pr]) | `13086779149` ([run `41316038552`][r10-dispatch]) |
+| darwin-x64 / macos-15-intel     | `13087157041` ([run `41315907240`][r10-pr]) | `13086739579` ([run `41316038552`][r10-dispatch]) |
+| windows-x64 / windows-2025      | `13086784287` ([run `41315907240`][r10-pr]) | `13086894360` ([run `41316038552`][r10-dispatch]) |
+| Dedicated Linux empty allowlist | `13087427952` ([run `41315907240`][r10-pr]) | `13087701539` ([run `41316038552`][r10-dispatch]) |
 
 Both runs agree on all statuses below, **for A and B separately**. P means pass,
 U means unverified. Execution observations are separate from verified offline.

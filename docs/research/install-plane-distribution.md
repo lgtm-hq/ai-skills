@@ -45,14 +45,33 @@ empty source status, the exact event/run URL and attempt **1**. SHA-256 values
 below identify the unchanged raw documents. Build/acquisition records are setup
 evidence, not extra result cells; a green workflow alone is not scenario proof.
 
-| Target / runner                   | PR artifact                                                                                        | Dispatch artifact                                                                                  |
-| --------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| linux-x64 / ubuntu-24.04          | [13093629541](https://github.com/lgtm-hq/ai-skills/actions/runs/41332673633/artifacts/13093629541) | [13093893911](https://github.com/lgtm-hq/ai-skills/actions/runs/41332723822/artifacts/13093893911) |
-| linux-arm64 / ubuntu-24.04-arm    | [13093609553](https://github.com/lgtm-hq/ai-skills/actions/runs/41332673633/artifacts/13093609553) | [13094072632](https://github.com/lgtm-hq/ai-skills/actions/runs/41332723822/artifacts/13094072632) |
-| darwin-arm64 / macos-15           | [13093637879](https://github.com/lgtm-hq/ai-skills/actions/runs/41332673633/artifacts/13093637879) | [13093853917](https://github.com/lgtm-hq/ai-skills/actions/runs/41332723822/artifacts/13093853917) |
-| darwin-x64 / macos-15-intel       | [13094033451](https://github.com/lgtm-hq/ai-skills/actions/runs/41332673633/artifacts/13094033451) | [13093899143](https://github.com/lgtm-hq/ai-skills/actions/runs/41332723822/artifacts/13093899143) |
-| windows-x64 / windows-2025        | [13094420287](https://github.com/lgtm-hq/ai-skills/actions/runs/41332673633/artifacts/13094420287) | [13093114706](https://github.com/lgtm-hq/ai-skills/actions/runs/41332723822/artifacts/13093114706) |
-| dedicated / linux-empty-allowlist | [13094305844](https://github.com/lgtm-hq/ai-skills/actions/runs/41332673633/artifacts/13094305844) | [13094460630](https://github.com/lgtm-hq/ai-skills/actions/runs/41332723822/artifacts/13094460630) |
+### Citation and download boundary (checked 2026-11-02)
+
+The tables retain exact artifact IDs as code literals beside checked parent-run
+citations. Those run pages are public evidence locators, not promises of public
+artifact downloads. GitHub artifact downloads require authentication and remain
+subject to retention; a public download-page 404 alone proves neither expiry nor
+deletion.
+
+An authenticated metadata GET for artifact `13094420287` reported `expired: false`,
+`expires_at: 2026-12-01T17:47:12Z`, run `41332673633` and source
+`fb4d21bbc68579606a283afa69af3eee664dab61`. Unauthenticated GETs of
+`/lgtm-hq/ai-skills/actions/runs/41332673633/artifacts/13094420287` and
+`/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13094489784` on `github.com`
+redirected to artifact pages returning 404, while their parent run pages and the
+other four parent runs cited in these reports returned 200. This establishes the
+observed public download boundary, not deletion or expiry. Metadata availability
+does not verify downloadable bytes, future retention or independent payload
+provenance. No credentials or artifact contents are included in this check.
+
+| Target / runner                   | PR artifact                                   | Dispatch artifact                                   |
+| --------------------------------- | --------------------------------------------- | --------------------------------------------------- |
+| linux-x64 / ubuntu-24.04          | `13093629541` ([run `41332673633`][final-pr]) | `13093893911` ([run `41332723822`][final-dispatch]) |
+| linux-arm64 / ubuntu-24.04-arm    | `13093609553` ([run `41332673633`][final-pr]) | `13094072632` ([run `41332723822`][final-dispatch]) |
+| darwin-arm64 / macos-15           | `13093637879` ([run `41332673633`][final-pr]) | `13093853917` ([run `41332723822`][final-dispatch]) |
+| darwin-x64 / macos-15-intel       | `13094033451` ([run `41332673633`][final-pr]) | `13093899143` ([run `41332723822`][final-dispatch]) |
+| windows-x64 / windows-2025        | `13094420287` ([run `41332673633`][final-pr]) | `13093114706` ([run `41332723822`][final-dispatch]) |
+| dedicated / linux-empty-allowlist | `13094305844` ([run `41332673633`][final-pr]) | `13094460630` ([run `41332723822`][final-dispatch]) |
 
 Native artifacts contain `results/<target>-{ts,py}.json`; dedicated artifacts
 contain `linux-x64-{ts,py}-offline.json`. Collector source identity and independent
@@ -83,20 +102,20 @@ registry clients, no Node, direct offline and npm fallback. The two dedicated
 Harden Runner results and independent payload provenance remain **unverified**.
 This is separate evidence; the historical `fb4d21b` comparison above is unchanged.
 
-| JSON                      | Artifact                                                                                           | SHA-256                                                            |
-| ------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| darwin-arm64-py.json      | [13094489784](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13094489784) | `c2775a1905e9f30a14bc91f80ef5c25bed6cef86e525d8221c06410fc8687435` |
-| darwin-arm64-ts.json      | [13094489784](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13094489784) | `b69beed944d959824e9a38688ef9d27410c600eccd5119ae93f6fef85ff53df0` |
-| darwin-x64-py.json        | [13094894240](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13094894240) | `0dac63df579ed947c56383f6b3a37c4c886eb6ccccd1b0a786dc92bd3d0de5ee` |
-| darwin-x64-ts.json        | [13094894240](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13094894240) | `dc4642e50b69c9268f5918a7d285e5b797787cb1da80ad2b7dad6efc23c065b6` |
-| linux-arm64-py.json       | [13095216667](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095216667) | `d4d5b2447850d15eb1fb30cc35e3609483e40a716ff050577d248faa5b6bbdf3` |
-| linux-arm64-ts.json       | [13095216667](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095216667) | `0ed1401d4658fb31875ea53f41c48198820bae5c2dc74d7b01dca64450c39f6e` |
-| linux-x64-py.json         | [13095228033](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095228033) | `f44b65ebda11acf8609ef04591b76922500190ea92bfeec8f0c6ace71204a7d5` |
-| linux-x64-ts.json         | [13095228033](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095228033) | `cbb78193e30604f15b7a32cf611a6ca1ea4a9f7cbef609d919e0e5b1be1e3322` |
-| linux-x64-py-offline.json | [13095591042](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095591042) | `34b0e19456f3d6fb64b15b1a84f074e1d0a49cf0792677c308fc0480479dc5cb` |
-| linux-x64-ts-offline.json | [13095591042](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095591042) | `3fca78cd1a0b3237ec307d419844ebdf3d514030bd15e6930284844aca23535b` |
-| windows-x64-py.json       | [13095635752](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095635752) | `da59d0818888c02fc431c50df4c414253c6846f33dc1127cadf2971513e52822` |
-| windows-x64-ts.json       | [13095635752](https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949/artifacts/13095635752) | `b24bc2d74391d3c595d861bff90123f84c7a30464a0a1c19fe0b7589925285a9` |
+| JSON                      | Artifact                                                  | SHA-256                                                            |
+| ------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
+| darwin-arm64-py.json      | `13094489784` ([run `41335569949`][integration-dispatch]) | `c2775a1905e9f30a14bc91f80ef5c25bed6cef86e525d8221c06410fc8687435` |
+| darwin-arm64-ts.json      | `13094489784` ([run `41335569949`][integration-dispatch]) | `b69beed944d959824e9a38688ef9d27410c600eccd5119ae93f6fef85ff53df0` |
+| darwin-x64-py.json        | `13094894240` ([run `41335569949`][integration-dispatch]) | `0dac63df579ed947c56383f6b3a37c4c886eb6ccccd1b0a786dc92bd3d0de5ee` |
+| darwin-x64-ts.json        | `13094894240` ([run `41335569949`][integration-dispatch]) | `dc4642e50b69c9268f5918a7d285e5b797787cb1da80ad2b7dad6efc23c065b6` |
+| linux-arm64-py.json       | `13095216667` ([run `41335569949`][integration-dispatch]) | `d4d5b2447850d15eb1fb30cc35e3609483e40a716ff050577d248faa5b6bbdf3` |
+| linux-arm64-ts.json       | `13095216667` ([run `41335569949`][integration-dispatch]) | `0ed1401d4658fb31875ea53f41c48198820bae5c2dc74d7b01dca64450c39f6e` |
+| linux-x64-py.json         | `13095228033` ([run `41335569949`][integration-dispatch]) | `f44b65ebda11acf8609ef04591b76922500190ea92bfeec8f0c6ace71204a7d5` |
+| linux-x64-ts.json         | `13095228033` ([run `41335569949`][integration-dispatch]) | `cbb78193e30604f15b7a32cf611a6ca1ea4a9f7cbef609d919e0e5b1be1e3322` |
+| linux-x64-py-offline.json | `13095591042` ([run `41335569949`][integration-dispatch]) | `34b0e19456f3d6fb64b15b1a84f074e1d0a49cf0792677c308fc0480479dc5cb` |
+| linux-x64-ts-offline.json | `13095591042` ([run `41335569949`][integration-dispatch]) | `3fca78cd1a0b3237ec307d419844ebdf3d514030bd15e6930284844aca23535b` |
+| windows-x64-py.json       | `13095635752` ([run `41335569949`][integration-dispatch]) | `da59d0818888c02fc431c50df4c414253c6846f33dc1127cadf2971513e52822` |
+| windows-x64-ts.json       | `13095635752` ([run `41335569949`][integration-dispatch]) | `b24bc2d74391d3c595d861bff90123f84c7a30464a0a1c19fe0b7589925285a9` |
 
 The #614 hardening changes prototype/collector code after these runs. These
 historical results certify only their bound source, not the modified #614 head;
@@ -319,8 +338,9 @@ No production engine or paid signing implementation is added by #562.
 ## Raw result identity manifest
 
 Hashes are SHA-256 of the actual result JSON bytes, not archive/build digests.
-Artifact links above are scoped to the exact run; N = native, H = dedicated
-Harden Runner. A = `ts`, B = `py`; result filenames follow the table above.
+Artifact IDs and parent-run citations above are scoped to the exact run;
+N = native, H = dedicated Harden Runner. A = `ts`, B = `py`; result filenames
+follow the table above.
 
 | Run         | Scope | Target       | Variant | Raw JSON SHA-256                                                   |
 | ----------- | ----- | ------------ | ------- | ------------------------------------------------------------------ |
@@ -352,13 +372,14 @@ Harden Runner. A = `ts`, B = `py`; result filenames follow the table above.
 ## Historical observations
 
 The [earlier report snapshot](./install-plane-distribution-history.md) preserves
-raw links, measurements and the correction history. Its Proposed statuses and
-future-work statements describe the named earlier revisions, not this decision.
+evidence identities, measurements and the correction history. Its Proposed
+statuses and future-work statements describe the named earlier revisions, not this decision.
 Old policy/classifier outcomes remain intact; unreachable or refusal never
 supplies current denial proof. No historical artifact was edited or relabeled.
 
 [final-pr]: https://github.com/lgtm-hq/ai-skills/actions/runs/41332673633
 [final-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41332723822
+[integration-dispatch]: https://github.com/lgtm-hq/ai-skills/actions/runs/41335569949
 [final-source]: https://github.com/lgtm-hq/ai-skills/tree/fb4d21bbc68579606a283afa69af3eee664dab61/research/install-plane-spike
 [owner-cap]: https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6561604904
 [owner-security]: https://github.com/lgtm-hq/ai-skills/issues/562#issuecomment-6557818942
