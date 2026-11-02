@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.30.10] - 2026-11-02
+
+### Fixed
+
+- **release**: prevent automatic mid-milestone merges (#636) (#637) (2da6c99)
+
 ## [0.30.9] - 2026-11-02
 
 ### Changed
@@ -1177,7 +1183,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.9...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.10...HEAD
+[0.30.10]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.9...v0.30.10
 [0.30.9]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.8...v0.30.9
 [0.30.8]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.7...v0.30.8
 [0.30.6]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.5...v0.30.6
