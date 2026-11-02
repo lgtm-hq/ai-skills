@@ -78,6 +78,13 @@ time. It now rejects numeric prerelease identifiers with leading zeroes and
 non-ASCII digits, which the former overlapping regex erroneously accepted.
 Build metadata may still contain numeric identifiers with leading zeroes.
 
+Run `bash scripts/ci/quality/prepare_node_deps.sh` before local quality checks.
+It acquires each TypeScript project's dependencies separately using its frozen
+lockfile and `--ignore-scripts`. The quality job does the same inside the pinned
+Lintro image before the full check. Lintro's root-only auto-install cannot acquire
+these nested projects. Keep the historical spike's sources and lockfile intact;
+sharing a workspace introduces incompatible Bun type versions into the gateway.
+
 Lintro runs all current and future bundled tools by default. Any explicit tool
 disable in `.lintro-config.yaml` needs a reason comment. AI `idiom-review` requires
 paid provider credentials and explicit opt-in under the #596 cost gate; it belongs
@@ -573,6 +580,11 @@ Publishing uses **npm trusted publishing (OIDC)** via
 `.github/workflows/publish-npm.yml` and the GitHub **`npm` environment**
 (maintainer approval), mirroring
 [py-lintro](https://github.com/lgtm-hq/py-lintro).
+
+The publisher's egress policy stays `block`. During the first release after a
+toolchain or provenance change, inspect Harden Runner's denied endpoints and
+update the explicit allowlist only for verified publishing requirements. PR
+checks do not exercise the release OIDC/provenance exchange.
 
 Before the first live publish:
 
