@@ -105,7 +105,19 @@ def legacy_documents(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """
     _check_publication(data)
     bundles: dict[str, Any] = {**data.get("x-legacy-fields", {}), "groups": {}}
+    destinations: dict[tuple[str, Any], str] = {}
     for package in data.get("packages", []):
+        destination = (
+            ("ungrouped", None)
+            if package.get("x-legacy-ungrouped")
+            else ("groups", package.get("x-legacy-group", package["id"]))
+        )
+        if destination in destinations:
+            raise ValueError(
+                f"Legacy registry has duplicate destination {destination!r} for "
+                f"packages {destinations[destination]} and {package['id']}"
+            )
+        destinations[destination] = package["id"]
         qualified = f"{data['publisher']['id']}/{package['id']}"
         _check_dependencies(declaration=package, location=qualified)
         skills = []

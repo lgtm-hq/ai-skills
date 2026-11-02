@@ -5,12 +5,33 @@ import re
 import shutil
 import subprocess  # nosec B404 - bounded local lint process, no shell
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 from assertpy import assert_that
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
+
+
+@dataclass
+class VendorPinMatch:
+    """Merged recursive captures with source spans for pin-update assertions."""
+
+    groups: dict[str, str]
+    spans: dict[str, tuple[int, int]]
+
+    def groupdict(self) -> dict[str, str]:
+        """Return the captures merged across all recursive stages."""
+        return self.groups
+
+    def __getitem__(self, name: str) -> str:
+        """Read one merged capture."""
+        return self.groups[name]
+
+    def span(self, name: str) -> tuple[int, int]:
+        """Locate a capture in the original manifest."""
+        return self.spans[name]
 
 
 @pytest.fixture
@@ -41,7 +62,7 @@ def check_yaml() -> Callable[[Path], None]:
 
 
 @pytest.fixture
-def vendor_pin_matches() -> Callable[[str], list[re.Match[str]]]:
+def vendor_pin_matches() -> Callable[[str], list[VendorPinMatch]]:
     """Apply the production Renovate recursive manager with original source spans.
 
     Returns:
@@ -55,18 +76,34 @@ def vendor_pin_matches() -> Callable[[str], list[re.Match[str]]]:
         if item.get("datasourceTemplate") == "git-refs"
     )
 
-    def extract(text: str) -> list[re.Match[str]]:
-        """Recurse within each previous match as Renovate's strategy specifies."""
-        windows = [(0, len(text))]
-        matches = []
+    assert_that(manager["matchStringsStrategy"]).is_equal_to("recursive")
+
+    def extract(text: str) -> list[VendorPinMatch]:
+        """Match each substring independently and merge groups like Renovate.
+
+        Mirrors processRecursive/mergeGroups in Renovate's custom/regex manager:
+        each next pattern receives match[0], including its own start/end anchors;
+        captures from earlier stages survive unless overwritten by a later one.
+        Source offsets are bookkeeping for the real pin-edit regression only.
+        """
+        windows = [(text, 0, VendorPinMatch({}, {}))]
         for pattern in manager["matchStrings"]:
             regex = re.compile(pattern.replace("(?<", "(?P<"))
-            matches = [
-                match
-                for start, end in windows
-                for match in regex.finditer(text, start, end)
-            ]
-            windows = [match.span() for match in matches]
-        return matches
+            next_windows = []
+            for content, offset, previous in windows:
+                for match in regex.finditer(content):
+                    groups = match.groupdict()
+                    spans = {
+                        name: (offset + match.start(name), offset + match.end(name))
+                        for name, value in groups.items()
+                        if value is not None
+                    }
+                    merged = VendorPinMatch(
+                        groups={**previous.groups, **groups},
+                        spans={**previous.spans, **spans},
+                    )
+                    next_windows.append((match[0], offset + match.start(), merged))
+            windows = next_windows
+        return [merged for _, _, merged in windows]
 
     return extract

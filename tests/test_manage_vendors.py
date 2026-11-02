@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-import re
 import shutil
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -20,6 +20,9 @@ from ai_skills_engine.manifest.migrate import migrate
 from ai_skills_engine.registry.registry import load_registry
 from ai_skills_engine.registry.vendor import Vendor
 
+if TYPE_CHECKING:
+    from manifest_helpers import VendorPinMatch
+
 pytest_plugins = ("manifest_helpers",)
 
 _EXISTING_SHA = "0123456789abcdef0123456789abcdef01234567"
@@ -30,7 +33,7 @@ _FETCHED_TREE = ["skills/alpha/SKILL.md", "skills/beta/SKILL.md"]
 def test_manifest_update_add_and_rollback(
     repo_root: Path,
     monkeypatch: pytest.MonkeyPatch,
-    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
+    vendor_pin_matches: Callable[[str], list[VendorPinMatch]],
 ) -> None:
     """Real management operations persist canonical fields and roll back both files."""
     migrate(repo_root)

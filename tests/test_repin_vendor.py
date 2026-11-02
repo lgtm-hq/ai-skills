@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from assertpy import assert_that
 import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
 import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
 import ai_skills_engine.vendors.repin as repin_vendor
+from ai_skills_engine.manifest.edit import dump_document
+from ai_skills_engine.manifest.legacy import write_legacy
 from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.manifest.migrate import migrate
 from ai_skills_engine.registry.registry import load_registry
@@ -35,6 +38,114 @@ _PLUGINS_YAML = (
     "        skillsRoot: skills\n"
     '        skills: "*"\n'
 )
+
+
+@pytest.mark.parametrize("mode", ["keep", "resolve-current", "resolve-new", "rollback"])
+@pytest.mark.parametrize("baseline", [False, True])
+def test_direct_repin_uses_manifest_only_edits(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    baseline: bool,
+) -> None:
+    """Direct API resolution and real snapshots use manifest declarations."""
+    migrate(repo_root)
+    manage = repin_vendor.manage_vendors
+    manage.refresh(repo_root=repo_root)
+    baseline_text = (repo_root / "vendors.yaml").read_text()
+    path = repo_root / "ai-skills.yaml"
+    data = read_document(path)
+    data["vendors"][0].update(
+        repo="changed/repository", branch="release/next", sha=_NEW_SHA
+    )
+    path.write_text(dump_document(data))
+    manifest_bytes = path.read_bytes()
+    # Compute expected derived declarations, then restore stale outputs before calling.
+    stale = {
+        name: (repo_root / name).read_bytes()
+        for name in ("vendors.yaml", "bundles.yaml")
+    }
+    write_legacy(repo_root)
+    generated = {name: (repo_root / name).read_bytes() for name in stale}
+    for name, content in stale.items():
+        (repo_root / name).write_bytes(content)
+    artifacts = manage._generated_artifact_paths(repo_root=repo_root)
+    artifact_snapshot = manage._snapshot_artifacts(paths=artifacts)
+    observed = []
+    snapshots = []
+    real_snapshot = repin_vendor._snapshot_vendor
+
+    def snapshot(
+        *, repo_root: Path, vendor: Vendor, vendor_trees: Mapping[str, Path] | None
+    ) -> VendorRepinSnapshot:
+        """Observe the vendor but retain the production bake and snapshot path."""
+        snapshots.append((vendor.repo, vendor.branch, vendor.sha))
+        return real_snapshot(
+            repo_root=repo_root, vendor=vendor, vendor_trees=vendor_trees
+        )
+
+    def resolver(vendor: Vendor) -> str:
+        """Resolve against authoritative fields without any network calls."""
+        observed.append((vendor.repo, vendor.branch, vendor.sha))
+        return _BASELINE_SHA if mode in {"resolve-new", "rollback"} else vendor.sha
+
+    def no_network(**kwargs: object) -> bytes:
+        """Fail if any test leaves the fixture's offline vendor acquisition path."""
+        pytest.fail(f"Unexpected network request: {kwargs.get('host')}")
+
+    monkeypatch.setattr(repin_vendor, "_snapshot_vendor", snapshot)
+    monkeypatch.setattr(bake_vendor_plugins, "_http_get_bytes", no_network)
+    if mode == "rollback":
+
+        def fail_bake(*, repo_root: Path) -> None:
+            """Fail after a genuine before snapshot and pin update."""
+            raise RuntimeError("index bake failed")
+
+        monkeypatch.setattr(bake_vendor_indexes, "bake", fail_bake)
+
+    def repin() -> repin_vendor.VendorRepinDiff:
+        """Call the production API directly with the unchanged legacy registry."""
+        return repin_vendor.repin_vendor(
+            repo_root=repo_root,
+            vendor_id="example-vendor",
+            keep_sha=mode == "keep",
+            resolve_sha=resolver,
+            baseline_registry_text=baseline_text if baseline else None,
+        )
+
+    authoritative = ("changed/repository", "release/next", _NEW_SHA)
+    if mode == "rollback":
+        with pytest.raises(RuntimeError, match="index bake failed"):
+            repin()
+        assert_that(path.read_bytes()).is_equal_to(manifest_bytes)
+        assert_that(
+            {name: (repo_root / name).read_bytes() for name in generated}
+        ).is_equal_to(generated)
+        assert_that(manage._snapshot_artifacts(paths=artifacts)).is_equal_to(
+            artifact_snapshot
+        )
+    else:
+        diff = repin()
+        expected_sha = _BASELINE_SHA if mode == "resolve-new" else _NEW_SHA
+        assert_that(diff.new_sha).is_equal_to(expected_sha)
+        assert_that(diff.old_sha).is_equal_to(_EXISTING_SHA if baseline else _NEW_SHA)
+        if baseline and mode != "resolve-new":
+            assert_that(diff.added_skills).contains("delta")
+            assert_that(diff.renamed_skills).contains(("beta", "gamma"))
+        if mode != "resolve-new":
+            assert_that(path.read_bytes()).is_equal_to(manifest_bytes)
+            assert_that(
+                {name: (repo_root / name).read_bytes() for name in generated}
+            ).is_equal_to(generated)
+        assert_that(
+            load_registry(registry_path=repo_root / "vendors.yaml")[0].sha
+        ).is_equal_to(expected_sha)
+    assert_that(observed).is_equal_to([] if mode == "keep" else [authoritative])
+    assert_that(snapshots[0]).is_equal_to(
+        ("owner/example", None, _EXISTING_SHA) if baseline else authoritative
+    )
+    if baseline and mode != "rollback" or mode == "resolve-new":
+        assert_that(snapshots[-1][:2]).is_equal_to(authoritative[:2])
 
 
 def test_manifest_repin_and_failure_restore(

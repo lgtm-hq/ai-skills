@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import base64
 import json
-import re
 import subprocess  # nosec B404 - isolated local Git fixtures, no shell
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
 import pytest
@@ -19,6 +18,9 @@ from ci import create_signed_commit, vendor_pin_artifact
 
 import ai_skills_engine.vendors.manage as manage_vendors
 from ai_skills_engine.registry.registry import load_registry
+
+if TYPE_CHECKING:
+    from manifest_helpers import VendorPinMatch
 
 pytest_plugins = ("manifest_helpers",)
 
@@ -186,7 +188,7 @@ def renovate_vendor_manager() -> dict[str, Any]:
 
 
 def test_renovate_captures_every_explicit_vendor_branch(
-    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
+    vendor_pin_matches: Callable[[str], list[VendorPinMatch]],
     renovate_vendor_manager: dict[str, Any],
 ) -> None:
     """The actual Renovate regex extracts all pins and their branch refs."""
@@ -256,7 +258,7 @@ def test_renovate_vendor_pattern_uses_re2_subset(
 )
 def test_renovate_captures_registry_writer_branch(
     tmp_path: Path,
-    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
+    vendor_pin_matches: Callable[[str], list[VendorPinMatch]],
     branch: str,
 ) -> None:
     """Capture branch names without the quotes emitted by the registry writer."""
@@ -297,7 +299,7 @@ def test_renovate_captures_registry_writer_branch(
 )
 @pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
 def test_renovate_captures_yaml_branch_quote_styles(
-    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
+    vendor_pin_matches: Callable[[str], list[VendorPinMatch]],
     branch_scalar: str,
     comment: str,
     line_ending: str,
@@ -1105,7 +1107,7 @@ def test_collision_report_posts_without_commit_then_fails(
 @pytest.mark.parametrize("comment", ["", " # upstream default"])
 @pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
 def test_renovate_never_truncates_unsupported_branch_quotes(
-    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
+    vendor_pin_matches: Callable[[str], list[VendorPinMatch]],
     branch: str,
     comment: str,
     line_ending: str,
@@ -1126,7 +1128,7 @@ def test_renovate_never_truncates_unsupported_branch_quotes(
 )
 @pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
 def test_renovate_rejects_malformed_scalar_boundaries(
-    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
+    vendor_pin_matches: Callable[[str], list[VendorPinMatch]],
     branch_scalar: str,
     line_ending: str,
 ) -> None:
@@ -1146,7 +1148,7 @@ def test_renovate_rejects_malformed_scalar_boundaries(
 @pytest.mark.parametrize("comment", ["", " # upstream 'default'"])
 def test_registry_rejects_unbalanced_quotes_permitted_by_renovate(
     tmp_path: Path,
-    vendor_pin_matches: Callable[[str], list[re.Match[str]]],
+    vendor_pin_matches: Callable[[str], list[VendorPinMatch]],
     branch_scalar: str,
     comment: str,
 ) -> None:
