@@ -69,6 +69,12 @@ def test_legacy_rejects_duplicate_effective_destinations_before_writes(
         data["packages"].append(duplicate)
         if change != "ungrouped":
             data["exports"].append(duplicate["id"])
+    for package in data["packages"]:
+        for capability in package["capabilities"]:
+            _write_publication_skill(
+                directory=tmp_path / capability["path"],
+                name=capability["id"],
+            )
     path = tmp_path / "ai-skills.yaml"
     path.write_text(dump_document(data))
     args = ["--repo-root", str(tmp_path), "manifest"]
