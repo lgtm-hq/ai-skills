@@ -66,8 +66,7 @@ elif ! uv run python "$script_dir/validate_skills.py" skills; then
 fi
 
 if command -v uv >/dev/null 2>&1; then
-  if [[ -f "$script_dir/export-audit-requirements.sh" ]] &&
-    ! bash "$script_dir/export-audit-requirements.sh" --check; then
+  if ! bash "$script_dir/export-audit-requirements.sh" --check; then
     errors=$((errors + 1))
   fi
   if ! uv run python "$script_dir/check_suppressions.py"; then

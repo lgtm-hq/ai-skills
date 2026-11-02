@@ -12,3 +12,5 @@ ue = "ue"
 unparseable = "unparseable"
 # The installer safety test matches the "ba" prefix in a shell-name regex.
 ba = "ba"
+# setpriv's --inh-caps option selects inheritable capabilities.
+inh = "inh"
