@@ -42,3 +42,6 @@ enable = ["duplicate-code"]
 [tool.pylint.similarities]
 # Independent CLIs repeat short argparse wrappers and exception tuples.
 min-similarity-lines = 12
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,19 @@
+{
+  "sha256": "f6d9372bea3653cc2b88aab834a89bdf7475e3e0d55bff7600829c043656d64d",
+  "capabilities": [
+    {
+      "id": "fixture:drop",
+      "closure": [],
+      "files": {
+        "drop/SKILL.md": "18e17b7f7a089611377cc7deff413a7c07e7ba2481f79b8d6825e4aed3df9dd6"
+      }
+    },
+    {
+      "id": "fixture:keep",
+      "closure": [],
+      "files": {
+        "keep/SKILL.md": "8396eb1a734b9965b23150d000a30db7f8b183be91cc53fdfadd96ba46f3e64d"
+      }
+    }
+  ]
+}

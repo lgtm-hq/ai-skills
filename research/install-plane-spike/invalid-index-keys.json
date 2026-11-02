@@ -1,0 +1,9 @@
+[
+  { "key": "sha256", "previous": "\"wrong\"" },
+  { "key": "capabilities", "previous": "[]" },
+  { "key": "id", "previous": "\"wrong\"" },
+  { "key": "closure", "previous": "[\"fixture:drop\"]" },
+  { "key": "files", "previous": "{}" },
+  { "key": "keep/SKILL.md", "previous": "\"wrong\"" },
+  { "key": "drop/SKILL.md", "previous": "\"wrong\"" }
+]
