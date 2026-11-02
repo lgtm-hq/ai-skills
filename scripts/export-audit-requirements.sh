@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Generate lintro's pip_audit input from the locked dev dependencies, offline.
+# Generate lintro's pip_audit input from all locked dependency groups, offline.
 set -euo pipefail
 
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
