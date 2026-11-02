@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "inert-command": {"command": "touch MUST-NOT-EXECUTE"},
+    "inert-endpoint": {"url": "https://network-must-not-be-contacted.invalid"}
+  }
+}

@@ -35,6 +35,14 @@ def consumer_and_vendor(
     data["vendors"][0].pop("mapping")
     data["vendors"][0]["include"] = []
     data["exports"] = ["tools", "actual/upstream-tools"]
+    # This fixture isolates vendor authority. Supply actual local payloads and
+    # omit the unrelated edge selectors from the schema-only positive fixture.
+    data["packages"][0]["capabilities"][0].update(requires=[], related=[])
+    (tmp_path / "skills/run").mkdir(parents=True)
+    (tmp_path / "skills/run/SKILL.md").write_text(
+        "---\nname: run\ndescription: Boundary fixture.\n---\n"
+    )
+    (tmp_path / "NOTICE.md").write_text("Boundary fixture notice.\n")
     path = tmp_path / "ai-skills.yaml"
     path.write_text(dump_document(data))
     vendor = tmp_path / "vendor"

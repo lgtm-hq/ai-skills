@@ -18,7 +18,11 @@ from assertpy import assert_that
 from packaging.requirements import Requirement
 
 from ai_skills_engine import cli
+from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.legacy import GENERATED_HEADER
+from ai_skills_engine.manifest.load import read_document
+
+pytest_plugins = ["inventory_helpers"]
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -187,6 +191,7 @@ def installed_command(tmp_path_factory: pytest.TempPathFactory) -> Path:
         assert_that(archive.read(schema)).is_equal_to(
             (ROOT / "schemas/ai-skills.v1.schema.json").read_bytes()
         )
+        assert_that(members).contains("ai_skills_engine/data/host_attributes.yaml")
     print(
         json.dumps(
             {
@@ -239,6 +244,19 @@ def test_installed_migration_and_legacy_match_source(
         repository.mkdir()
         for name, content in originals.items():
             (repository / name).write_bytes(content)
+        # Validation now observes payloads too. Keep every historical assertion
+        # and supply minimal real payloads for the legacy declaration fixture.
+        bundles = read_document(repository / "bundles.yaml")
+        names = [
+            *bundles["ungrouped"],
+            *(name for group in bundles["groups"].values() for name in group["skills"]),
+        ]
+        for name in names:
+            directory = repository / "skills" / name
+            directory.mkdir(parents=True)
+            (directory / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: Wheel fixture.\n---\n"
+            )
     for operation, expected in (
         (["migrate"], 0),
         (["validate"], 0),
@@ -273,3 +291,117 @@ def test_installed_migration_and_legacy_match_source(
             assert_that((repository / name).read_bytes()).is_equal_to(
                 (ROOT / name).read_bytes()
             )
+
+
+def test_installed_inventory_and_resource_boundary_match_source(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An unrelated consumer gets identical installed/source records and failures."""
+    root, vendor = inventory_repo
+    missing_root = _run(
+        args=[str(installed_command), "inventory", "--json"],
+        cwd=root.parent,
+        expected=2,
+    )
+    assert_that(missing_root.stderr).contains("No ai-skills repository", "--repo-root")
+    operands = ["--repo-root", str(root), "--vendor-root", f"vendor={vendor}"]
+    for command in (["inventory", "--json"], ["manifest", "validate"]):
+        first = _run(
+            args=[str(installed_command), *command, *operands], cwd=root.parent
+        )
+        second = _run(
+            args=[str(installed_command), *command, *operands], cwd=root.parent
+        )
+        assert_that(second.stdout).is_equal_to(first.stdout)
+        assert_that(cli.main([*command, *operands])).is_zero()
+        source = capsys.readouterr()
+        assert_that((first.stdout, first.stderr)).is_equal_to((source.out, source.err))
+        assert_that(first.stdout).contains(
+            "inventory.host-specific-frontmatter",
+            "codex=unverified" if command[0] == "manifest" else '"codex"',
+        )
+    path = root / "ai-skills.yaml"
+    document = read_document(path)
+    document["packages"][0]["capabilities"][0]["resources"] = []
+    path.write_text(dump_document(document))
+    for command in (["inventory", "--json"], ["manifest", "validate"]):
+        result = _run(
+            args=[str(installed_command), *command, *operands],
+            cwd=root.parent,
+            expected=1,
+        )
+        assert_that(cli.main([*command, *operands])).is_equal_to(1)
+        source = capsys.readouterr()
+        assert_that((result.stdout, result.stderr)).is_equal_to(
+            (source.out, source.err)
+        )
+        assert_that(result.stdout).contains("inventory.undeclared-resource")
+
+
+@pytest.mark.parametrize("control", ["missing", "drop", "changed"])
+def test_installed_host_table_is_authoritative_without_checkout_fallback(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    control: str,
+) -> None:
+    """Installed package data cannot fall back to author data."""
+    root, vendor = inventory_repo
+    python = installed_command.with_name("python")
+    probe = _run(
+        args=[
+            str(python),
+            "-I",
+            "-c",
+            (
+                "from importlib.resources import files; "
+                'print(files("ai_skills_engine.data").joinpath("host_attributes.yaml"))'
+            ),
+        ],
+        cwd=root.parent,
+    )
+    table = Path(probe.stdout.strip())
+    assert_that(table.is_relative_to(installed_command.parent.parent)).is_true()
+    assert_that(table.is_relative_to(ROOT)).is_false()
+    original = table.read_bytes()
+    try:
+        if control == "missing":
+            table.unlink()
+        else:
+            table.write_text(
+                original.decode().replace(
+                    "codex: unverified",
+                    f"codex: {'drop' if control == 'drop' else 'refuse'}",
+                )
+            )
+        result = _run(
+            args=[
+                str(installed_command),
+                "inventory",
+                "--json",
+                "--repo-root",
+                str(root),
+                "--vendor-root",
+                f"vendor={vendor}",
+            ],
+            cwd=root.parent,
+            expected=0 if control == "changed" else 1,
+        )
+        if control == "changed":
+            document = json.loads(result.stdout)
+            start = next(
+                item
+                for item in document["capabilities"]
+                if item["id"] == "fixture/tools:skill/stable"
+            )
+            assert_that(
+                dict(start["host_attributes"][0]["hosts"])["codex"]
+            ).is_equal_to("refuse")
+        else:
+            assert_that(result.stdout).contains(
+                "inventory.invalid-payload",
+                "host_attributes.yaml" if control == "missing" else "drop is forbidden",
+            )
+    finally:
+        table.write_bytes(original)

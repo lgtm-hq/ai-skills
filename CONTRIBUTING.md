@@ -27,6 +27,19 @@ document:
   preserves the old ungrouped selection without adding it to host marketplaces.
   Legacy output rejects payload roles/paths it cannot represent; it never
   invents install behavior for newer declarations.
+  `uv run ai-skills-engine inventory --json` observes local payloads, stable
+  qualified IDs, sorted SHA-256/mode records, direct declared edges and shared
+  resources. Both inventory and `manifest validate` include inventory diagnostics
+  and exit nonzero on errors. Prose mentions and actual Markdown destinations
+  produce lint only; they never create dependency edges. Code fences and code
+  spans are inert. External local links must stay within that capability's
+  explicitly referenced resources; a resource declaration in another package
+  alone does not grant access. Resource Markdown uses the same boundary.
+  Tree digests hash compact ASCII JSON arrays of sorted path/hash/mode triples;
+  permission modes are POSIX permission bits, independent of file timestamps.
+  Host-specific frontmatter retains canonical JSON values and explicit rules
+  from the wheel's `data/host_attributes.yaml`. Unknown hosts and strict
+  `unverified` rules refuse; collection does not certify host semantics.
   Local capabilities require an explicit `id` alongside `path`; migration
   records the legacy skill name as that ID. This follows ADR 0011's stable
   identity contract so moving a payload never silently changes its identity.
@@ -43,6 +56,23 @@ document:
   local vendor manifests, only consumer-mapped package exports can be resolved.
   In v1, persisted collision records use `capability`, `action` (`keep`, `rename`
   or `skip`) and a required `name` for `rename`.
+- **Inventory vendor inputs:** `inventory --vendor-root ID=PATH` reads explicit
+  offline snapshots, reporting that inventory has not verified their revision.
+  Missing inputs remain `inventory.vendor-unavailable` warnings; references to
+  their absent capabilities still fail. `inventory --fetch-vendors` explicitly
+  acquires missing trees with the existing SHA-pinned bake fetcher. Collection
+  hashes vendor files without importing modules, running scripts, hooks, commands
+  or endpoints, and never rewrites supplied snapshots. A manifest vendor's own
+  publisher names its IDs; consumer authority remains separate. Legacy
+  `renameSkills` creates destination aliases. Legacy `extraFiles` declares
+  resources named by lowercase file stem (underscores become hyphens), and
+  per-name `resources` references grant capability access. A mapping with roots
+  only uses the vendor alias as its package ID. Explicit migrations resolve old
+  edge targets to current identities; inventory does not implement selection or
+  dependency closure. Other roles require explicit manifest declarations:
+  Markdown instructions (`.md`/`.mdc`), specialists and workflows (`.md`), command
+  event registrations (`hooks` JSON), or MCP server configurations (`mcpServers`
+  JSON). Unsupported shapes fail visibly without guessing a dialect.
 - **Skills:** each skill is `skills/<name>/SKILL.md` with YAML frontmatter (`name`,
   `description`, …) following the conventions used by existing skills.
 - **Index:** after adding, renaming, or removing skills, **`AGENTS.md` must stay in
