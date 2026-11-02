@@ -1171,7 +1171,18 @@ def test_collector_failure_does_not_erase_other_scenarios(
 @pytest.mark.parametrize("setup_exit", [0, 1])
 @pytest.mark.parametrize("bun_status", ["pass", "fail"])
 @pytest.mark.parametrize("controlled", [False, True])
-@pytest.mark.parametrize("launcher_matches", [False, True])
+@pytest.mark.parametrize(
+    "launcher_case",
+    [
+        "matched",
+        "wrong-node",
+        "wrong-cli",
+        "later-mismatch",
+        "unexpected",
+        "missing",
+        "payload-uncontrolled",
+    ],
+)
 def test_firewall_is_scoped_and_cleanup_verified(
     collector: dict[str, ModuleType],
     tmp_path: Path,
@@ -1180,11 +1191,11 @@ def test_firewall_is_scoped_and_cleanup_verified(
     setup_exit: int,
     bun_status: str,
     controlled: bool,
-    launcher_matches: bool,
+    launcher_case: str,
 ) -> None:
     """Offline passes require matched controls and cleanup; retain raw observations."""
     offline = collector["offline"]
-    installs = {
+    installs: dict[str, Any] = {
         v: {
             "status": bun_status,
             "direct_execution": {"status": "pass"},
@@ -1200,19 +1211,32 @@ def test_firewall_is_scoped_and_cleanup_verified(
                             "argv": [
                                 (
                                     "C:/node.exe"
-                                    if launcher_matches
+                                    if launcher_case != "wrong-node"
                                     else "C:/other-node.exe"
                                 ),
-                                "C:/npm-cli.js",
+                                (
+                                    "C:/other-cli.js"
+                                    if launcher_case == "wrong-cli"
+                                    else "C:/npm-cli.js"
+                                ),
                                 "install",
                             ]
-                        }
+                        },
+                        {"argv": [f"C:/installed/{v}.exe"], "exit": 0},
                     ],
                 },
             },
         }
         for v in ("ts", "py")
     }
+    for install in installs.values():
+        commands = install["clients"]["npm"]["commands"]
+        if launcher_case == "later-mismatch":
+            commands.append({"argv": ["C:/other-node.exe", "C:/npm-cli.js", "install"]})
+        elif launcher_case == "unexpected":
+            commands.insert(0, {"argv": ["npm.cmd", "install"]})
+        elif launcher_case == "missing":
+            commands.pop(0)
     monkeypatch.setattr(offline, "worker", lambda **_: installs)
     controls = {
         name: {
@@ -1228,7 +1252,9 @@ def test_firewall_is_scoped_and_cleanup_verified(
         offline, "prepare_windows_controls", lambda **_: controls if controlled else {}
     )
     monkeypatch.setattr(
-        offline, "finish_windows_controls", lambda **_: {"ts": True, "py": True}
+        offline,
+        "finish_windows_controls",
+        lambda **_: {v: launcher_case != "payload-uncontrolled" for v in ("ts", "py")},
     )
     monkeypatch.setattr(offline.platform, "system", lambda: "Windows")
     monkeypatch.setattr(offline.shutil, "which", lambda name: f"C:/{name}.exe")
@@ -1294,7 +1320,7 @@ def test_firewall_is_scoped_and_cleanup_verified(
         assert_that(observed[variant]["probe_denial_proven"]).is_equal_to(
             setup_exit == 0
         )
-        proven = controlled and launcher_matches and setup_exit == 0
+        proven = controlled and launcher_case == "matched" and setup_exit == 0
         assert_that(observed[variant]["installer_denial_proven"]).is_equal_to(proven)
         assert_that(observed[variant]["direct_execution"]["status"]).is_equal_to(
             "pass" if proven and cleanup_exit == 0 else "unverified"
@@ -3061,6 +3087,9 @@ def test_collection_scope_and_unbound_downloads_are_explicit(
 
 @pytest.mark.parametrize("unexpected_write", ["none", "file", "symlink", "directory"])
 @pytest.mark.parametrize(
+    "timestamp_quantum", [1, 2_000_000_000], ids=["native-clock", "coarse-clock"]
+)
+@pytest.mark.parametrize(
     "cache_mutation",
     [
         "unchanged",
@@ -3078,9 +3107,23 @@ def test_payload_home_write_affects_status(
     monkeypatch: pytest.MonkeyPatch,
     unexpected_write: str,
     cache_mutation: str,
+    timestamp_quantum: int,
 ) -> None:
     """Correct output cannot hide an unexpected runtime cache write under HOME."""
     common = collector["common"]
+    import os
+
+    original_utime = os.utime
+
+    def coarse_utime(path: Path, *, ns: tuple[int, int]) -> None:
+        """Model a timestamp tick too coarse to observe a sub-tick write."""
+        current = path.stat().st_mtime_ns
+        if abs(ns[1] - current) >= timestamp_quantum:
+            original_utime(
+                path, ns=(ns[0], ns[1] // timestamp_quantum * timestamp_quantum)
+            )
+
+    monkeypatch.setattr(os, "utime", coarse_utime)
     monkeypatch.setattr(common, "isolated_env", lambda _: {"PATH": ""})
     expected = json.loads((SPIKE / "fixtures/expected-output.json").read_bytes())
     home = tmp_path / "home"
@@ -3109,10 +3152,12 @@ def test_payload_home_write_affects_status(
             (home / "runtime-cache").symlink_to(outside, target_is_directory=True)
         cache = home / ".cache"
         if cache_mutation == "touched":
-            import os
-
             metadata = cache.stat()
-            os.utime(cache, ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1))
+            # Two-second filesystems and Windows cannot observe a 1ns write.
+            os.utime(
+                cache, ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 4_000_000_000)
+            )
+            assert_that(cache.stat().st_mtime_ns).is_not_equal_to(metadata.st_mtime_ns)
         elif cache_mutation == "replaced":
             original = cache.read_bytes()
             cache.rename(home / "saved-cache")

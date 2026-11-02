@@ -528,12 +528,19 @@ def measure_offline(
                             .get("commands", [])
                         )
                         launcher = program_controls["npm-node"]["npm_launcher"]
+                        # The same record also contains the installed payload
+                        # invocation, which has its own executable/denial control.
+                        npm_installs = [
+                            item.get("argv", [])
+                            for item in npm_commands
+                            if "install" in item.get("argv", [])
+                        ]
                         same_launcher = bool(
                             len(launcher) == 2
-                            and npm_commands
+                            and npm_installs
                             and all(
-                                item.get("argv", [])[:2] == launcher
-                                for item in npm_commands
+                                argv[:3] == [*launcher, "install"]
+                                for argv in npm_installs
                             )
                         )
                         results[variant].update(
