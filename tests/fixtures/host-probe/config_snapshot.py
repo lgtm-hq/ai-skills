@@ -1,7 +1,8 @@
 """Hash protected host configuration without printing any file contents.
 
 Run before changing HOME. Write snapshots outside the repository, compare them
-locally, and publish only counts and the aggregate digest. Runtime transcripts,
+locally, and publish only counts. Inventories and their digests stay private.
+Runtime transcripts,
 databases, logs and other session output at known host runtime roots are outside
 this inventory. Identically named directories inside payloads remain protected.
 Links and unreadable paths in the protected scope fail the entire collection.
@@ -32,7 +33,7 @@ HOST_RUNTIME_ROOTS = {
         "plans",
     },
     ".codex": {"sessions", "logs", "log", "shell_snapshots", "tmp"},
-    ".cursor": {"logs", "projects"},
+    ".cursor": {"logs", "projects", "extensions"},
 }
 # Kit manifests/settings use JSON/TOML/YAML; instructions, skills, agents and
 # commands use Markdown/MDC; hook/MCP executables use Python or shell scripts.
@@ -125,15 +126,32 @@ def snapshot(home: Path) -> dict[str, dict[str, str | int | bool]]:
             raise ValueError("Snapshot incomplete: unsupported .claude.json path")
         files.append(extra)
     for path in files:
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError("Snapshot incomplete: protected file changed type")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        after = path.lstat()
+        if any(
+            getattr(before, key) != getattr(after, key)
+            for key in (
+                "st_dev",
+                "st_ino",
+                "st_mode",
+                "st_size",
+                "st_mtime_ns",
+                "st_ctime_ns",
+            )
+        ):
+            raise ValueError("Snapshot incomplete: protected file changed during read")
         records[f"~/{path.relative_to(home).as_posix()}"] = {
-            "mtime_ns": path.stat().st_mtime_ns,
-            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "mtime_ns": before.st_mtime_ns,
+            "sha256": digest,
         }
     return records
 
 
 def main() -> None:
-    """Write the private inventory and print only its count and digest."""
+    """Write the private inventory and print only its count, never auth digests."""
     destination = Path(sys.argv[1])
     data = snapshot(Path.home())
     destination.write_text(
@@ -144,7 +162,6 @@ def main() -> None:
         json.dumps(
             {
                 "files": len(data),
-                "snapshot_sha256": hashlib.sha256(destination.read_bytes()).hexdigest(),
             },
         ),
     )

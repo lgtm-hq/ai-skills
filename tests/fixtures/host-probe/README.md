@@ -32,7 +32,8 @@ needed for either fixture. Run them only from a copied disposable tree.
 ## Personal Cursor source kit
 
 [`cursor-macos-probe.sh`](cursor-macos-probe.sh) preserves the exact supplied
-personal-Mac script as an archival fixture; do not use it for new runs. Its
+personal-Mac script as an archival fixture; do not use it for new runs.
+Its SHA-256 is `6565f402a8554f5153479dfa5b32ca32345b4a16edba9886853e46374f8ffe8f`. Its
 narrow lint exception is documented in [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 [`cursor-macos-probe-driver.sh`](cursor-macos-probe-driver.sh) is the maintained
 macOS Bash 3.2 kit, preserving R6's controls and adding the canonical physical
@@ -302,3 +303,40 @@ See [the findings](../../../docs/parity/README.md) for the exact inventory
 scope and aggregate digests. Finally delete the owned temporary parent,
 including private inventories, after saving only sanitized evidence. Do not
 run unprefixed host commands against real config to prove cleanup.
+
+## Maintained guard limits
+
+The archival supplied script remains digest-pinned and unchanged; all hardening
+applies to the maintained driver. Interactive `y` invocation answers mean that
+the maintainer reports the requested token returned; curated token strings are
+interpretations of those answers, not verbatim model transcripts. Hook/MCP logs
+are separate invocation traces. D004 in the command log recovers the original
+Claude file-mode hook reads before removal. Post-removal hook noninvocation,
+whole-host cache cleanup and same-version update behavior remain unverified.
+
+Process matching uses the portable POSIX ERE subset and intentionally includes
+helpers below the selected app's `Contents/` tree only when their flattened argv
+contains the exact isolated user-data directory. Explicit app aliases are
+canonicalized. Startup isolation is checked after the isolated app opens; this
+is not a prelaunch filesystem sandbox. BSD/macOS matching still needs native
+confirmation; Linux tests use synthetic process tables and never signal an IDE.
+A failed keychain creation may leave scratch retained with cleanup unverified
+when the system cannot confirm deletion/restoration; do not infer a leak or a
+successful purge from an incomplete control.
+
+The config collector excludes only direct known runtime roots, including Cursor
+extensions. Nested payload directories named `node_modules` remain protected;
+unsupported links fail closed rather than silently omitting payloads. Concurrent
+file mutation during reads and permission failures abort collection. Comparison
+is not atomic across files. Inventories, auth-file digests and aggregate inventory
+digests stay private; publish counts and limitations, then promptly delete the
+private inventories after retaining sanitized evidence. Never publish hashes
+derived from credential files. The maintained shell fingerprint is narrower,
+excludes only exact runtime-root names, and does not cover newline filenames.
+
+The first committed hook blob at `ffa0f08` and the current hook blob are both
+`e24936fa4bc46d35acf253e56ad5bf91ca2782e2` (an empty Git diff). Its formatting
+already uses `Path(...).open(mode="a", encoding="utf-8")` and appends the same
+sentinel line to the explicit TMPDIR. The earlier preformat bytes were not
+retained as a separate artifact; the historical lint-only description is not
+an exact-byte comparison to those missing bytes or a native remeasurement.

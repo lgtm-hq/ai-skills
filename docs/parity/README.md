@@ -4,7 +4,8 @@ Original Linux probes recorded 2026-11-01 from `032ee309`; personal-Mac Cursor
 evidence recorded 2026-11-01, building on R6 `e5e4969` on
 `research/563-host-load-paths`.
 This is research only: no gateway, ADR, generated catalog or #562 files changed.
-The future PR must merge after #562/PR #615, per epic #596.
+The source work landed as #563/PR #617; the later runtime decision is recorded
+in [Accepted ADR 0008](../adr/0008-engine-runtime-build-and-install-planes.md).
 
 | Host/interface  | Actually probed    | Environment                                           |
 | --------------- | ------------------ | ----------------------------------------------------- |
@@ -54,7 +55,8 @@ sources as owner attestation and definition, with no empirical policy-host
 measurement. File-policy records depend on the exact matching personal IDE
 cell, now measured by `ue-<role>` or `rm-<role>` JSON checks for defined routes. The
 [minimal IDE/policy extension](evidence-format.md#cursor-ide-and-policy-extension)
-is flagged for #565; it does not ratify a production schema.
+is ratified by [ADR 0009](../adr/0009-capabilities-and-parity.md); the production
+schema remains #585 work.
 
 The maintainer's returned
 [raw
@@ -318,15 +320,17 @@ tests exercise the revised oracle; they do not certify host wiring. Existing
 listed-only MCP records remain **partial/discovered**, with no retroactive
 model/tool invocation claim.
 
-Recovered driver evidence D001–D003 in the [command log](probe-log.md) restores
-the original source edit/cache comparison and MCP path replacements. Parent
+Recovered driver evidence D001–D004 in the [command log](probe-log.md) restores
+the original source edit/cache comparison, MCP path replacements and
+pre-removal file-mode hook reads. Parent
 reconciliation for #384/#583 should carry this narrower wording: snapshot
 loading was observed for Codex 0.164.0/package 1.0.0, but cache-byte immutability
 and same-version invalidation were not measured. The R031 invocation-restriction
 loss remains evidenced; #583's strict semantic gate still applies.
 
 Claude lifecycle invocation steps inspect the SessionStart hook log produced
-by earlier authentication-failing requests. In the two file modes, R110/R112
-inspect that log **after file removal**. No fresh session established
+by earlier authentication-failing requests. [D004](probe-log.md#d004-pre-removal-claude-file-mode-hook-reads-after-r060r063)
+recovers the original pre-removal reads immediately after R060/R063. In the two
+file modes, R110/R112 inspect that log **after file removal**. No fresh session established
 post-removal noninvocation. Final whole-root purge removed the owned hook logs
 and other residue; it is the cleanup proof, not a new hook execution test.

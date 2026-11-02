@@ -25,7 +25,14 @@ def driver(tmp_path: Path, request: pytest.FixtureRequest) -> DriverRunner:
     real_find = shutil.which("find")
     real_shasum = shutil.which("shasum")
     real_diff = shutil.which("diff")
-    if bash is None or real_find is None or real_shasum is None or real_diff is None:
+    real_mkdir = shutil.which("mkdir")
+    if (
+        bash is None
+        or real_find is None
+        or real_shasum is None
+        or real_diff is None
+        or real_mkdir is None
+    ):
         pytest.skip("Offline driver requires Bash and standard file tools")
     home = tmp_path / "personal home"
     config = home / ".cursor/settings.json"
@@ -55,12 +62,18 @@ def driver(tmp_path: Path, request: pytest.FixtureRequest) -> DriverRunner:
             f"real_find = {real_find!r}\n"
             f"real_shasum = {real_shasum!r}\n"
             f"real_diff = {real_diff!r}\n"
+            f"real_mkdir = {real_mkdir!r}\n"
             "name = Path(sys.argv[0]).name\n"
             "marker = base / 'running'\n"
             "if name == 'uname':\n"
             "    print('Darwin' if sys.argv[1] == '-s' else 'synthetic')\n"
             "elif name == 'sw_vers':\n"
             "    print('synthetic-os')\n"
+            "elif name == 'date':\n"
+            "    print('synthetic')\n"
+            "elif name == 'mkdir':\n"
+            "    if failure == 'early-mkdir': sys.exit(1)\n"
+            "    os.execv(real_mkdir, [real_mkdir, *sys.argv[1:]])\n"
             "elif name == 'security':\n"
             "    state = base / 'keychains.json'\n"
             "    original = [] if failure == 'empty-keychains' else [\n"
@@ -94,6 +107,8 @@ def driver(tmp_path: Path, request: pytest.FixtureRequest) -> DriverRunner:
             "    counter = base / 'launches'\n"
             "    phase = int(counter.read_text()) + 1 if counter.exists() else 1\n"
             "    counter.write_text(str(phase))\n"
+            "    if phase == 5 and failure == 'report-write':\n"
+            "        (base / 'cursor-probe-results-synthetic.json.tmp').mkdir()\n"
             "    if phase <= 4:\n"
             "        tag = ['ue', 'rm', 'np', 'npp'][phase - 1]\n"
             "        if failure in ('serialize-hooks', 'serialize-mcp'):\n"
@@ -122,7 +137,9 @@ def driver(tmp_path: Path, request: pytest.FixtureRequest) -> DriverRunner:
             "                'root': str(root), 'config': config,\n"
             "                'executions': executions}))\n"
             "        with (root / 'tmp/probe-hook.log').open('a') as stream:\n"
-            "            stream.write(f'PROBE-7f3a-lifecycle-{tag} sessionStart\\n')\n"
+            "            if failure != 'no-hook-control' or tag != 'ue':\n"
+            "                stream.write(f'PROBE-7f3a-lifecycle-{tag} "
+            "sessionStart\\n')\n"
             "            if phase == 4 and failure == 'stale-hook':\n"
             "                stream.write('PROBE-7f3a-lifecycle-np "
             "beforeSubmitPrompt\\n')\n"
@@ -153,7 +170,7 @@ def driver(tmp_path: Path, request: pytest.FixtureRequest) -> DriverRunner:
             "    os.execv(real_diff, [real_diff, *sys.argv[1:]])\n"
             "elif name == 'find':\n"
             "    if (failure == 'report-find'\n"
-            "            and 'ai-skills-563-cursor.' in sys.argv[1]):\n"
+            "            and sys.argv[1] == '.'):\n"
             "        sys.exit(1)\n"
             "    os.execv(real_find, [real_find, *sys.argv[1:]])\n",
             encoding="utf-8",
@@ -161,6 +178,8 @@ def driver(tmp_path: Path, request: pytest.FixtureRequest) -> DriverRunner:
         fake.chmod(0o700)
         for name in (
             "uname",
+            "date",
+            "mkdir",
             "sw_vers",
             "security",
             "pgrep",
@@ -192,6 +211,11 @@ def driver(tmp_path: Path, request: pytest.FixtureRequest) -> DriverRunner:
             check=False,
         )
         outputs = list(tmp_path.glob("cursor-probe-results-*.json"))
+        if failure == "report-write":
+            assert_that(outputs).is_empty()
+            marker = result.stdout.index('{\n  "issue":')
+            report, _ = json.JSONDecoder().raw_decode(result.stdout[marker:])
+            return result, report, scratch
         assert_that(outputs).described_as(result.stderr).is_length(1)
         text = outputs[0].read_text()
         assert_that(text).does_not_contain(
@@ -383,4 +407,43 @@ def test_driver_hook_removal_uses_restart_boundary_and_exact_tag(
         check for check in report["checks"] if check["check"] == "np-lifecycle-removed"
     )
     assert_that(check["answer"]).is_equal_to("n" if failure == "stale-hook" else "y")
+    assert_that(list(scratch.iterdir())).is_empty()
+
+
+def test_driver_absence_requires_prior_tag_invocation(driver: DriverRunner) -> None:
+    """A hook that never fired cannot yield verified removal from an empty log."""
+    result, report, scratch = driver("no-hook-control", False)
+    assert_that(result.returncode).is_zero()
+    removal = next(
+        event
+        for event in report["hookRemovalEvidence"]
+        if event["tag"] == "ue" and event["phase"] == "after-restart-fresh-prompt"
+    )
+    assert_that(removal["status"]).is_equal_to("unverified")
+    assert_that(removal["invocationControl"]).is_equal_to("n")
+    check = next(
+        check for check in report["checks"] if check["check"] == "ue-lifecycle-removed"
+    )
+    assert_that(check["answer"]).is_equal_to("s")
+    assert_that(list(scratch.iterdir())).is_empty()
+
+
+def test_driver_report_write_fallback_records_final_cleanup(
+    driver: DriverRunner,
+) -> None:
+    """An unwritable result file still emits sanitized evidence after actual purge."""
+    result, report, scratch = driver("report-write", False)
+    assert_that(result.returncode).is_not_zero()
+    assert_that(report["incompleteReason"]).is_equal_to("report-write-failed")
+    assert_that(report["cleanup"]["status"]).is_equal_to("purged")
+    assert_that(result.stderr).contains("no results file was written")
+    assert_that(list(scratch.iterdir())).is_empty()
+
+
+def test_driver_traps_initial_directory_failure(driver: DriverRunner) -> None:
+    """Initial setup failure after mktemp saves an incomplete report and purges."""
+    result, report, scratch = driver("early-mkdir", False)
+    assert_that(result.returncode).is_not_zero()
+    assert_that(report["runStatus"]).is_equal_to("incomplete")
+    assert_that(report["cleanup"]["status"]).is_equal_to("purged")
     assert_that(list(scratch.iterdir())).is_empty()

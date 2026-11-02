@@ -1,5 +1,6 @@
 """Validate embedded Cursor kit programs offline, without an IDE or HOME probe."""
 
+import hashlib
 import json
 import re
 import shutil
@@ -24,6 +25,7 @@ SCRIPT = Path(__file__).parent / "fixtures/host-probe/cursor-macos-probe-driver.
     [
         (None, "global"),
         ("isolated", "isolated"),
+        ("alias", "isolated"),
         ("global", "global"),
         ("", None),
         ("relative", None),
@@ -58,6 +60,8 @@ def test_app_selection_never_falls_back_from_explicit_override(
         cli.parent.mkdir(parents=True)
         cli.write_text(f"#!/bin/sh\nprintf '%s\\n' {name} >> launches\n")
         cli.chmod(0o700)
+    if override == "alias":
+        (tmp_path / "alias").symlink_to(apps["isolated"], target_is_directory=True)
     environment = {"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"}
     if override is not None:
         selected = apps.get(override, tmp_path / override)
@@ -545,7 +549,7 @@ def test_process_matching_preserves_literal_paths_and_owned_cleanup(
     )
 
 
-def test_supplied_script_bash_syntax() -> None:
+def test_maintained_driver_bash_syntax() -> None:
     """Parse the complete stock-Bash script without executing it."""
     bash = shutil.which("bash")
     if bash is None:
@@ -559,3 +563,11 @@ def test_supplied_script_bash_syntax() -> None:
     )
     assert_that(result.returncode).is_zero()
     assert_that(result.stderr).is_empty()
+
+
+def test_archival_supplied_driver_is_digest_pinned() -> None:
+    """Pin the supplied script while the maintained driver evolves."""
+    archived = SCRIPT.with_name("cursor-macos-probe.sh")
+    assert_that(hashlib.sha256(archived.read_bytes()).hexdigest()).is_equal_to(
+        "6565f402a8554f5153479dfa5b32ca32345b4a16edba9886853e46374f8ffe8f"
+    )

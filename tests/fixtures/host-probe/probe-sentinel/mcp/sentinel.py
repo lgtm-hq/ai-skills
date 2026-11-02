@@ -1,14 +1,16 @@
 """Serve a dependency-free, read-only MCP sentinel over stdio."""
 
+from __future__ import annotations
+
 import json
 import math
 import sys
-from typing import Any, Never
+from typing import Any, NoReturn
 
 TOOL_NAME = "probe_integration"
 
 
-def reject_constant(value: str) -> Never:
+def reject_constant(value: str) -> NoReturn:
     """Reject non-JSON numeric constants accepted by Python's decoder."""
     raise ValueError(f"Invalid JSON constant: {value}")
 
@@ -28,6 +30,10 @@ def respond(line: str) -> dict[str, Any] | None:
         request = json.loads(line, parse_constant=reject_constant)
     except ValueError:
         return error(request_id=None, code=-32700, message="Parse error")
+    request_id = request.get("id") if isinstance(request, dict) else None
+    valid_id = type(request_id) in (str, int, float) and not (
+        isinstance(request_id, float) and not math.isfinite(request_id)
+    )
     if (
         not isinstance(request, dict)
         or request.get("jsonrpc") != "2.0"
@@ -36,7 +42,11 @@ def respond(line: str) -> dict[str, Any] | None:
         or ("id" in request and request["id"] is None)
         or (isinstance(request.get("id"), float) and not math.isfinite(request["id"]))
     ):
-        return error(request_id=None, code=-32600, message="Invalid Request")
+        return error(
+            request_id=request_id if valid_id else None,
+            code=-32600,
+            message="Invalid Request",
+        )
     if "id" not in request:
         return None
     request_id = request["id"]
@@ -86,6 +96,8 @@ def respond(line: str) -> dict[str, Any] | None:
 def main() -> None:
     """Read newline-delimited messages and keep serving after invalid input."""
     for line in sys.stdin:
+        if not line.strip():
+            continue
         response = respond(line)
         if response is not None:
             print(json.dumps(response), flush=True)
