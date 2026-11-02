@@ -30,6 +30,10 @@ document:
   Local capabilities require an explicit `id` alongside `path`; migration
   records the legacy skill name as that ID. This follows ADR 0011's stable
   identity contract so moving a payload never silently changes its identity.
+  The Python engine ships a generated schema resource so installed commands work
+  without this checkout. Regenerate it and the npm schema data with
+  `uv run ai-skills-engine package-sync`; `package-sync --check` rejects drift
+  from the published schema. Edit only the canonical file under `schemas/`.
 - **Offline vendor validation:** use `manifest validate --vendor-root ID=PATH`
   for each locally available vendor checkout. Its own `publisher.id` identifies
   its packages. Consumer mapping is rejected when that checkout supplies a

@@ -2,26 +2,25 @@
 
 import json
 from collections.abc import Mapping
-from pathlib import Path
+
+# nosemgrep: python37-compatibility-importlib2 - pyproject.toml requires Python >=3.13
+from importlib import resources
 from typing import Any
 
 from jsonschema import Draft202012Validator
 
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.identity import parse_id
-from ai_skills_engine.paths import find_repo_root
 
 
-def schema_path() -> Path:
-    """Locate the author repository's published schema.
+def schema_path() -> resources.abc.Traversable:
+    """Locate the v1 schema resource shipped with this engine.
 
     Returns:
-        Canonical JSON Schema path.
+        Read-only packaged JSON Schema resource.
     """
-    return (
-        find_repo_root(Path(__file__).resolve().parent)
-        / "schemas"
-        / "ai-skills.v1.schema.json"
+    return resources.files("ai_skills_engine.manifest").joinpath(
+        "ai-skills.v1.schema.json"
     )
 
 

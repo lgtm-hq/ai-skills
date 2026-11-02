@@ -176,10 +176,41 @@ def test_renovate_matches_manifest_and_regeneration(legacy_repo: Path) -> None:
     ).is_equal_to({"f" * 40})
 
 
-def test_package_sync_copies_published_schema() -> None:
-    """The production package renderer copies exact schema bytes."""
+@pytest.mark.parametrize(
+    "destination", ["npm/ai-skills/data/schema", "src/ai_skills_engine/manifest"]
+)
+def test_package_sync_copies_published_schema(destination: str) -> None:
+    """The production renderer derives both package resources from one schema."""
     generated = package_sync.rendered_files("0.0.0-dev", repo_root=ROOT)
-    path = ROOT / "npm/ai-skills/data/schema/ai-skills.v1.schema.json"
+    path = ROOT / destination / "ai-skills.v1.schema.json"
     assert_that(generated[path]).is_equal_to(
         (ROOT / "schemas/ai-skills.v1.schema.json").read_text()
     )
+
+
+@pytest.mark.parametrize(
+    "destination", ["npm/ai-skills/data/schema", "src/ai_skills_engine/manifest"]
+)
+def test_schema_generator_and_drift_gate(tmp_path: Path, destination: str) -> None:
+    """The real sync command detects stale schema copies and repairs them."""
+    for relative in (
+        "bundles.yaml",
+        "vendors.yaml",
+        "NOTICE.md",
+        "npm/ai-skills/package.json",
+        "schemas/ai-skills.v1.schema.json",
+    ):
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((ROOT / relative).read_bytes())
+    args = ["--repo-root", str(tmp_path)]
+    assert_that(package_sync.main(args)).is_zero()
+    assert_that(package_sync.main([*args, "--check"])).is_zero()
+    path = tmp_path / destination / "ai-skills.v1.schema.json"
+    canonical = (tmp_path / "schemas/ai-skills.v1.schema.json").read_bytes()
+    path.write_bytes(b"stale\n")
+    assert_that(package_sync.main([*args, "--check"])).is_equal_to(1)
+    assert_that(path.read_bytes()).is_equal_to(b"stale\n")
+    assert_that(package_sync.main(args)).is_zero()
+    assert_that(path.read_bytes()).is_equal_to(canonical)
+    assert_that(package_sync.main([*args, "--check"])).is_zero()

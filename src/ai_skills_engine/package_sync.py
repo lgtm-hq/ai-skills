@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synchronize generated data and version for the ai-skills npm package.
+"""Synchronize npm data/version and the Python engine's schema resources.
 
 Usage:
     uv run python scripts/ci/npm/sync_ai_skills_package.py
@@ -112,14 +112,18 @@ def rendered_files(version: str, *, repo_root: Path | None = None) -> dict[Path,
         project_root / "bundles.yaml": data_root / "bundles.yaml",
         project_root / "NOTICE.md": package_root / "NOTICE.md",
     }
-    for schema in sorted((project_root / "schemas").glob("*.schema.json")):
-        source_data[schema] = data_root / "schema" / schema.name
     manifest = json.loads(package_manifest.read_text(encoding="utf-8"))
     manifest["version"] = version
     files = {
         destination: source.read_text(encoding="utf-8")
         for source, destination in source_data.items()
     }
+    for schema in sorted((project_root / "schemas").glob("*.schema.json")):
+        content = schema.read_text(encoding="utf-8")
+        files[data_root / "schema" / schema.name] = content
+        files[project_root / "src" / "ai_skills_engine" / "manifest" / schema.name] = (
+            content
+        )
     files[package_root / "NOTICE.md"] = files[package_root / "NOTICE.md"].replace(
         "`vendors.yaml`",
         "`data/vendors.yaml`",
