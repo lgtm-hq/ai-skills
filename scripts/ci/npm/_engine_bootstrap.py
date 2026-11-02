@@ -12,6 +12,40 @@ import sys
 from pathlib import Path
 
 
+def _bind_checkout_source() -> None:
+    """Prefer checkout imports without replacing any cached engine identities.
+
+    Raises:
+        RuntimeError: If a cached engine module belongs to another source.
+    """
+    source = Path(__file__).resolve().parents[3] / "src"
+    for name, cached in sys.modules.copy().items():
+        if name != "ai_skills_engine" and not name.startswith("ai_skills_engine."):
+            continue
+        expected = source.joinpath(*name.split("."))
+        package = expected.is_dir()
+        expected_file = (
+            expected / "__init__.py" if package else expected.with_suffix(".py")
+        )
+        origin = getattr(cached, "__file__", None)
+        search_paths = tuple(
+            Path(path).resolve() for path in getattr(cached, "__path__", ())
+        )
+        if (
+            origin is None
+            or Path(origin).resolve() != expected_file
+            or search_paths != ((expected,) if package else ())
+        ):
+            msg = (
+                f"Cached engine module {name!r} is incompatible with "
+                f"checkout {source}; "
+                "run the shim in a fresh Python process."
+            )
+            raise RuntimeError(msg)
+    # Membership alone does not establish precedence over another installation.
+    sys.path[:] = [str(source), *(entry for entry in sys.path if entry != str(source))]
+
+
 def run(module: str) -> int:
     """Load this checkout's engine and invoke one compatibility entry point.
 
@@ -22,11 +56,10 @@ def run(module: str) -> int:
         The entry point's exit status.
 
     Raises:
+        RuntimeError: If cached engine modules conflict with this checkout.
         ValueError: If the module is not a supported compatibility entry point.
     """
-    source = str(Path(__file__).resolve().parents[3] / "src")
-    if source not in sys.path:
-        sys.path.insert(0, source)
+    _bind_checkout_source()
     # Import only the selected implementation. In particular, manifest backfills
     # must stay stdlib-only even though other commands need runtime dependencies.
     match module:
