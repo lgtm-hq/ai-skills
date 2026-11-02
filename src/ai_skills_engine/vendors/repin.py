@@ -300,11 +300,11 @@ def repin_vendor(
     if baseline_ref is not None and baseline_registry_text is not None:
         msg = "baseline_ref and baseline_registry_text are mutually exclusive"
         raise ValueError(msg)
-    vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
     manifest_path = repo_root / "ai-skills.yaml"
     manifest_bytes = manifest_path.read_bytes() if manifest_path.is_file() else None
     if manifest_bytes is not None:
         legacy.write_legacy(repo_root)
+    vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
     registry_path = repo_root / "vendors.yaml"
     working_text = registry_path.read_text(encoding="utf-8")
     if baseline_ref is not None:

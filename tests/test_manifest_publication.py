@@ -10,7 +10,11 @@ from assertpy import assert_that
 
 from ai_skills_engine import cli
 from ai_skills_engine.manifest.edit import dump_document
-from ai_skills_engine.manifest.legacy import render_legacy
+from ai_skills_engine.manifest.legacy import (
+    legacy_documents,
+    render_legacy,
+    write_legacy,
+)
 from ai_skills_engine.manifest.load import read_document
 
 pytest_plugins = ("manifest_helpers",)
@@ -29,6 +33,86 @@ def _write_publication_skill(directory: Path, name: str) -> None:
     (directory / "SKILL.md").write_text(
         f"---\nname: {name}\ndescription: Publication fixture.\n---\n"
     )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "baseline",
+        "disjoint",
+        "extension-extension",
+        "extension-default",
+        "default-extension",
+        "ungrouped",
+    ],
+)
+def test_legacy_rejects_duplicate_effective_destinations_before_writes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], change: str
+) -> None:
+    """Schema-valid package identities cannot overwrite a shared legacy destination."""
+    data = read_document(ROOT / "ai-skills.yaml")
+    first = data["packages"][0]
+    if change != "baseline":
+        source = data["packages"][-1] if change == "ungrouped" else first
+        duplicate = copy.deepcopy(source)
+        duplicate["id"] = "duplicate-copy"
+        duplicate["capabilities"] = [{"id": "distinct", "path": "skills/distinct"}]
+        duplicate["x-useful-note"] = {"preserve": True}
+        if change == "disjoint":
+            duplicate["x-legacy-group"] = "distinct-group"
+        elif change == "extension-default":
+            first["x-legacy-group"] = duplicate["id"]
+            duplicate.pop("x-legacy-group")
+        elif change == "default-extension":
+            first.pop("x-legacy-group")
+            duplicate["x-legacy-group"] = first["id"]
+        data["packages"].append(duplicate)
+        if change != "ungrouped":
+            data["exports"].append(duplicate["id"])
+    path = tmp_path / "ai-skills.yaml"
+    path.write_text(dump_document(data))
+    args = ["--repo-root", str(tmp_path), "manifest"]
+    assert_that(cli.main([*args, "validate"])).is_zero()
+    before = {}
+    for name in ("bundles.yaml", "vendors.yaml"):
+        before[name] = b"# preexisting sentinel: " + name.encode() + b"\n"
+        (tmp_path / name).write_bytes(before[name])
+    manifest_before = path.read_bytes()
+    if change in {"baseline", "disjoint"}:
+        rendered = render_legacy(tmp_path)
+        assert_that(write_legacy(tmp_path, check=True)).is_equal_to(1)
+        for name, content in before.items():
+            assert_that((tmp_path / name).read_bytes()).is_equal_to(content)
+        assert_that(cli.main([*args, "legacy"])).is_zero()
+        assert_that(cli.main([*args, "legacy", "--check"])).is_zero()
+        for destination, content in rendered.items():
+            assert_that(destination.read_bytes()).is_equal_to(content)
+        groups = read_document(tmp_path / "bundles.yaml")["groups"]
+        assert_that(groups).is_length(8 if change == "disjoint" else 7)
+        if change == "disjoint":
+            assert_that(groups["distinct-group"]["skills"]).is_equal_to(["distinct"])
+        else:
+            for name in before:
+                assert_that((tmp_path / name).read_bytes()).is_equal_to(
+                    (ROOT / name).read_bytes()
+                )
+    else:
+        for operation in (
+            lambda: legacy_documents(data),
+            lambda: render_legacy(tmp_path),
+            lambda: write_legacy(tmp_path),
+            lambda: write_legacy(tmp_path, check=True),
+        ):
+            with pytest.raises(ValueError, match="Legacy.*duplicate.*destination"):
+                operation()
+        for check in (["--check"], [], ["--check"]):
+            assert_that(cli.main([*args, "legacy", *check])).is_equal_to(1)
+            assert_that(capsys.readouterr().out).contains(
+                "Legacy", "duplicate", "destination", "duplicate-copy"
+            )
+            for name, content in before.items():
+                assert_that((tmp_path / name).read_bytes()).is_equal_to(content)
+    assert_that(path.read_bytes()).is_equal_to(manifest_before)
 
 
 @pytest.mark.parametrize(
