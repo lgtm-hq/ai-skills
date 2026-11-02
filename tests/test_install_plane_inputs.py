@@ -143,6 +143,87 @@ def shell_closure(tmp_path: Path) -> tuple[Path, Path, Path]:
     return tmp_path / "entry.sh", helper, data
 
 
+@pytest.mark.parametrize("punctuation", ["+", "@", ":", "%", "!", "=", ",", "é"])
+@pytest.mark.parametrize("operator", ["\n", ";", "&&", "||", "|", "&"])
+def test_shell_closure_preserves_literal_filename_punctuation(
+    shell_closure: tuple[Path, Path, Path], punctuation: str, operator: str
+) -> None:
+    """Complete literal words retain helpers and data beside shell boundaries."""
+    entry, helper, data = shell_closure
+    helper = helper.rename(helper.with_name(f"setup{punctuation}extra.sh"))
+    entry.write_text(f"source lib/{helper.name}{operator}true\n", encoding="utf-8")
+    assert_that(local_inputs(entry.parent, {entry})).contains(helper, data)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "$(source lib/payload\\ data.sh)",
+        "it's $(source lib/payload\\ data.sh)",
+        '$(source "lib/payload data.sh")',
+        "$(source 'lib/payload data.sh')",
+        "$(source lib/payload\\ \\\ndata.sh)",
+        "$(source\nlib/payload\\ data.sh)",
+        "$(echo ignored) and $(source lib/payload\\ data.sh)",
+        "$(echo 'literal (parentheses)'; source lib/payload\\ data.sh)",
+    ],
+)
+def test_shell_closure_follows_escaped_heredoc_helper(
+    shell_closure: tuple[Path, Path, Path], body: str
+) -> None:
+    """Only expandable heredoc commands reference the helper and transitive data."""
+    entry, helper, data = shell_closure
+    helper = helper.rename(helper.with_name("payload data.sh"))
+    entry.write_text(f"cat <<EOF\n{body}\nEOF\n", encoding="utf-8")
+    assert_that(local_inputs(entry.parent, {entry})).contains(helper, data)
+
+
+def test_shell_closure_follows_escaped_heredoc_cat_input(tmp_path: Path) -> None:
+    """The original cat reproduction retains a data filename with escaped spaces."""
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    data = fixtures / "payload data.txt"
+    data.write_text("it's literal data\n", encoding="utf-8")
+    entry = tmp_path / "entry.sh"
+    entry.write_text(
+        "cat <<EOF\n$(cat fixtures/payload\\ data.txt)\nEOF\n", encoding="utf-8"
+    )
+    assert_that(local_inputs(tmp_path, {entry})).contains(data)
+
+
+@pytest.mark.parametrize("marker", ["'EOF'", '"EOF"', "E'OF'", "\\EOF", "-'EOF'"])
+def test_shell_closure_keeps_escaped_quoted_heredoc_literal(
+    shell_closure: tuple[Path, Path, Path], marker: str
+) -> None:
+    """Quoted data must not decode an escaped-space command into a helper edge."""
+    entry, helper, data = shell_closure
+    helper = helper.rename(helper.with_name("payload data.sh"))
+    entry.write_text(
+        f"cat <<{marker}\nit's $(source lib/payload\\ data.sh)\nEOF\n",
+        encoding="utf-8",
+    )
+    assert_that(local_inputs(entry.parent, {entry})).does_not_contain(helper, data)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "$(echo $(source lib/payload\\ data.sh))",
+        "$(source lib/payload\\ data.sh",
+        "`source lib/payload\\ data.sh`",
+        "$(echo ignored # )\nsource lib/payload\\ data.sh\n)",
+    ],
+)
+def test_shell_closure_rejects_unsupported_heredoc_substitutions(
+    shell_closure: tuple[Path, Path, Path], body: str
+) -> None:
+    """Unsupported executable boundaries fail closed instead of losing inputs."""
+    entry, _, _ = shell_closure
+    entry.write_text(f"cat <<EOF\n{body}\nEOF\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="heredoc command substitution"):
+        local_inputs(entry.parent, {entry})
+
+
 @pytest.mark.parametrize(
     "statement",
     [
@@ -327,6 +408,7 @@ def test_shell_closure_keeps_heredoc_boundary_after_escaped_backslashes(
         "echo '#';",
         'echo "#";',
         "echo $\\\n#;",
+        "echo $(echo a)#b;",
         "# ordinary comment\n",
         "true;# adjacent operator comment\n",
     ],
@@ -338,6 +420,7 @@ def test_shell_closure_keeps_heredoc_boundary_after_escaped_backslashes(
         "single-quoted-hash",
         "double-quoted-hash",
         "continued-special-parameter",
+        "attached-substitution-hash",
         "comment-newline",
         "operator-comment-newline",
     ],

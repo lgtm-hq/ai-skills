@@ -55,17 +55,64 @@ class _ShellSource(StringIO):
         ):
             super().read(1)
             char = super().read(1)
-        # shlex also resets to whitespace state after '$' and '{', so quote
-        # state alone cannot distinguish $# or ${#name} from a shell comment.
+        # Quote state alone cannot distinguish $# or ${#name} from a comment.
+        # A closing ')' can end a substitution within a word, so conservatively
+        # retain an attached hash; whitespace after it still starts a comment.
         if (
             char == "#"
             and self.lexer.state in {" ", "c"}
-            and (not self.previous or self.previous in " \t\r\n;&|()<>")
+            and (not self.previous or self.previous in " \t\r\n;&|(<>")
         ):
             super().readline()
             char = "\n"
         self.previous = char
         return char
+
+
+def _heredoc_command_literals(body: str) -> Iterator[str]:
+    """Tokenize simple command substitutions, leaving surrounding data literal.
+
+    Only extracted command text uses shell quotes and escapes. Nested commands,
+    arithmetic/grouping and legacy backticks fail closed rather than guessing
+    executable boundaries. Quoted or escaped parentheses within words are safe.
+    """
+    index = 0
+    while index < len(body):
+        if body[index] == "\\" and body[index + 1 : index + 2] in {"\\", "$", "`"}:
+            index += 2
+            continue
+        if body[index] == "`":
+            raise ValueError("unsupported heredoc command substitution: backticks")
+        if not body.startswith("$(", index):
+            index += 1
+            continue
+        start = cursor = index + 2
+        quote = ""
+        while cursor < len(body):
+            char = body[cursor]
+            if char == "\\" and quote != "'":
+                cursor += 2
+                continue
+            if quote != "'" and (char == "`" or body.startswith("$(", cursor)):
+                raise ValueError("unsupported nested heredoc command substitution")
+            if quote:
+                if char == quote:
+                    quote = ""
+            elif char in "'\"":
+                quote = char
+            elif char == "#" and (
+                cursor == start or body[cursor - 1] in " \t\r\n;&|()<>"
+            ):
+                raise ValueError("unsupported comment in heredoc command substitution")
+            elif char == "(":
+                raise ValueError("unsupported grouping in heredoc command substitution")
+            elif char == ")":
+                yield from _shell_literals(body[start:cursor])
+                index = cursor + 1
+                break
+            cursor += 1
+        else:
+            raise ValueError("unterminated heredoc command substitution")
 
 
 def _shell_literals(source: str) -> Iterator[str]:
@@ -84,7 +131,10 @@ def _shell_literals(source: str) -> Iterator[str]:
     # Keep newlines as individual tokens so bodies start at the right boundary.
     lexer.whitespace_split = False
     lexer.commenters = ""
-    lexer.wordchars += "#"
+    # shlex's default wordchars omit valid filename punctuation such as '+'
+    # and '@'. Retain all literal characters present in this source, while
+    # preserving shell quoting, escape, newline and operator boundaries.
+    lexer.wordchars += "".join(sorted(set(source) - set(" \t\r\n;&|()<>'\"\\`")))
     pending: list[tuple[str, bool, bool]] = []
     arithmetic_depth = 0
     while True:
@@ -127,6 +177,7 @@ def _shell_literals(source: str) -> Iterator[str]:
             )
         elif lexeme == "\n":
             for delimiter, strip_tabs, expands in pending:
+                body: list[str] = []
                 while True:
                     line = stream.readline()
                     if not line:
@@ -145,9 +196,12 @@ def _shell_literals(source: str) -> Iterator[str]:
                     if (line.lstrip("\t") if strip_tabs else line).rstrip(
                         "\r\n"
                     ) == delimiter:
+                        if expands:
+                            yield from _heredoc_command_literals("".join(body))
                         break
                     if expands and re.search(r"(?<!\\)\$(?:[A-Za-z_]|\{)", line):
                         raise ValueError("dynamic heredoc input cannot be resolved")
+                    body.append(line)
                     # Whole lines retain filenames with spaces. Words and quoted
                     # fragments retain literal inputs inside data/expansions;
                     # no contents are evaluated, even for unquoted heredocs.
