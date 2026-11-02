@@ -8,8 +8,8 @@ Consumers verify an installed skill by hashing their local ``SKILL.md``
 (sha256 over raw file bytes) and comparing against the released manifest.
 
 Output is deterministic: keys are sorted, JSON formatting is stable, and the
-file ends with a trailing newline. The script is stdlib-only so it runs in
-any minimal container without dependency installation.
+file ends with a trailing newline. This module and its checkout shim use only
+the standard library; the installed engine CLI also loads runtime dependencies.
 
 Usage:
     uv run python scripts/generate_skills_manifest.py \

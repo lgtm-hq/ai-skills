@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import subprocess  # nosec B404 - bounded local regression process, no shell
+import sys
 from pathlib import Path
 
 import pytest
@@ -92,3 +95,96 @@ def test_normalize_version_rejects_invalid_release_tag() -> None:
 
     with pytest.raises(ValueError, match="Invalid npm semver version"):
         module.normalize_version("ai-skills-v1.2.3")
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "0.0.0",
+        "v1.2.3",
+        "1.2.3-alpha.1",
+        "1.2.3-0.3.7",
+        "1.2.3-x.7.z.92",
+        "1.2.3-01a.0-1.-",
+        "1.2.3+001",
+        "1.2.3-beta+exp.sha.5114f85",
+        "123456789012345678901234567890.0.0",
+    ],
+)
+def test_normalize_semver(version: str) -> None:
+    """Preserve valid SemVer prereleases, metadata and unbounded numbers."""
+    assert_that(module.normalize_version(version)).is_equal_to(
+        version.removeprefix("v")
+    )
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "",
+        "v",
+        "vv1.2.3",
+        "1.2",
+        "1.2.3.4",
+        "01.2.3",
+        "1.02.3",
+        "1.2.03",
+        "1.2.3-",
+        "1.2.3+",
+        "1.2.3-a..b",
+        "1.2.3+a..b",
+        "1.2.3+a+b",
+        "1.2.3-01",
+        "1.2.3-alpha.01",
+        "1.2.3-1٢",
+        "1.2.3-α",
+        "1.2.3+α",
+        "1.٢.3",
+        "1.2.3\n",
+        " 1.2.3",
+        "1.2.3 ",
+        "1.2.3-a_b",
+    ],
+)
+def test_reject_invalid_semver(version: str) -> None:
+    """Reject malformed versions, including former leading-zero/Unicode bugs."""
+    with pytest.raises(ValueError, match="Invalid npm semver version"):
+        module.normalize_version(version)
+
+
+def test_normalize_version_has_bounded_runtime() -> None:
+    """Run the real function with the ReDoS reproducer and long controls."""
+    versions = [
+        "0.0.0-" + "0." * 30 + "0",
+        "0.0.0-" + "0." * 30 + "!",
+        "1.2.3-" + "0." * 50_000 + "0",
+        "1.2.3-" + "0." * 50_000 + "!",
+        "1.2.3+" + "a" * 100_000,
+        "1.2.3+" + "a" * 100_000 + "!",
+    ]
+    process = subprocess.run(  # nosec B603 - local Python, fixed code, input as JSON
+        args=[
+            sys.executable,
+            "-c",
+            """
+import json, sys
+from ai_skills_engine.package_sync import normalize_version
+results = []
+for version in json.load(sys.stdin):
+    try:
+        results.append(normalize_version(version))
+    except ValueError:
+        results.append(None)
+print(json.dumps(results))
+""",
+        ],
+        input=json.dumps(versions),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    assert_that(process.returncode).described_as(process.stderr).is_zero()
+    assert_that(json.loads(process.stdout)).is_equal_to(
+        [versions[0], None, versions[2], None, versions[4], None],
+    )

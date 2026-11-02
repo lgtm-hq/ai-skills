@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Compatibility entry point for ai_skills_engine.package_sync."""
 
-from ai_skills_engine.package_sync import main
+from _engine_bootstrap import run
 
-raise SystemExit(main())
+raise SystemExit(run("ai_skills_engine.package_sync"))
