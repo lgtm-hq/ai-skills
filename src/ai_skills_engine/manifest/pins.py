@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from ai_skills_engine.manifest.edit import dump_document, patch_document
-from ai_skills_engine.manifest.legacy import write_legacy
+from ai_skills_engine.manifest.legacy import LEGACY_PACKAGE_FIELDS, write_legacy
 from ai_skills_engine.manifest.load import load_manifest, read_document
 from ai_skills_engine.manifest.migrate import vendor_declaration
 
@@ -29,14 +29,28 @@ def write_vendors(path: Path, vendors: list[dict[str, Any]]) -> str:
     for raw in vendors:
         incoming = vendor_declaration(raw)
         previous = existing.get(raw["id"], {})
-        mapping = {**previous.get("mapping", {}), **incoming["mapping"]}
+        mapping = {
+            **{
+                key: value
+                for key, value in previous.get("mapping", {}).items()
+                if key not in {"skillRoots", "packages"}
+            },
+            **incoming["mapping"],
+        }
         if "packages" in incoming["mapping"]:
             old_packages = {
                 package["id"]: package
                 for package in previous.get("mapping", {}).get("packages", [])
             }
             mapping["packages"] = [
-                {**old_packages.get(package["id"], {}), **package}
+                {
+                    **{
+                        key: value
+                        for key, value in old_packages.get(package["id"], {}).items()
+                        if key not in LEGACY_PACKAGE_FIELDS
+                    },
+                    **package,
+                }
                 for package in incoming["mapping"]["packages"]
             ]
         declarations.append(

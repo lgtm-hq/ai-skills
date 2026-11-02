@@ -40,6 +40,13 @@ document:
   Host-specific frontmatter retains canonical JSON values and explicit rules
   from the wheel's `data/host_attributes.yaml`. Unknown hosts and strict
   `unverified` rules refuse; collection does not certify host semantics.
+
+  Compatibility publication also requires explicit exports for every local
+  marketplace package and mapped vendor package. Narrowed exports or vendor
+  selectors fail before either generated registry is written. An explicit
+  include of every mapped package and an empty exclude list are supported;
+  narrower selection requires a manifest-aware publisher. Exporting the reserved
+  ungrouped package is rejected because legacy marketplaces cannot publish it.
   Local capabilities require an explicit `id` alongside `path`; migration
   records the legacy skill name as that ID. This follows ADR 0011's stable
   identity contract so moving a payload never silently changes its identity.
@@ -47,6 +54,7 @@ document:
   without this checkout. Regenerate it and the npm schema data with
   `uv run ai-skills-engine package-sync`; `package-sync --check` rejects drift
   from the published schema. Edit only the canonical file under `schemas/`.
+
 - **Offline vendor validation:** use `manifest validate --vendor-root ID=PATH`
   for each locally available vendor checkout. Its own `publisher.id` identifies
   its packages. Consumer mapping is rejected when that checkout supplies a

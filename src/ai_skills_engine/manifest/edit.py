@@ -114,33 +114,52 @@ def patch_document(*, text: str, data: object) -> str:
             for child, previous, desired in zip(node.value, before, after, strict=True):
                 visit(child, previous, desired)
         else:
+            start = node.start_mark.index
+            line_start = text.rfind("\n", 0, start) + 1
+            prefix = text[line_start:start]
+            indent = node.start_mark.column
+            collection = isinstance(after, (dict, list))
+            inline = collection and prefix.strip() not in {"", "-"}
+            if inline:
+                indent = len(prefix) - len(prefix.lstrip()) + 2
+                if prefix.lstrip().startswith("- "):
+                    indent += 2
+                while start > line_start and text[start - 1] == " ":
+                    start -= 1
             rendered = (
-                yaml.safe_dump(
+                yaml.dump(
                     after,
-                    default_flow_style=True,
+                    Dumper=ManifestDumper if collection else yaml.SafeDumper,
+                    default_flow_style=not collection,
                     sort_keys=False,
-                    width=1_000_000,
+                    width=max(20, 80 - indent),
                     allow_unicode=True,
                 )
                 .removesuffix("...\n")
                 .rstrip("\n")
             )
-            if (
-                isinstance(after, str)
-                and isinstance(node, ScalarNode)
+            rendered = rendered.replace("\n", "\n" + " " * indent)
+            if collection:
+                if inline:
+                    rendered = "\n" + " " * indent + rendered
+            elif isinstance(after, str) and (
+                isinstance(node, ScalarNode)
                 and node.style == '"'
+                or any(char in after for char in "\n\r\x85\u2028\u2029")
             ):
-                rendered = json.dumps(after, ensure_ascii=False)
+                rendered = json.dumps(after)
             elif (
                 isinstance(after, str)
                 and isinstance(node, ScalarNode)
                 and node.style == "'"
             ):
                 rendered = "'" + after.replace("'", "''") + "'"
-            if isinstance(node, (MappingNode, SequenceNode)):
+            if isinstance(node, (MappingNode, SequenceNode)) or (
+                isinstance(node, ScalarNode) and node.style in {"|", ">"}
+            ):
                 source = text[node.start_mark.index : node.end_mark.index]
                 rendered += source[len(source.rstrip()) :]
-            changes.append((node.start_mark.index, node.end_mark.index, rendered))
+            changes.append((start, node.end_mark.index, rendered))
 
     visit(root, old, data)
     for start, end, replacement in sorted(changes, reverse=True):
