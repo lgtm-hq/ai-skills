@@ -1,0 +1,109 @@
+---
+name: Repository quality
+
+'on':
+  workflow_call:
+    inputs:
+      job-name:
+        type: string
+        required: true
+      tooling-ref:
+        type: string
+        required: true
+      lintro-image:
+        type: string
+        required: true
+      egress-policy:
+        type: string
+        required: true
+    outputs:
+      exit-code:
+        value: ${{ jobs.quality.outputs.exit-code }}
+
+jobs:
+  quality:
+    name: ${{ inputs.job-name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      exit-code: ${{ steps.quality.outputs.exit-code }}
+    env:
+      LINTRO_IMAGE: ${{ inputs.lintro-image }}
+    steps:
+      - name: Harden runner
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: ${{ inputs.egress-policy }}
+          # Same quality endpoints as the pinned lgtm-ci workflow.
+          allowed-endpoints: >-
+            github.com:443 api.github.com:443 codeload.github.com:443
+            release-assets.githubusercontent.com:443 objects.githubusercontent.com:443
+            raw.githubusercontent.com:443 pipelines.actions.githubusercontent.com:443
+            github-releases.githubusercontent.com:443 ghcr.io:443
+            pkg-containers.githubusercontent.com:443 docker.io:443
+            registry-1.docker.io:443 auth.docker.io:443
+            production.cloudflare.docker.com:443 production.cloudfront.docker.com:443
+            pypi.org:443 files.pythonhosted.org:443 static.rust-lang.org:443
+            bun.sh:443 astral.sh:443 releases.astral.sh:443 sh.rustup.rs:443
+            deb.debian.org:80 registry.npmjs.org:443 crates.io:443
+            static.crates.io:443 index.crates.io:443 semgrep.dev:443
+            metrics.semgrep.dev:443 api.osv.dev:443 api.deps.dev:443
+      - name: Checkout repository
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Checkout pinned quality tooling
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: lgtm-hq/lgtm-ci
+          ref: ${{ inputs.tooling-ref }}
+          path: .lgtm-ci-tooling
+          sparse-checkout: scripts/ci/
+          persist-credentials: false
+      - name: Log in to GitHub Container Registry
+        # yamllint disable-line rule:line-length
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Acquire nested TypeScript dependencies in the quality image
+        run: bash scripts/ci/quality/prepare_docker_deps.sh
+      - name: Run full pinned Lintro quality checks
+        id: quality
+        env:
+          STEP: check
+        # The shared runner retains report artifacts and exit-code semantics.
+        run: bash .lgtm-ci-tooling/scripts/ci/quality/run-lintro-docker.sh
+      - name: Upload quality reports
+        if: always()
+        continue-on-error: true
+        # yamllint disable-line rule:line-length
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linting-report
+          path: |
+            .lintro/
+            chk-output.txt
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: ignore
+          overwrite: true
+      - name: Upload quality JSON
+        if: always()
+        continue-on-error: true
+        # yamllint disable-line rule:line-length
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linting-json-report
+          path: .lintro/artifacts/json/results.json
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: ignore
+          overwrite: true

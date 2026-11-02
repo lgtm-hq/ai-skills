@@ -1,0 +1,4 @@
+[test]
+root = "./test"
+preload = ["./scripts/build-test-fixtures.ts"]
+coverageThreshold = { function = 0.9083, line = 0.8763 }

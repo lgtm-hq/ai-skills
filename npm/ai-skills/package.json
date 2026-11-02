@@ -13,12 +13,11 @@
     "directory": "npm/ai-skills"
   },
   "bin": {
-    "skill": "bin/skill.js",
-    "sk": "bin/skill.js"
+    "skill": "dist/bin/skill.js",
+    "sk": "dist/bin/skill.js"
   },
   "files": [
-    "bin",
-    "lib",
+    "dist",
     "data",
     "NOTICE.md"
   ],
@@ -27,10 +26,16 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "bun test --coverage"
+    "test": "bun test --coverage",
+    "build": "tsc -p tsconfig.build.json",
+    "build:launcher": "bun run build"
   },
   "type": "module",
   "dependencies": {
     "@clack/prompts": "1.8.1"
+  },
+  "devDependencies": {
+    "bun-types": "1.4.4",
+    "typescript": "7.0.2"
   }
 }
