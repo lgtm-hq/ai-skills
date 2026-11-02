@@ -143,6 +143,68 @@ def shell_closure(tmp_path: Path) -> tuple[Path, Path, Path]:
     return tmp_path / "entry.sh", helper, data
 
 
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "source \\\nlib/setup.sh\n",
+        "source lib/set\\\nup.sh\n",
+        'source "lib/set\\\nup.sh"\n',
+        "sou\\\nrce lib/setup.sh\n",
+        "source \\\nlib/set\\\nup.sh;true\n",
+    ],
+    ids=["source-argument", "split-word", "double-quoted", "command", "combined"],
+)
+def test_shell_closure_follows_continued_source(
+    shell_closure: tuple[Path, Path, Path], statement: str
+) -> None:
+    """Only continued source words refer to the helper and its transitive data."""
+    entry, helper, data = shell_closure
+    entry.write_text(statement, encoding="utf-8")
+    assert_that(local_inputs(entry.parent, {entry})).contains(helper, data)
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "source 'lib/set\\\nup.sh'\n",
+        "# source lib/set\\\n#up.sh\n",
+        "cat <<'EOF'\nlib/set\\\nup.sh\nEOF\n",
+        "echo lib/set\\\\\nup.sh\n",
+    ],
+    ids=["single-quoted", "comment", "quoted-heredoc", "escaped-backslash"],
+)
+def test_shell_closure_keeps_literal_backslash_newlines(
+    shell_closure: tuple[Path, Path, Path], statement: str
+) -> None:
+    """Literal backslashes must not manufacture a nonexistent source edge."""
+    entry, helper, data = shell_closure
+    entry.write_text(statement, encoding="utf-8")
+    assert_that(local_inputs(entry.parent, {entry})).does_not_contain(helper, data)
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "echo name#suffix;",
+        "echo ${x#prefix};",
+        "echo $((1 << 2));",
+        "((1 << 2));",
+        "echo $((1 << (2 + 1)));",
+        "echo $\\\n((1 << 2));",
+        "cat <<'EOF'\nit's literal data\nEOF\n",
+        "# it's a comment\n",
+        "true;# it's a comment\n",
+    ],
+)
+def test_shell_closure_preserves_context_before_continued_source(
+    shell_closure: tuple[Path, Path, Path], prefix: str
+) -> None:
+    """Word hashes, arithmetic and preceding quotes cannot hide a source edge."""
+    entry, helper, data = shell_closure
+    entry.write_text(prefix + "source lib/set\\\nup.sh\n", encoding="utf-8")
+    assert_that(local_inputs(entry.parent, {entry})).contains(helper, data)
+
+
 @pytest.mark.parametrize("operator", [";", "&&", "||", "|", "&"])
 def test_shell_closure_splits_adjacent_operators(
     shell_closure: tuple[Path, Path, Path], operator: str
@@ -210,11 +272,17 @@ def test_shell_closure_preserves_quoted_words_and_multiple_heredocs(
     assert_that(local_inputs(entry.parent, {entry})).contains(helper, data)
 
 
+@pytest.mark.parametrize("prefix", ["", "echo $((1 << 2));", "echo '(('; "])
+@pytest.mark.parametrize("marker", ["EOF", "E\\\nOF"])
 def test_shell_closure_fails_closed_on_dynamic_heredoc_inputs(
     shell_closure: tuple[Path, Path, Path],
+    prefix: str,
+    marker: str,
 ) -> None:
     """Expandable heredocs cannot silently hide unknown executable inputs."""
     entry, _, _ = shell_closure
-    entry.write_text('cat <<EOF\n$(source "$UNKNOWN")\nEOF\n', encoding="utf-8")
+    entry.write_text(
+        prefix + f'cat <<{marker}\n$(source "$UNKNOWN")\nEOF\n', encoding="utf-8"
+    )
     with pytest.raises(ValueError, match="dynamic heredoc"):
         local_inputs(entry.parent, {entry})

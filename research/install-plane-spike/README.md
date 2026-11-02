@@ -117,6 +117,14 @@ PR is mergeable only with a green spike run on its current head. The repository'
 separate release-gate workflow polls the read-only Actions API for a successful
 exact-head PR
 run (latest attempt); dispatch, stale, skipped and failed runs cannot satisfy it.
+The verifier is the standalone stdlib-only script from reviewed immutable commit
+`cc312d1371236cde3cdbc8b58899c6f67e65dcb0`, sparsely checked out into `trusted-gate`
+without persisted credentials. It reads the original GitHub event and repository
+identity, so changing the candidate's gate script cannot replace the verifier or
+change the candidate head being checked. Repository workflow YAML writers remain
+trusted: they can change the checkout or invocation. Organization-required
+immutable workflows would need separate owner setup; this repository workflow
+does not provide that boundary.
 The existing required all-checks gate observes that separate workflow; no failed
 prerequisite can silently turn the required job into a skip. Merge-queue heads
 run the same mandatory harness. Change-detection failures run

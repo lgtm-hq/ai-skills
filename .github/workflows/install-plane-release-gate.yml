@@ -33,12 +33,17 @@ jobs:
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
-      - name: Checkout gate
+      - name: Checkout reviewed gate
         # yamllint disable-line rule:line-length
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Reviewed bootstrap: the standalone helper exists before main has it.
+          ref: cc312d1371236cde3cdbc8b58899c6f67e65dcb0
+          path: trusted-gate
+          sparse-checkout: scripts/ci/install_plane_release_gate.py
+          sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Enforce mandatory release and queue evidence
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci/install_plane_release_gate.py
+        run: python3 trusted-gate/scripts/ci/install_plane_release_gate.py

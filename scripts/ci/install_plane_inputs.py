@@ -27,6 +27,41 @@ IGNORED = {
 type Value = Path | str | int | None
 
 
+class _ShellLexer(shlex.shlex):
+    """Declare shlex's runtime quote state, which its type stubs omit."""
+
+    state: str | None
+
+
+class _ShellSource(StringIO):
+    """Adapt shlex's character reads to shell comments and line continuations.
+
+    Use the lexer's quote/escape state rather than replacing physical lines:
+    single quotes, escaped backslashes and raw heredoc reads remain literal.
+    """
+
+    lexer: _ShellLexer
+
+    def read(self, size: int | None = -1) -> str:
+        """Remove unquoted/double-quoted continuations before token boundaries."""
+        char = super().read(size)
+        if size != 1:
+            return char
+        while (
+            char == "\\"
+            and self.lexer.state not in {"'", "\\"}
+            and self.getvalue().startswith("\n", self.tell())
+        ):
+            super().read(1)
+            char = super().read(1)
+        # A hash starts a comment only at a word boundary, including directly
+        # after an operator. Hashes in words/parameter expansions are literal.
+        if char == "#" and self.lexer.state in {" ", "c"}:
+            super().readline()
+            return "\n"
+        return char
+
+
 def _shell_literals(source: str) -> Iterator[str]:
     """Tokenize shell operators and heredoc boundaries without executing code.
 
@@ -36,13 +71,16 @@ def _shell_literals(source: str) -> Iterator[str]:
     overapproximation, not a shell evaluator; dynamic path values stay unknown.
     Unterminated quotes or heredocs fail closed.
     """
-    stream = StringIO(source)
-    lexer = shlex.shlex(stream, posix=True, punctuation_chars=";&|()<>")
+    stream = _ShellSource(source)
+    lexer = _ShellLexer(stream, posix=True, punctuation_chars=";&|()<>")
+    stream.lexer = lexer
     lexer.whitespace = " \t\r"
     # Keep newlines as individual tokens so bodies start at the right boundary.
     lexer.whitespace_split = False
     lexer.commenters = ""
+    lexer.wordchars += "#"
     pending: list[tuple[str, bool, bool]] = []
+    arithmetic_depth = 0
     while True:
         # shlex may have consumed one operator lookahead character. Retain it
         # when distinguishing an operator from a quoted word with the same text.
@@ -50,12 +88,21 @@ def _shell_literals(source: str) -> Iterator[str]:
         lexeme = lexer.get_token()
         if lexeme is None:
             break
-        raw = source[start : stream.tell()].lstrip()
-        if lexeme == "#" and raw.startswith("#"):
-            stream.readline()
-            lexeme = "\n"
-        if lexeme == "<<" and raw.startswith("<<"):
-            strip_tabs = source[: stream.tell()].endswith("<<-")
+        # Continuations are not quoting syntax in boundary/delimiter metadata.
+        # Actual word contents still use the quote-aware stream above.
+        raw = source[start : stream.tell()].replace("\\\n", "").lstrip()
+        operator = raw.startswith(lexeme) or (
+            lexeme.startswith("((") and raw.startswith(f"${lexeme}")
+        )
+        if (
+            operator
+            and set(lexeme) <= set(";&|()<>")
+            and (arithmetic_depth or lexeme.startswith("(("))
+        ):
+            arithmetic_depth += lexeme.count("(") - lexeme.count(")")
+            arithmetic_depth = max(0, arithmetic_depth)
+        if lexeme == "<<" and raw.startswith("<<") and not arithmetic_depth:
+            strip_tabs = source[: stream.tell()].replace("\\\n", "").endswith("<<-")
             marker_start = max(0, stream.tell() - 1)
             delimiter = lexer.get_token()
             if strip_tabs and delimiter == "-":
@@ -66,7 +113,8 @@ def _shell_literals(source: str) -> Iterator[str]:
             if delimiter is None or delimiter == "\n":
                 raise ValueError("missing heredoc delimiter")
             expands = not any(
-                char in source[marker_start : stream.tell()] for char in "'\"\\"
+                char in source[marker_start : stream.tell()].replace("\\\n", "")
+                for char in "'\"\\"
             )
             pending.append(
                 (delimiter[1:] if strip_prefix else delimiter, strip_tabs, expands)

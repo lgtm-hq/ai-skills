@@ -2,6 +2,7 @@
 
 import json
 import os
+import shlex
 import subprocess  # nosec B404 - local gate scripts and synthetic gh only
 import sys
 from pathlib import Path
@@ -16,6 +17,129 @@ from ci.install_plane_gate import gate
 from ci.install_plane_release_gate import latest_result, required_head
 
 HEAD = "a" * 40
+
+
+@pytest.fixture
+def release_workflow() -> dict[str, Any]:
+    """Read the actual required-check workflow, including its code source."""
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github/workflows/install-plane-release-gate.yml"
+    )
+    config: dict[str, Any] = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+    return config
+
+
+def test_release_workflow_uses_reviewed_immutable_gate(
+    release_workflow: dict[str, Any],
+) -> None:
+    """Only the reviewed standalone gate is checked out with read-only access."""
+    job = release_workflow["jobs"]["release-spike"]
+    checkouts = [
+        step
+        for step in job["steps"]
+        if step.get("uses", "").startswith("actions/checkout@")
+    ]
+    assert_that(checkouts).is_length(1)
+    checkout = checkouts[0]["with"]
+    # This reviewed bootstrap exists even before the helper reaches main.
+    assert_that(checkout.get("ref")).is_equal_to(
+        "cc312d1371236cde3cdbc8b58899c6f67e65dcb0"
+    )
+    assert_that(checkout.get("path")).is_equal_to("trusted-gate")
+    script = "scripts/ci/install_plane_release_gate.py"
+    assert_that(checkout.get("sparse-checkout", "").splitlines()).contains_only(script)
+    assert_that(checkout.get("sparse-checkout-cone-mode")).is_false()
+    assert_that(checkout["persist-credentials"]).is_false()
+    assert_that(checkout).does_not_contain_key("repository")
+    runs = [step["run"] for step in job["steps"] if "run" in step]
+    assert_that(runs).contains_only(f"python3 {checkout['path']}/{script}")
+    for scope in (release_workflow, job):
+        assert_that(scope["permissions"]).is_equal_to(
+            {"contents": "read", "actions": "read"}
+        )
+    for scope in (release_workflow, job, *job["steps"]):
+        assert_that(scope.get("env", {})).does_not_contain_key(
+            "GITHUB_EVENT_PATH", "GITHUB_EVENT_NAME", "GITHUB_REPOSITORY"
+        )
+        assert_that(scope).does_not_contain_key("working-directory")
+
+
+@pytest.mark.parametrize("event_name", ["pull_request", "merge_group"])
+def test_workflow_gate_ignores_candidate_script_and_preserves_event(
+    tmp_path: Path,
+    release_workflow: dict[str, Any],
+    event_name: str,
+) -> None:
+    """The workflow selects separate verifier code and forwards original data."""
+    job = release_workflow["jobs"]["release-spike"]
+    checkout = next(
+        step["with"]
+        for step in job["steps"]
+        if step.get("uses", "").startswith("actions/checkout@")
+    )
+    invocation = next(step for step in job["steps"] if "run" in step)
+    script = Path("scripts/ci/install_plane_release_gate.py")
+    candidate = tmp_path / script
+    candidate.parent.mkdir(parents=True)
+    candidate.write_text("raise SystemExit(0)\n", encoding="utf-8")
+    # Model checkout offline without assuming CI retains historical Git objects.
+    # The contract above binds its source; a distinct exit proves selection.
+    if checkout.get("ref"):
+        trusted = tmp_path / checkout.get("path", ".") / script
+        trusted.parent.mkdir(parents=True, exist_ok=True)
+        trusted.write_text(
+            "import json, os\nfrom pathlib import Path\n"
+            "print(json.dumps({\n"
+            "    'event': json.loads(\n"
+            "        Path(os.environ['GITHUB_EVENT_PATH']).read_text()),\n"
+            "    'name': os.environ['GITHUB_EVENT_NAME'],\n"
+            "    'repo': os.environ['GITHUB_REPOSITORY'],\n"
+            "}))\nraise SystemExit(23)\n",
+            encoding="utf-8",
+        )
+    event = tmp_path / "original-event.json"
+    event.write_text(
+        json.dumps(
+            {
+                "pull_request": {"head": {"ref": "release/v1", "sha": HEAD}},
+                "merge_group": {"head_sha": HEAD},
+            }
+        ),
+        encoding="utf-8",
+    )
+    argv = shlex.split(invocation["run"])
+    assert_that(argv[0]).is_equal_to("python3")
+    result = subprocess.run(  # nosec B603 - local workflow argv and fixture scripts
+        args=[sys.executable, *argv[1:]],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": str(tmp_path),
+            "GITHUB_EVENT_PATH": str(event),
+            "GITHUB_EVENT_NAME": event_name,
+            "GITHUB_REPOSITORY": "example/repo",
+            "GITHUB_SHA": "b" * 40,
+            **release_workflow.get("env", {}),
+            **job.get("env", {}),
+            **invocation.get("env", {}),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    assert_that(result.returncode).described_as(result.stderr).is_equal_to(23)
+    assert_that(json.loads(result.stdout)).is_equal_to(
+        {
+            "event": json.loads(event.read_text(encoding="utf-8")),
+            "name": event_name,
+            "repo": "example/repo",
+        }
+    )
+    assert_that(candidate.read_text(encoding="utf-8")).is_equal_to(
+        "raise SystemExit(0)\n"
+    )
 
 
 def test_release_timeout_covers_actual_sequential_workflow() -> None:
@@ -307,8 +431,3 @@ def test_workflow_wires_mandatory_jobs_and_release_gate() -> None:
     assert_that(version >= (3, 12)).is_true()
     checks = yaml.safe_load((workflows / "all-checks-gate.yml").read_text())
     assert_that(checks["jobs"]["gate"]).does_not_contain_key("needs")
-    release = yaml.safe_load((workflows / "install-plane-release-gate.yml").read_text())
-    steps = release["jobs"]["release-spike"]["steps"]
-    assert_that([step.get("run") for step in steps]).contains(
-        "python3 scripts/ci/install_plane_release_gate.py"
-    )
