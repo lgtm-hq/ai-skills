@@ -62,9 +62,17 @@ rg -n 'shell\s*=\s*True' --type py
 rg -n '(execute|query)\s*\(\s*f["\x27]|\.format\s*\(' --type py
 
 # Dependency vulnerabilities
-uv run lintro chk          # Python: runs pip_audit, osv_scanner and the other bundled tools
-bun audit                    # JavaScript/TypeScript with bun
+uv run lintro chk          # Prefer when the project uses lintro
+bun audit                  # JavaScript/TypeScript with bun
 ```
+
+For dependency auditing through lintro, inspect the project's enabled tools and
+confirm from the output which dependency scanners actually ran (for example,
+`osv_scanner` or `pip_audit`). Execution depends on configuration and scanner binary
+availability. Check each scanner's result; a successful lintro exit alone does not
+establish dependency scan coverage. Report disabled, skipped, unavailable, or failed
+scans as unchecked, never clean. If the project does not use lintro, use its existing
+dependency audit tooling according to project standards.
 
 Cross-check results against the Security Best Practices rubric below.
 
