@@ -354,3 +354,6 @@ coverage.json
 
 # act secrets file (DO NOT COMMIT)
 .secrets
+
+# Generated gateway runtime staging; published payloads are owned by #386.
+npm/ai-skills/runtime-staging/

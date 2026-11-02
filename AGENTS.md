@@ -62,7 +62,7 @@ Total skills: 40
 <!-- markdownlint-disable MD013 -->
 
 There are no long-running services. This repo ships two deliverables: the Python
-catalog/validation/generator scripts (managed with **uv**) and the JS gateway CLI
+catalog/validation/generator scripts (managed with **uv**) and the TypeScript gateway CLI
 (`@lgtm-hq/ai-skills`, managed with **bun**) under `npm/ai-skills/`.
 
 - Toolchains: Python via **uv** (`requires-python >= 3.13`; uv provisions the
@@ -76,7 +76,7 @@ catalog/validation/generator scripts (managed with **uv**) and the JS gateway CL
   `uv run lintro fmt`, `uv run lintro tst`, `bash scripts/validate.sh`) and in
   `npm/ai-skills/package.json` (`bun test`). Run Python tests directly with
   `uv run pytest tests/`. `scripts/validate.sh` needs both `uv` and `rg` on PATH.
-- Running the gateway CLI without installing: `node npm/ai-skills/bin/skill.js <list|vendors|install|update|remove|adopt>`.
+- Running the gateway CLI without installing: `bun npm/ai-skills/bin/skill.ts <list|vendors|install|update|remove|adopt|doctor>`.
 - Gateway `install`/`update` shell out to the upstream Vercel `skills` CLI via
   `bunx skills@^…`, which needs network + GitHub access. To smoke-test a real
   install, prefer a vendor source (for example
