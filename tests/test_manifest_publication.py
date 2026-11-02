@@ -10,11 +10,105 @@ from assertpy import assert_that
 
 from ai_skills_engine import cli
 from ai_skills_engine.manifest.edit import dump_document
+from ai_skills_engine.manifest.legacy import render_legacy
 from ai_skills_engine.manifest.load import read_document
 
 pytest_plugins = ("manifest_helpers",)
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize(
+    ("owner", "declaration"),
+    [
+        (owner, declaration)
+        for owner in ("local", "vendor")
+        for declaration in (
+            "baseline",
+            "requires",
+            "resources",
+            "package-resources",
+            "empty",
+            "related",
+        )
+        if owner == "local" or declaration != "package-resources"
+    ],
+)
+def test_legacy_cli_rejects_unrepresentable_dependencies_before_writes(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    owner: str,
+    declaration: str,
+) -> None:
+    """Schema-valid dependencies cannot disappear through legacy publication."""
+    data = read_document(ROOT / "ai-skills.yaml")
+    if owner == "vendor":
+        vendor = next(item for item in data["vendors"] if item["id"] == "anthropics")
+        package = vendor["mapping"]["packages"][0]
+        package["skills"] = ["docx"]
+        qualified = f"anthropics/{package['id']}"
+        capability: dict[str, Any] = {}
+        package["capabilities"] = {"docx": capability}
+    else:
+        package = data["packages"][0]
+        qualified = f"lgtm-hq/{package['id']}"
+        capability = package["capabilities"][0]
+    if declaration == "requires":
+        capability["requires"] = ["anthropics/document-skills:skill/pdf"]
+    elif declaration == "resources":
+        capability["resources"] = [f"{qualified}:resource/guide"]
+    elif declaration == "package-resources":
+        package["resources"] = [{"id": "guide", "path": "shared/guide.md"}]
+    elif declaration == "empty":
+        capability.update(requires=[], resources=[], related=[])
+        if owner == "local":
+            package["resources"] = []
+    elif declaration == "related":
+        capability["related"] = ["anthropics/document-skills:skill/pdf"]
+    path = tmp_path / "ai-skills.yaml"
+    path.write_text(dump_document(data))
+    args = ["--repo-root", str(tmp_path), "manifest"]
+    # Establish actual schema and semantic validity before testing publication.
+    assert_that(cli.main([*args, "validate"])).is_zero()
+    expected = 1 if declaration in {"requires", "resources", "package-resources"} else 0
+    before = {}
+    for name in ("bundles.yaml", "vendors.yaml"):
+        before[name] = b"# preexisting sentinel: " + name.encode() + b"\n"
+        (tmp_path / name).write_bytes(before[name])
+    manifest_before = path.read_bytes()
+    if expected:
+        with pytest.raises(ValueError, match="Legacy.*cannot represent"):
+            render_legacy(tmp_path)
+        for check in (["--check"], [], ["--check"]):
+            assert_that(cli.main([*args, "legacy", *check])).is_equal_to(1)
+            assert_that(capsys.readouterr().out).contains(
+                "Legacy",
+                "cannot represent",
+                qualified,
+                declaration.removeprefix("package-"),
+            )
+            for name, content in before.items():
+                assert_that((tmp_path / name).read_bytes()).is_equal_to(content)
+    else:
+        rendered = render_legacy(tmp_path)
+        assert_that(cli.main([*args, "legacy", "--check"])).is_equal_to(1)
+        for name, content in before.items():
+            assert_that((tmp_path / name).read_bytes()).is_equal_to(content)
+        assert_that(cli.main([*args, "legacy"])).is_zero()
+        assert_that(cli.main([*args, "legacy", "--check"])).is_zero()
+        for destination, content in rendered.items():
+            assert_that(destination.read_bytes()).is_equal_to(content)
+        if owner == "local":
+            for name in before:
+                assert_that((tmp_path / name).read_bytes()).is_equal_to(
+                    (ROOT / name).read_bytes()
+                )
+        else:
+            published = read_document(tmp_path / "vendors.yaml")["vendors"]
+            mapped = next(item for item in published if item["id"] == "anthropics")
+            assert_that(mapped["plugins"][0]["skills"]).is_equal_to(["docx"])
+            assert_that(mapped["plugins"][0]).does_not_contain_key("capabilities")
+    assert_that(path.read_bytes()).is_equal_to(manifest_before)
 
 
 @pytest.mark.parametrize(

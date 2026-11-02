@@ -24,6 +24,24 @@ LEGACY_PACKAGE_FIELDS = frozenset(
 )
 
 
+def _check_dependencies(*, declaration: dict[str, Any], location: str) -> None:
+    """Reject payload requirements that legacy publication cannot honor.
+
+    Args:
+        declaration: Validated package or capability declaration.
+        location: Qualified identity for an actionable diagnostic.
+
+    Raises:
+        ValueError: If dependencies or resources would be silently discarded.
+    """
+    for field in ("requires", "resources"):
+        if declaration.get(field):
+            raise ValueError(
+                f"Legacy publication cannot represent {field} in {location}; "
+                "use manifest-aware publication for dependencies and resources"
+            )
+
+
 def _check_publication(data: dict[str, Any]) -> None:
     """Reject publication narrowing that legacy readers cannot enforce.
 
@@ -88,8 +106,16 @@ def legacy_documents(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     _check_publication(data)
     bundles: dict[str, Any] = {**data.get("x-legacy-fields", {}), "groups": {}}
     for package in data.get("packages", []):
+        qualified = f"{data['publisher']['id']}/{package['id']}"
+        _check_dependencies(declaration=package, location=qualified)
         skills = []
         for capability in package.get("capabilities", []):
+            _check_dependencies(
+                declaration=capability,
+                location=(
+                    f"{qualified}:{capability.get('role', 'skill')}/{capability['id']}"
+                ),
+            )
             path = capability["path"]
             if (
                 capability.get("role", "skill") != "skill"
@@ -117,6 +143,12 @@ def legacy_documents(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
             raise ValueError(
                 f"Legacy registry cannot represent manifest vendor: {vendor['id']}"
             )
+        for package in mapping.get("packages", []):
+            for name, capability in package.get("capabilities", {}).items():
+                _check_dependencies(
+                    declaration=capability,
+                    location=f"{vendor['id']}/{package['id']}:skill/{name}",
+                )
         raw = {
             key: value
             for key, value in vendor.items()

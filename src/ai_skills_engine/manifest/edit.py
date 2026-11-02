@@ -65,6 +65,30 @@ def dump_document(data: object) -> str:
     )
 
 
+def _same_value(before: object, after: object) -> bool:
+    """Compare JSON-compatible values without conflating scalar types.
+
+    Args:
+        before: Parsed source value.
+        after: Authoritative desired value.
+
+    Returns:
+        Whether values and their recursively nested scalar types match.
+    """
+    if type(before) is not type(after):
+        return False
+    if isinstance(before, dict) and isinstance(after, dict):
+        return before.keys() == after.keys() and all(
+            _same_value(before=value, after=after[key]) for key, value in before.items()
+        )
+    if isinstance(before, list) and isinstance(after, list):
+        return len(before) == len(after) and all(
+            _same_value(before=previous, after=desired)
+            for previous, desired in zip(before, after, strict=True)
+        )
+    return before == after
+
+
 def patch_document(*, text: str, data: object) -> str:
     """Replace changed values while preserving unchanged source bytes.
 
@@ -91,7 +115,7 @@ def patch_document(*, text: str, data: object) -> str:
 
     def visit(node: Node, before: Any, after: Any) -> None:
         """Collect nonoverlapping source replacements."""
-        if before == after:
+        if _same_value(before=before, after=after):
             return
         if id(node) in visited:
             raise ValueError("Cannot edit aliased YAML values losslessly")
@@ -147,7 +171,10 @@ def patch_document(*, text: str, data: object) -> str:
                 and node.style == '"'
                 or any(char in after for char in "\n\r\x85\u2028\u2029")
             ):
-                rendered = json.dumps(after)
+                # YAML folds a literal NEL even inside double quotes.
+                rendered = json.dumps(after, ensure_ascii=False).replace(
+                    "\x85", r"\u0085"
+                )
             elif (
                 isinstance(after, str)
                 and isinstance(node, ScalarNode)
@@ -164,6 +191,6 @@ def patch_document(*, text: str, data: object) -> str:
     visit(root, old, data)
     for start, end, replacement in sorted(changes, reverse=True):
         text = text[:start] + replacement + text[end:]
-    if load_unique_yaml_text(text=text) != data:
+    if not _same_value(before=load_unique_yaml_text(text=text), after=data):
         raise ValueError("Lossless YAML edit did not preserve the requested values")
     return text
