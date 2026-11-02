@@ -41,18 +41,18 @@ now establishes that comparison on all five native targets.
   diagnostics. Do not implement another resolver, verifier, filter, policy
   evaluator or installer in TypeScript. Use Bun for development. Emitted JavaScript
   is permitted; authored `.js`/`.mjs`/`.cjs` is not.
-- **Self-contained distribution.** Per-platform Python directory bundles include
+- **Self-contained distribution.** Per-platform bundled Python directories include
   the interpreter and required engine dependencies. Direct execution requires no
   consumer Python, uv, pip, Node or Bun. npm uses the thin launcher and optional
   `os`/`cpu` payload packages, compatible with both Bun and npm, private mirrors
   and `--ignore-scripts`. No postinstall bootstrap, floating dependency or runtime
   download is allowed.
 - **Offline transport.** Apply the owner's standalone-primary rule to the chosen
-  Python bundle: execute it directly with no install step. The npm-only local-file
-  wrapper is the documented fallback. Both direct execution and npm fallback must
-  pass per target. Bun local-file selection failure remains evidence outside this
-  gate ([oven-sh/bun#47640](https://github.com/oven-sh/bun/issues/47640)); both
-  clients remain required for registry installs.
+  bundled Python runtime: execute it directly with no install step. The npm-only
+  local-file wrapper is the documented fallback. Both direct execution and npm
+  fallback must pass per target. Bun local-file selection failure remains evidence
+  outside this gate ([oven-sh/bun#47640](https://github.com/oven-sh/bun/issues/47640));
+  both clients remain required for registry installs.
 - **No Rust adoption.** Reopening the runtime or install-resolution boundary
   requires a superseding ADR.
 
@@ -120,7 +120,7 @@ limits are explicit, not additional universal-green runtime-selection gates.
   filtering, denies and consumer profiles there. The launcher delegates.
 - [#386](https://github.com/lgtm-hq/ai-skills/issues/386) distributes the same
   attested artifacts and self-contained Python payloads through all transports,
-  including private npm mirrors and direct offline bundles. The npm wrapper is
+  including private npm mirrors and direct offline payloads. The npm wrapper is
   the fallback; consumer Python is never a prerequisite.
 - Retain `uv run pytest`, `bun test` and `bunx tsc --noEmit` CI gates. Shared
   fixtures verify contract semantics and launcher-to-engine behavior. Both spike
