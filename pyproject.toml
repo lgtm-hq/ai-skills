@@ -30,5 +30,18 @@ dev = [
 # bare `assert` statement anywhere in the repo is a lint failure by design.
 skips = []
 
+[tool.pylint.main]
+# Test arrangements deliberately repeat fixture data; check production code.
+ignore-paths = ["(^|/)tests/"]
+
+[tool.pylint.messages_control]
+# Ruff, mypy, and pydoclint own per-file checks. Pylint adds cross-file analysis.
+disable = ["all"]
+enable = ["duplicate-code"]
+
+[tool.pylint.similarities]
+# Independent CLIs repeat short argparse wrappers and exception tuples.
+min-similarity-lines = 12
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

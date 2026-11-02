@@ -2,42 +2,13 @@
 # Lintro Configuration
 # https://github.com/lgtm-hq/py-lintro
 #
-# All bundled tools are enabled; each tool no-ops or skips when it has no
-# matching files in this repository.
+# All current and future bundled tools run by default. Tools with no matching
+# files no-op; any explicit disable below must explain its reason.
 
 enforce:
   line_length: 88
 
 execution:
-  enabled_tools:
-    - actionlint
-    - astro-check
-    - bandit
-    - black
-    - cargo_audit
-    - cargo_deny
-    - clippy
-    - gitleaks
-    - hadolint
-    - markdownlint
-    - mypy
-    - osv_scanner
-    - oxfmt
-    - oxlint
-    - prettier
-    - pydoclint
-    - pytest
-    - ruff
-    - rustfmt
-    - semgrep
-    - shellcheck
-    - shfmt
-    - sqlfluff
-    - svelte-check
-    - taplo
-    - tsc
-    - vue-tsc
-    - yamllint
   tool_order: 'priority'
   fail_fast: false
   parallel: true
@@ -99,6 +70,9 @@ tools:
 
   hadolint:
     enabled: true
+
+  idiom-review:
+    enabled: false # Paid AI review requires explicit opt-in (#596 cost gate).
 
   markdownlint:
     enabled: true
