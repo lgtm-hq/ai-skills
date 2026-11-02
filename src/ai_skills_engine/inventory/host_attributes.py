@@ -7,6 +7,7 @@ from importlib import resources
 from typing import Any
 
 from ai_skills_engine.inventory.host_attribute import HostAttribute
+from ai_skills_engine.inventory.yaml_value import normalize_yaml_value
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.registry.registry import load_unique_yaml_text
 
@@ -99,9 +100,23 @@ def inspect_attributes(
                     )
                 )
             continue
+        try:
+            value_json = json.dumps(
+                normalize_yaml_value(value), sort_keys=True, allow_nan=False
+            )
+        except (TypeError, ValueError) as error:
+            diagnostics.append(
+                Diagnostic(
+                    "inventory.invalid-host-attribute",
+                    location,
+                    f"{key}: {error}; correct the attribute value before use; "
+                    "host semantics remain unverified",
+                )
+            )
+            continue
         attribute = HostAttribute(
             key=key,
-            value_json=json.dumps(value, sort_keys=True, allow_nan=False),
+            value_json=value_json,
             semantics=definition["semantics"],
             hosts=tuple(sorted(definition["hosts"].items())),
         )

@@ -40,6 +40,14 @@ document:
   Host-specific frontmatter retains canonical JSON values and explicit rules
   from the wheel's `data/host_attributes.yaml`. Unknown hosts and strict
   `unverified` rules refuse; collection does not certify host semantics.
+  YAML dates and timestamps use `{"$yaml":"date|datetime","value":"ISO-8601"}`.
+  Mappings with non-string keys or a literal `$yaml` key use
+  `{"$yaml":"mapping","items":[[key,value],...]}`, sorted by canonical JSON
+  key, preserving key types without string collisions. Other JSON values retain
+  their shapes. Unsupported types, non-finite floats, recursive aliases, depth
+  over 64 or expansion over 10,000 nodes raise `inventory.invalid-host-attribute`
+  errors while retaining the capability, payload and declared edges. Such an
+  inventory is invalid for use; an omitted attribute never authorizes projection.
 
   Compatibility publication also requires explicit exports for every local
   marketplace package and mapped vendor package. Narrowed exports or vendor
@@ -73,7 +81,10 @@ document:
   their absent capabilities still fail. `inventory --fetch-vendors` explicitly
   acquires missing trees with the existing SHA-pinned bake fetcher. Collection
   hashes vendor files without importing modules, running scripts, hooks, commands
-  or endpoints, and never rewrites supplied snapshots. A manifest vendor's own
+  or endpoints, and never rewrites supplied snapshots. Fetched trees are validated
+  pristine: any symlink, including an unrelated documentation alias, fails the
+  fetch before collection. Legacy bake's documentation-alias pruning stays
+  confined to baking. A manifest vendor's own
   publisher names its IDs; consumer authority remains separate. Legacy
   `renameSkills` creates destination aliases. Legacy `extraFiles` declares
   resources named by lowercase file stem (underscores become hyphens), and

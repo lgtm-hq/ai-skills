@@ -309,13 +309,31 @@ def test_installed_migration_and_legacy_match_source(
             )
 
 
+@pytest.mark.parametrize(
+    "attribute,expected",
+    [
+        ("true", 0),
+        ("2026-11-02", 0),
+        ("{1: first, '1': second, nested: [true, text]}", 0),
+        ("!!binary aGVsbG8=", 1),
+    ],
+    ids=["bool", "date", "mixed-keys", "unsupported"],
+)
 def test_installed_inventory_and_resource_boundary_match_source(
     installed_command: Path,
     inventory_repo: tuple[Path, Path],
     capsys: pytest.CaptureFixture[str],
+    attribute: str,
+    expected: int,
 ) -> None:
     """An unrelated consumer gets identical installed/source records and failures."""
     root, vendor = inventory_repo
+    skill = root / "skills/start/SKILL.md"
+    skill.write_text(
+        skill.read_text().replace(
+            "disable-model-invocation: true", "disable-model-invocation: " + attribute
+        )
+    )
     missing_root = _run(
         args=[str(installed_command), "inventory", "--json"],
         cwd=root.parent,
@@ -325,19 +343,28 @@ def test_installed_inventory_and_resource_boundary_match_source(
     operands = ["--repo-root", str(root), "--vendor-root", f"vendor={vendor}"]
     for command in (["inventory", "--json"], ["manifest", "validate"]):
         first = _run(
-            args=[str(installed_command), *command, *operands], cwd=root.parent
+            args=[str(installed_command), *command, *operands],
+            cwd=root.parent,
+            expected=expected,
         )
         second = _run(
-            args=[str(installed_command), *command, *operands], cwd=root.parent
+            args=[str(installed_command), *command, *operands],
+            cwd=root.parent,
+            expected=expected,
         )
         assert_that(second.stdout).is_equal_to(first.stdout)
-        assert_that(cli.main([*command, *operands])).is_zero()
+        assert_that(cli.main([*command, *operands])).is_equal_to(expected)
         source = capsys.readouterr()
         assert_that((first.stdout, first.stderr)).is_equal_to((source.out, source.err))
-        assert_that(first.stdout).contains(
-            "inventory.host-specific-frontmatter",
-            "codex=unverified" if command[0] == "manifest" else '"codex"',
-        )
+        if expected:
+            assert_that(first.stdout).contains(
+                "inventory.invalid-host-attribute", "disable-model-invocation", "bytes"
+            )
+        else:
+            assert_that(first.stdout).contains(
+                "inventory.host-specific-frontmatter",
+                "codex=unverified" if command[0] == "manifest" else '"codex"',
+            )
     path = root / "ai-skills.yaml"
     document = read_document(path)
     document["packages"][0]["capabilities"][0]["resources"] = []

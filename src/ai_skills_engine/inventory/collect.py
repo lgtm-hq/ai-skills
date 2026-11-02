@@ -77,11 +77,18 @@ def collect_package(
             if not _included(identity=str(resource_identity), vendor=vendor):
                 continue
             if resource_identity in resource_paths:
+                previous = next(
+                    item.source_path
+                    for item in resources
+                    if item.id == resource_identity
+                )
                 diagnostics.append(
                     Diagnostic(
                         "inventory.duplicate-id",
                         str(resource_identity),
-                        "Resource identity is not unique across inputs",
+                        "Resource identity is not unique across inputs: "
+                        f"{previous} conflicts with {resource_declaration.path}; "
+                        "declare distinct resource IDs in a vendor manifest",
                     )
                 )
                 continue

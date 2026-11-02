@@ -44,7 +44,8 @@ def load_inventory(
         Sorted records and diagnostics, retaining errors for review.
 
     Raises:
-        ValueError: On malformed declarations or unknown vendor-root aliases.
+        ValueError: On malformed declarations, unknown vendor-root aliases or
+            unsafe fetched trees (including unrelated documentation symlinks).
         RuntimeError: On a failed explicitly requested pinned fetch.
     """
     root = root.resolve()
@@ -72,7 +73,10 @@ def load_inventory(
                         homepage=item.get("homepage", ""),
                     )
                     roots[vendor.id] = _materialize_vendor_tree(
-                        vendor=vendor, trees={}, temporary_root=Path(temporary)
+                        vendor=vendor,
+                        trees={},
+                        temporary_root=Path(temporary),
+                        prune_content_free_symlinks=False,
                     )
         return _collect(root=root, roots=roots, supplied=set(vendor_roots or {}))
 

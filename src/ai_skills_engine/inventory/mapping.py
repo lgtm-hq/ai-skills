@@ -1,6 +1,5 @@
 """Translate explicit legacy import mappings into inventory declarations."""
 
-import re
 from pathlib import Path, PurePosixPath
 
 from ai_skills_engine.inventory.payload import source_path
@@ -14,7 +13,7 @@ from ai_skills_engine.registry.plugin_bake import (
     discover_skill_relpaths,
     expand_skills_roots,
 )
-from ai_skills_engine.registry.registry import discover_skills
+from ai_skills_engine.registry.registry import GLOB_METACHARS, discover_skills
 from ai_skills_engine.registry.safe_tree import walk_files
 
 
@@ -74,8 +73,12 @@ def _mapped_package(
         ValueError: On unsafe/missing paths or unused per-name declarations.
     """
     # Check the non-glob prefix before glob expansion, then each matched root.
-    prefix = re.split(r"[?*\[]", package.skills_root, maxsplit=1)[0].rstrip("/") or "."
-    source_path(root=root, relative=prefix)
+    ancestors: list[str] = []
+    for component in PurePosixPath(package.skills_root).parts:
+        if any(char in GLOB_METACHARS for char in component):
+            break
+        ancestors.append(component)
+    source_path(root=root, relative=PurePosixPath(*ancestors).as_posix())
     roots = expand_skills_roots(vendor_root=root, pattern=package.skills_root)
     if not roots:
         raise ValueError(f"skillsRoot matched no directories: {package.skills_root}")

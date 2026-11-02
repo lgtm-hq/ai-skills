@@ -407,6 +407,7 @@ def _materialize_vendor_tree(
     vendor: Vendor,
     trees: dict[str, Path],
     temporary_root: Path,
+    prune_content_free_symlinks: bool = True,
 ) -> Path:
     """Return an unpacked vendor tree, fetching the pin when needed.
 
@@ -414,6 +415,8 @@ def _materialize_vendor_tree(
         vendor: Registry record.
         trees: Optional local trees keyed by vendor id.
         temporary_root: Scratch directory for tarball extraction.
+        prune_content_free_symlinks: Apply the legacy bake-only documentation
+            alias exception. Inventory disables this to validate pristine bytes.
 
     Returns:
         Path to the unpacked vendor tree.
@@ -422,14 +425,12 @@ def _materialize_vendor_tree(
         ValueError: If a provided local tree is unsafe.
         RuntimeError: If GitHub cannot return the pinned tarball.
     """
-    provided = trees.get(vendor.id)
-    if provided is not None:
-        _drop_content_free_symlinks(vendor=vendor, root=provided)
-        validate_tree(root=provided)
-        return provided
-    dest = temporary_root / f"vendor-{vendor.id}"
-    _fetch_vendor_tree(vendor=vendor, dest=dest)
-    _drop_content_free_symlinks(vendor=vendor, root=dest)
+    dest = trees.get(vendor.id)
+    if dest is None:
+        dest = temporary_root / f"vendor-{vendor.id}"
+        _fetch_vendor_tree(vendor=vendor, dest=dest)
+    if prune_content_free_symlinks:
+        _drop_content_free_symlinks(vendor=vendor, root=dest)
     validate_tree(root=dest)
     return dest
 

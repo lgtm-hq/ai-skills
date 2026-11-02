@@ -8,10 +8,11 @@ import pytest
 from assertpy import assert_that
 
 from ai_skills_engine import cli
-from ai_skills_engine.inventory import load as inventory_load
+from ai_skills_engine.bake import vendor_plugins
 from ai_skills_engine.inventory import load_inventory
 from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.load import read_document
+from ai_skills_engine.registry.vendor import Vendor
 
 pytest_plugins = ["inventory_helpers"]
 
@@ -153,14 +154,12 @@ def test_explicit_fetch_uses_exact_pin_and_existing_bake_boundary(
     root, vendor = inventory_repo
     calls: list[tuple[str, str]] = []
 
-    def materialize(*, vendor: object, trees: dict, temporary_root: Path) -> Path:
+    def fetch(*, vendor: Vendor, dest: Path) -> None:
         """Replace network acquisition with fixed fixture bytes."""
         calls.append((vendor.repo, vendor.sha))
-        destination = temporary_root / "vendor"
-        shutil.copytree(src=inventory_repo[1], dst=destination)
-        return destination
+        shutil.copytree(src=inventory_repo[1], dst=dest, symlinks=True)
 
-    monkeypatch.setattr(inventory_load, "_materialize_vendor_tree", materialize)
+    monkeypatch.setattr(vendor_plugins, "_fetch_vendor_tree", fetch)
     result = load_inventory(root, fetch_vendors=True)
     assert_that(calls).is_equal_to(
         [("upstream/tools", "0123456789abcdef0123456789abcdef01234567")]
@@ -256,14 +255,14 @@ def test_fetch_notes_do_not_corrupt_cli_json(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Shared fetcher notes stay visible on stderr, leaving parseable JSON stdout."""
-    root, vendor = inventory_repo
+    root, _vendor = inventory_repo
 
-    def materialize(**kwargs: object) -> Path:
+    def fetch(*, vendor: Vendor, dest: Path) -> None:
         """Supply fixture bytes with the existing fetcher's note behavior."""
         print("fixture acquisition note")
-        return vendor
+        shutil.copytree(src=inventory_repo[1], dst=dest, symlinks=True)
 
-    monkeypatch.setattr(inventory_load, "_materialize_vendor_tree", materialize)
+    monkeypatch.setattr(vendor_plugins, "_fetch_vendor_tree", fetch)
     assert_that(
         cli.main(["inventory", "--json", "--fetch-vendors", "--repo-root", str(root)])
     ).is_zero()
