@@ -44,8 +44,8 @@ jobs:
     permissions:
       contents: read
       packages: read
-    # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-quality-lint.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+    # The upstream workflow has no prerequisite hook for nested TS projects.
+    uses: ./.github/workflows/quality.yml
     with:
       egress-policy: block
       job-name: '🛠️ Lintro Code Quality'

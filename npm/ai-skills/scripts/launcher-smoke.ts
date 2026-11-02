@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { spawn, spawnSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { constants, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { PACKAGE_ROOT } from "../lib/paths.ts";
@@ -59,20 +59,63 @@ export async function launcherSmoke(): Promise<void> {
       assert.equal(result.status, 23);
       assert.deepEqual(JSON.parse(result.stdout), args);
       assert.equal(result.stderr, "fixture stderr\n");
-      const signaled = spawnSync(executable, [entry, "self-signal"], options);
-      assert.equal(signaled.signal, "SIGTERM");
+      const input = "stdin through launcher\n☃\n";
+      const piped = spawnSync(executable, [entry, "stdin"], { ...options, input });
+      assert.equal(piped.status, 0, piped.stderr);
+      assert.equal(piped.stdout, input);
+      assert.equal(piped.stderr, "");
+      // Windows does not implement native POSIX signal death semantics.
+      if (process.platform === "win32") continue;
+      for (const signal of ["SIGTERM", "SIGPIPE", "SIGUSR1", "SIGALRM"] as const) {
+        const signaled = spawnSync(executable, [entry, "self-signal", signal], options);
+        assert.equal(signaled.error, undefined);
+        const pid = Number(signaled.stdout.trim());
+        assert(Number.isSafeInteger(pid) && pid > 0, signaled.stdout);
+        assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+        const death = {
+          signal,
+          status: signaled.status,
+          received: signaled.signal,
+          stderr: signaled.stderr,
+        };
+        console.log(JSON.stringify({ executable, ...death }));
+        assert.deepEqual(death, {
+          signal,
+          status: signal === "SIGTERM" ? null : 128 + constants.signals[signal],
+          received: signal === "SIGTERM" ? signal : null,
+          // Exact stderr also rejects Node's SIGUSR1 debugger activation.
+          stderr: "fixture signal stderr\n",
+        });
+      }
       for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
         await new Promise<void>((resolveDone, reject) => {
           const child = spawn(executable, [entry, "signal"], options);
+          let payloadPid: number | undefined;
           const timer = setTimeout(() => {
-            child.kill("SIGKILL");
-            reject(new Error("signal forwarding timed out"));
+            try {
+              if (payloadPid) process.kill(payloadPid, "SIGKILL");
+            } catch (error) {
+              reject(error);
+            } finally {
+              child.kill("SIGKILL");
+              reject(new Error("signal forwarding timed out"));
+            }
           }, 10000);
-          child.once("error", reject);
+          child.once("error", (error) => {
+            clearTimeout(timer);
+            reject(error);
+          });
           let output = "";
           child.stdout.on("data", (chunk: Buffer) => {
             output += chunk.toString();
-            if (output === "ready\n") {
+            if (output.startsWith("ready:") && output.endsWith("\n")) {
+              const pid = Number(output.trim().slice("ready:".length));
+              if (!Number.isSafeInteger(pid) || pid <= 0) {
+                child.kill("SIGKILL");
+                reject(new Error(`Invalid payload PID: ${output}`));
+                return;
+              }
+              payloadPid = pid;
               output = "";
               child.kill(signal);
             }
@@ -81,6 +124,9 @@ export async function launcherSmoke(): Promise<void> {
             clearTimeout(timer);
             try {
               assert.equal(received, signal);
+              const pid = payloadPid;
+              assert(pid);
+              assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
               resolveDone();
             } catch (error) {
               reject(error);

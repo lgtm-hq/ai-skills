@@ -6,6 +6,17 @@ process.env.npm_package_version = "0.0.0-dev";
 const base = process.argv[2]!;
 const extension = process.argv[3] === "dist" ? "js" : "ts";
 const moduleRoot = process.argv[3] === "dist" ? `${base}/dist` : base;
+const paths: typeof import("../lib/paths.ts") = await import(
+  `${moduleRoot}/lib/paths.${extension}`
+);
+const catalogRoot = join(base, "test/fixtures/legacy-catalog");
+// Pin the original inputs as well as outputs; release/vendor updates must not
+// change the behavior comparison. Keep the real catalog reader in both modes.
+mock.module(`${moduleRoot}/lib/paths.${extension}`, () => ({
+  ...paths,
+  DATA_ROOT: catalogRoot,
+  CHECKOUT_ROOT: catalogRoot,
+}));
 const inst: typeof import("../lib/install.ts") = await import(
   `${moduleRoot}/lib/install.${extension}`
 );

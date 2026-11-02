@@ -424,7 +424,7 @@ describe("native Cursor projector", () => {
   test("finds a catalog checkout from cwd", async () => {
     const root = await mkdtemp(join(tmpdir(), "ai-skills-catalog-root-"));
     try {
-      await mkdir(join(root!, "skills"), { recursive: true });
+      await mkdir(join(root, "skills"), { recursive: true });
       await mkdir(join(root, ".claude-plugin"), { recursive: true });
       await writeFile(join(root, ".claude-plugin/marketplace.json"), "{}\n");
       expect(findCatalogSourceRoot(root)).toBe(root);

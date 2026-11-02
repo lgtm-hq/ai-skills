@@ -20,6 +20,9 @@ stdout, stderr, status, invocation arguments, lock JSON bytes, and written file
 bytes. Only the temporary home prefix is normalized. The test runs the scenario
 against both source and emitted modules in separate processes. The fixture must
 not be regenerated from migrated code to make a failed comparison pass.
+`test/fixtures/legacy-catalog/{bundles,vendors}.json` preserves the catalog inputs
+from that same commit. The scenario uses the real catalog reader with those
+paths, independent of current bundle membership, vendor pins, and bake output.
 
 ADR 0008 assigns future engine semantics to Python. If `data/runtime/` exists, the
 launcher selects a supported target and invokes its local interpreter with
@@ -34,5 +37,7 @@ the existing gateway commands.
 `bun scripts/launcher-smoke.ts` stages a test interpreter and fixture entry point,
 then launches source and emitted code from an empty cwd with an empty PATH. It
 checks version/list output, literal arguments, stderr, status, child termination,
-and forwarded SIGINT/SIGTERM/SIGHUP. This certifies the launcher contract only;
+stdin, and forwarded SIGINT/SIGTERM/SIGHUP. POSIX tests also check payload deaths
+from SIGPIPE, SIGUSR1, and SIGALRM: they produce nonzero statuses without activating
+a debugger. This certifies the launcher contract only;
 production Python payload packaging and delivery remain #386 work.

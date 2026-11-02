@@ -1023,7 +1023,7 @@ async function deleteVerifiedFiles(
     removeFile: typeof unlink;
   },
 ): Promise<void> {
-  const skillDirs: Map<string, string> = new Map<string, "MISSING" | "MODIFIED">();
+  const skillDirs = new Map<string, string>();
 
   const skipSkillDirs: Set<string> = new Set();
   const modifiedSkills = io.modifiedSkills ?? new Set();

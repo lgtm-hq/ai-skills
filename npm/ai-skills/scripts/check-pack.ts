@@ -21,7 +21,10 @@ try {
   assert(files.includes("package/dist/bin/skill.js"));
   assert(files.includes("package/dist/lib/cli.js"));
   assert(files.includes("package/data/bundles.json"));
-  assert(!files.some((path) => /\.tsx?$/.test(path)));
+  // Canonical upstream resources keep their original names and bytes.
+  assert(
+    !files.some((path) => !path.startsWith("package/data/plugins-baked/") && /\.tsx?$/.test(path)),
+  );
   assert(!files.some((path) => /^package\/(test|scripts|bin|lib)\//.test(path)));
   const extracted = spawnSync("tar", ["-xzf", archive, "-C", root], { encoding: "utf8" });
   assert.equal(extracted.status, 0, extracted.stderr);

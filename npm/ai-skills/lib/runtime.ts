@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { constants } from "node:os";
 import { join, resolve } from "node:path";
 
 import { DATA_ROOT } from "./paths.ts";
@@ -61,20 +62,25 @@ export async function runPackagedRuntime(runtime: PackagedRuntime, argv: string[
       process.removeListener(signal, forward);
     }
   };
+  let result: { code: number | null; signal: NodeJS.Signals | null };
   try {
-    const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+    result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
       (resolveExit, reject) => {
         child.once("error", reject);
         child.once("close", (code, signal) => resolveExit({ code, signal }));
       },
     );
-    cleanup();
-    if (result.signal) {
-      process.kill(process.pid, result.signal);
-    } else {
-      process.exitCode = result.code ?? 1;
-    }
   } finally {
     cleanup();
+  }
+  if (result.signal) {
+    process.exitCode = 128 + (constants.signals[result.signal] ?? 1);
+    // Only re-raise the termination signals we forward. Other signals may be
+    // ignored (SIGPIPE) or activate runtime features (Node's SIGUSR1 debugger).
+    if (signals.some((signal) => signal === result.signal)) {
+      process.kill(process.pid, result.signal);
+    }
+  } else {
+    process.exitCode = result.code ?? 1;
   }
 }
