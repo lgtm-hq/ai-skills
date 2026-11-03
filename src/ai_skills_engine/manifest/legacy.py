@@ -3,11 +3,14 @@
 import difflib
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
+from ai_skills_engine.generate.marketplace import _load_bundles
 from ai_skills_engine.manifest.edit import dump_document, patch_document
 from ai_skills_engine.manifest.layout import decode_template
 from ai_skills_engine.manifest.load import load_manifest, read_document
+from ai_skills_engine.registry.registry import load_registry
 
 GENERATED_HEADER = "# generated from ai-skills.yaml; do not edit.\n"
 LEGACY_PACKAGE_FIELDS = frozenset(
@@ -196,12 +199,15 @@ def render_legacy(repo_root: Path) -> dict[Path, bytes]:
 
     Returns:
         Destination paths and exact generated UTF-8 bytes.
+
+    Raises:
+        ValueError: If either rendered document fails its compatibility reader.
     """
     path = repo_root / "ai-skills.yaml"
     load_manifest(path)
     data = read_document(path)
     templates = data.get("x-legacy-format", {})
-    return {
+    files = {
         repo_root
         / name: (
             GENERATED_HEADER
@@ -218,6 +224,27 @@ def render_legacy(repo_root: Path) -> dict[Path, bytes]:
         ).encode("utf-8")
         for name, document in legacy_documents(data).items()
     }
+    # Both real readers must see the rendered pair, including their cross-file
+    # collision checks. Never validate against stale destination files or write
+    # one registry before discovering that the other is incompatible.
+    with TemporaryDirectory(prefix="ai-skills-legacy-") as directory:
+        scratch = Path(directory)
+        for destination, content in files.items():
+            (scratch / destination.name).write_bytes(content)
+        for name, reader in (
+            ("bundles.yaml", lambda: _load_bundles(repo_root=scratch)),
+            (
+                "vendors.yaml",
+                lambda: load_registry(registry_path=scratch / "vendors.yaml"),
+            ),
+        ):
+            try:
+                reader()
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Legacy publication cannot satisfy {name} reader: {exc}"
+                ) from exc
+    return files
 
 
 def write_legacy(repo_root: Path, *, check: bool = False) -> int:
