@@ -22,35 +22,83 @@ from ai_skills_engine.registry.vendor import Vendor
         "mixed-empty",
         "top-symlink",
         "private-top-file",
+        "two-roots-collision",
+        "two-roots-distinct",
+        "inconsistent-root-directory",
+        "late-inconsistent-root-directory",
+        "two-root-directories",
+        "private-first-root",
+        "private-second-root",
     ],
 )
-def root_archive(request: pytest.FixtureRequest) -> tuple[bytes, bool]:
-    """Build real gzip archives with valid roots or misplaced top-level members.
+def root_archive(request: pytest.FixtureRequest) -> tuple[bytes, str | None]:
+    """Build real gzip archives with valid roots or invalid root layouts.
 
     Args:
         request: Root layout or invalid member arrangement.
 
     Returns:
-        Compressed archive bytes and whether extraction should succeed.
+        Compressed archive bytes and the expected rejection, if any.
     """
     kind = request.param
     accepted = kind in {"nested-file", "explicit-root"}
+    inconsistent = kind in {
+        "two-roots-collision",
+        "two-roots-distinct",
+        "inconsistent-root-directory",
+        "late-inconsistent-root-directory",
+        "two-root-directories",
+        "private-first-root",
+        "private-second-root",
+    }
+    private_root = "root-" + "AKIA" + "A" * 16
+    first_root = private_root if kind == "private-first-root" else "root"
     output = BytesIO()
     # Avoid letting tiny, zero-filled tar padding trip the independent ratio
     # limit before these fixtures reach root-layout validation.
     with tarfile.open(fileobj=output, mode="w:gz", compresslevel=0) as archive:
-        if kind == "explicit-root":
-            root = tarfile.TarInfo("root")
+        if kind in {
+            "explicit-root",
+            "inconsistent-root-directory",
+            "two-root-directories",
+        }:
+            root = tarfile.TarInfo(
+                "other" if kind == "inconsistent-root-directory" else first_root
+            )
             root.type = tarfile.DIRTYPE
             root.mode = 0o755
             archive.addfile(root)
-        if accepted or kind.startswith("mixed-"):
-            member = tarfile.TarInfo("root/asset.txt")
+        if (accepted or inconsistent or kind.startswith("mixed-")) and (
+            kind != "two-root-directories"
+        ):
+            member = tarfile.TarInfo(f"{first_root}/asset.txt")
             member.mode = 0o644
             data = b"actual fixture payload\n"
             member.size = len(data)
             archive.addfile(member, BytesIO(data))
-        if not accepted:
+        if accepted or kind in {
+            "two-roots-collision",
+            "two-roots-distinct",
+            "private-first-root",
+            "private-second-root",
+        }:
+            second_root = (
+                first_root
+                if accepted
+                else private_root if kind == "private-second-root" else "other"
+            )
+            name = "asset.txt" if kind == "two-roots-collision" else "other.txt"
+            member = tarfile.TarInfo(f"{second_root}/{name}")
+            member.mode = 0o644
+            data = b"second fixture payload\n"
+            member.size = len(data)
+            archive.addfile(member, BytesIO(data))
+        if kind in {"late-inconsistent-root-directory", "two-root-directories"}:
+            root = tarfile.TarInfo("other")
+            root.type = tarfile.DIRTYPE
+            root.mode = 0o755
+            archive.addfile(root)
+        if not accepted and not inconsistent:
             name = (
                 "loose-" + "AKIA" + "A" * 16 + ".txt"
                 if kind == "private-top-file"
@@ -65,7 +113,8 @@ def root_archive(request: pytest.FixtureRequest) -> tuple[bytes, bool]:
                 data = b""
             member.size = len(data)
             archive.addfile(member, BytesIO(data))
-    return output.getvalue(), accepted
+    error = None if accepted else "common root" if inconsistent else "top-level"
+    return output.getvalue(), error
 
 
 @pytest.fixture(params=[False, True], ids=["absent", "existing"])
