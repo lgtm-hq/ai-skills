@@ -32,7 +32,10 @@ def renovate_yaml_module() -> Path:
         "yaml"
     ]
     assert_that(metadata["version"]).is_equal_to(expected)
-    return (directory / metadata["main"]).resolve()
+    entry = metadata["main"]
+    if not isinstance(entry, str):
+        raise TypeError("Locked YAML parser entry must be a string")
+    return (directory / entry).resolve()
 
 
 @pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""])
@@ -61,7 +64,7 @@ def test_unseparated_comment_production_parser_differential(
         subprocess.run(  # nosec B603 B607 - fixed parser, no shell/network/vendor code
             [
                 "bun",
-                str(ROOT / "tests/fixtures/manifest/renovate-parse.mjs"),
+                str(ROOT / "tests/fixtures/manifest/renovate-parse.ts"),
                 str(renovate_yaml_module),
             ],
             input=source,
