@@ -40,7 +40,15 @@ document:
   explicitly referenced resources; a resource declaration in another package
   alone does not grant access. Resource Markdown uses the same boundary.
   Tree digests hash compact ASCII JSON arrays of sorted path/hash/mode triples;
-  permission modes are POSIX permission bits, independent of file timestamps.
+  payload modes are canonical Git-like `0644` (no owner execute bit) or `0755`
+  (owner execute bit set), for files in capability and resource payloads alike.
+  Other permission and special bits and directory permissions are not identity;
+  timestamps are also excluded. Owner execution matches Git and survives the
+  fetcher's safe tar data filter; group/other-only execution is not preserved
+  by that filter and does not mark a payload executable. Thus equivalent local
+  snapshots under umask `002` or `022` and fetched trees have the same digests.
+  Collection observes these modes without changing source permissions or
+  authorizing or executing vendor code.
   Host-specific frontmatter retains canonical JSON values and explicit rules
   from the wheel's `data/host_attributes.yaml`. Unknown hosts and strict
   `unverified` rules refuse; collection does not certify host semantics.
