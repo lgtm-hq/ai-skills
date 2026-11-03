@@ -11,7 +11,7 @@ from ai_skills_engine.inventory.payload import payload_files, source_path, tree_
 from ai_skills_engine.inventory.pending import PendingCapability
 from ai_skills_engine.inventory.resource_id import ResourceId
 from ai_skills_engine.inventory.resource_record import Resource
-from ai_skills_engine.inventory.roles import inspect_role
+from ai_skills_engine.inventory.roles import destination_names, inspect_role
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.package import Package
 from ai_skills_engine.manifest.vendor import Vendor
@@ -146,6 +146,9 @@ def collect_package(
                 tree_digest=tree_digest(payload),
                 aliases=(aliases[upstream],) if upstream in aliases else (),
                 host_attributes=attributes,
+                destination_names=destination_names(
+                    source=source, role=declaration.role, metadata=metadata
+                ),
             )
             pending.append(
                 PendingCapability(

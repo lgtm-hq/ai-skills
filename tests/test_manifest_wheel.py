@@ -525,3 +525,92 @@ def test_wheel_fixture_selects_platform_executables(
     probes = [args for args in calls if args[1:3] == ["-I", "-c"]]
     assert_that(probes).is_length(3)
     assert_that([args[0] for args in probes]).contains_only(str(python))
+
+
+def test_installed_plan_matches_source_and_refuses_selector_drift(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An actual wheel plans an unrelated consumer, including closure and vetoes."""
+    root, vendor = inventory_repo
+    path = root / "ai-skills.yaml"
+    document = read_document(path)
+    document["packages"][0]["include"] = ["fixture/tools:skill/stable"]
+    document["vendors"][0]["include"] = []
+    path.write_text(dump_document(document))
+    operands = ["--repo-root", str(root), "--vendor-root", f"vendor={vendor}"]
+    lock = root / "ai-skills.lock"
+    lock.write_bytes(b"existing lock\n")
+    generation = root / "generation"
+    generation.write_bytes(b"existing installation\n")
+    for control, expected in (
+        ("closure", 0),
+        ("excluded-resource", 1),
+        ("drift", 1),
+        ("migration", 0),
+    ):
+        if control == "excluded-resource":
+            document["vendors"][0]["exclude"] = ["vendor/tools:resource/notice"]
+        elif control == "drift":
+            document["vendors"][0].pop("exclude")
+            document["packages"][0]["include"] = ["fixture/tools:skill/old-id"]
+        elif control == "migration":
+            document["overrides"] = {
+                "migrations": [
+                    {
+                        "from": "fixture/tools:skill/old-id",
+                        "to": "fixture/tools:skill/stable",
+                    }
+                ]
+            }
+        path.write_text(dump_document(document))
+        before = {
+            str(item.relative_to(root)): item.read_bytes()
+            for item in root.rglob("*")
+            if item.is_file()
+        }
+        for command in (["plan", "--json"], ["plan"]):
+            installed = _run(
+                args=[str(installed_command), *command, *operands],
+                cwd=root.parent,
+                expected=expected,
+            )
+            repeated = _run(
+                args=[str(installed_command), *command, *operands],
+                cwd=root.parent,
+                expected=expected,
+            )
+            assert_that(repeated.stdout).is_equal_to(installed.stdout)
+            assert_that(cli.main([*command, *operands])).is_equal_to(expected)
+            source = capsys.readouterr()
+            assert_that((installed.stdout, installed.stderr)).is_equal_to(
+                (source.out, source.err)
+            )
+            if command[-1] == "--json":
+                output = json.loads(installed.stdout)
+                assert_that(output["capabilities"]).is_length(8)
+                assert_that(output["resources"]).is_length(2)
+                if expected:
+                    assert_that(
+                        [item["code"] for item in output["diagnostics"]]
+                    ).contains(
+                        "selection.required-excluded"
+                        if control == "excluded-resource"
+                        else "selection.selector-unmatched"
+                    )
+                else:
+                    helper = next(
+                        item
+                        for item in output["capabilities"]
+                        if item["id"] == "vendor/tools:skill/helper"
+                    )
+                    assert_that(helper["state"]).is_equal_to("pulled-in")
+        after = {
+            str(item.relative_to(root)): item.read_bytes()
+            for item in root.rglob("*")
+            if item.is_file()
+        }
+        assert_that(after).is_equal_to(before)
+    assert_that(lock.read_bytes()).is_equal_to(b"existing lock\n")
+    assert_that(generation.read_bytes()).is_equal_to(b"existing installation\n")

@@ -39,6 +39,7 @@ dev = [
   # self-contained on CI runners without system ripgrep.
   "ripgrep>=15.1.0",
   "types-jsonschema>=4.26.0.20261006",
+  "hypothesis>=6.170.14",
 ]
 
 [tool.bandit]

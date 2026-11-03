@@ -8,6 +8,7 @@ from ai_skills_engine.inventory.capability_id import CapabilityId
 from ai_skills_engine.inventory.pending import PendingCapability
 from ai_skills_engine.inventory.resource_id import ResourceId
 from ai_skills_engine.manifest.diagnostic import Diagnostic
+from ai_skills_engine.manifest.migrations import migrate
 
 
 def matches(*, selector: str, identity: str) -> bool:
@@ -22,7 +23,7 @@ def matches(*, selector: str, identity: str) -> bool:
     """
     if selector.endswith("*"):
         return identity.startswith(selector[:-1])
-    return identity == selector or identity.startswith(selector + ":")
+    return identity == selector or identity.startswith((selector + ":", selector + "/"))
 
 
 def resolve_edges(
@@ -57,7 +58,7 @@ def resolve_edges(
         """Resolve a declared field while preserving the target ID type."""
         resolved: set[Id] = set()
         for selector in getattr(item.declaration, field):
-            target = migrations.get(selector, selector)
+            target = migrate(selector=selector, migrations=migrations)
             found = {
                 identity
                 for identity in candidates

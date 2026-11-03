@@ -59,6 +59,13 @@ def _check_publication(data: dict[str, Any]) -> None:
     required = set()
     for package in data.get("packages", []):
         qualified = f"{publisher}/{package['id']}"
+        if (
+            "include" in package and qualified not in package["include"]
+        ) or package.get("exclude"):
+            raise ValueError(
+                f"Legacy publication cannot represent include/exclude for {qualified}; "
+                "use manifest-aware publication for narrowing"
+            )
         if package.get("x-legacy-ungrouped"):
             if qualified in exports:
                 raise ValueError(

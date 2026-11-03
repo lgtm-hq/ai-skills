@@ -66,6 +66,27 @@ document:
   `uv run ai-skills-engine package-sync`; `package-sync --check` rejects drift
   from the published schema. Edit only the canonical file under `schemas/`.
 
+- **Selection:** `uv run ai-skills-engine plan [--json]` explains every capability
+  and resource without writing a lock or installation. Supply offline snapshots
+  with `--vendor-root ID=PATH`; planning never fetches or executes vendor code.
+  Local packages and consumer vendor declarations accept `include` and `exclude`:
+  absent include roots all eligible capabilities, while `include: []` roots none.
+  Includes expand declared `requires` and resources across package boundaries;
+  related references and prose mentions only produce directional dangling warnings.
+  Every explicit selector must match a qualified ID, package or publisher (or a
+  trailing wildcard), before destination aliases or content hashes are considered.
+  Resource exclusions are supported; file/path selectors are invalid. Exclusions,
+  consumer role restrictions, origin denies and collision skips veto expansion;
+  a retained dependency on a vetoed target fails with the shortest chain and fix.
+  Cyclic requirements are one selection unit. Namespace reports reserve declared
+  aliases even when their owner is selected out. Catalog collisions need persisted
+  `overrides.collisions` rename/skip or a narrower selection; equal bytes alone
+  cannot resolve catalog ownership. Explicit identity migrations preserve old
+  selectors after an ID move; path/display moves alone keep stable IDs.
+  Publisher-local vendor migrations can supply identity metadata, while consumer
+  policy and collision decisions remain authoritative. Full authenticated lineage,
+  lock persistence, deduplication and install projection belong to later stages.
+
 - **Offline vendor validation:** use `manifest validate --vendor-root ID=PATH`
   for each locally available vendor checkout. Its own `publisher.id` identifies
   its packages. Consumer mapping is rejected when that checkout supplies a

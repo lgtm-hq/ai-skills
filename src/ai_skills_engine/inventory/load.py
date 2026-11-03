@@ -28,6 +28,8 @@ def load_inventory(
     *,
     vendor_roots: Mapping[str, Path] | None = None,
     fetch_vendors: bool = False,
+    selection_candidates: bool = False,
+    identity_migrations: Mapping[str, str] | None = None,
 ) -> Inventory:
     """Collect immutable records and diagnostics without executing vendor bytes.
 
@@ -39,6 +41,8 @@ def load_inventory(
         root: Consumer repository root.
         vendor_roots: Explicit local snapshots keyed by consumer vendor alias.
         fetch_vendors: Acquire missing trees using the existing pinned fetcher.
+        selection_candidates: Retain all declared candidates before selection.
+        identity_migrations: Validated publisher-local migration metadata.
 
     Returns:
         Sorted records and diagnostics, retaining errors for review.
@@ -78,16 +82,31 @@ def load_inventory(
                         temporary_root=Path(temporary),
                         prune_content_free_symlinks=False,
                     )
-        return _collect(root=root, roots=roots, supplied=set(vendor_roots or {}))
+        return _collect(
+            root=root,
+            roots=roots,
+            supplied=set(vendor_roots or {}),
+            selection_candidates=selection_candidates,
+            identity_migrations=identity_migrations or {},
+        )
 
 
-def _collect(*, root: Path, roots: dict[str, Path], supplied: set[str]) -> Inventory:
+def _collect(
+    *,
+    root: Path,
+    roots: dict[str, Path],
+    supplied: set[str],
+    selection_candidates: bool,
+    identity_migrations: Mapping[str, str],
+) -> Inventory:
     """Collect local declarations and imports inside the input lifetime.
 
     Args:
         root: Consumer repository.
         roots: Available vendor snapshots.
         supplied: Unverified caller-provided snapshot aliases.
+        selection_candidates: Defer all import filters to the selection layer.
+        identity_migrations: Publisher-local identity moves for direct edges.
 
     Returns:
         Complete inventory observations.
@@ -181,7 +200,7 @@ def _collect(*, root: Path, roots: dict[str, Path], supplied: set[str]) -> Inven
                 else origin
             ),
             aliases=aliases,
-            vendor=import_vendor,
+            vendor=None if selection_candidates else import_vendor,
             pending=pending,
             resources=resources,
             resource_paths=resource_paths,
@@ -191,11 +210,14 @@ def _collect(*, root: Path, roots: dict[str, Path], supplied: set[str]) -> Inven
         pending=pending,
         resource_ids=tuple(item.id for item in resources),
         publishers=publishers,
-        migrations=(
-            {item.from_: item.to for item in consumer.overrides.migrations}
-            if consumer.overrides
-            else {}
-        ),
+        migrations={
+            **identity_migrations,
+            **(
+                {item.from_: item.to for item in consumer.overrides.migrations}
+                if consumer.overrides
+                else {}
+            ),
+        },
     )
     diagnostics.extend(edge_findings)
     diagnostics.extend(
