@@ -44,11 +44,12 @@ def select(
     resources = {str(item.id): item for item in inventory.resources}
     all_ids = set(caps) | set(resources)
     rejected = {str(identity) for identity in inventory.rejected}
-    candidate_caps = set(caps) | {
-        str(identity)
+    capability_ids = {item.id for item in inventory.capabilities} | {
+        identity
         for identity in inventory.rejected
         if isinstance(identity, CapabilityId)
     }
+    candidate_caps = {str(identity) for identity in capability_ids}
     known_ids = all_ids | rejected
     candidate_resources = known_ids - candidate_caps
     if scopes is None:
@@ -94,9 +95,12 @@ def select(
     blocked: dict[str, tuple[State, str]] = {
         key: (State.EXCLUDED, reason) for key, reason in excluded.items()
     }
-    for key, capability in caps.items():
-        if policy and policy.roles is not None and capability.role not in policy.roles:
-            blocked[key] = (State.UNSUPPORTED, "role excluded by consumer policy.roles")
+    for identity in capability_ids:
+        if policy and policy.roles is not None and identity.role not in policy.roles:
+            blocked[str(identity)] = (
+                State.UNSUPPORTED,
+                "role excluded by consumer policy.roles",
+            )
     for key, match in denies.items():
         if len(match.chain) == 1:
             blocked[key] = (

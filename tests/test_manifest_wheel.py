@@ -19,6 +19,7 @@ from assertpy import assert_that
 from inventory_helpers import snapshot
 from packaging.requirements import Requirement
 from selection_helpers import collision_migration_case, edge_diagnostic_case
+from test_selection_roles import role_policy_case
 
 from ai_skills_engine import cli
 from ai_skills_engine.manifest.edit import dump_document
@@ -850,6 +851,35 @@ def test_installed_plan_collision_migrations(
     root, vendor = inventory_repo
     collision_migration_case(root=root, control=control, action=action, kind=kind)
     expected = 0 if control in {"migrated", "current"} else 1
+    _compare_installed_plan(
+        installed_command=installed_command,
+        root=root,
+        vendor=vendor,
+        capsys=capsys,
+        expected=expected,
+    )
+
+
+@pytest.mark.parametrize("role", ["integration", "lifecycle"])
+@pytest.mark.parametrize("rejected", [False, True], ids=["valid", "rejected"])
+@pytest.mark.parametrize("allowed", [False, True], ids=["disallowed", "allowed"])
+@pytest.mark.parametrize(
+    "control", ["default", "selected", "excluded", "narrow", "required", "transitive"]
+)
+def test_installed_plan_role_eligibility(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    role: str,
+    rejected: bool,
+    allowed: bool,
+    control: str,
+) -> None:
+    """Role vetoes and retained failure witnesses agree in actual installed plans."""
+    root, vendor = inventory_repo
+    _, expected, _ = role_policy_case(
+        root=root, role=role, rejected=rejected, allowed=allowed, control=control
+    )
     _compare_installed_plan(
         installed_command=installed_command,
         root=root,
