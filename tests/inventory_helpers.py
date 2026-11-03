@@ -14,6 +14,23 @@ from ai_skills_engine.manifest.load import read_document
 FIXTURES = Path(__file__).parent / "fixtures" / "inventory"
 
 
+def snapshot(*roots: Path) -> dict[str, tuple[bytes, int]]:
+    """Capture every consumer/vendor file byte and permission bit.
+
+    Args:
+        roots: Independent fixture inputs.
+
+    Returns:
+        File contents and modes keyed by absolute path.
+    """
+    return {
+        str(path): (path.read_bytes(), path.stat().st_mode & 0o7777)
+        for root in roots
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
 def inventory_tarball(root: Path) -> bytes:
     """Archive actual fixture bytes and modes with GitHub's root prefix.
 

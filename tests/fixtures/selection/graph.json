@@ -1,0 +1,15 @@
+{
+  "capabilities": {
+    "alpha": {"requires": ["middle", "short"], "resources": ["shared"], "related": ["beta"]},
+    "beta": {"resources": ["shared"], "related": ["alpha"]},
+    "middle": {"requires": ["short"]},
+    "short": {"requires": ["target"]},
+    "target": {},
+    "cycle-a": {"requires": ["cycle-b"]},
+    "cycle-b": {"requires": ["cycle-c"]},
+    "cycle-c": {"requires": ["cycle-a"]},
+    "mention-a": {"mentions": ["mention-b"]},
+    "mention-b": {"mentions": ["mention-a"]}
+  },
+  "resources": {"shared": {"origin": "github.com/upstream/scripts"}}
+}

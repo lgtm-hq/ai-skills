@@ -178,3 +178,29 @@ def inspect_role(*, source: Path, role: Role) -> tuple[Dialect, dict[str, Any]]:
     ):
         raise ValueError("Frontmatter requires a nonempty description")
     return dialect, metadata
+
+
+def destination_names(
+    *, source: Path, role: Role, metadata: dict[str, Any]
+) -> tuple[str, ...]:
+    """Observe declared destination names/keys without projecting or executing.
+
+    Args:
+        source: Validated payload entrypoint.
+        role: Declared semantic role.
+        metadata: Already parsed Markdown frontmatter.
+
+    Returns:
+        Source names or configuration keys, independent of stable identity.
+    """
+    if role in {Role.LIFECYCLE, Role.INTEGRATION}:
+        field = "hooks" if role == Role.LIFECYCLE else "mcpServers"
+        return tuple(sorted(_json_object(source)[field]))
+    name = metadata.get("name")
+    return (
+        (
+            name
+            if isinstance(name, str) and name
+            else source.name if source.is_dir() else source.stem
+        ),
+    )

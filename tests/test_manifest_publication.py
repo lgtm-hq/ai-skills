@@ -9,6 +9,11 @@ from typing import Any
 import pytest
 import yaml
 from assertpy import assert_that
+from inventory_helpers import snapshot
+from manifest_helpers import (
+    PUBLICATION_SELECTION_CONTROLS,
+    configure_publication_selection,
+)
 
 from ai_skills_engine import cli
 from ai_skills_engine.generate.marketplace import _load_bundles
@@ -26,6 +31,77 @@ pytest_plugins = ("manifest_helpers",)
 pytestmark = pytest.mark.usefixtures("author_skills")
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("owner", ["local", "vendor"])
+@pytest.mark.parametrize(("control", "expected"), PUBLICATION_SELECTION_CONTROLS)
+def test_real_publication_whole_package_includes(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    owner: str,
+    control: str,
+    expected: int,
+) -> None:
+    """Wildcard includes publish identical bytes; narrowing rejects before writes."""
+    configure_publication_selection(root=tmp_path, owner=owner, control=control)
+    paths = [tmp_path / name for name in ("bundles.yaml", "vendors.yaml")]
+    for path in paths:
+        path.write_bytes(b"# preexisting publication sentinel\r\n")
+        path.chmod(0o640)
+    before = snapshot(tmp_path)
+    args = ["--repo-root", str(tmp_path), "manifest"]
+    assert_that(cli.main([*args, "validate"])).is_zero()
+    capsys.readouterr()
+    writes: list[Path] = []
+    real_write = Path.write_bytes
+
+    def observe(path: Path, content: bytes) -> int:
+        """Observe actual destination writes without replacing rendering or I/O."""
+        if path in paths:
+            writes.append(path)
+        return real_write(path, content)
+
+    monkeypatch.setattr(Path, "write_bytes", observe)
+    if expected:
+        for operation in (
+            lambda: render_legacy(tmp_path),
+            lambda: write_legacy(tmp_path),
+            lambda: write_legacy(tmp_path, check=True),
+        ):
+            with pytest.raises(ValueError, match="cannot represent include/exclude"):
+                operation()
+        for flags in ([], ["--check"]):
+            assert_that(cli.main([*args, "legacy", *flags])).is_equal_to(expected)
+            assert_that(capsys.readouterr().out).contains(
+                "cannot represent include/exclude"
+            )
+        assert_that(writes).is_empty()
+        assert_that(snapshot(tmp_path)).is_equal_to(before)
+    else:
+        rendered = render_legacy(tmp_path)
+        assert_that(write_legacy(tmp_path, check=True)).is_equal_to(1)
+        assert_that(cli.main([*args, "legacy", "--check"])).is_equal_to(1)
+        assert_that(writes).is_empty()
+        assert_that(snapshot(tmp_path)).is_equal_to(before)
+        assert_that(cli.main([*args, "legacy"])).is_zero()
+        assert_that(writes).is_equal_to(paths)
+        writes.clear()
+        assert_that(write_legacy(tmp_path)).is_zero()
+        assert_that(cli.main([*args, "legacy"])).is_zero()
+        assert_that(cli.main([*args, "legacy", "--check"])).is_zero()
+        assert_that(writes).is_empty()
+        for path, content in rendered.items():
+            assert_that(path.read_bytes()).is_equal_to(content)
+            assert_that(content).is_equal_to((ROOT / path.name).read_bytes())
+        after = snapshot(tmp_path)
+        assert_that(
+            {key: value for key, value in after.items() if key not in map(str, paths)}
+        ).is_equal_to(
+            {key: value for key, value in before.items() if key not in map(str, paths)}
+        )
+        for path in paths:
+            assert_that(after[str(path)][1]).is_equal_to(before[str(path)][1])
 
 
 def _write_publication_skill(directory: Path, name: str) -> None:
