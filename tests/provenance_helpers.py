@@ -6,10 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from ai_skills_engine.inventory.payload import payload_files, tree_digest
-from ai_skills_engine.manifest.edit import dump_document
-from ai_skills_engine.manifest.load import read_document
-
 FIXTURE = Path(__file__).parent / "fixtures/provenance/two-hop"
 
 
@@ -19,6 +15,9 @@ def refresh_index(root: Path) -> None:
     Args:
         root: Self-contained x/y/z snapshots.
     """
+    # Plugin discovery also runs in the deliberately engine-free spike harness.
+    from ai_skills_engine.inventory.payload import payload_files, tree_digest
+
     path = root / "y/ai-skills.lineage.json"
     records = json.loads(path.read_text())
     for record in records:
@@ -35,6 +34,9 @@ def omit_shared_links(root: Path) -> None:
     Args:
         root: The reusable fixture, retaining the root consumer's resource edges.
     """
+    from ai_skills_engine.manifest.edit import dump_document
+    from ai_skills_engine.manifest.load import read_document
+
     path = root / "y/ai-skills.yaml"
     document = read_document(path)
     for item in document["packages"][0]["capabilities"]:
@@ -80,6 +82,9 @@ def change_policy(
         accept: Whether independent authorship claims may clear missing lineage.
         deny: Consumer origin vetoes.
     """
+    from ai_skills_engine.manifest.edit import dump_document
+    from ai_skills_engine.manifest.load import read_document
+
     path = root / "ai-skills.yaml"
     document = read_document(path)
     document["policy"] = {
@@ -99,6 +104,9 @@ def missing_copy(
         statement: Publish a descriptive claim on the copied file.
         statement_path: Payload-relative attestation path.
     """
+    from ai_skills_engine.manifest.edit import dump_document
+    from ai_skills_engine.manifest.load import read_document
+
     original = root / "x/docs/full-tree.txt"
     original.parent.mkdir(exist_ok=True)
     original.write_text("Shared fixture documentation outside all capability roots.\n")

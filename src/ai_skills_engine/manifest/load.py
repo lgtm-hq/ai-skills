@@ -194,6 +194,11 @@ def load_consumer(
                     )
                 )
                 document.pop(key)
+        structural = [
+            item for item in validate_document(document) if item.code == "schema"
+        ]
+        if structural:
+            raise ValueError(f"Invalid vendor manifest {alias}: {structural}")
         nested_packages: dict[str, set[str]] = {}
         for nested in document.get("vendors", []):
             nested_root = (vendor_roots or {}).get(alias + "/" + nested["id"])

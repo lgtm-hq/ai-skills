@@ -32,6 +32,26 @@ FIXTURES = ROOT / "tests/fixtures/manifest"
 _NEW_HEAD = "a" * 40
 
 
+@pytest.mark.parametrize("branches", [("main", "main"), ("main", "next")])
+def test_duplicate_vendor_digests_keep_distinct_occurrence_spans(
+    vendor_pin_matches: Callable[[str], list[VendorPinMatch]],
+    branches: tuple[str, str],
+) -> None:
+    """Equal pins belong to their own vendor records in extraction order."""
+    digest = "a" * 40
+    text = "vendors:\n" + "".join(
+        f"- id: vendor-{index}\n  repo: owner/shared\n"
+        f"  sha: '{digest}'\n  branch: {branch}\n"
+        for index, branch in enumerate(branches)
+    )
+    matches = vendor_pin_matches(text)
+    assert_that(matches).is_length(2)
+    starts = [text.index(digest), text.rindex(digest)]
+    assert_that([match.span("currentDigest") for match in matches]).is_equal_to(
+        [(start, start + len(digest)) for start in starts]
+    )
+
+
 @pytest.fixture
 def legacy_repo(tmp_path: Path, author_skills: None) -> Path:
     """Copy pre-migration registries and real author payloads without acquisition."""
@@ -178,7 +198,10 @@ def test_renovate_extracts_reordered_vendor_records(
         )
     text = "vendors: # declarations\n" + "".join(records) + "exports: []\n"
     # Both layouts are real YAML, before native discovery and updater checks.
-    assert_that(load_unique_yaml_text(text=text)["vendors"]).is_length(2)
+    document = load_unique_yaml_text(text=text)
+    if not isinstance(document, dict):
+        raise TypeError("Fixture manifest must be a mapping")
+    assert_that(document["vendors"]).is_length(2)
     matches = vendor_pin_matches(text)
     assert_that([match.groupdict() for match in matches]).is_equal_to(expected)
     for match in matches:
@@ -217,7 +240,10 @@ def test_renovate_never_borrows_fields_outside_vendor_record(
         "x-other:\n- id: other\n  repo: ignored/top-level\n"
         f"  sha: {'c' * 40}\n  branch: hidden\n"
     )
-    assert_that(load_unique_yaml_text(text=text)["vendors"]).is_length(2)
+    document = load_unique_yaml_text(text=text)
+    if not isinstance(document, dict):
+        raise TypeError("Fixture manifest must be a mapping")
+    assert_that(document["vendors"]).is_length(2)
     expected = []
     if missing == "none":
         expected.append(
@@ -513,6 +539,8 @@ def test_native_update_requires_direct_sha_source(
     else:
         assert_that(result["updates"]).is_equal_to([text.replace(OLD, NEW)])
         updated = load_unique_yaml_text(text=result["content"])
+        if not isinstance(updated, dict):
+            raise TypeError("Fixture manifest must be a mapping")
         assert_that([vendor["sha"] for vendor in updated["vendors"]]).is_equal_to(
             [NEW, NEW]
         )

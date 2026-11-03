@@ -75,12 +75,16 @@ def merge_imports[Record: (Capability, Resource)](
             continue
         if direct and key not in table:
             continue  # Preserve the inventory caller's direct import filters.
-        if key in table and table[key].origin != item.origin:
+        if key in table and (
+            table[key].origin != item.origin
+            or table[key].tree_digest != item.tree_digest
+            or table[key].payload != item.payload
+        ):
             findings.append(
                 Diagnostic(
                     "inventory.duplicate-id",
                     key,
-                    "Recursive export conflicts with another input",
+                    "Recursive export origin or payload conflicts with another input",
                 )
             )
             continue

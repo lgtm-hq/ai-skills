@@ -48,5 +48,7 @@ Claims against known imported ancestry or consumer origin denies are rejected as
 Nothing beyond the publisher's declared inputs is checked. Concealed or hand-copied
 content from undeclared inputs is not detected. An independent publisher that does
 not import X gains no X ancestry or diagnostic merely by shipping identical bytes.
+A transformation that changes every file also evades the byte-equality tripwire
+when the publisher conceals that ancestry.
 The lineage declaration also cannot establish license ownership or originality;
 license and notice obligations still apply through imports and re-exports.

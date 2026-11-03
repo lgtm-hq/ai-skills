@@ -19,7 +19,7 @@ def bind_exports(inventory: Inventory) -> Inventory:
     caps = {item.id: item for item in inventory.capabilities}
     resource_ids = tuple(item.id for item in inventory.resources)
     unresolved = []
-    resolved: set[tuple[str, str]] = set()
+    resolved: set[tuple[str, str, str]] = set()
     for edge in inventory.unresolved_edges:
         candidates = resource_ids if edge.field == "resources" else tuple(caps)
         found = tuple(
@@ -61,11 +61,11 @@ def bind_exports(inventory: Inventory) -> Inventory:
                 if edge.field == "requires"
                 else replace(record, related=targets_caps)
             )
-        resolved.add((str(edge.source), edge.target))
+        resolved.add((str(edge.source), edge.field, edge.target))
     settled = {
         (str(edge.source), edge.field)
         for edge in inventory.unresolved_edges
-        if (str(edge.source), edge.target) in resolved
+        if (str(edge.source), edge.field, edge.target) in resolved
     } - {(str(edge.source), edge.field) for edge in unresolved}
     return replace(
         inventory,
@@ -83,7 +83,12 @@ def bind_exports(inventory: Inventory) -> Inventory:
                     "inventory.unknown-related",
                 }
                 and (
-                    (item.location, item.message.rsplit(": ", 1)[-1]) in resolved
+                    (
+                        item.location,
+                        item.code.rsplit("-", 1)[-1],
+                        item.message.rsplit(": ", 1)[-1],
+                    )
+                    in resolved
                     or (item.location, item.code.rsplit("-", 1)[-1]) in settled
                 )
             )

@@ -3,6 +3,8 @@
 Keeps ``scripts/`` on ``sys.path`` for repository hygiene and CI helpers only.
 Engine tests import the installed ``ai_skills_engine`` package directly. Also
 exposes the shared spike test helpers for the small root parity check.
+Plugins must defer engine imports until use so that isolated spike discovery
+does not require the root project's runtime installation.
 """
 
 from __future__ import annotations
