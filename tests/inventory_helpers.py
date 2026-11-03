@@ -8,6 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from ai_skills_engine.manifest.edit import dump_document
+from ai_skills_engine.manifest.load import read_document
+
 FIXTURES = Path(__file__).parent / "fixtures" / "inventory"
 
 
@@ -75,6 +78,31 @@ def copy_inventory_fixture(destination: Path) -> tuple[Path, Path]:
     shutil.copytree(src=FIXTURES / "publisher", dst=root)
     shutil.copytree(src=FIXTURES / "vendor", dst=vendor)
     return root, vendor
+
+
+def configure_inventory_aliases(*, root: Path, vendor: Path, control: str) -> None:
+    """Prepare skill aliases with a matching specialist or an unused rename key.
+
+    Args:
+        root: Fixture consumer repository.
+        vendor: Fixture manifestless vendor.
+        control: Same-stem, specialist-only, unused, or ordinary skill case.
+    """
+    document = read_document(root / "ai-skills.yaml")
+    package = document["vendors"][0]["mapping"]["packages"][0]
+    if control == "same-stem":
+        skill = vendor / "skills/reviewer"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\nname: reviewer\ndescription: Safe fixture.\n---\nText.\n"
+        )
+    if control in {"same-stem", "specialist-only"}:
+        package["renameSkills"]["reviewer"] = "review-helper"
+    elif control == "unused":
+        package["renameSkills"]["absent"] = "absent-helper"
+    else:
+        package["renameSkills"]["help"] = "ordinary-helper"
+    (root / "ai-skills.yaml").write_text(dump_document(document))
 
 
 @pytest.fixture

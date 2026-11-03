@@ -100,6 +100,7 @@ def _mapped_package(
     )
     declarations: list[Capability] = []
     names: set[str] = set()
+    skill_names: set[str] = set()
     for path, role in sorted(set(paths)):
         name = (
             PurePosixPath(path).stem
@@ -107,6 +108,8 @@ def _mapped_package(
             else PurePosixPath(path).name
         )
         names.add(name)
+        if role == Role.SKILL:
+            skill_names.add(name)
         declaration = package.capabilities.get(name)
         declarations.append(
             Capability(
@@ -118,7 +121,9 @@ def _mapped_package(
                 resources=declaration.resources if declaration else (),
             )
         )
-    unused = (set(package.capabilities) | set(package.rename_skills or {})) - names
+    unused = (set(package.capabilities) - names) | (
+        set(package.rename_skills or {}) - skill_names
+    )
     if unused:
         raise ValueError(f"Unused mapped capability/renameSkills: {sorted(unused)}")
     # extraFiles is an explicit resource declaration, not a dependency heuristic.
