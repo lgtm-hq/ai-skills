@@ -309,13 +309,21 @@ def test_installed_migration_and_legacy_match_source(
             )
 
 
+@pytest.mark.parametrize("key", ["disable-model-invocation", "vendor-permission"])
 @pytest.mark.parametrize(
-    "attribute,expected",
+    "attribute,expected,normalized",
     [
-        ("true", 0),
-        ("2026-11-02", 0),
-        ("{1: first, '1': second, nested: [true, text]}", 0),
-        ("!!binary aGVsbG8=", 1),
+        ("true", 0, True),
+        ("2026-11-02", 0, {"$yaml": "date", "value": "2026-11-02"}),
+        (
+            "{1: first, '1': second, nested: [true, text]}",
+            0,
+            {
+                "$yaml": "mapping",
+                "items": [["1", "second"], ["nested", [True, "text"]], [1, "first"]],
+            },
+        ),
+        ("!!binary aGVsbG8=", 1, None),
     ],
     ids=["bool", "date", "mixed-keys", "unsupported"],
 )
@@ -323,15 +331,17 @@ def test_installed_inventory_and_resource_boundary_match_source(
     installed_command: Path,
     inventory_repo: tuple[Path, Path],
     capsys: pytest.CaptureFixture[str],
+    key: str,
     attribute: str,
     expected: int,
+    normalized: object,
 ) -> None:
     """An unrelated consumer gets identical installed/source records and failures."""
     root, vendor = inventory_repo
     skill = root / "skills/start/SKILL.md"
     skill.write_text(
         skill.read_text().replace(
-            "disable-model-invocation: true", "disable-model-invocation: " + attribute
+            "disable-model-invocation: true", f"{key}: {attribute}"
         )
     )
     missing_root = _run(
@@ -358,13 +368,33 @@ def test_installed_inventory_and_resource_boundary_match_source(
         assert_that((first.stdout, first.stderr)).is_equal_to((source.out, source.err))
         if expected:
             assert_that(first.stdout).contains(
-                "inventory.invalid-host-attribute", "disable-model-invocation", "bytes"
+                "inventory.invalid-host-attribute", key, "bytes"
             )
         else:
             assert_that(first.stdout).contains(
                 "inventory.host-specific-frontmatter",
                 "codex=unverified" if command[0] == "manifest" else '"codex"',
             )
+            if command[0] == "inventory":
+                start = next(
+                    item
+                    for item in json.loads(first.stdout)["capabilities"]
+                    if item["id"] == "fixture/tools:skill/stable"
+                )
+                retained = next(
+                    item for item in start["host_attributes"] if item["key"] == key
+                )
+                assert_that(json.loads(retained["value_json"])).is_equal_to(normalized)
+                if key == "vendor-permission":
+                    assert_that(retained["semantics"]).is_equal_to("unknown")
+                    assert_that(dict(retained["hosts"])).is_equal_to(
+                        {
+                            "claude-code": "unverified",
+                            "codex": "unverified",
+                            "cursor": "unverified",
+                        }
+                    )
+                    assert_that(first.stdout).contains("inventory.unknown-frontmatter")
     path = root / "ai-skills.yaml"
     document = read_document(path)
     document["packages"][0]["capabilities"][0]["resources"] = []
