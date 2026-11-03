@@ -17,6 +17,9 @@ def migrate(selector: str, migrations: Mapping[str, str]) -> str:
         ValueError: On a cyclic migration.
     """
     visited: set[str] = set()
+    # Prefix rewrites preserve the suffix. A growing suffix under a repeated
+    # rule can never reach an exact identity; guard it as well as state cycles.
+    suffixes: dict[str, set[str]] = {}
     while True:
         source = next(
             (
@@ -28,7 +31,12 @@ def migrate(selector: str, migrations: Mapping[str, str]) -> str:
         )
         if source is None:
             return selector
-        if source in visited:
+        suffix = selector[len(source) :]
+        if selector in visited or any(
+            suffix != previous and suffix.endswith(previous)
+            for previous in suffixes.get(source, set())
+        ):
             raise ValueError(f"Cyclic identity migration at {selector}")
-        visited.add(source)
+        visited.add(selector)
+        suffixes.setdefault(source, set()).add(suffix)
         selector = migrations[source] + selector[len(source) :]

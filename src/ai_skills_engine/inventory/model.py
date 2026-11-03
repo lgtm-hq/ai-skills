@@ -13,6 +13,7 @@ from ai_skills_engine.inventory.payload_file import PayloadFile
 from ai_skills_engine.inventory.resource_id import ResourceId
 from ai_skills_engine.inventory.resource_record import Resource
 from ai_skills_engine.inventory.roles import Dialect
+from ai_skills_engine.inventory.unresolved_edge import UnresolvedEdge
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.identity import Role
 
@@ -57,6 +58,10 @@ class Inventory:
     capabilities: tuple[Capability, ...]
     resources: tuple[Resource, ...]
     diagnostics: tuple[Diagnostic, ...]
+    # Evidence comes only from typed declarations/discovery, never diagnostics.
+    # Rejected identities have no payload and must never authorize projection.
+    rejected: tuple[CapabilityId | ResourceId, ...] = ()
+    unresolved_edges: tuple[UnresolvedEdge, ...] = ()
 
     def to_json(self) -> str:
         """Render deterministic JSON without absolute checkout paths.

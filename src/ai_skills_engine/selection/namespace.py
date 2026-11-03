@@ -4,6 +4,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 
 from ai_skills_engine.inventory.capability import Capability
+from ai_skills_engine.manifest.identity import Role
 from ai_skills_engine.manifest.overrides import Overrides
 from ai_skills_engine.selection.closure import dependency_chain
 from ai_skills_engine.selection.diagnostic import SelectionDiagnostic
@@ -48,6 +49,27 @@ def names_and_skips(
             )
         decisions.add(identity)
         if override.action == "rename" and override.name:
+            capability = capabilities.get(identity)
+            if (
+                capability
+                and capability.role in {Role.INTEGRATION, Role.LIFECYCLE}
+                and len(capability.destination_names) > 1
+            ):
+                findings.append(
+                    SelectionDiagnostic(
+                        code="selection.invalid-collision-override",
+                        location=identity,
+                        message=(
+                            "Cannot rename a multi-key configuration as one capability"
+                        ),
+                        chain=(identity,),
+                        fix=(
+                            "Split the configuration into single-key capabilities, "
+                            "or skip/exclude the conflicting capability."
+                        ),
+                    )
+                )
+                continue
             names[identity] = (override.name,)
             reserved.add(identity)
         elif override.action == "skip":

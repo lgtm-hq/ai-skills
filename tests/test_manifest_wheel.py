@@ -16,6 +16,7 @@ from zipfile import ZipFile
 
 import pytest
 from assertpy import assert_that
+from inventory_helpers import snapshot
 from packaging.requirements import Requirement
 
 from ai_skills_engine import cli
@@ -614,3 +615,65 @@ def test_installed_plan_matches_source_and_refuses_selector_drift(
         assert_that(after).is_equal_to(before)
     assert_that(lock.read_bytes()).is_equal_to(b"existing lock\n")
     assert_that(generation.read_bytes()).is_equal_to(b"existing installation\n")
+
+
+@pytest.mark.parametrize(
+    ("control", "expected"),
+    [
+        ("exclude", 0),
+        ("narrow", 0),
+        ("kept", 1),
+        ("required", 1),
+        ("stale", 1),
+        ("related", 0),
+    ],
+)
+def test_installed_plan_rejected_payload_and_advisory_controls(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    control: str,
+    expected: int,
+) -> None:
+    """Installed public CLI preserves source behavior and both trees' bytes/modes."""
+    root, vendor = inventory_repo
+    document = read_document(root / "ai-skills.yaml")
+    broken = vendor / "skills/broken"
+    broken.mkdir()
+    (broken / "SKILL.md").write_text("---\nname: broken\n---\nbody\n")
+    identity = "vendor/tools:skill/broken"
+    if control in {"exclude", "related"}:
+        document["vendors"][0]["exclude"] = [identity]
+    elif control in {"narrow", "required"}:
+        document["vendors"][0]["include"] = ["vendor/tools:skill/helper"]
+    elif control == "stale":
+        document["vendors"][0]["exclude"] = ["vendor/tools:skill/absent"]
+    if control == "required":
+        document["packages"][0]["capabilities"][0]["requires"].append(identity)
+    elif control == "related":
+        document["packages"][0]["capabilities"][0]["related"] = [
+            "fixture/tools:skill/absent"
+        ]
+    (root / "ai-skills.yaml").write_text(dump_document(document))
+    (root / "ai-skills.lock").write_bytes(b"untouched lock\n")
+    (root / "installed-generation").write_bytes(b"untouched generation\n")
+    before = snapshot(root, vendor)
+    args = [
+        "plan",
+        "--json",
+        "--repo-root",
+        str(root),
+        "--vendor-root",
+        f"vendor={vendor}",
+    ]
+    installed = _run(
+        args=[str(installed_command), *args], cwd=root.parent, expected=expected
+    )
+    assert_that(cli.main(args)).is_equal_to(expected)
+    source = capsys.readouterr()
+    assert_that((source.out, source.err)).is_equal_to(
+        (installed.stdout, installed.stderr)
+    )
+    codes = [item["code"] for item in json.loads(source.out)["diagnostics"]]
+    assert_that("selection.selector-unmatched" in codes).is_equal_to(control == "stale")
+    assert_that(snapshot(root, vendor)).is_equal_to(before)

@@ -54,6 +54,7 @@ def collect_package(
     resources: list[Resource],
     resource_paths: dict[ResourceId, Path],
     diagnostics: list[Diagnostic],
+    rejected: list[CapabilityId | ResourceId],
 ) -> None:
     """Hash explicit package contents and retain per-payload failures.
 
@@ -68,19 +69,24 @@ def collect_package(
         resources: Resource accumulator.
         resource_paths: Physical resource boundaries.
         diagnostics: Findings accumulator.
+        rejected: Typed identities of declarations whose payload was rejected.
     """
     for resource_declaration in package.resources:
+        resource_identity = None
         try:
             resource_identity = ResourceId(
                 package=package_id, name=resource_declaration.id
             )
             if not _included(identity=str(resource_identity), vendor=vendor):
                 continue
-            if resource_identity in resource_paths:
+            if resource_identity in resource_paths or resource_identity in rejected:
                 previous = next(
-                    item.source_path
-                    for item in resources
-                    if item.id == resource_identity
+                    (
+                        item.source_path
+                        for item in resources
+                        if item.id == resource_identity
+                    ),
+                    "rejected payload",
                 )
                 diagnostics.append(
                     Diagnostic(
@@ -105,20 +111,25 @@ def collect_package(
             )
             resource_paths[resource_identity] = source
         except (OSError, TypeError, ValueError) as error:
+            if resource_identity is not None:
+                rejected.append(resource_identity)
             diagnostics.append(
                 Diagnostic(
                     "inventory.invalid-resource",
-                    str(package_id),
+                    str(resource_identity) if resource_identity else str(package_id),
                     str(error).replace(str(root), "."),
                 )
             )
     for declaration in package.capabilities:
         location = f"{package_id}:{declaration.role}/{declaration.id}"
+        identity = None
         try:
             identity = CapabilityId.parse(location)
             if not _included(identity=location, vendor=vendor):
                 continue
-            if any(item.capability.id == identity for item in pending):
+            if identity in rejected or any(
+                item.capability.id == identity for item in pending
+            ):
                 diagnostics.append(
                     Diagnostic(
                         "inventory.duplicate-id",
@@ -156,6 +167,8 @@ def collect_package(
                 )
             )
         except (OSError, TypeError, ValueError) as error:
+            if identity is not None:
+                rejected.append(identity)
             diagnostics.append(
                 Diagnostic(
                     "inventory.invalid-payload",

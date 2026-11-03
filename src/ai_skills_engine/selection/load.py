@@ -65,6 +65,7 @@ def load_selection(
         sorted(
             [str(item.id) for item in inventory.capabilities]
             + [str(resource.id) for resource in inventory.resources]
+            + [str(identity) for identity in inventory.rejected]
         )
     )
     scopes = [

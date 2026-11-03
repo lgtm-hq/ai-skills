@@ -8,6 +8,23 @@ import pytest
 FIXTURES = Path(__file__).parent / "fixtures" / "inventory"
 
 
+def snapshot(*roots: Path) -> dict[str, tuple[bytes, int]]:
+    """Capture every consumer/vendor file byte and permission bit.
+
+    Args:
+        roots: Independent fixture inputs.
+
+    Returns:
+        File contents and modes keyed by absolute path.
+    """
+    return {
+        str(path): (path.read_bytes(), path.stat().st_mode & 0o7777)
+        for root in roots
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
 def copy_inventory_fixture(destination: Path) -> tuple[Path, Path]:
     """Copy the full fixture publisher and manifestless vendor inputs.
 

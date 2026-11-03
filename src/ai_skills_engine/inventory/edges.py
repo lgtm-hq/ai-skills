@@ -2,11 +2,13 @@
 
 from collections.abc import Iterable
 from dataclasses import replace
+from typing import Literal
 
 from ai_skills_engine.inventory.capability import Capability
 from ai_skills_engine.inventory.capability_id import CapabilityId
 from ai_skills_engine.inventory.pending import PendingCapability
 from ai_skills_engine.inventory.resource_id import ResourceId
+from ai_skills_engine.inventory.unresolved_edge import UnresolvedEdge
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.migrations import migrate
 
@@ -32,7 +34,8 @@ def resolve_edges(
     resource_ids: tuple[ResourceId, ...],
     publishers: set[str],
     migrations: dict[str, str],
-) -> tuple[tuple[Capability, ...], tuple[Diagnostic, ...]]:
+    rejected: tuple[CapabilityId | ResourceId, ...],
+) -> tuple[tuple[Capability, ...], tuple[Diagnostic, ...], tuple[UnresolvedEdge, ...]]:
     """Expand declared selectors against the observed inventory, without closure.
 
     Args:
@@ -40,19 +43,21 @@ def resolve_edges(
         resource_ids: Declared resources.
         publishers: Local and explicitly imported publisher namespaces.
         migrations: Consumer-declared old to current ID relationships.
+        rejected: Typed identity evidence without valid payloads.
 
     Returns:
-        Capabilities with resolved direct edges and all invalid-target errors.
+        Capabilities, invalid-target errors and structured missing-edge evidence.
     """
     records = tuple(pending)
     ids = tuple(item.capability.id for item in records)
     diagnostics: list[Diagnostic] = []
     result: list[Capability] = []
+    unresolved: list[UnresolvedEdge] = []
 
     def resolve[Id: (CapabilityId, ResourceId)](
         *,
         item: PendingCapability,
-        field: str,
+        field: Literal["requires", "related", "resources"],
         candidates: tuple[Id, ...],
     ) -> tuple[Id, ...]:
         """Resolve a declared field while preserving the target ID type."""
@@ -64,6 +69,22 @@ def resolve_edges(
                 for identity in candidates
                 if matches(selector=target, identity=str(identity))
             }
+            rejected_targets = {
+                str(identity)
+                for identity in rejected
+                if isinstance(identity, ResourceId) == (field == "resources")
+                and matches(selector=target, identity=str(identity))
+            }
+            for missing in sorted(
+                rejected_targets or ({target} if not found else set())
+            ):
+                unresolved.append(
+                    UnresolvedEdge(
+                        source=item.capability.id,
+                        field=field,
+                        target=missing,
+                    )
+                )
             if not found:
                 code = f"inventory.unknown-{field}"
                 if field == "requires" and target.split("/", 1)[0] not in publishers:
@@ -97,4 +118,4 @@ def resolve_edges(
                 ),
             )
         )
-    return tuple(result), tuple(diagnostics)
+    return tuple(result), tuple(diagnostics), tuple(unresolved)

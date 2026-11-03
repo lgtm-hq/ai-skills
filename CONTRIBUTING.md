@@ -77,16 +77,26 @@ document:
   absent include roots all eligible capabilities, while `include: []` roots none.
   Includes expand declared `requires` and resources across package boundaries;
   related references and prose mentions only produce directional dangling warnings.
-  Every explicit selector must match a qualified ID, package or publisher (or a
-  trailing wildcard), before destination aliases or content hashes are considered.
+  Every explicit selector must match a qualified ID, package or `publisher/*`
+  (or a trailing wildcard), before destination aliases or content hashes are
+  considered. A bare publisher is invalid.
   Resource exclusions are supported; file/path selectors are invalid. Exclusions,
   consumer role restrictions, origin denies and collision skips veto expansion;
   a retained dependency on a vetoed target fails with the shortest chain and fix.
   Cyclic requirements are one selection unit. Namespace reports reserve declared
-  aliases even when their owner is selected out. Catalog collisions need persisted
-  `overrides.collisions` rename/skip or a narrower selection; equal bytes alone
-  cannot resolve catalog ownership. Explicit identity migrations preserve old
-  selectors after an ID move; path/display moves alone keep stable IDs.
+  aliases even when their owner is selected out or skipped; skipping an alias
+  owner does not release its reservation. A directly excluded or denied root
+  remains vetoed without an error unless a retained capability requires it.
+  Catalog collisions need persisted `overrides.collisions` rename/skip or a
+  narrower selection; equal bytes alone
+  cannot resolve catalog ownership. Capability-wide renames of multi-key MCP or
+  lifecycle configurations fail; split them into single-key capabilities or skip
+  the conflicting capability. Rejected payload identities come only from typed
+  declarations or discovery. They may satisfy exclusions but never authorize a
+  payload. Payload diagnostics outside the retained closure do not block planning;
+  retained failures, required resource grants and structural errors remain fatal.
+  Explicit identity migrations preserve old selectors after an ID move;
+  path/display moves alone keep stable IDs.
   Publisher-local vendor migrations can supply identity metadata, while consumer
   policy and collision decisions remain authoritative. Full authenticated lineage,
   lock persistence, deduplication and install projection belong to later stages.

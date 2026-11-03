@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from ai_skills_engine.bake.vendor_plugins import _materialize_vendor_tree
+from ai_skills_engine.inventory.capability_id import CapabilityId
 from ai_skills_engine.inventory.collect import collect_package
 from ai_skills_engine.inventory.edges import resolve_edges
 from ai_skills_engine.inventory.lint import lint_inventory
@@ -122,6 +123,7 @@ def _collect(
     pending: list[PendingCapability] = []
     resources: list[Resource] = []
     resource_paths: dict[ResourceId, Path] = {}
+    rejected: list[CapabilityId | ResourceId] = []
     publishers = {
         consumer.publisher.id,
         *(vendor.id for vendor in consumer.vendors),
@@ -205,11 +207,13 @@ def _collect(
             resources=resources,
             resource_paths=resource_paths,
             diagnostics=diagnostics,
+            rejected=rejected,
         )
-    capabilities, edge_findings = resolve_edges(
+    capabilities, edge_findings, unresolved_edges = resolve_edges(
         pending=pending,
         resource_ids=tuple(item.id for item in resources),
         publishers=publishers,
+        rejected=tuple(rejected),
         migrations={
             **identity_migrations,
             **(
@@ -230,6 +234,8 @@ def _collect(
     return Inventory(
         capabilities=tuple(sorted(capabilities, key=lambda item: str(item.id))),
         resources=tuple(sorted(resources, key=lambda item: str(item.id))),
+        rejected=tuple(sorted(set(rejected), key=str)),
+        unresolved_edges=unresolved_edges,
         diagnostics=tuple(
             sorted(
                 diagnostics,

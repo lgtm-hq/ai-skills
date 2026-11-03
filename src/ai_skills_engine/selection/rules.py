@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping
 
+from ai_skills_engine.inventory.capability_id import CapabilityId
 from ai_skills_engine.inventory.model import Inventory
 from ai_skills_engine.manifest.overrides import Overrides
 from ai_skills_engine.manifest.policy import Policy
@@ -42,15 +43,25 @@ def select(
     caps = {str(item.id): item for item in inventory.capabilities}
     resources = {str(item.id): item for item in inventory.resources}
     all_ids = set(caps) | set(resources)
+    rejected = {str(identity) for identity in inventory.rejected}
+    candidate_caps = set(caps) | {
+        str(identity)
+        for identity in inventory.rejected
+        if isinstance(identity, CapabilityId)
+    }
+    known_ids = all_ids | rejected
+    candidate_resources = known_ids - candidate_caps
     if scopes is None:
-        scopes = (SelectionScope(location="inventory", members=tuple(sorted(all_ids))),)
+        scopes = (
+            SelectionScope(location="inventory", members=tuple(sorted(known_ids))),
+        )
     migration_map = dict(migrations or {})
     migration_map.update(
         {item.from_: item.to for item in overrides.migrations} if overrides else {}
     )
     roots, excluded, findings = resolve_selectors(
         scopes=scopes,
-        capabilities=set(caps),
+        capabilities=candidate_caps,
         migrations=migration_map,
     )
     names, skips, reserved, namespace_findings = names_and_skips(
@@ -102,6 +113,10 @@ def select(
         )
         for key, item in caps.items()
     }
+    for edge in inventory.unresolved_edges:
+        if edge.field != "related":
+            source = str(edge.source)
+            graph[source] = tuple(sorted({*graph.get(source, ()), edge.target}))
     parents = closure(
         graph=graph, roots=set(roots) - set(blocked), blocked=set(blocked)
     )
@@ -112,8 +127,8 @@ def select(
             ordered = tuple(sorted(component))
             components.update(dict.fromkeys(component, ordered))
     for target in sorted(parents):
-        chain = dependency_chain(parents=parents, target=target)
         if target in blocked:
+            chain = dependency_chain(parents=parents, target=target)
             state, reason = blocked[target]
             findings.append(
                 SelectionDiagnostic(
@@ -129,6 +144,7 @@ def select(
                 )
             )
         elif target not in all_ids:
+            chain = dependency_chain(parents=parents, target=target)
             findings.append(
                 SelectionDiagnostic(
                     code="selection.required-missing",
@@ -144,9 +160,23 @@ def select(
                     ),
                 )
             )
-    # Collection failures remain failures; filtering never turns a truncated
-    # source into a valid capability. Mentions are advisory evidence only.
+    # Only payload-scoped failures with trusted candidate evidence can be trimmed.
+    # Unknown identities, duplicates and structural/acquisition failures stay fatal.
     for item in inventory.diagnostics:
+        if item.code == "inventory.unknown-related":
+            continue  # Structured targets below produce directional warnings.
+        if (
+            item.code
+            in {
+                "inventory.invalid-payload",
+                "inventory.invalid-resource",
+                "inventory.invalid-host-attribute",
+                "inventory.undeclared-resource",
+            }
+            and item.location in known_ids
+            and item.location not in kept
+        ):
+            continue
         chain = dependency_chain(parents=parents, target=item.location) or (
             item.location,
         )
@@ -172,6 +202,11 @@ def select(
     related = {
         (key, str(target)) for key, item in caps.items() for target in item.related
     }
+    related.update(
+        (str(edge.source), edge.target)
+        for edge in inventory.unresolved_edges
+        if edge.field == "related"
+    )
     for item in inventory.diagnostics:
         if item.code == "inventory.undeclared-mention" and item.message.startswith(
             "Mention of "
@@ -219,7 +254,11 @@ def select(
         """Explain each record, preserving the highest-precedence veto."""
         chain = dependency_chain(parents=parents, target=key)
         state, reason = blocked.get(
-            key, (State.EXCLUDED, "not included" if key in caps else "unused resource")
+            key,
+            (
+                State.EXCLUDED,
+                "not included" if key in candidate_caps else "unused resource",
+            ),
         )
         if key in kept:
             state = State.SELECTED if key in roots else State.PULLED_IN
@@ -239,8 +278,8 @@ def select(
         )
 
     return SelectionResult(
-        capabilities=tuple(entry(key) for key in sorted(caps)),
-        resources=tuple(entry(key) for key in sorted(resources)),
+        capabilities=tuple(entry(key) for key in sorted(candidate_caps)),
+        resources=tuple(entry(key) for key in sorted(candidate_resources)),
         diagnostics=tuple(
             sorted(
                 findings,
