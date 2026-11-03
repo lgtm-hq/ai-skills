@@ -1,0 +1,9 @@
+{
+  "extends": "../../../npm/ai-skills/tsconfig.fixtures.json",
+  "compilerOptions": {
+    "typeRoots": [
+      "../../../npm/ai-skills/node_modules",
+      "../../../npm/ai-skills/node_modules/@types"
+    ]
+  }
+}

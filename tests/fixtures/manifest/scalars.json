@@ -1,0 +1,282 @@
+[
+  {
+    "name": "scientific-sha",
+    "field": "sha",
+    "value": "1e11111111111111111111111111111111111111",
+    "version": "",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "scientific-zero-sha",
+    "field": "sha",
+    "value": "0000000000000000000e00000000000000000000",
+    "version": "",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "decimal-sha",
+    "field": "sha",
+    "value": "0000000000000000000000000000000000000008",
+    "version": "",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "octal",
+    "field": "branch",
+    "value": "0o17",
+    "version": "",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "octal-zero",
+    "field": "branch",
+    "value": "0o0",
+    "version": "",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "decimal-leading-zero",
+    "field": "branch",
+    "value": "08",
+    "version": "",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "decimal-signed",
+    "field": "branch",
+    "value": "+019",
+    "version": "",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "decimal-negative",
+    "field": "branch",
+    "value": "-09",
+    "version": "",
+    "ambiguous": true,
+    "publish": false
+  },
+  {
+    "name": "exponent-integer",
+    "field": "branch",
+    "value": "1e3",
+    "version": "",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "exponent-signed",
+    "field": "branch",
+    "value": "-1E+3",
+    "version": "",
+    "ambiguous": true,
+    "publish": false
+  },
+  {
+    "name": "exponent-fraction",
+    "field": "branch",
+    "value": ".5e3",
+    "version": "",
+    "ambiguous": true,
+    "publish": false
+  },
+  {
+    "name": "exponent-dot",
+    "field": "branch",
+    "value": "1.e3",
+    "version": "",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "exponent-signed-fraction",
+    "field": "branch",
+    "value": "+.5E-3",
+    "version": "",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "boolean-y",
+    "field": "branch",
+    "value": "y",
+    "version": "1.1",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "boolean-Y",
+    "field": "branch",
+    "value": "Y",
+    "version": "1.1",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "boolean-n",
+    "field": "branch",
+    "value": "n",
+    "version": "1.1",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "boolean-N",
+    "field": "branch",
+    "value": "N",
+    "version": "1.1",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "float-dot",
+    "field": "branch",
+    "value": ".",
+    "version": "1.1",
+    "ambiguous": true,
+    "publish": false
+  },
+  {
+    "name": "exponent-no-mantissa",
+    "field": "branch",
+    "value": "e3",
+    "version": "1.1",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "exponent-no-digits",
+    "field": "branch",
+    "value": "-.e-3",
+    "version": "1.1",
+    "ambiguous": true,
+    "publish": false
+  },
+  {
+    "name": "exponent-underscores",
+    "field": "branch",
+    "value": "1_0e3",
+    "version": "1.1",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "sexagesimal",
+    "field": "branch",
+    "value": "0:1",
+    "version": "1.1",
+    "ambiguous": true,
+    "publish": false
+  },
+  {
+    "name": "timestamp-date",
+    "field": "branch",
+    "value": "2020-1-1",
+    "version": "1.1",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "timestamp-time",
+    "field": "branch",
+    "value": "2020-1-1 1:2:3Z",
+    "version": "1.1",
+    "ambiguous": true,
+    "publish": false
+  },
+  {
+    "name": "decimal-directive",
+    "field": "branch",
+    "value": "09",
+    "version": "1.1",
+    "ambiguous": true,
+    "publish": true
+  },
+  {
+    "name": "ordinary",
+    "field": "branch",
+    "value": "release/next",
+    "version": "",
+    "ambiguous": false,
+    "publish": true
+  },
+  {
+    "name": "octal-invalid",
+    "field": "branch",
+    "value": "0o8",
+    "version": "",
+    "ambiguous": false,
+    "publish": true
+  },
+  {
+    "name": "octal-signed",
+    "field": "branch",
+    "value": "+0o17",
+    "version": "",
+    "ambiguous": false,
+    "publish": true
+  },
+  {
+    "name": "hex-uppercase",
+    "field": "branch",
+    "value": "0Xab",
+    "version": "",
+    "ambiguous": false,
+    "publish": true
+  },
+  {
+    "name": "exponent-underscores-core",
+    "field": "branch",
+    "value": "1_0e3",
+    "version": "",
+    "ambiguous": false,
+    "publish": true
+  },
+  {
+    "name": "exponent-incomplete",
+    "field": "branch",
+    "value": "1e",
+    "version": "",
+    "ambiguous": false,
+    "publish": true
+  },
+  {
+    "name": "bool-core",
+    "field": "branch",
+    "value": "y",
+    "version": "",
+    "ambiguous": false,
+    "publish": true
+  },
+  {
+    "name": "float-dot-core",
+    "field": "branch",
+    "value": ".",
+    "version": "",
+    "ambiguous": false,
+    "publish": false
+  },
+  {
+    "name": "timestamp-core",
+    "field": "branch",
+    "value": "2020-1-1",
+    "version": "",
+    "ambiguous": false,
+    "publish": true
+  },
+  {
+    "name": "octal-directive",
+    "field": "branch",
+    "value": "0o17",
+    "version": "1.1",
+    "ambiguous": false,
+    "publish": true
+  }
+]

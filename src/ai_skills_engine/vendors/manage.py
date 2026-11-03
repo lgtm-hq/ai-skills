@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import stat
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,11 @@ import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
 from ai_skills_engine import package_sync
 from ai_skills_engine.manifest import legacy, pins
 from ai_skills_engine.manifest.load import load_manifest, read_document
+from ai_skills_engine.manifest.transaction import (
+    FileSnapshots,
+    restore_files,
+    snapshot_files,
+)
 from ai_skills_engine.paths import resolve_repo_root
 from ai_skills_engine.registry.registry import load_registry
 
@@ -361,7 +367,7 @@ def _generated_artifact_paths(*, repo_root: Path) -> tuple[Path, ...]:
 def _snapshot_artifacts(
     *,
     paths: tuple[Path, ...],
-) -> tuple[dict[Path, bytes], frozenset[Path]]:
+) -> tuple[dict[Path, tuple[bytes, int]], frozenset[Path]]:
     """Capture files and directories under ``paths``.
 
     Args:
@@ -371,7 +377,7 @@ def _snapshot_artifacts(
         File contents and the set of directories that existed, including
         empty directories such as agent-only ``skills/``.
     """
-    snapshot: dict[Path, bytes] = {}
+    snapshot: dict[Path, tuple[bytes, int]] = {}
     directories: set[Path] = set()
     for path in paths:
         if path.is_dir():
@@ -381,17 +387,21 @@ def _snapshot_artifacts(
                     directories.add(child)
                     continue
                 if child.is_file():
-                    snapshot[child] = child.read_bytes()
+                    snapshot[child] = (
+                        child.read_bytes(),
+                        stat.S_IMODE(child.stat().st_mode),
+                    )
         elif path.is_file():
-            snapshot[path] = path.read_bytes()
+            snapshot[path] = (path.read_bytes(), stat.S_IMODE(path.stat().st_mode))
     return snapshot, frozenset(directories)
 
 
 def _restore_artifacts(
     *,
     paths: tuple[Path, ...],
-    snapshot: dict[Path, bytes],
+    snapshot: dict[Path, tuple[bytes, int]],
     directories: frozenset[Path],
+    error: BaseException | None = None,
 ) -> None:
     """Restore snapshotted files and directories.
 
@@ -401,29 +411,69 @@ def _restore_artifacts(
 
     Args:
         paths: Files or directory roots covered by the snapshot.
-        snapshot: Pre-change file contents from ``_snapshot_artifacts``.
+        snapshot: Pre-change file bytes and modes from ``_snapshot_artifacts``.
         directories: Pre-change directories from ``_snapshot_artifacts``.
+        error: Primary failure to annotate while attempting every restoration.
     """
     for path in paths:
-        if path.is_dir():
-            current = [file for file in path.rglob("*") if file.is_file()]
-        elif path.is_file():
-            current = [path]
-        else:
-            current = []
+        try:
+            if path.is_dir():
+                current = [file for file in path.rglob("*") if file.is_file()]
+            elif path.is_file():
+                current = [path]
+            else:
+                current = []
+        except OSError as cleanup_error:
+            _record_cleanup_error(path=path, error=error, cleanup_error=cleanup_error)
+            continue
         for file in current:
             if file not in snapshot:
-                file.unlink()
-        if path.is_dir():
-            _prune_empty_directories(root=path, keep=directories)
-            if path not in directories and not any(path.iterdir()):
-                path.rmdir()
-    for directory in sorted(directories, key=lambda item: len(item.parts)):
-        directory.mkdir(parents=True, exist_ok=True)
-    for file, content in snapshot.items():
-        file.parent.mkdir(parents=True, exist_ok=True)
-        if not file.is_file() or file.read_bytes() != content:
-            file.write_bytes(content)
+                try:
+                    file.unlink()
+                except OSError as cleanup_error:
+                    _record_cleanup_error(
+                        path=file, error=error, cleanup_error=cleanup_error
+                    )
+        try:
+            if path.is_dir():
+                _prune_empty_directories(root=path, keep=directories)
+                if path not in directories and not any(path.iterdir()):
+                    path.rmdir()
+        except OSError as cleanup_error:
+            _record_cleanup_error(path=path, error=error, cleanup_error=cleanup_error)
+    parents = directories | {file.parent for file in snapshot}
+    for directory in sorted(parents, key=lambda item: len(item.parts)):
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as cleanup_error:
+            _record_cleanup_error(
+                path=directory, error=error, cleanup_error=cleanup_error
+            )
+    primary = error if error is not None else OSError("Artifact restoration failed")
+    restore_files(originals=dict(snapshot), error=primary)
+    if error is None and hasattr(primary, "__notes__"):
+        raise primary
+
+
+def _record_cleanup_error(
+    *,
+    path: Path,
+    error: BaseException | None,
+    cleanup_error: OSError,
+) -> None:
+    """Keep a cleanup failure on the primary error, or raise in standalone use.
+
+    Args:
+        path: Failed restoration destination.
+        error: Original refresh failure, when present.
+        cleanup_error: Actual filesystem failure during cleanup.
+    """
+    if error is None:
+        raise cleanup_error
+    error.add_note(
+        f"Transaction cleanup failed for {path}: {cleanup_error!r}; "
+        "manually restore it before retrying."
+    )
 
 
 def _prune_empty_directories(*, root: Path, keep: frozenset[Path]) -> None:
@@ -450,6 +500,7 @@ def _refresh_or_restore(
     repo_root: Path,
     registry_path: Path,
     original: str | None,
+    originals: FileSnapshots | None = None,
 ) -> None:
     """Rebake and synchronize, restoring all artifacts if that fails.
 
@@ -463,26 +514,31 @@ def _refresh_or_restore(
         registry_path: Path to the ``vendors.yaml`` registry.
         original: Registry text to restore on failure, or ``None`` to remove a
             newly created file.
+        originals: Exact author/legacy state captured before the management edit.
     """
+    if originals is None:
+        originals = snapshot_files(
+            (registry_path, repo_root / "bundles.yaml", repo_root / "vendors.yaml")
+        )
+        previous = originals[registry_path]
+        originals[registry_path] = (
+            (original.encode("utf-8"), previous[1] if previous is not None else 0o644)
+            if original is not None
+            else None
+        )
     artifact_paths = _generated_artifact_paths(repo_root=repo_root)
     snapshot, directories = _snapshot_artifacts(paths=artifact_paths)
-    refreshed = False
     try:
         refresh(repo_root=repo_root)
-        refreshed = True
-    finally:
-        if not refreshed:
-            if original is not None:
-                registry_path.write_text(original, encoding="utf-8")
-            elif registry_path.is_file():
-                registry_path.unlink()
-            if registry_path.name == "ai-skills.yaml" and registry_path.is_file():
-                legacy.write_legacy(repo_root)
-            _restore_artifacts(
-                paths=artifact_paths,
-                snapshot=snapshot,
-                directories=directories,
-            )
+    except BaseException as error:
+        restore_files(originals=originals, error=error)
+        _restore_artifacts(
+            paths=artifact_paths,
+            snapshot=snapshot,
+            directories=directories,
+            error=error,
+        )
+        raise
 
 
 def _normalize_skill_roots(*, values: list[str]) -> tuple[str, ...]:
@@ -763,11 +819,15 @@ def add(
             branch=branch,
         ),
     )
+    originals = snapshot_files(
+        (registry_path, repo_root / "bundles.yaml", repo_root / "vendors.yaml")
+    )
     original = _write_registry(registry_path=registry_path, vendors=vendors)
     _refresh_or_restore(
         repo_root=repo_root,
         registry_path=registry_path,
         original=original,
+        originals=originals,
     )
     _print_summary(action="Added", vendor_id=vendor_id)
 
@@ -828,11 +888,15 @@ def update(
     )
     if clear_branch:
         target.pop("branch", None)
+    originals = snapshot_files(
+        (registry_path, repo_root / "bundles.yaml", repo_root / "vendors.yaml")
+    )
     original = _write_registry(registry_path=registry_path, vendors=vendors)
     _refresh_or_restore(
         repo_root=repo_root,
         registry_path=registry_path,
         original=original,
+        originals=originals,
     )
     _print_summary(action="Updated", vendor_id=vendor_id)
 

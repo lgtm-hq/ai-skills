@@ -6,6 +6,7 @@ from typing import Any
 import yaml
 from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
+from ai_skills_engine.manifest.scalars import quote_vendor_scalars
 from ai_skills_engine.registry.registry import load_unique_yaml_text
 
 
@@ -55,13 +56,16 @@ def dump_document(data: object) -> str:
     Returns:
         Safe YAML with indented lists.
     """
-    return yaml.dump(
-        data,
-        Dumper=ManifestDumper,
-        sort_keys=False,
-        explicit_start=True,
-        width=80,
-        allow_unicode=True,
+    return quote_vendor_scalars(
+        data=data,
+        text=yaml.dump(
+            data,
+            Dumper=ManifestDumper,
+            sort_keys=False,
+            explicit_start=True,
+            width=80,
+            allow_unicode=True,
+        ),
     )
 
 
@@ -195,6 +199,7 @@ def patch_document(*, text: str, data: object) -> str:
     visit(root, old, data)
     for start, end, replacement in sorted(changes, reverse=True):
         text = text[:start] + replacement + text[end:]
+    text = quote_vendor_scalars(text=text, data=data)
     if not _same_value(before=load_unique_yaml_text(text=text), after=data):
         raise ValueError("Lossless YAML edit did not preserve the requested values")
     return text

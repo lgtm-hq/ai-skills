@@ -298,6 +298,7 @@
           "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
         },
         "sha": {
+          "description": "YAML source must be a direct, unescaped 40-hex scalar (plain or ordinary single/double quoted), without escape sequences, folded/block scalars, anchors, aliases or tags. Enforced by the manifest loader before compatibility publication so native Renovate can update one pin safely.",
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
         },
