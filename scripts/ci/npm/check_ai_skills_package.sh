@@ -22,6 +22,7 @@ bunx --no-install tsc --noEmit -p tsconfig.fixtures.json
 # The Python-only job has no Bun/node_modules. This prepared gate owns the
 # mandatory production parser/extractor/updater controls; never acquire in tests.
 UV_OFFLINE=1 uv run --no-sync pytest \
+  "$REPO_ROOT/scripts/ci/npm/manifest_fixture_type_tests.py" \
   "$REPO_ROOT/scripts/ci/npm/manifest_yaml_boundary_tests.py" \
   "$REPO_ROOT/scripts/ci/npm/manifest_renovate_tests.py"
 bunx --no-install tsc --noEmit

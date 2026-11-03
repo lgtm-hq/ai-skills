@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNNER = Path("scripts/ci/npm/check_ai_skills_package.sh")
 COMPARISON = Path("scripts/ci/npm/manifest_yaml_boundary_tests.py")
 DISCOVERY = Path("scripts/ci/npm/manifest_renovate_tests.py")
+QUALITY_TYPES = Path("scripts/ci/npm/manifest_fixture_type_tests.py")
 FIXTURE_TYPES = [
     "bunx",
     ["--no-install", "tsc", "--noEmit", "-p", "tsconfig.fixtures.json"],
@@ -141,6 +142,7 @@ def test_workflow_prepares_gateway_parser_gate() -> None:
     assert_that(python_paths).contains("tests")
     for path in python_paths:
         assert_that(COMPARISON.is_relative_to(path)).is_false()
+        assert_that(QUALITY_TYPES.is_relative_to(path)).is_false()
     assert_that(jobs["test"]["with"]["test-path"]).is_equal_to("tests")
 
 
@@ -216,6 +218,7 @@ def test_actual_gateway_runner_requires_offline_comparison(
                 "run",
                 "--no-sync",
                 "pytest",
+                str(tmp_path / QUALITY_TYPES),
                 str(tmp_path / COMPARISON),
                 str(tmp_path / DISCOVERY),
             ],
