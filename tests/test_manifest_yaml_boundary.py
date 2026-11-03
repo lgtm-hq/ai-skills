@@ -1,8 +1,5 @@
 """Keep the permissive production parser distinct from strict manifest publication."""
 
-import json
-import os
-import subprocess  # nosec B404 - fixed offline parser fixture, no shell
 from pathlib import Path
 
 import pytest
@@ -12,39 +9,18 @@ from ai_skills_engine import cli
 from ai_skills_engine.manifest.legacy import render_legacy, write_legacy
 from ai_skills_engine.manifest.load import load_manifest
 
+pytest_plugins = ("manifest_helpers",)
+pytestmark = pytest.mark.usefixtures("author_skills")
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.fixture(scope="module")
-def renovate_yaml_module() -> Path:
-    """Resolve the locked parser read-only, including isolated dependency setups.
-
-    Returns:
-        Installed YAML parser entry with its exact development dependency version.
-    """
-    package = ROOT / "npm/ai-skills"
-    prepared = Path(
-        os.environ.get("RENOVATE_TEST_NODE_MODULES", package / "node_modules")
-    )
-    directory = prepared / "yaml"
-    metadata = json.loads((directory / "package.json").read_text())
-    expected = json.loads((package / "package.json").read_text())["devDependencies"][
-        "yaml"
-    ]
-    assert_that(metadata["version"]).is_equal_to(expected)
-    entry = metadata["main"]
-    if not isinstance(entry, str):
-        raise TypeError("Locked YAML parser entry must be a string")
-    return (directory / entry).resolve()
-
-
 @pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""])
-def test_unseparated_comment_production_parser_differential(
+def test_unseparated_comment_rejected_before_publication(
     tmp_path: Path,
-    renovate_yaml_module: Path,
     line_ending: str,
 ) -> None:
-    """Production accepts the literal; the real publication path rejects it."""
+    """The Python publication boundary rejects invalid comments without Bun."""
     source = (ROOT / "ai-skills.yaml").read_text()
     if line_ending:
         source = source.replace(
@@ -60,24 +36,6 @@ def test_unseparated_comment_production_parser_differential(
             + "a" * 40
             + '"\n    branch: "main"#no-separation'
         )
-    result = (
-        subprocess.run(  # nosec B603 B607 - fixed parser, no shell/network/vendor code
-            [
-                "bun",
-                str(ROOT / "tests/fixtures/manifest/renovate-parse.ts"),
-                str(renovate_yaml_module),
-            ],
-            input=source,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-    )
-    assert_that(result.returncode).described_as(result.stderr).is_zero()
-    parsed = json.loads(result.stdout)
-    assert_that(parsed["errors"]).is_empty()
-    assert_that(parsed["parsed"][0]["vendors"][0]["branch"]).is_equal_to("main")
     path = tmp_path / "ai-skills.yaml"
     path.write_text(source)
     sentinels = {

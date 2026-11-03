@@ -205,6 +205,7 @@ def repo_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         '{\n  "name": "@lgtm-hq/ai-skills",\n  "version": "0.0.0-dev"\n}\n',
         encoding="utf-8",
     )
+    _write_skill(directory=tmp_path / "skills/branch", name="branch")
     manage_vendors.refresh(repo_root=tmp_path)
     return tmp_path
 

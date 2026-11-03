@@ -1,6 +1,7 @@
 """Legacy publication fails closed when it cannot honor manifest declarations."""
 
 import copy
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from ai_skills_engine.manifest.load import load_manifest, read_document
 from ai_skills_engine.registry.registry import load_registry
 
 pytest_plugins = ("manifest_helpers",)
+pytestmark = pytest.mark.usefixtures("author_skills")
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -182,8 +184,9 @@ def test_legacy_rejects_duplicate_effective_destinations_before_writes(
         duplicate["id"] = "duplicate-copy"
         duplicate["capabilities"] = [{"id": "distinct", "path": "skills/distinct"}]
         duplicate["x-useful-note"] = {"preserve": True}
+        shutil.copytree(src=ROOT / "skills/branch", dst=tmp_path / "skills/distinct")
         if change == "disjoint":
-            duplicate["x-legacy-group"] = "distinct-group"
+            duplicate["x-legacy-group"] = duplicate["id"]
         elif change == "extension-default":
             first["x-legacy-group"] = duplicate["id"]
             duplicate.pop("x-legacy-group")
@@ -193,12 +196,6 @@ def test_legacy_rejects_duplicate_effective_destinations_before_writes(
         data["packages"].append(duplicate)
         if change != "ungrouped":
             data["exports"].append(duplicate["id"])
-    for package in data["packages"]:
-        for capability in package["capabilities"]:
-            _write_publication_skill(
-                directory=tmp_path / capability["path"],
-                name=capability["id"],
-            )
     path = tmp_path / "ai-skills.yaml"
     path.write_text(dump_document(data))
     args = ["--repo-root", str(tmp_path), "manifest"]
@@ -220,7 +217,7 @@ def test_legacy_rejects_duplicate_effective_destinations_before_writes(
         groups = read_document(tmp_path / "bundles.yaml")["groups"]
         assert_that(groups).is_length(8 if change == "disjoint" else 7)
         if change == "disjoint":
-            assert_that(groups["distinct-group"]["skills"]).is_equal_to(["distinct"])
+            assert_that(groups["duplicate-copy"]["skills"]).is_equal_to(["distinct"])
         else:
             for name in before:
                 assert_that((tmp_path / name).read_bytes()).is_equal_to(
@@ -269,12 +266,6 @@ def test_legacy_cli_rejects_unrepresentable_dependencies_before_writes(
 ) -> None:
     """Schema-valid dependencies cannot disappear through legacy publication."""
     data = read_document(ROOT / "ai-skills.yaml")
-    for local_package in data["packages"]:
-        for local_capability in local_package["capabilities"]:
-            _write_publication_skill(
-                directory=tmp_path / local_capability["path"],
-                name=local_capability["id"],
-            )
     vendor = next(item for item in data["vendors"] if item["id"] == "anthropics")
     vendor_root = tmp_path / "vendor"
     for mapped_package in vendor["mapping"]["packages"]:
@@ -426,13 +417,6 @@ def test_actual_legacy_cli_publication_contract(
     (tmp_path / "ai-skills.yaml").write_text(dump_document(data))
     for name in ("bundles.yaml", "vendors.yaml"):
         (tmp_path / name).write_bytes((ROOT / name).read_bytes())
-    # Inventory validation now observes declared payloads. Keep publication
-    # assertions intact and provide real local skills for this author fixture.
-    for package in data["packages"]:
-        for capability in package["capabilities"]:
-            _write_publication_skill(
-                directory=tmp_path / capability["path"], name=capability["id"]
-            )
     before = {
         path.relative_to(tmp_path): path.read_bytes()
         for path in tmp_path.rglob("*")
@@ -463,6 +447,7 @@ def test_actual_cli_collection_additions_are_lintable(
     if change == "package":
         package = copy.deepcopy(data["packages"][0])
         package.update(id="new-package", **{"x-legacy-group": "new-package"})
+        package["capabilities"] = [{"id": "new-skill", "path": "skills/new-skill"}]
         data["packages"].append(package)
         data["exports"].append("new-package")
     elif change == "skill":
@@ -477,14 +462,18 @@ def test_actual_cli_collection_additions_are_lintable(
         data["exports"].extend(
             f"new-vendor/{package['id']}" for package in vendor["mapping"]["packages"]
         )
+    if change in {"package", "skill"}:
+        shutil.copytree(src=ROOT / "skills/branch", dst=tmp_path / "skills/new-skill")
     (tmp_path / "ai-skills.yaml").write_text(dump_document(data))
     args = ["--repo-root", str(tmp_path), "manifest"]
     assert_that(cli.main([*args, "legacy"])).is_zero()
-    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+    before = {
+        path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()
+    }
     for name in ("ai-skills.yaml", "bundles.yaml", "vendors.yaml"):
         check_yaml(tmp_path / name)
     assert_that(cli.main([*args, "legacy"])).is_zero()
     assert_that(cli.main([*args, "legacy", "--check"])).is_zero()
     assert_that(
-        {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+        {path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()}
     ).is_equal_to(before)

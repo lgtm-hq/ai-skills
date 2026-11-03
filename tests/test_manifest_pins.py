@@ -14,6 +14,7 @@ from ai_skills_engine.manifest.pins import write_vendors
 from ai_skills_engine.vendors import manage
 
 pytest_plugins = ("manifest_helpers",)
+pytestmark = pytest.mark.usefixtures("author_skills")
 
 ROOT = Path(__file__).resolve().parents[1]
 

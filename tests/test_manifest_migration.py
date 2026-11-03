@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from manifest_helpers import VendorPinMatch
 
 pytest_plugins = ("manifest_helpers",)
+pytestmark = pytest.mark.usefixtures("author_skills")
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).parent / "fixtures" / "manifest"

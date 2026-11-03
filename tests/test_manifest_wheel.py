@@ -258,21 +258,9 @@ def test_installed_migration_and_legacy_match_source(
     }
     for repository in repositories:
         repository.mkdir()
+        shutil.copytree(src=ROOT / "skills", dst=repository / "skills")
         for name, content in originals.items():
             (repository / name).write_bytes(content)
-        # Validation now observes payloads too. Keep every historical assertion
-        # and supply minimal real payloads for the legacy declaration fixture.
-        bundles = read_document(repository / "bundles.yaml")
-        names = [
-            *bundles["ungrouped"],
-            *(name for group in bundles["groups"].values() for name in group["skills"]),
-        ]
-        for name in names:
-            directory = repository / "skills" / name
-            directory.mkdir(parents=True)
-            (directory / "SKILL.md").write_text(
-                f"---\nname: {name}\ndescription: Wheel fixture.\n---\n"
-            )
     for operation, expected in (
         (["migrate"], 0),
         (["validate"], 0),
@@ -478,6 +466,67 @@ def test_installed_host_table_is_authoritative_without_checkout_fallback(
             )
     finally:
         table.write_bytes(original)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "baseline",
+        "id-key-mismatch",
+        "duplicate-skill",
+        "missing-skill",
+        "unknown-skill",
+    ],
+)
+def test_installed_publication_requires_marketplace_acceptance(
+    installed_command: Path, tmp_path: Path, change: str
+) -> None:
+    """Installed validation stays broad while legacy publication enforces consumers."""
+    shutil.copytree(src=ROOT / "skills", dst=tmp_path / "skills")
+    shutil.copy2(src=ROOT / "pyproject.toml", dst=tmp_path / "pyproject.toml")
+    data = read_document(ROOT / "ai-skills.yaml")
+    if change == "id-key-mismatch":
+        data["packages"][0]["id"] = "git-workflow"
+        data["exports"][data["exports"].index("git-pr")] = "git-workflow"
+    elif change == "duplicate-skill":
+        data["packages"][1]["capabilities"].append(
+            {"id": "branch", "path": "skills/branch"}
+        )
+    elif change == "missing-skill":
+        data["packages"][0]["capabilities"].pop(0)
+    elif change == "unknown-skill":
+        data["packages"][0]["capabilities"].append(
+            {"id": "unknown", "path": "skills/unknown"}
+        )
+        shutil.copytree(src=ROOT / "skills/branch", dst=tmp_path / "skills/unknown")
+    (tmp_path / "ai-skills.yaml").write_text(dump_document(data))
+    before = {
+        name: f"# installed sentinel {name}\n".encode()
+        for name in ("bundles.yaml", "vendors.yaml")
+    }
+    for name, content in before.items():
+        (tmp_path / name).write_bytes(content)
+    args = [str(installed_command), "--repo-root", str(tmp_path)]
+    _run(args=[*args, "manifest", "validate"], cwd=tmp_path)
+    if change == "unknown-skill":
+        # Recheck source loss after a successful real installed inventory check.
+        shutil.rmtree(tmp_path / "skills/unknown")
+    expected = 0 if change == "baseline" else 1
+    for flags in ([], ["--check"]):
+        result = _run(
+            args=[*args, "manifest", "legacy", *flags], cwd=tmp_path, expected=expected
+        )
+        if expected:
+            assert_that(result.stdout).contains("bundles.yaml reader")
+            for name, content in before.items():
+                assert_that((tmp_path / name).read_bytes()).is_equal_to(content)
+    if not expected:
+        _run(args=[*args, "generate", "marketplace"], cwd=tmp_path)
+        _run(args=[*args, "generate", "marketplace", "--check"], cwd=tmp_path)
+        for name in before:
+            assert_that((tmp_path / name).read_bytes()).is_equal_to(
+                (ROOT / name).read_bytes()
+            )
 
 
 @pytest.mark.parametrize(
