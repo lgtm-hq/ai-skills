@@ -68,6 +68,7 @@ def select(
     )
     names, skips, reserved, namespace_findings = names_and_skips(
         capabilities=caps,
+        capability_ids=candidate_caps,
         overrides=overrides,
         migrations=migration_map,
         identities=known_ids,

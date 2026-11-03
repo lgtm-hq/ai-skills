@@ -14,6 +14,7 @@ from ai_skills_engine.selection.diagnostic import SelectionDiagnostic
 def names_and_skips(
     *,
     capabilities: Mapping[str, Capability],
+    capability_ids: Collection[str],
     overrides: Overrides | None,
     migrations: Mapping[str, str],
     identities: Collection[str],
@@ -22,6 +23,7 @@ def names_and_skips(
 
     Args:
         capabilities: Unfiltered catalog.
+        capability_ids: Known loaded and typed rejected capability identities.
         overrides: Consumer persisted decisions.
         migrations: Validated consumer and publisher-local identity migrations.
         identities: Complete observed IDs, including resources and rejected IDs.
@@ -77,7 +79,7 @@ def names_and_skips(
                 )
             )
             continue
-        if identity not in capabilities or identity in decisions:
+        if identity not in capability_ids or identity in decisions:
             findings.append(
                 SelectionDiagnostic(
                     code="selection.invalid-collision-override",
@@ -92,6 +94,17 @@ def names_and_skips(
             )
             continue
         decisions.add(identity)
+        if override.action != "skip" and identity not in capabilities:
+            findings.append(
+                SelectionDiagnostic(
+                    code="selection.invalid-collision-override",
+                    location=identity,
+                    message="Collision decision requires loaded capability metadata",
+                    chain=(identity,),
+                    fix="Restore the capability payload, or declare a skip instead.",
+                )
+            )
+            continue
         if override.action == "rename" and override.name:
             if identity in multi_key:
                 findings.append(

@@ -21,6 +21,11 @@ from packaging.requirements import Requirement
 from selection_helpers import collision_migration_case, edge_diagnostic_case
 from test_selection_migrations import live_migration_case
 from test_selection_roles import role_policy_case
+from test_selection_skips import (
+    SKIP_CONTROLS,
+    check_rejected_collision_plan,
+    rejected_collision_case,
+)
 
 from ai_skills_engine import cli
 from ai_skills_engine.manifest.edit import dump_document
@@ -1098,6 +1103,7 @@ def test_installed_plan_live_migration_precedence(
 @pytest.mark.parametrize("author", ["vendor", "consumer"])
 @pytest.mark.parametrize("kind", ["capability", "package"])
 @pytest.mark.parametrize("action", ["rename", "skip"])
+@pytest.mark.parametrize("rejected", [False, True], ids=["live", "typed-rejected"])
 def test_installed_live_migration_collision_answers(
     installed_command: Path,
     inventory_repo: tuple[Path, Path],
@@ -1105,6 +1111,7 @@ def test_installed_live_migration_collision_answers(
     author: str,
     kind: str,
     action: str,
+    rejected: bool,
 ) -> None:
     """The installed planner keeps persisted answers bound to the live source ID."""
     root, vendor = inventory_repo
@@ -1114,13 +1121,15 @@ def test_installed_live_migration_collision_answers(
         author=author,
         kind=kind,
         control=action,
+        rejected=rejected,
     )
+    expected = int(rejected and action == "rename")
     _compare_installed_plan(
         installed_command=installed_command,
         root=root,
         vendor=vendor,
         capsys=capsys,
-        expected=0,
+        expected=expected,
     )
     installed = _run(
         args=[
@@ -1133,16 +1142,68 @@ def test_installed_live_migration_collision_answers(
             f"vendor={vendor}",
         ],
         cwd=root.parent,
+        expected=expected,
     )
     entries = {
         item["id"]: item for item in json.loads(installed.stdout)["capabilities"]
     }
     if action == "skip":
         assert_that(entries[target]["state"]).is_equal_to("excluded")
-    else:
+    elif not rejected:
         assert_that(entries[target]["names"]).is_equal_to(["consumer-name"])
+    else:
+        assert_that(entries[target]["names"]).is_empty()
     assert_that(entries[replacement]["state"]).is_equal_to("selected")
     assert_that(entries[replacement]["names"]).does_not_contain("consumer-name")
+
+
+@pytest.mark.parametrize("source", ["local", "mapped", "manifest"])
+@pytest.mark.parametrize("control", SKIP_CONTROLS)
+def test_installed_plan_rejected_collision_decisions(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    source: str,
+    control: str,
+) -> None:
+    """Real installed wheel replays known skips and preserves strict inventory."""
+    from inventory_helpers import inventory_snapshot
+
+    root, vendor = inventory_repo
+    target, expected = rejected_collision_case(
+        root=root, vendor=vendor, source=source, control=control
+    )
+    before = inventory_snapshot(root, vendor)
+    operands = ["--json", "--repo-root", str(root), "--vendor-root", f"vendor={vendor}"]
+    if not control.startswith("live"):
+        strict = _run(
+            args=[str(installed_command), "inventory", *operands],
+            cwd=root.parent,
+            expected=1,
+        )
+        assert_that(
+            [item["code"] for item in json.loads(strict.stdout)["diagnostics"]]
+        ).contains(
+            "inventory.unknown-requires"
+            if control == "required" and source != "local"
+            else "inventory.invalid-payload"
+        )
+    installed = _run(
+        args=[str(installed_command), "plan", *operands],
+        cwd=root.parent,
+        expected=expected,
+    )
+    assert_that(cli.main(["plan", *operands])).is_equal_to(expected)
+    captured = capsys.readouterr()
+    assert_that((captured.out, captured.err)).is_equal_to(
+        (installed.stdout, installed.stderr)
+    )
+    check_rejected_collision_plan(
+        output=json.loads(installed.stdout),
+        target=target,
+        control=control,
+    )
+    assert_that(inventory_snapshot(root, vendor)).is_equal_to(before)
 
 
 def test_installed_selection_import_identity(

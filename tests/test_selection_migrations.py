@@ -184,12 +184,14 @@ def test_actual_plan_migrations_preserve_existing_identity(
 @pytest.mark.parametrize("author", ["vendor", "consumer"])
 @pytest.mark.parametrize("kind", ["capability", "package"])
 @pytest.mark.parametrize("action", ["rename", "skip"])
+@pytest.mark.parametrize("rejected", [False, True], ids=["live", "typed-rejected"])
 def test_actual_plan_collision_answers_keep_live_identity(
     inventory_repo: tuple[Path, Path],
     capsys: pytest.CaptureFixture[str],
     author: str,
     kind: str,
     action: str,
+    rejected: bool,
 ) -> None:
     """A persisted consumer rename or skip cannot move to another live capability."""
     root, vendor = inventory_repo
@@ -199,13 +201,21 @@ def test_actual_plan_collision_answers_keep_live_identity(
         author=author,
         kind=kind,
         control=action,
+        rejected=rejected,
     )
-    output = run_plan(root=root, vendor=vendor, capsys=capsys, expected=0)
+    output = run_plan(
+        root=root,
+        vendor=vendor,
+        capsys=capsys,
+        expected=int(rejected and action == "rename"),
+    )
     entries = {item["id"]: item for item in output["capabilities"]}
     if action == "skip":
         assert_that(entries[target]["state"]).is_equal_to("excluded")
-    else:
+    elif not rejected:
         assert_that(entries[target]["names"]).is_equal_to(["consumer-name"])
+    else:
+        assert_that(entries[target]["names"]).is_empty()
     assert_that(entries[replacement]["state"]).is_equal_to("selected")
     assert_that(entries[replacement]["names"]).does_not_contain("consumer-name")
 
