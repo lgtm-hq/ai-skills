@@ -58,6 +58,17 @@ def main() -> None:
                     )
                 elif operation == "legacy":
                     status = cli.main(["manifest", "legacy", "--repo-root", author])
+                elif operation == "plan":
+                    status = cli.main(
+                        [
+                            "plan",
+                            "--repo-root",
+                            author,
+                            "--vendor-root",
+                            f"vendor={vendor_root}",
+                            "--json",
+                        ]
+                    )
                 elif operation == "extract":
                     vendor_plugins._extract_tarball(
                         payload=Path(vendor_root).read_bytes(),

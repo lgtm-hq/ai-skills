@@ -4,17 +4,16 @@ from pathlib import Path, PurePosixPath
 
 from ai_skills_engine.inventory.capability import Capability
 from ai_skills_engine.inventory.capability_id import CapabilityId
-from ai_skills_engine.inventory.edges import matches
 from ai_skills_engine.inventory.host_attributes import inspect_attributes
 from ai_skills_engine.inventory.package_id import PackageId
 from ai_skills_engine.inventory.payload import payload_files, source_path, tree_digest
 from ai_skills_engine.inventory.pending import PendingCapability
 from ai_skills_engine.inventory.resource_id import ResourceId
 from ai_skills_engine.inventory.resource_record import Resource
-from ai_skills_engine.inventory.roles import inspect_role
+from ai_skills_engine.inventory.roles import destination_names, inspect_role
 from ai_skills_engine.manifest.capability import Capability as CapabilityDeclaration
 from ai_skills_engine.manifest.diagnostic import Diagnostic
-from ai_skills_engine.manifest.identity import Role
+from ai_skills_engine.manifest.identity import Role, matches
 from ai_skills_engine.manifest.package import Package
 from ai_skills_engine.manifest.resource_record import Resource as ResourceDeclaration
 from ai_skills_engine.manifest.vendor import Vendor
@@ -60,6 +59,7 @@ def collect_package(
     resources: list[Resource],
     resource_paths: dict[ResourceId, Path],
     diagnostics: list[Diagnostic],
+    rejected: list[CapabilityId | ResourceId],
 ) -> None:
     """Hash explicit package contents and retain per-payload failures.
 
@@ -74,6 +74,7 @@ def collect_package(
         resources: Resource accumulator.
         resource_paths: Physical resource boundaries.
         diagnostics: Findings accumulator.
+        rejected: Typed identities of declarations whose payload was rejected.
     """
     if vendor is not None:
         try:
@@ -87,7 +88,11 @@ def collect_package(
                 selected_identity = f"{package_id}:{role}/{selected_declaration.id}"
                 if not _included(identity=selected_identity, vendor=vendor):
                     continue
-                source = source_path(root=root, relative=selected_declaration.path)
+                try:
+                    source = source_path(root=root, relative=selected_declaration.path)
+                except (OSError, TypeError, ValueError):
+                    # The per-declaration pass below records the typed rejection.
+                    continue
                 selected.update(
                     walk_files(root=source) if source.is_dir() else (source,)
                 )
@@ -110,17 +115,21 @@ def collect_package(
             )
             return
     for resource_declaration in package.resources:
+        resource_identity = None
         try:
             resource_identity = ResourceId(
                 package=package_id, name=resource_declaration.id
             )
             if not _included(identity=str(resource_identity), vendor=vendor):
                 continue
-            if resource_identity in resource_paths:
+            if resource_identity in resource_paths or resource_identity in rejected:
                 previous = next(
-                    item.source_path
-                    for item in resources
-                    if item.id == resource_identity
+                    (
+                        item.source_path
+                        for item in resources
+                        if item.id == resource_identity
+                    ),
+                    "rejected payload",
                 )
                 diagnostics.append(
                     Diagnostic(
@@ -145,20 +154,25 @@ def collect_package(
             )
             resource_paths[resource_identity] = source
         except (OSError, TypeError, ValueError) as error:
+            if resource_identity is not None:
+                rejected.append(resource_identity)
             diagnostics.append(
                 Diagnostic(
                     "inventory.invalid-resource",
-                    str(package_id),
+                    str(resource_identity) if resource_identity else str(package_id),
                     str(error).replace(str(root), "."),
                 )
             )
     for declaration in package.capabilities:
         location = f"{package_id}:{declaration.role}/{declaration.id}"
+        identity = None
         try:
             identity = CapabilityId.parse(location)
             if not _included(identity=location, vendor=vendor):
                 continue
-            if any(item.capability.id == identity for item in pending):
+            if identity in rejected or any(
+                item.capability.id == identity for item in pending
+            ):
                 diagnostics.append(
                     Diagnostic(
                         "inventory.duplicate-id",
@@ -190,6 +204,9 @@ def collect_package(
                     else ()
                 ),
                 host_attributes=attributes,
+                destination_names=destination_names(
+                    source=source, role=declaration.role, metadata=metadata
+                ),
             )
             pending.append(
                 PendingCapability(
@@ -197,6 +214,8 @@ def collect_package(
                 )
             )
         except (OSError, TypeError, ValueError) as error:
+            if identity is not None:
+                rejected.append(identity)
             diagnostics.append(
                 Diagnostic(
                     "inventory.invalid-payload",

@@ -10,6 +10,7 @@ from ai_skills_engine.bake import vendor_indexes, vendor_plugins
 from ai_skills_engine.generate import agents_md, marketplace, readme, skills_manifest
 from ai_skills_engine.inventory import cli as inventory_cli
 from ai_skills_engine.manifest import cli as manifest_cli
+from ai_skills_engine.selection import cli as selection_cli
 from ai_skills_engine.vendors import manage, repin
 
 
@@ -31,6 +32,7 @@ def main(argv: list[str] | None = None) -> int:
         "repin": repin.main,
         "package-sync": package_sync.main,
         "inventory": inventory_cli.main,
+        "plan": selection_cli.main,
     }
     for name, handler in routes.items():
         commands.add_parser(name, add_help=False).set_defaults(handler=handler)

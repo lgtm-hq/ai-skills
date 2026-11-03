@@ -25,6 +25,21 @@ _IDENTITY = re.compile(
 )
 
 
+def matches(*, selector: str, identity: str) -> bool:
+    """Match an exact qualified ID, package or validated trailing wildcard.
+
+    Args:
+        selector: Schema-validated manifest selector.
+        identity: Exact capability or resource identity.
+
+    Returns:
+        Whether the declaration names this identity.
+    """
+    if selector.endswith("*"):
+        return identity.startswith(selector[:-1])
+    return identity == selector or identity.startswith((selector + ":", selector + "/"))
+
+
 def parse_id(value: str, *, selector: bool = False) -> tuple[str, str, str, str]:
     """Parse an exact ID or a selector with one trailing wildcard.
 

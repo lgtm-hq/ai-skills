@@ -1,10 +1,12 @@
 """Load a deterministic inventory from explicit local or pinned vendor inputs."""
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from ai_skills_engine.bake.vendor_plugins import _materialize_vendor_tree
+from ai_skills_engine.inventory.capability_id import CapabilityId
 from ai_skills_engine.inventory.collect import collect_package
 from ai_skills_engine.inventory.edges import resolve_edges
 from ai_skills_engine.inventory.lint import lint_inventory
@@ -34,6 +36,8 @@ def load_inventory(
     *,
     vendor_roots: Mapping[str, Path] | None = None,
     fetch_vendors: bool = False,
+    selection_candidates: bool = False,
+    identity_migrations: Mapping[str, str] | None = None,
 ) -> Inventory:
     """Collect immutable records and diagnostics without executing vendor bytes.
 
@@ -45,6 +49,8 @@ def load_inventory(
         root: Consumer repository root.
         vendor_roots: Explicit local snapshots keyed by consumer vendor alias.
         fetch_vendors: Acquire missing trees using the existing pinned fetcher.
+        selection_candidates: Retain all declared candidates before selection.
+        identity_migrations: Validated publisher-local migration metadata.
 
     Returns:
         Sorted records and diagnostics, retaining errors for review.
@@ -103,16 +109,31 @@ def load_inventory(
                         else IngestLimits()
                     ),
                 )
-        return _collect(root=root, roots=roots, supplied=set(vendor_roots or {}))
+        return _collect(
+            root=root,
+            roots=roots,
+            supplied=set(vendor_roots or {}),
+            selection_candidates=selection_candidates,
+            identity_migrations=identity_migrations or {},
+        )
 
 
-def _collect(*, root: Path, roots: dict[str, Path], supplied: set[str]) -> Inventory:
+def _collect(
+    *,
+    root: Path,
+    roots: dict[str, Path],
+    supplied: set[str],
+    selection_candidates: bool,
+    identity_migrations: Mapping[str, str],
+) -> Inventory:
     """Collect local declarations and imports inside the input lifetime.
 
     Args:
         root: Consumer repository.
         roots: Available vendor snapshots.
         supplied: Unverified caller-provided snapshot aliases.
+        selection_candidates: Defer all import filters to the selection layer.
+        identity_migrations: Publisher-local identity moves for direct edges.
 
     Returns:
         Complete inventory observations.
@@ -128,6 +149,7 @@ def _collect(*, root: Path, roots: dict[str, Path], supplied: set[str]) -> Inven
     pending: list[PendingCapability] = []
     resources: list[Resource] = []
     resource_paths: dict[ResourceId, Path] = {}
+    rejected: list[CapabilityId | ResourceId] = []
     publishers = {
         consumer.publisher.id,
         *(vendor.id for vendor in consumer.vendors),
@@ -206,21 +228,30 @@ def _collect(*, root: Path, roots: dict[str, Path], supplied: set[str]) -> Inven
                 else origin
             ),
             aliases=aliases,
-            vendor=import_vendor,
+            vendor=(
+                replace(import_vendor, include=None, exclude=None)
+                if selection_candidates and import_vendor is not None
+                else import_vendor
+            ),
             pending=pending,
             resources=resources,
             resource_paths=resource_paths,
             diagnostics=diagnostics,
+            rejected=rejected,
         )
-    capabilities, edge_findings = resolve_edges(
+    capabilities, edge_findings, unresolved_edges = resolve_edges(
         pending=pending,
         resource_ids=tuple(item.id for item in resources),
         publishers=publishers,
-        migrations=(
-            {item.from_: item.to for item in consumer.overrides.migrations}
-            if consumer.overrides
-            else {}
-        ),
+        rejected=tuple(rejected),
+        migrations={
+            **identity_migrations,
+            **(
+                {item.from_: item.to for item in consumer.overrides.migrations}
+                if consumer.overrides
+                else {}
+            ),
+        },
     )
     diagnostics.extend(edge_findings)
     diagnostics.extend(
@@ -233,6 +264,8 @@ def _collect(*, root: Path, roots: dict[str, Path], supplied: set[str]) -> Inven
     return Inventory(
         capabilities=tuple(sorted(capabilities, key=lambda item: str(item.id))),
         resources=tuple(sorted(resources, key=lambda item: str(item.id))),
+        rejected=tuple(sorted(set(rejected), key=str)),
+        unresolved_edges=unresolved_edges,
         diagnostics=tuple(
             sorted(
                 diagnostics,

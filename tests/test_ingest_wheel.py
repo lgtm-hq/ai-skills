@@ -15,11 +15,13 @@ import pytest
 import yaml
 from assertpy import assert_that
 
+from ai_skills_engine import cli
 from ai_skills_engine.manifest.edit import dump_document
+from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.manifest.migrate import vendor_declaration
 from ai_skills_engine.registry.vendor import Vendor
 
-pytest_plugins = ["ingest_helpers"]
+pytest_plugins = ["ingest_helpers", "inventory_helpers"]
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -107,6 +109,72 @@ def probe(*, site: Path, root: Path, source: Path, operation: str) -> dict[str, 
     for field in ("module", "schema"):
         assert_that(Path(report[field]).is_relative_to(site)).is_true()
     return report
+
+
+@pytest.mark.parametrize("control", ["clean", "secret", "acknowledged", "stale"])
+def test_wheel_selection_candidates_retain_ingestion_policy(
+    wheel_site: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    control: str,
+) -> None:
+    """Dependency closure retains consumer policy in both source and actual wheel."""
+    from inventory_helpers import inventory_snapshot
+
+    root, vendor = inventory_repo
+    sample = b"AKIA" + b"A" * 16
+    payload = vendor / "skills/help/synthetic.txt"
+    payload.write_bytes(b"Synthetic example\n" + sample)
+    document = read_document(root / "ai-skills.yaml")
+    # This vendor is needed only by closure, despite the empty direct include.
+    document["vendors"][0]["include"] = []
+    if control == "clean":
+        payload.write_bytes(b"ordinary payload\n")
+    elif control in {"acknowledged", "stale"}:
+        document["vendors"][0]["ingestAllow"] = [
+            {
+                "path": "skills/help/synthetic.txt",
+                "rule": "aws-access-key-id",
+                "sha256": (
+                    hashlib.sha256(payload.read_bytes()).hexdigest()
+                    if control == "acknowledged"
+                    else "0" * 64
+                ),
+                "reason": "Synthetic documentation acknowledgement",
+            }
+        ]
+    (root / "ai-skills.yaml").write_text(dump_document(document))
+    before = inventory_snapshot(root, vendor)
+    expected = int(control in {"secret", "stale"})
+    assert_that(
+        cli.main(
+            [
+                "plan",
+                "--repo-root",
+                str(root),
+                "--vendor-root",
+                f"vendor={vendor}",
+                "--json",
+            ]
+        )
+    ).is_equal_to(expected)
+    source = capsys.readouterr()
+    report = probe(site=wheel_site, root=root, source=vendor, operation="plan")
+    assert_that(report["status"]).is_equal_to(expected)
+    assert_that((report["stdout"], report["stderr"])).is_equal_to(
+        (source.out, source.err)
+    )
+    assert_that(source.out + source.err).does_not_contain(sample.decode())
+    if expected:
+        assert_that(source.out + source.err).contains("aws-access-key-id")
+    else:
+        helper = next(
+            item
+            for item in json.loads(source.out)["capabilities"]
+            if item["id"] == "vendor/tools:skill/helper"
+        )
+        assert_that(helper["state"]).is_equal_to("pulled-in")
+    assert_that(inventory_snapshot(root, vendor)).is_equal_to(before)
 
 
 def test_wheel_bakes_checks_and_rejects_forged_lock(

@@ -29,3 +29,4 @@ class Capability:
     resources: tuple[ResourceId, ...] = ()
     aliases: tuple[str, ...] = ()
     host_attributes: tuple[HostAttribute, ...] = ()
+    destination_names: tuple[str, ...] = ()

@@ -113,6 +113,7 @@ def test_collection_applies_aliases_only_to_skill_roles(
     resources: list[Resource] = []
     resource_paths: dict[ResourceId, Path] = {}
     diagnostics: list[Diagnostic] = []
+    rejected: list[CapabilityId | ResourceId] = []
     before = inventory_snapshot(root, vendor)
     collect_package(
         root=root,
@@ -125,7 +126,9 @@ def test_collection_applies_aliases_only_to_skill_roles(
         resources=resources,
         resource_paths=resource_paths,
         diagnostics=diagnostics,
+        rejected=rejected,
     )
+    assert_that(rejected).is_empty()
     assert_that([item for item in diagnostics if not item.warning]).is_empty()
     assert_that({item.capability.role for item in pending}).is_equal_to(set(Role))
     for item in pending:

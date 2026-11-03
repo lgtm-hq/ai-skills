@@ -16,3 +16,5 @@ class Package(Record):
     description: str | None = None
     capabilities: tuple[Capability, ...] = ()
     resources: tuple[Resource, ...] = ()
+    include: tuple[str, ...] | None = None
+    exclude: tuple[str, ...] | None = None

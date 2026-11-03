@@ -141,9 +141,13 @@ def test_invalid_policy_fails_before_legacy_writes(
         )
 
 
-@pytest.mark.parametrize("fetched", [False, True])
+@pytest.mark.parametrize(
+    ("command", "fetched"),
+    [("inventory", False), ("inventory", True), ("plan", False)],
+)
 def test_inventory_vendor_content_checks_cover_both_modes(
     inventory_repo: tuple[Path, Path],
+    command: str,
     fetched: bool,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -167,7 +171,7 @@ def test_inventory_vendor_content_checks_cover_both_modes(
         )
     args = ["--fetch-vendors"] if fetched else ["--vendor-root", f"vendor={vendor}"]
     assert_that(
-        cli.main(["inventory", "--repo-root", str(root), "--json", *args])
+        cli.main([command, "--repo-root", str(root), "--json", *args])
     ).is_equal_to(1)
     output = capsys.readouterr()
     assert_that(output.out + output.err).contains("aws-access-key-id").does_not_contain(

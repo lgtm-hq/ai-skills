@@ -19,16 +19,74 @@ from zipfile import ZipFile
 import pytest
 from assertpy import assert_that
 from ci.npm.scalar_helpers import CASES, line_break_source, scalar_source
+from inventory_helpers import snapshot
+from manifest_helpers import (
+    PUBLICATION_SELECTION_CONTROLS,
+    configure_publication_selection,
+)
 from packaging.requirements import Requirement
+from selection_helpers import collision_migration_case, edge_diagnostic_case
+from test_selection_migrations import live_migration_case
+from test_selection_roles import role_policy_case
+from test_selection_skips import (
+    SKIP_CONTROLS,
+    check_rejected_collision_plan,
+    rejected_collision_case,
+)
 
 from ai_skills_engine import cli
 from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.legacy import GENERATED_HEADER
 from ai_skills_engine.manifest.load import read_document
 
-pytest_plugins = ["inventory_helpers"]
+pytest_plugins = ["inventory_helpers", "manifest_helpers"]
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.usefixtures("author_skills")
+@pytest.mark.parametrize("owner", ["local", "vendor"])
+@pytest.mark.parametrize(("control", "expected"), PUBLICATION_SELECTION_CONTROLS)
+def test_installed_publication_whole_package_includes(
+    installed_command: Path,
+    tmp_path: Path,
+    owner: str,
+    control: str,
+    expected: int,
+) -> None:
+    """Actual installed publication accepts whole-package wildcards outside checkout."""
+    configure_publication_selection(root=tmp_path, owner=owner, control=control)
+    for name in ("bundles.yaml", "vendors.yaml"):
+        path = tmp_path / name
+        path.write_bytes(b"# installed publication sentinel\r\n")
+        path.chmod(0o640)
+    before = snapshot(tmp_path)
+    args = [str(installed_command), "--repo-root", str(tmp_path), "manifest"]
+    _run(args=[*args, "validate"], cwd=tmp_path.parent)
+    # Check mode reports existing drift and preserves all bytes, even on success.
+    _run(args=[*args, "legacy", "--check"], cwd=tmp_path.parent, expected=1)
+    assert_that(snapshot(tmp_path)).is_equal_to(before)
+    result = _run(args=[*args, "legacy"], cwd=tmp_path.parent, expected=expected)
+    _run(args=[*args, "legacy", "--check"], cwd=tmp_path.parent, expected=expected)
+    if expected:
+        assert_that(result.stdout).contains("cannot represent include/exclude")
+        assert_that(snapshot(tmp_path)).is_equal_to(before)
+    else:
+        for name in ("bundles.yaml", "vendors.yaml"):
+            path = tmp_path / name
+            assert_that(path.read_bytes()).is_equal_to((ROOT / name).read_bytes())
+            assert_that(snapshot(tmp_path)[str(path)][1]).is_equal_to(
+                before[str(path)][1]
+            )
+        published = snapshot(tmp_path)
+        _run(args=[*args, "legacy"], cwd=tmp_path.parent)
+        assert_that(snapshot(tmp_path)).is_equal_to(published)
+        registries = {str(tmp_path / name) for name in ("bundles.yaml", "vendors.yaml")}
+        assert_that(
+            {key: value for key, value in published.items() if key not in registries}
+        ).is_equal_to(
+            {key: value for key, value in before.items() if key not in registries}
+        )
 
 
 @pytest.mark.parametrize(
@@ -1096,3 +1154,477 @@ def test_wheel_fixture_selects_platform_executables(
     probes = [args for args in calls if args[1:3] == ["-I", "-c"]]
     assert_that(probes).is_length(3)
     assert_that([args[0] for args in probes]).contains_only(str(python))
+
+
+def test_installed_plan_matches_source_and_refuses_selector_drift(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An actual wheel plans an unrelated consumer, including closure and vetoes."""
+    root, vendor = inventory_repo
+    path = root / "ai-skills.yaml"
+    document = read_document(path)
+    document["packages"][0]["include"] = ["fixture/tools:skill/stable"]
+    document["vendors"][0]["include"] = []
+    path.write_text(dump_document(document))
+    operands = ["--repo-root", str(root), "--vendor-root", f"vendor={vendor}"]
+    lock = root / "ai-skills.lock"
+    lock.write_bytes(b"existing lock\n")
+    generation = root / "generation"
+    generation.write_bytes(b"existing installation\n")
+    for control, expected in (
+        ("closure", 0),
+        ("excluded-resource", 1),
+        ("drift", 1),
+        ("migration", 0),
+    ):
+        if control == "excluded-resource":
+            document["vendors"][0]["exclude"] = ["vendor/tools:resource/notice"]
+        elif control == "drift":
+            document["vendors"][0].pop("exclude")
+            document["packages"][0]["include"] = ["fixture/tools:skill/old-id"]
+        elif control == "migration":
+            document["overrides"] = {
+                "migrations": [
+                    {
+                        "from": "fixture/tools:skill/old-id",
+                        "to": "fixture/tools:skill/stable",
+                    }
+                ]
+            }
+        path.write_text(dump_document(document))
+        before = {
+            str(item.relative_to(root)): item.read_bytes()
+            for item in root.rglob("*")
+            if item.is_file()
+        }
+        for command in (["plan", "--json"], ["plan"]):
+            installed = _run(
+                args=[str(installed_command), *command, *operands],
+                cwd=root.parent,
+                expected=expected,
+            )
+            repeated = _run(
+                args=[str(installed_command), *command, *operands],
+                cwd=root.parent,
+                expected=expected,
+            )
+            assert_that(repeated.stdout).is_equal_to(installed.stdout)
+            assert_that(cli.main([*command, *operands])).is_equal_to(expected)
+            source = capsys.readouterr()
+            assert_that((installed.stdout, installed.stderr)).is_equal_to(
+                (source.out, source.err)
+            )
+            if command[-1] == "--json":
+                output = json.loads(installed.stdout)
+                assert_that(output["capabilities"]).is_length(8)
+                assert_that(output["resources"]).is_length(2)
+                if expected:
+                    assert_that(
+                        [item["code"] for item in output["diagnostics"]]
+                    ).contains(
+                        "selection.required-excluded"
+                        if control == "excluded-resource"
+                        else "selection.selector-unmatched"
+                    )
+                else:
+                    helper = next(
+                        item
+                        for item in output["capabilities"]
+                        if item["id"] == "vendor/tools:skill/helper"
+                    )
+                    assert_that(helper["state"]).is_equal_to("pulled-in")
+        after = {
+            str(item.relative_to(root)): item.read_bytes()
+            for item in root.rglob("*")
+            if item.is_file()
+        }
+        assert_that(after).is_equal_to(before)
+    assert_that(lock.read_bytes()).is_equal_to(b"existing lock\n")
+    assert_that(generation.read_bytes()).is_equal_to(b"existing installation\n")
+
+
+@pytest.mark.parametrize(
+    ("control", "expected"),
+    [
+        ("exclude", 0),
+        ("narrow", 0),
+        ("kept", 1),
+        ("required", 1),
+        ("stale", 1),
+        ("related", 0),
+    ],
+)
+def test_installed_plan_rejected_payload_and_advisory_controls(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    control: str,
+    expected: int,
+) -> None:
+    """Installed public CLI preserves source behavior and both trees' bytes/modes."""
+    root, vendor = inventory_repo
+    document = read_document(root / "ai-skills.yaml")
+    broken = vendor / "skills/broken"
+    broken.mkdir()
+    (broken / "SKILL.md").write_text("---\nname: broken\n---\nbody\n")
+    identity = "vendor/tools:skill/broken"
+    if control in {"exclude", "related"}:
+        document["vendors"][0]["exclude"] = [identity]
+    elif control in {"narrow", "required"}:
+        document["vendors"][0]["include"] = ["vendor/tools:skill/helper"]
+    elif control == "stale":
+        document["vendors"][0]["exclude"] = ["vendor/tools:skill/absent"]
+    if control == "required":
+        document["packages"][0]["capabilities"][0]["requires"].append(identity)
+    elif control == "related":
+        document["packages"][0]["capabilities"][0]["related"] = [
+            "fixture/tools:skill/absent"
+        ]
+    (root / "ai-skills.yaml").write_text(dump_document(document))
+    (root / "ai-skills.lock").write_bytes(b"untouched lock\n")
+    (root / "installed-generation").write_bytes(b"untouched generation\n")
+    before = snapshot(root, vendor)
+    args = [
+        "plan",
+        "--json",
+        "--repo-root",
+        str(root),
+        "--vendor-root",
+        f"vendor={vendor}",
+    ]
+    installed = _run(
+        args=[str(installed_command), *args], cwd=root.parent, expected=expected
+    )
+    assert_that(cli.main(args)).is_equal_to(expected)
+    source = capsys.readouterr()
+    assert_that((source.out, source.err)).is_equal_to(
+        (installed.stdout, installed.stderr)
+    )
+    codes = [item["code"] for item in json.loads(source.out)["diagnostics"]]
+    assert_that("selection.selector-unmatched" in codes).is_equal_to(control == "stale")
+    assert_that(snapshot(root, vendor)).is_equal_to(before)
+
+
+def _compare_installed_plan(
+    *,
+    installed_command: Path,
+    root: Path,
+    vendor: Path,
+    capsys: pytest.CaptureFixture[str],
+    expected: int,
+) -> None:
+    """Check real wheel/source plan output and complete input bytes/modes.
+
+    Args:
+        installed_command: Wheel-installed console script.
+        root: Consumer fixture root.
+        vendor: Offline vendor snapshot.
+        capsys: Source CLI output capture.
+        expected: Required exit status.
+    """
+    before = snapshot(root, vendor)
+    args = [
+        "plan",
+        "--json",
+        "--repo-root",
+        str(root),
+        "--vendor-root",
+        f"vendor={vendor}",
+    ]
+    installed = _run(
+        args=[str(installed_command), *args], cwd=root.parent, expected=expected
+    )
+    assert_that(cli.main(args)).is_equal_to(expected)
+    source_output = capsys.readouterr()
+    assert_that((source_output.out, source_output.err)).is_equal_to(
+        (installed.stdout, installed.stderr)
+    )
+    assert_that(snapshot(root, vendor)).is_equal_to(before)
+
+
+@pytest.mark.parametrize("source", ["local", "mapped", "manifest"])
+@pytest.mark.parametrize(
+    "edge",
+    [
+        "requires-rejected",
+        "requires-missing",
+        "resources-rejected",
+        "resources-missing",
+        "nonimported",
+    ],
+)
+@pytest.mark.parametrize(
+    "control", ["excluded", "narrow", "kept", "required", "transitive", "stale"]
+)
+def test_installed_plan_edge_diagnostic_scope(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    source: str,
+    edge: str,
+    control: str,
+) -> None:
+    """The installed CLI trims only unreachable edges and matches source bytes."""
+    root, vendor = inventory_repo
+    edge_diagnostic_case(
+        root=root, vendor=vendor, source=source, edge=edge, control=control
+    )
+    expected = 0 if control in {"excluded", "narrow"} else 1
+    _compare_installed_plan(
+        installed_command=installed_command,
+        root=root,
+        vendor=vendor,
+        capsys=capsys,
+        expected=expected,
+    )
+
+
+@pytest.mark.parametrize("kind", ["capability", "package"])
+@pytest.mark.parametrize("action", ["rename", "skip"])
+@pytest.mark.parametrize(
+    "control", ["migrated", "current", "stale", "malformed", "cycle", "duplicate"]
+)
+def test_installed_plan_collision_migrations(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+    action: str,
+    control: str,
+) -> None:
+    """Actual wheel decisions migrate and reject duplicates without changing inputs."""
+    root, vendor = inventory_repo
+    collision_migration_case(root=root, control=control, action=action, kind=kind)
+    expected = 0 if control in {"migrated", "current"} else 1
+    _compare_installed_plan(
+        installed_command=installed_command,
+        root=root,
+        vendor=vendor,
+        capsys=capsys,
+        expected=expected,
+    )
+
+
+@pytest.mark.parametrize("role", ["integration", "lifecycle"])
+@pytest.mark.parametrize("rejected", [False, True], ids=["valid", "rejected"])
+@pytest.mark.parametrize("allowed", [False, True], ids=["disallowed", "allowed"])
+@pytest.mark.parametrize(
+    "control", ["default", "selected", "excluded", "narrow", "required", "transitive"]
+)
+def test_installed_plan_role_eligibility(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    role: str,
+    rejected: bool,
+    allowed: bool,
+    control: str,
+) -> None:
+    """Role vetoes and retained failure witnesses agree in actual installed plans."""
+    root, vendor = inventory_repo
+    _, expected, _ = role_policy_case(
+        root=root, role=role, rejected=rejected, allowed=allowed, control=control
+    )
+    _compare_installed_plan(
+        installed_command=installed_command,
+        root=root,
+        vendor=vendor,
+        capsys=capsys,
+        expected=expected,
+    )
+
+
+@pytest.mark.parametrize("author", ["vendor", "consumer"])
+@pytest.mark.parametrize(
+    "kind", ["capability", "package", "resource", "package-resource"]
+)
+@pytest.mark.parametrize("rejected", [False, True], ids=["live", "typed-rejected"])
+@pytest.mark.parametrize("control", ["baseline", "exclude", "required", "absent"])
+def test_installed_plan_live_migration_precedence(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    author: str,
+    kind: str,
+    rejected: bool,
+    control: str,
+) -> None:
+    """Actual installed CLI cannot move a veto or required witness to another ID."""
+    root, vendor = inventory_repo
+    target, replacement = live_migration_case(
+        root=root,
+        vendor=vendor,
+        author=author,
+        kind=kind,
+        rejected=rejected,
+        control=control,
+    )
+    expected = int(control == "required")
+    _compare_installed_plan(
+        installed_command=installed_command,
+        root=root,
+        vendor=vendor,
+        capsys=capsys,
+        expected=expected,
+    )
+    installed = _run(
+        args=[
+            str(installed_command),
+            "plan",
+            "--json",
+            "--repo-root",
+            str(root),
+            "--vendor-root",
+            f"vendor={vendor}",
+        ],
+        cwd=root.parent,
+        expected=expected,
+    )
+    output = json.loads(installed.stdout)
+    section = "resources" if "resource" in kind else "capabilities"
+    entries = {item["id"]: item for item in output[section]}
+    identity = replacement if control == "absent" else target
+    assert_that(entries[identity]["state"]).is_equal_to(
+        "pulled-in" if control == "absent" else "excluded"
+    )
+    if control == "required":
+        finding = next(
+            item
+            for item in output["diagnostics"]
+            if item["code"] == "selection.required-excluded"
+        )
+        assert_that(finding["chain"]).is_equal_to(
+            ["fixture/tools:skill/stable", target]
+        )
+
+
+@pytest.mark.parametrize("author", ["vendor", "consumer"])
+@pytest.mark.parametrize("kind", ["capability", "package"])
+@pytest.mark.parametrize("action", ["rename", "skip"])
+@pytest.mark.parametrize("rejected", [False, True], ids=["live", "typed-rejected"])
+def test_installed_live_migration_collision_answers(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    author: str,
+    kind: str,
+    action: str,
+    rejected: bool,
+) -> None:
+    """The installed planner keeps persisted answers bound to the live source ID."""
+    root, vendor = inventory_repo
+    target, replacement = live_migration_case(
+        root=root,
+        vendor=vendor,
+        author=author,
+        kind=kind,
+        control=action,
+        rejected=rejected,
+    )
+    expected = int(rejected and action == "rename")
+    _compare_installed_plan(
+        installed_command=installed_command,
+        root=root,
+        vendor=vendor,
+        capsys=capsys,
+        expected=expected,
+    )
+    installed = _run(
+        args=[
+            str(installed_command),
+            "plan",
+            "--json",
+            "--repo-root",
+            str(root),
+            "--vendor-root",
+            f"vendor={vendor}",
+        ],
+        cwd=root.parent,
+        expected=expected,
+    )
+    entries = {
+        item["id"]: item for item in json.loads(installed.stdout)["capabilities"]
+    }
+    if action == "skip":
+        assert_that(entries[target]["state"]).is_equal_to("excluded")
+    elif not rejected:
+        assert_that(entries[target]["names"]).is_equal_to(["consumer-name"])
+    else:
+        assert_that(entries[target]["names"]).is_empty()
+    assert_that(entries[replacement]["state"]).is_equal_to("selected")
+    assert_that(entries[replacement]["names"]).does_not_contain("consumer-name")
+
+
+@pytest.mark.parametrize("source", ["local", "mapped", "manifest"])
+@pytest.mark.parametrize("control", SKIP_CONTROLS)
+def test_installed_plan_rejected_collision_decisions(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    source: str,
+    control: str,
+) -> None:
+    """Real installed wheel replays known skips and preserves strict inventory."""
+    from inventory_helpers import inventory_snapshot
+
+    root, vendor = inventory_repo
+    target, expected = rejected_collision_case(
+        root=root, vendor=vendor, source=source, control=control
+    )
+    before = inventory_snapshot(root, vendor)
+    operands = ["--json", "--repo-root", str(root), "--vendor-root", f"vendor={vendor}"]
+    if not control.startswith("live"):
+        strict = _run(
+            args=[str(installed_command), "inventory", *operands],
+            cwd=root.parent,
+            expected=1,
+        )
+        assert_that(
+            [item["code"] for item in json.loads(strict.stdout)["diagnostics"]]
+        ).contains(
+            "inventory.unknown-requires"
+            if control == "required" and source != "local"
+            else "inventory.invalid-payload"
+        )
+    installed = _run(
+        args=[str(installed_command), "plan", *operands],
+        cwd=root.parent,
+        expected=expected,
+    )
+    assert_that(cli.main(["plan", *operands])).is_equal_to(expected)
+    captured = capsys.readouterr()
+    assert_that((captured.out, captured.err)).is_equal_to(
+        (installed.stdout, installed.stderr)
+    )
+    check_rejected_collision_plan(
+        output=json.loads(installed.stdout),
+        target=target,
+        control=control,
+    )
+    assert_that(inventory_snapshot(root, vendor)).is_equal_to(before)
+
+
+def test_installed_selection_import_identity(
+    installed_command: Path, tmp_path: Path
+) -> None:
+    """Bind the selection modules to the installed wheel, outside the checkout."""
+    probe = _run(
+        args=[
+            str(_venv_executable(installed_command.parent.parent, "python")),
+            "-I",
+            "-c",
+            (
+                "import json; from ai_skills_engine.selection import rules, namespace; "
+                "print(json.dumps([rules.__file__, namespace.__file__]))"
+            ),
+        ],
+        cwd=tmp_path,
+    )
+    for path in json.loads(probe.stdout):
+        assert_that(
+            Path(path).is_relative_to(installed_command.parent.parent)
+        ).is_true()
+        assert_that(Path(path).is_relative_to(ROOT)).is_false()
+    print(probe.stdout)
