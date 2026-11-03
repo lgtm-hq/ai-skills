@@ -8,6 +8,7 @@ from typing import Any
 
 from ai_skills_engine.generate.marketplace import _load_bundles, _validate_bundles
 from ai_skills_engine.manifest.edit import dump_document, patch_document
+from ai_skills_engine.manifest.identity import matches
 from ai_skills_engine.manifest.layout import decode_template
 from ai_skills_engine.manifest.load import load_manifest, read_document
 from ai_skills_engine.manifest.transaction import restore_files, snapshot_files
@@ -64,7 +65,11 @@ def _check_publication(data: dict[str, Any]) -> None:
     for package in data.get("packages", []):
         qualified = f"{publisher}/{package['id']}"
         if (
-            "include" in package and qualified not in package["include"]
+            "include" in package
+            and not any(
+                matches(selector=selector, identity=qualified)
+                for selector in package["include"]
+            )
         ) or package.get("exclude"):
             raise ValueError(
                 f"Legacy publication cannot represent include/exclude for {qualified}; "
@@ -85,7 +90,14 @@ def _check_publication(data: dict[str, Any]) -> None:
         }
         required.update(packages)
         if (
-            "include" in vendor and not packages.issubset(set(vendor["include"]))
+            "include" in vendor
+            and not all(
+                any(
+                    matches(selector=selector, identity=qualified)
+                    for selector in vendor["include"]
+                )
+                for qualified in packages
+            )
         ) or vendor.get("exclude"):
             raise ValueError(
                 f"Legacy publication cannot represent include/exclude for vendor "
