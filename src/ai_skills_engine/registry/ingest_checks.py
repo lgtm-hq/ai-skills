@@ -62,12 +62,13 @@ def safe_diagnostic(text: str) -> str:
     parts: list[bytes] = []
     header_pattern = _RULES["pem-private-key"]
     while (header := header_pattern.search(data, position)) is not None:
+        parts.extend((data[position : header.start()], b"[REDACTED]"))
         footer = _PEM_END.search(data, header.end())
         if footer is None:
-            parts.append(header_pattern.sub(b"[REDACTED]", data[position:]))
+            # A truncated block has no safe trailing boundary: withhold the
+            # header and all remaining private material, then stop scanning.
             position = len(data)
             break
-        parts.extend((data[position : header.start()], b"[REDACTED]"))
         position = footer.end()
     parts.append(data[position:])
     data = b"".join(parts)

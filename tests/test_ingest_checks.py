@@ -532,3 +532,54 @@ def test_acknowledgement_reason_redacts_complete_pem_material() -> None:
     assert_that(safe_diagnostic(header.decode() * 10_000)).does_not_contain(
         header.decode()
     )
+
+
+def test_public_pem_acknowledgement_privacy(
+    ingest_repo: tuple[Path, Path, Vendor],
+    pem_acknowledgement: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Real bake/check, lock, report and both output streams withhold PEM bodies."""
+    root, source, vendor = ingest_repo
+    baker.bake(repo_root=root, vendor_trees={vendor.id: source})
+    assert_that(baker.check(repo_root=root)).is_zero()
+    baked = root / "plugins-baked"
+    lock = json.loads((baked / "BAKE.json").read_text())
+    findings = lock["ingestChecks"]["vendors"][vendor.id]["acknowledgedFindings"]
+    assert_that(findings).is_length(1)
+    assert_that(findings[0]["reason"]).is_equal_to(pem_acknowledgement)
+    report = (baked / "COVERAGE.md").read_text()
+    captured = capsys.readouterr()
+    assert_that(report).contains(pem_acknowledgement)
+    assert_that(captured.out).contains(pem_acknowledgement)
+    assert_that(captured.err).is_empty()
+    for output in (json.dumps(lock), report, captured.out, captured.err):
+        assert_that(output).does_not_contain(
+            "SYNTHETIC_PRIVATE_BODY_CONTROL_572", "-----BEGIN", "-----END"
+        )
+    # A changed published payload still fails the real offline digest gate.
+    target = baked / "synthetic-plugin/skills/helper/example.txt"
+    target.write_bytes(target.read_bytes() + b"\nchanged")
+    assert_that(baker.check(repo_root=root)).is_equal_to(1)
+    failed = capsys.readouterr()
+    assert_that(failed.err).contains(
+        "aws-access-key-id", "unacknowledged"
+    ).does_not_contain("SYNTHETIC_PRIVATE_BODY_CONTROL_572", "-----BEGIN", "-----END")
+
+
+@pytest.mark.timeout(3)
+@pytest.mark.parametrize("complete", [False, True], ids=["unterminated", "complete"])
+def test_many_pem_headers_preserve_safe_text(complete: bool) -> None:
+    """Repeated/adjacent headers stay bounded and never expose trailing material."""
+    from ai_skills_engine.registry.ingest_checks import safe_diagnostic
+
+    edge = "-" * 5
+    header = edge + "BEGIN RSA PRIVATE KEY" + edge
+    footer = edge + "END RSA PRIVATE KEY" + edge
+    body = "SYNTHETIC_PRIVATE_BODY_CONTROL_572"
+    block = header + "\n" + body + ("\n" + footer if complete else "")
+    reason = "safe prefix " + block * 10_000 + " safe suffix"
+    expected = "safe prefix " + (
+        "[REDACTED]" * 10_000 + " safe suffix" if complete else "[REDACTED]"
+    )
+    assert_that(safe_diagnostic(reason)).is_equal_to(expected)

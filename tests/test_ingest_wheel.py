@@ -174,3 +174,35 @@ def test_wheel_manifest_policy_reaches_legacy_reader(
     projected = yaml.safe_load((root / "vendors.yaml").read_text())["vendors"][0]
     for field in ("ingestAllow", "ingestLimits"):
         assert_that(projected[field]).is_equal_to(raw[field])
+
+
+def test_wheel_pem_acknowledgement_privacy(
+    wheel_site: Path,
+    ingest_repo: tuple[Path, Path, Vendor],
+    pem_acknowledgement: str,
+) -> None:
+    """Actual wheel bake/check outputs apply the same PEM privacy contract."""
+    root, source, vendor = ingest_repo
+    baked_result = probe(site=wheel_site, root=root, source=source, operation="bake")
+    checked_result = probe(site=wheel_site, root=root, source=source, operation="check")
+    assert_that(baked_result["status"]).is_zero()
+    assert_that(checked_result["status"]).is_zero()
+    baked = root / "plugins-baked"
+    lock = json.loads((baked / "BAKE.json").read_text())
+    findings = lock["ingestChecks"]["vendors"][vendor.id]["acknowledgedFindings"]
+    assert_that(findings).is_length(1)
+    assert_that(findings[0]["reason"]).is_equal_to(pem_acknowledgement)
+    report = (baked / "COVERAGE.md").read_text()
+    assert_that(report).contains(pem_acknowledgement)
+    assert_that(baked_result["stdout"]).contains(pem_acknowledgement)
+    for result in (baked_result, checked_result):
+        assert_that(result["stderr"]).is_empty()
+    for output in (
+        json.dumps(lock),
+        report,
+        json.dumps(baked_result),
+        json.dumps(checked_result),
+    ):
+        assert_that(output).does_not_contain(
+            "SYNTHETIC_PRIVATE_BODY_CONTROL_572", "-----BEGIN", "-----END"
+        )
