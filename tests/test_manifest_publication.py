@@ -6,16 +6,20 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from assertpy import assert_that
 
 from ai_skills_engine import cli
+from ai_skills_engine.generate.marketplace import _load_bundles
 from ai_skills_engine.manifest.edit import dump_document
+from ai_skills_engine.manifest.layout import encode_template
 from ai_skills_engine.manifest.legacy import (
     legacy_documents,
     render_legacy,
     write_legacy,
 )
-from ai_skills_engine.manifest.load import read_document
+from ai_skills_engine.manifest.load import load_manifest, read_document
+from ai_skills_engine.registry.registry import load_registry
 
 pytest_plugins = ("manifest_helpers",)
 
@@ -33,6 +37,126 @@ def _write_publication_skill(directory: Path, name: str) -> None:
     (directory / "SKILL.md").write_text(
         f"---\nname: {name}\ndescription: Publication fixture.\n---\n"
     )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "baseline",
+        "optional-fields",
+        "license",
+        "homepage",
+        "mapping-description",
+        "local-name",
+        "empty-roots",
+        "invalid-homepage",
+        "invalid-branch",
+        "empty-mapping-description",
+        "no-vendors",
+        "bad-group-key",
+    ],
+)
+def test_compatibility_publication_checks_real_readers_before_either_write(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], change: str
+) -> None:
+    """Valid engine declarations must also satisfy both compatibility readers."""
+    data = read_document(ROOT / "ai-skills.yaml")
+    vendor = data["vendors"][0]
+    package = vendor["mapping"]["packages"][0]
+    if change in {"license", "homepage"}:
+        vendor.pop(change)
+    elif change == "mapping-description":
+        package.pop("description")
+    elif change == "local-name":
+        data["packages"][0].pop("name")
+    elif change == "empty-roots":
+        vendor["mapping"]["skillRoots"] = []
+    elif change == "invalid-homepage":
+        vendor["homepage"] = "not-a-url"
+    elif change == "invalid-branch":
+        vendor["branch"] = "bad..branch"
+    elif change == "empty-mapping-description":
+        package["description"] = ""
+    elif change == "no-vendors":
+        data["vendors"] = []
+        data["exports"] = [value for value in data["exports"] if "/" not in value]
+    elif change == "bad-group-key":
+        data["packages"][0]["x-legacy-group"] = "Invalid key"
+    elif change == "optional-fields":
+        vendor.pop("branch", None)
+        vendor.pop("displayRef", None)
+        data["packages"][0].pop("description")
+    path = tmp_path / "ai-skills.yaml"
+    path.write_text(dump_document(data))
+    load_manifest(path)
+    before = {}
+    for name in ("bundles.yaml", "vendors.yaml"):
+        before[name] = b"# unchanged sentinel " + name.encode() + b"\n"
+        (tmp_path / name).write_bytes(before[name])
+    manifest_before = path.read_bytes()
+    args = ["--repo-root", str(tmp_path), "manifest", "legacy"]
+    if change in {"baseline", "optional-fields"}:
+        rendered = render_legacy(tmp_path)
+        assert_that(write_legacy(tmp_path, check=True)).is_equal_to(1)
+        for name, content in before.items():
+            assert_that((tmp_path / name).read_bytes()).is_equal_to(content)
+        assert_that(cli.main(args)).is_zero()
+        assert_that(cli.main([*args, "--check"])).is_zero()
+        assert_that(
+            load_registry(registry_path=tmp_path / "vendors.yaml")
+        ).is_not_empty()
+        assert_that(_load_bundles(repo_root=tmp_path).groups).is_not_empty()
+        for destination, content in rendered.items():
+            assert_that(destination.read_bytes()).is_equal_to(content)
+        if change == "baseline":
+            for name in before:
+                assert_that((tmp_path / name).read_bytes()).is_equal_to(
+                    (ROOT / name).read_bytes()
+                )
+    else:
+        for operation in (
+            lambda: render_legacy(tmp_path),
+            lambda: write_legacy(tmp_path),
+            lambda: write_legacy(tmp_path, check=True),
+        ):
+            with pytest.raises(ValueError, match="Legacy publication.*reader"):
+                operation()
+            for name, content in before.items():
+                assert_that((tmp_path / name).read_bytes()).is_equal_to(content)
+        for check in ([], ["--check"]):
+            assert_that(cli.main([*args, *check])).is_equal_to(1)
+            assert_that(capsys.readouterr().out).contains(
+                "Legacy publication", "reader"
+            )
+            for name, content in before.items():
+                assert_that((tmp_path / name).read_bytes()).is_equal_to(content)
+    assert_that(path.read_bytes()).is_equal_to(manifest_before)
+
+
+def test_legacy_cli_patches_shape_inside_stored_flow_template(tmp_path: Path) -> None:
+    """The real renderer and CLI can extend a mapping nested in a flow sequence."""
+    data = read_document(ROOT / "ai-skills.yaml")
+    document = legacy_documents(data)["vendors.yaml"]
+    # A compact flow template is valid input; retain it as the formatting authority.
+    template = "# retained template\n" + yaml.safe_dump(
+        document, default_flow_style=True, sort_keys=False
+    )
+    data["x-legacy-format"]["vendors.yaml"] = encode_template(template.encode())
+    data["vendors"][0]["mapping"]["packages"][0]["extraFiles"] = ["NOTICE.md", "😀.txt"]
+    (tmp_path / "ai-skills.yaml").write_text(dump_document(data))
+    rendered = render_legacy(tmp_path)
+    assert_that(write_legacy(tmp_path)).is_zero()
+    args = ["--repo-root", str(tmp_path), "manifest", "legacy"]
+    assert_that(cli.main(args)).is_zero()
+    assert_that(cli.main([*args, "--check"])).is_zero()
+    for destination, content in rendered.items():
+        assert_that(destination.read_bytes()).is_equal_to(content)
+    assert_that((tmp_path / "vendors.yaml").read_text()).contains(
+        "# retained template\n"
+    )
+    assert_that(
+        load_registry(registry_path=tmp_path / "vendors.yaml")[0].plugins[0].extra_files
+    ).is_equal_to(("NOTICE.md", "😀.txt"))
 
 
 @pytest.mark.parametrize(
@@ -348,6 +472,7 @@ def test_actual_cli_collection_additions_are_lintable(
     else:
         vendor = copy.deepcopy(data["vendors"][0])
         vendor.update(id="new-vendor", repo="example/new-vendor")
+        vendor["mapping"]["packages"][0]["id"] = "new-vendor-skills"
         data["vendors"].append(vendor)
         data["exports"].extend(
             f"new-vendor/{package['id']}" for package in vendor["mapping"]["packages"]

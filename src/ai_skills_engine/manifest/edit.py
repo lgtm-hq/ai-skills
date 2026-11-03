@@ -113,7 +113,7 @@ def patch_document(*, text: str, data: object) -> str:
     changes: list[tuple[int, int, str]] = []
     visited: set[int] = set()
 
-    def visit(node: Node, before: Any, after: Any) -> None:
+    def visit(node: Node, before: Any, after: Any, flow: bool = False) -> None:
         """Collect nonoverlapping source replacements."""
         if _same_value(before=before, after=after):
             return
@@ -128,7 +128,7 @@ def patch_document(*, text: str, data: object) -> str:
         ):
             for key_node, child in node.value:
                 key = key_node.value
-                visit(child, before[key], after[key])
+                visit(child, before[key], after[key], flow or node.flow_style)
         elif (
             isinstance(node, SequenceNode)
             and isinstance(after, list)
@@ -136,14 +136,14 @@ def patch_document(*, text: str, data: object) -> str:
             and len(before) == len(after)
         ):
             for child, previous, desired in zip(node.value, before, after, strict=True):
-                visit(child, previous, desired)
+                visit(child, previous, desired, flow or node.flow_style)
         else:
             start = node.start_mark.index
             line_start = text.rfind("\n", 0, start) + 1
             prefix = text[line_start:start]
             indent = node.start_mark.column
             collection = isinstance(after, (dict, list))
-            inline = collection and prefix.strip() not in {"", "-"}
+            inline = collection and not flow and prefix.strip() not in {"", "-"}
             if inline:
                 indent = len(prefix) - len(prefix.lstrip()) + 2
                 if prefix.lstrip().startswith("- "):
@@ -153,11 +153,15 @@ def patch_document(*, text: str, data: object) -> str:
             rendered = (
                 yaml.dump(
                     after,
-                    Dumper=ManifestDumper if collection else yaml.SafeDumper,
-                    default_flow_style=not collection,
+                    Dumper=(
+                        ManifestDumper if collection and not flow else yaml.SafeDumper
+                    ),
+                    default_flow_style=flow or not collection,
                     sort_keys=False,
                     width=max(20, 80 - indent),
-                    allow_unicode=True,
+                    # Escape Unicode line separators inside new flow collections:
+                    # YAML folds literal NEL/LS/PS, including in quoted scalars.
+                    allow_unicode=not flow,
                 )
                 .removesuffix("...\n")
                 .rstrip("\n")
