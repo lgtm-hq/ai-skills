@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import stat
 import sys
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,13 @@ import yaml
 import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
 import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
 from ai_skills_engine import package_sync
+from ai_skills_engine.manifest import legacy, pins
+from ai_skills_engine.manifest.load import load_manifest, read_document
+from ai_skills_engine.manifest.transaction import (
+    FileSnapshots,
+    restore_files,
+    snapshot_files,
+)
 from ai_skills_engine.paths import resolve_repo_root
 from ai_skills_engine.registry.registry import load_registry
 
@@ -49,6 +57,19 @@ _PLUGIN_FIELD_ORDER = (
     "agents",
 )
 _DEFAULT_DISPLAY_REF = "latest"
+
+
+def _author_registry(repo_root: Path) -> Path:
+    """Select the manifest, retaining compatibility for unmigrated repositories.
+
+    Args:
+        repo_root: Author repository root.
+
+    Returns:
+        Authoritative declaration file.
+    """
+    manifest = repo_root / "ai-skills.yaml"
+    return manifest if manifest.is_file() else repo_root / "vendors.yaml"
 
 
 def _sync_artifacts(*, repo_root: Path, check_only: bool) -> int:
@@ -262,6 +283,13 @@ def _read_raw_registry(*, registry_path: Path) -> list[dict[str, Any]]:
         TypeError: If the registry or a vendor entry has an invalid type.
         ValueError: If the registry violates its schema or lacks a list.
     """
+    if registry_path.name == "ai-skills.yaml":
+        load_manifest(registry_path)
+        return list(
+            legacy.legacy_documents(read_document(registry_path))["vendors.yaml"][
+                "vendors"
+            ]
+        )
     load_registry(registry_path=registry_path)
     data = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
     if (
@@ -299,6 +327,8 @@ def _write_registry(
         TypeError: If the serialized registry fails type validation.
         ValueError: If the serialized registry violates its schema.
     """
+    if registry_path.name == "ai-skills.yaml":
+        return pins.write_vendors(registry_path, vendors)
     original = (
         registry_path.read_text(encoding="utf-8") if registry_path.is_file() else None
     )
@@ -337,7 +367,7 @@ def _generated_artifact_paths(*, repo_root: Path) -> tuple[Path, ...]:
 def _snapshot_artifacts(
     *,
     paths: tuple[Path, ...],
-) -> tuple[dict[Path, bytes], frozenset[Path]]:
+) -> tuple[dict[Path, tuple[bytes, int]], frozenset[Path]]:
     """Capture files and directories under ``paths``.
 
     Args:
@@ -347,7 +377,7 @@ def _snapshot_artifacts(
         File contents and the set of directories that existed, including
         empty directories such as agent-only ``skills/``.
     """
-    snapshot: dict[Path, bytes] = {}
+    snapshot: dict[Path, tuple[bytes, int]] = {}
     directories: set[Path] = set()
     for path in paths:
         if path.is_dir():
@@ -357,17 +387,21 @@ def _snapshot_artifacts(
                     directories.add(child)
                     continue
                 if child.is_file():
-                    snapshot[child] = child.read_bytes()
+                    snapshot[child] = (
+                        child.read_bytes(),
+                        stat.S_IMODE(child.stat().st_mode),
+                    )
         elif path.is_file():
-            snapshot[path] = path.read_bytes()
+            snapshot[path] = (path.read_bytes(), stat.S_IMODE(path.stat().st_mode))
     return snapshot, frozenset(directories)
 
 
 def _restore_artifacts(
     *,
     paths: tuple[Path, ...],
-    snapshot: dict[Path, bytes],
+    snapshot: dict[Path, tuple[bytes, int]],
     directories: frozenset[Path],
+    error: BaseException | None = None,
 ) -> None:
     """Restore snapshotted files and directories.
 
@@ -377,29 +411,69 @@ def _restore_artifacts(
 
     Args:
         paths: Files or directory roots covered by the snapshot.
-        snapshot: Pre-change file contents from ``_snapshot_artifacts``.
+        snapshot: Pre-change file bytes and modes from ``_snapshot_artifacts``.
         directories: Pre-change directories from ``_snapshot_artifacts``.
+        error: Primary failure to annotate while attempting every restoration.
     """
     for path in paths:
-        if path.is_dir():
-            current = [file for file in path.rglob("*") if file.is_file()]
-        elif path.is_file():
-            current = [path]
-        else:
-            current = []
+        try:
+            if path.is_dir():
+                current = [file for file in path.rglob("*") if file.is_file()]
+            elif path.is_file():
+                current = [path]
+            else:
+                current = []
+        except OSError as cleanup_error:
+            _record_cleanup_error(path=path, error=error, cleanup_error=cleanup_error)
+            continue
         for file in current:
             if file not in snapshot:
-                file.unlink()
-        if path.is_dir():
-            _prune_empty_directories(root=path, keep=directories)
-            if path not in directories and not any(path.iterdir()):
-                path.rmdir()
-    for directory in sorted(directories, key=lambda item: len(item.parts)):
-        directory.mkdir(parents=True, exist_ok=True)
-    for file, content in snapshot.items():
-        file.parent.mkdir(parents=True, exist_ok=True)
-        if not file.is_file() or file.read_bytes() != content:
-            file.write_bytes(content)
+                try:
+                    file.unlink()
+                except OSError as cleanup_error:
+                    _record_cleanup_error(
+                        path=file, error=error, cleanup_error=cleanup_error
+                    )
+        try:
+            if path.is_dir():
+                _prune_empty_directories(root=path, keep=directories)
+                if path not in directories and not any(path.iterdir()):
+                    path.rmdir()
+        except OSError as cleanup_error:
+            _record_cleanup_error(path=path, error=error, cleanup_error=cleanup_error)
+    parents = directories | {file.parent for file in snapshot}
+    for directory in sorted(parents, key=lambda item: len(item.parts)):
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as cleanup_error:
+            _record_cleanup_error(
+                path=directory, error=error, cleanup_error=cleanup_error
+            )
+    primary = error if error is not None else OSError("Artifact restoration failed")
+    restore_files(originals=dict(snapshot), error=primary)
+    if error is None and hasattr(primary, "__notes__"):
+        raise primary
+
+
+def _record_cleanup_error(
+    *,
+    path: Path,
+    error: BaseException | None,
+    cleanup_error: OSError,
+) -> None:
+    """Keep a cleanup failure on the primary error, or raise in standalone use.
+
+    Args:
+        path: Failed restoration destination.
+        error: Original refresh failure, when present.
+        cleanup_error: Actual filesystem failure during cleanup.
+    """
+    if error is None:
+        raise cleanup_error
+    error.add_note(
+        f"Transaction cleanup failed for {path}: {cleanup_error!r}; "
+        "manually restore it before retrying."
+    )
 
 
 def _prune_empty_directories(*, root: Path, keep: frozenset[Path]) -> None:
@@ -426,6 +500,7 @@ def _refresh_or_restore(
     repo_root: Path,
     registry_path: Path,
     original: str | None,
+    originals: FileSnapshots | None = None,
 ) -> None:
     """Rebake and synchronize, restoring all artifacts if that fails.
 
@@ -439,24 +514,31 @@ def _refresh_or_restore(
         registry_path: Path to the ``vendors.yaml`` registry.
         original: Registry text to restore on failure, or ``None`` to remove a
             newly created file.
+        originals: Exact author/legacy state captured before the management edit.
     """
+    if originals is None:
+        originals = snapshot_files(
+            (registry_path, repo_root / "bundles.yaml", repo_root / "vendors.yaml")
+        )
+        previous = originals[registry_path]
+        originals[registry_path] = (
+            (original.encode("utf-8"), previous[1] if previous is not None else 0o644)
+            if original is not None
+            else None
+        )
     artifact_paths = _generated_artifact_paths(repo_root=repo_root)
     snapshot, directories = _snapshot_artifacts(paths=artifact_paths)
-    refreshed = False
     try:
         refresh(repo_root=repo_root)
-        refreshed = True
-    finally:
-        if not refreshed:
-            if original is not None:
-                registry_path.write_text(original, encoding="utf-8")
-            elif registry_path.is_file():
-                registry_path.unlink()
-            _restore_artifacts(
-                paths=artifact_paths,
-                snapshot=snapshot,
-                directories=directories,
-            )
+    except BaseException as error:
+        restore_files(originals=originals, error=error)
+        _restore_artifacts(
+            paths=artifact_paths,
+            snapshot=snapshot,
+            directories=directories,
+            error=error,
+        )
+        raise
 
 
 def _normalize_skill_roots(*, values: list[str]) -> tuple[str, ...]:
@@ -624,6 +706,15 @@ def set_sha(*, repo_root: Path, vendor_id: str, sha: str) -> None:
         ValueError: If the vendor id is unknown or the SHA is invalid.
         TypeError: If the rewritten registry fails type validation.
     """
+    manifest_path = repo_root / "ai-skills.yaml"
+    if manifest_path.is_file():
+        vendors = _read_raw_registry(registry_path=manifest_path)
+        target = next((vendor for vendor in vendors if vendor["id"] == vendor_id), None)
+        if target is None:
+            raise ValueError(f"Unknown vendor id: {vendor_id}")
+        target["sha"] = sha
+        pins.write_vendors(manifest_path, vendors)
+        return
     registry_path = repo_root / "vendors.yaml"
     original = registry_path.read_text(encoding="utf-8")
     vendors = _read_raw_registry(registry_path=registry_path)
@@ -653,6 +744,8 @@ def refresh(*, repo_root: Path) -> None:
     Args:
         repo_root: Repository root containing ``vendors.yaml``.
     """
+    if (repo_root / "ai-skills.yaml").is_file():
+        legacy.write_legacy(repo_root)
     bake_vendor_indexes.bake(repo_root=repo_root)
     bake_vendor_plugins.bake(repo_root=repo_root)
     _sync_artifacts(repo_root=repo_root, check_only=False)
@@ -670,10 +763,15 @@ def check(*, repo_root: Path) -> int:
     Returns:
         ``0`` when nothing is stale, otherwise ``1``.
     """
+    legacy_status = (
+        legacy.write_legacy(repo_root, check=True)
+        if (repo_root / "ai-skills.yaml").is_file()
+        else 0
+    )
     bake_status = int(bake_vendor_indexes.check(repo_root=repo_root))
     plugin_status = int(bake_vendor_plugins.check(repo_root=repo_root))
     sync_status = _sync_artifacts(repo_root=repo_root, check_only=True)
-    return max(bake_status, plugin_status, sync_status)
+    return max(legacy_status, bake_status, plugin_status, sync_status)
 
 
 def add(
@@ -704,7 +802,7 @@ def add(
     Raises:
         ValueError: If the vendor id already exists in the registry.
     """
-    registry_path = repo_root / "vendors.yaml"
+    registry_path = _author_registry(repo_root)
     vendors = _read_raw_registry(registry_path=registry_path)
     if any(vendor.get("id") == vendor_id for vendor in vendors):
         msg = f"Vendor id already exists: {vendor_id}"
@@ -721,11 +819,15 @@ def add(
             branch=branch,
         ),
     )
+    originals = snapshot_files(
+        (registry_path, repo_root / "bundles.yaml", repo_root / "vendors.yaml")
+    )
     original = _write_registry(registry_path=registry_path, vendors=vendors)
     _refresh_or_restore(
         repo_root=repo_root,
         registry_path=registry_path,
         original=original,
+        originals=originals,
     )
     _print_summary(action="Added", vendor_id=vendor_id)
 
@@ -763,7 +865,7 @@ def update(
     if clear_branch and branch is not None:
         msg = "branch and clear_branch are mutually exclusive"
         raise ValueError(msg)
-    registry_path = repo_root / "vendors.yaml"
+    registry_path = _author_registry(repo_root)
     vendors = _read_raw_registry(registry_path=registry_path)
     target = next(
         (vendor for vendor in vendors if vendor.get("id") == vendor_id),
@@ -786,11 +888,15 @@ def update(
     )
     if clear_branch:
         target.pop("branch", None)
+    originals = snapshot_files(
+        (registry_path, repo_root / "bundles.yaml", repo_root / "vendors.yaml")
+    )
     original = _write_registry(registry_path=registry_path, vendors=vendors)
     _refresh_or_restore(
         repo_root=repo_root,
         registry_path=registry_path,
         original=original,
+        originals=originals,
     )
     _print_summary(action="Updated", vendor_id=vendor_id)
 
@@ -948,6 +1054,8 @@ def main(argv: list[str] | None = None) -> int:
         return check(repo_root=repo_root)
     except (OSError, RuntimeError, TypeError, ValueError, yaml.YAMLError) as error:
         print(error, file=sys.stderr)
+        for note in getattr(error, "__notes__", ()):
+            print(note, file=sys.stderr)
         return 1
 
 

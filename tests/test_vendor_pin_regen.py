@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import json
-import re
 import subprocess  # nosec B404 - isolated local Git fixtures, no shell
 import sys
 from pathlib import Path
@@ -16,8 +15,7 @@ import yaml
 from assertpy import assert_that
 from ci import create_signed_commit, vendor_pin_artifact
 
-import ai_skills_engine.vendors.manage as manage_vendors
-from ai_skills_engine.registry.registry import load_registry
+pytest_plugins = ("manifest_helpers",)
 
 _ROOT = Path(__file__).resolve().parents[1]
 _REPOSITORY = "owner/catalog"
@@ -167,160 +165,8 @@ def _write_artifact(*, repo_root: Path, status: int = 0) -> Path:
     return directory
 
 
-@pytest.fixture
-def renovate_vendor_manager() -> dict[str, Any]:
-    """Read the actual Renovate manager for vendor refs.
-
-    Returns:
-        The git-refs custom manager configuration.
-    """
-    config = json.loads((_ROOT / "renovate.json").read_text(encoding="utf-8"))
-    return next(
-        item
-        for item in config["customManagers"]
-        if item.get("datasourceTemplate") == "git-refs"
-    )
-
-
-def test_renovate_captures_every_explicit_vendor_branch(
-    renovate_vendor_manager: dict[str, Any],
-) -> None:
-    """The actual Renovate regex extracts all pins and their branch refs."""
-    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
-    matches = [
-        match.groupdict()
-        for match in re.finditer(
-            pattern,
-            (_ROOT / "vendors.yaml").read_text(encoding="utf-8"),
-        )
-    ]
-    vendors = load_registry(registry_path=_ROOT / "vendors.yaml")
-    assert_that(matches).is_equal_to(
-        [
-            {
-                "depName": vendor.repo,
-                "currentDigest": vendor.sha,
-                "currentValue": vendor.branch,
-            }
-            for vendor in vendors
-        ],
-    )
-    assert_that(len(matches)).is_equal_to(5)
-    assert_that(renovate_vendor_manager).does_not_contain_key("currentValueTemplate")
-    for vendor in vendors:
-        assert_that(vendor.branch).is_equal_to("main")
-
-
-def test_renovate_vendor_pattern_uses_re2_subset(
-    renovate_vendor_manager: dict[str, Any],
-) -> None:
-    """Keep the Python matching smoke tests free of RE2-unsupported constructs."""
-    assert_that(renovate_vendor_manager["matchStrings"][0]).does_not_contain(
-        "(?=",
-        "(?!",
-        "(?<=",
-        "(?<!",
-        "(?>",
-        r"\1",
-        r"\k",
-        r"\g",
-    )
-
-
-@pytest.mark.parametrize(
-    "branch",
-    [
-        "main",
-        "release/next",
-        "123",
-        "1.2",
-        "true",
-        "False",
-        "yes",
-        "null",
-        "2026-10-31",
-    ],
-    ids=[
-        "plain",
-        "slash",
-        "integer",
-        "decimal",
-        "true",
-        "false",
-        "yes",
-        "null",
-        "date",
-    ],
-)
-def test_renovate_captures_registry_writer_branch(
-    tmp_path: Path,
-    renovate_vendor_manager: dict[str, Any],
-    branch: str,
-) -> None:
-    """Capture branch names without the quotes emitted by the registry writer."""
-    registry_path = tmp_path / "vendors.yaml"
-    vendor = manage_vendors._build_vendor_mapping(
-        vendor_id="example",
-        repo="owner/example",
-        sha=_NEW_HEAD,
-        branch=branch,
-        skill_roots=("skills",),
-        license_name="MIT",
-        homepage="https://github.com/owner/example",
-        display_ref=None,
-    )
-    manage_vendors._write_registry(registry_path=registry_path, vendors=[vendor])
-    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
-    matches = list(re.finditer(pattern, registry_path.read_text(encoding="utf-8")))
-
-    assert_that(load_registry(registry_path=registry_path)[0].branch).is_equal_to(
-        branch
-    )
-    assert_that(matches).is_length(1)
-    assert_that(matches[0].groupdict()).is_equal_to(
-        {
-            "depName": "owner/example",
-            "currentDigest": _NEW_HEAD,
-            "currentValue": branch,
-        },
-    )
-
-
-@pytest.mark.parametrize(
-    "branch_scalar", ["release/next", "'release/next'", '"release/next"']
-)
-@pytest.mark.parametrize(
-    "comment",
-    ["", " # upstream default", "\t # upstream 'default' (\"main\")"],
-    ids=["no-comment", "space-comment", "tab-comment-with-quotes"],
-)
-@pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
-def test_renovate_captures_yaml_branch_quote_styles(
-    renovate_vendor_manager: dict[str, Any],
-    branch_scalar: str,
-    comment: str,
-    line_ending: str,
-) -> None:
-    """Capture complete YAML scalars with optional comments and line endings."""
-    text = (
-        f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
-        f"    branch: {branch_scalar}{comment}{line_ending}"
-    )
-    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
-    matches = list(re.finditer(pattern, text))
-
-    assert_that(matches).is_length(1)
-    assert_that(matches[0].groupdict()).is_equal_to(
-        {
-            "depName": "owner/example",
-            "currentDigest": _NEW_HEAD,
-            "currentValue": "release/next",
-        },
-    )
-
-
 def test_registry_branch_follows_sha() -> None:
-    """Keep the documented Renovate serialization contract for every entry."""
+    """Keep the stable registry writer serialization for every entry."""
     lines = (_ROOT / "vendors.yaml").read_text(encoding="utf-8").splitlines()
     sha_lines = [
         index for index, line in enumerate(lines) if line.startswith("    sha:")
@@ -434,7 +280,7 @@ def test_graphql_failure_does_not_retry_or_comment(
 
 @pytest.mark.parametrize(
     "name",
-    ["vendors.yaml", "scripts/unsafe.py", "plugins-baked/file"],
+    ["ai-skills.yaml", "scripts/unsafe.py", "plugins-baked/file"],
 )
 def test_non_generated_change_is_rejected(git_tree: Path, name: str) -> None:
     """Commit publication is restricted to generated catalog data."""
@@ -487,7 +333,10 @@ def test_workflow_isolates_credentials_from_pr_head_code() -> None:
         (_ROOT / ".github/workflows/vendor-pin-regen.yml").read_text(encoding="utf-8"),
     )
     assert_that(workflow["on"]["pull_request"]).is_equal_to(
-        {"types": ["opened", "synchronize"], "paths": ["vendors.yaml"]},
+        {
+            "types": ["opened", "synchronize"],
+            "paths": ["ai-skills.yaml", "vendors.yaml"],
+        },
     )
     for name, ref in [("regenerate", "head"), ("publish", "base")]:
         job = workflow["jobs"][name]
@@ -572,7 +421,7 @@ def test_symlink_directory_inside_repo_is_rejected(git_tree: Path) -> None:
     [
         "scripts/ci/create_signed_commit.py",
         ".venv/bin/python",
-        "vendors.yaml",
+        "ai-skills.yaml",
         "/NOTICE.md",
         "vendor-indexes/../scripts/unsafe.py",
         "vendor-indexes/./x",
@@ -1095,80 +944,3 @@ def test_collision_report_posts_without_commit_then_fails(
         "/graphql"
     )
     assert_that(api.call_args.kwargs["path"]).ends_with("/issues/522/comments")
-
-
-@pytest.mark.parametrize("branch", ["it's", 'embedded"quote', "both'\"quotes"])
-@pytest.mark.parametrize("comment", ["", " # upstream default"])
-@pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
-def test_renovate_never_truncates_unsupported_branch_quotes(
-    renovate_vendor_manager: dict[str, Any],
-    branch: str,
-    comment: str,
-    line_ending: str,
-) -> None:
-    """Quoted branch names must never silently become a shorter upstream ref."""
-    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
-    for scalar in [branch, f"'{branch}'", json.dumps(branch)]:
-        text = (
-            f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
-            f"    branch: {scalar}{comment}{line_ending}"
-        )
-        assert_that(list(re.finditer(pattern, text))).is_empty()
-
-
-@pytest.mark.parametrize(
-    "branch_scalar",
-    ["'main''suffix'", '"main"suffix"', "main'bad", '"main"#no-separation'],
-)
-@pytest.mark.parametrize("line_ending", ["\n", "\r\n", ""], ids=["lf", "crlf", "eof"])
-def test_renovate_rejects_malformed_scalar_boundaries(
-    renovate_vendor_manager: dict[str, Any],
-    branch_scalar: str,
-    line_ending: str,
-) -> None:
-    """Embedded quotes and unseparated comments cannot truncate the captured ref."""
-    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
-    text = (
-        f'repo: owner/example\n    sha: "{_NEW_HEAD}"\n'
-        f"    branch: {branch_scalar}{line_ending}"
-    )
-    assert_that(list(re.finditer(pattern, text))).is_empty()
-
-
-@pytest.mark.parametrize(
-    "branch_scalar",
-    ['"main', "'main", 'main"', "main'", "'main\"", "\"main'"],
-)
-@pytest.mark.parametrize("comment", ["", " # upstream 'default'"])
-def test_registry_rejects_unbalanced_quotes_permitted_by_renovate(
-    tmp_path: Path,
-    renovate_vendor_manager: dict[str, Any],
-    branch_scalar: str,
-    comment: str,
-) -> None:
-    """YAML/registry validation enforces quote pairing outside the RE2 regex."""
-    registry = tmp_path / "vendors.yaml"
-    registry.write_text(
-        "vendors:\n"
-        "  - id: example\n"
-        "    repo: owner/example\n"
-        f'    sha: "{_NEW_HEAD}"\n'
-        f"    branch: {branch_scalar}{comment}\n"
-        "    skillRoots: [skills]\n"
-        "    license: MIT\n"
-        "    homepage: https://github.com/owner/example\n",
-        encoding="utf-8",
-    )
-    pattern = renovate_vendor_manager["matchStrings"][0].replace("(?<", "(?P<")
-    matches = list(re.finditer(pattern, registry.read_text(encoding="utf-8")))
-    assert_that([match.groupdict() for match in matches]).is_equal_to(
-        [
-            {
-                "depName": "owner/example",
-                "currentDigest": _NEW_HEAD,
-                "currentValue": "main",
-            }
-        ],
-    )
-    with pytest.raises((yaml.YAMLError, ValueError)):
-        load_registry(registry_path=registry)

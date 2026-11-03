@@ -11,6 +11,11 @@ import pytest
 from assertpy import assert_that
 from loguru import logger
 
+from ai_skills_engine.generate import marketplace
+from ai_skills_engine.manifest.edit import dump_document
+from ai_skills_engine.manifest.legacy import write_legacy
+from ai_skills_engine.manifest.load import read_document
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -36,6 +41,7 @@ def _copy_validate_script(
         "bake_vendor_plugins.py",
         "validate_skills.py",
         "check_suppressions.py",
+        "generate_marketplace.py",
     ):
         shutil.copy2(
             src=repo_root / "scripts" / helper,
@@ -47,6 +53,8 @@ def _copy_validate_script(
     shutil.copytree(src=repo_root / "src", dst=tmp_path / "src")
     for fixture_file in ("requirements-audit.txt", "pyproject.toml", "uv.lock"):
         shutil.copy2(src=repo_root / fixture_file, dst=tmp_path / fixture_file)
+    (tmp_path / "docs").mkdir()
+    shutil.copy2(src=repo_root / "docs/glossary.md", dst=tmp_path / "docs/glossary.md")
     shutil.copy2(src=repo_root / "vendors.yaml", dst=tmp_path / "vendors.yaml")
     shutil.copy2(src=repo_root / "NOTICE.md", dst=tmp_path / "NOTICE.md")
     shutil.copytree(
@@ -72,6 +80,41 @@ def _run_validate(
         ``stdout`` and ``stderr`` (``text=True``).
     """
     logger.debug("Running validate.sh cwd={} script={}", cwd, script_path)
+    if (cwd / "skills").is_dir() and (cwd / "vendors.yaml").is_file():
+        # Keep the declaration gates real while each existing test independently
+        # varies skill/frontmatter inputs. No network or vendor execution occurs.
+        names = sorted(path.parent.name for path in (cwd / "skills").glob("*/SKILL.md"))
+        (cwd / "bundles.yaml").write_text(
+            dump_document({"groups": {}, "ungrouped": names})
+        )
+        vendors = read_document(REPO_ROOT / "ai-skills.yaml")["vendors"]
+        declaration = {
+            "apiVersion": "ai-skills.dev/v1",
+            "publisher": {"id": "fixture"},
+            "packages": [
+                {
+                    "id": "other",
+                    "x-legacy-ungrouped": True,
+                    "capabilities": [
+                        {"id": f"fixture-{index}", "path": f"skills/{name}"}
+                        for index, name in enumerate(names)
+                    ],
+                }
+            ],
+            "vendors": vendors,
+            "exports": [
+                f"{vendor['id']}/{package['id']}"
+                for vendor in vendors
+                for package in vendor["mapping"].get("packages", [])
+            ],
+            "x-legacy-format": {
+                name: (cwd / name).read_text()
+                for name in ("bundles.yaml", "vendors.yaml")
+            },
+        }
+        (cwd / "ai-skills.yaml").write_text(dump_document(declaration))
+        write_legacy(cwd)
+        marketplace.main(["--repo-root", str(cwd)])
     env = dict(os.environ)
     # Use the existing project environment for the copied Python validators.
     # Never sync packages or contact the network from these unit tests.
@@ -128,6 +171,9 @@ def audit_validation_repo(
         "    fi\n"
         "    ;;\n"
         '  "run python "*/validate_skills.py" skills" | '
+        '"run ai-skills-engine manifest validate --terminology" | '
+        '"run ai-skills-engine manifest legacy --check" | '
+        '"run python scripts/generate_marketplace.py --check" | '
         '"run python "*/check_suppressions.py | '
         '"run python "*/bake_vendor_indexes.py" --check") ;;\n'
         '  *) echo "Unexpected uv invocation: $*" >&2; exit 90 ;;\n'

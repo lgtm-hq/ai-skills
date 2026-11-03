@@ -284,7 +284,7 @@ ID Application, hardened runtime and reviewed Bun/JIT entitlements. B needs nest
 Mach-O extensions/dylibs and its interpreter signed inside-out with reviewed
 entitlements. Notarize the final archive/container using `notarytool`, assess the
 distributed output with `spctl`, and test Finder behavior. Bare executables and
-zip/directory bundles cannot receive stapled tickets; supported pkg/app/dmg
+zip/directory archives cannot receive stapled tickets; supported pkg/app/dmg
 containers can. Exact entitlements, notarization/stapling and signed verification
 belong to human-secret-gated [#619](https://github.com/lgtm-hq/ai-skills/issues/619).
 Both Windows variants need Authenticode for a signed route; this is cost-gated
@@ -302,7 +302,7 @@ when B is equally deployable under required private-registry/no-Node/offline
 restrictions, choose a single Python engine behind a thin TypeScript npm launcher.
 All ten native cells pass those restrictions in both inspected runs, so **apply
 that branch and accept revised ADR 0008**. Smaller POSIX A footprint does not invent
-a budget or override the rule. The selected self-contained Python bundle supplies
+a budget or override the rule. The selected self-contained Python runtime supplies
 the standalone primary offline route; no consumer Python is required.
 
 The semantic build/install boundary remains: only build may resolve; install
@@ -317,7 +317,7 @@ Downstream reconciliation is required #562 work before implementation:
 | #566  | Migrate authored JS to strict TS; final role is a thin npm launcher selecting/invoking the Python payload. Replace Bun-compiled engine targets with bundled-runtime handoff. | Behavior/CLI golden parity, test count/coverage, typecheck, no authored JS, required gateway CI.                                      |
 | #567  | Extract the typed Python package as the common engine for build and install; subsequent work adds install commands there.                                                    | Behavior-preserving extraction, old shims/flags, mypy strict, `py.typed`, generated-byte parity and wheel import.                     |
 | #578  | Implement artifact verification, subtraction, closure/deny evaluation and consumer profiles in Python; TS delegates.                                                         | Digest/schema failure before writes, multi-hop origin deny, stale selector/frozen/profile behavior, no install resolution or network. |
-| #386  | Distribute artifacts plus per-platform self-contained Python bundles; TS npm wrapper, direct offline primary and npm local-file fallback.                                    | Byte/digest identity, private mirrors, both registry clients, no bootstrap, license/notice and owner attestation/signing policies.    |
+| #386  | Distribute artifacts plus per-platform self-contained Python runtimes; TS npm wrapper, direct offline primary and npm local-file fallback.                                   | Byte/digest identity, private mirrors, both registry clients, no bootstrap, license/notice and owner attestation/signing policies.    |
 
 Replacement bodies and explanatory implementation-prompt corrections are prepared
 from fresh issue bodies/comments for the parent to apply and independently read

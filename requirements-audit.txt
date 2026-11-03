@@ -3,6 +3,7 @@ annotated-types==0.8.0
 anyio==4.15.1
 assertpy==1.1
 ast-serialize==0.13.1
+attrs==26.1.0
 certifi==2026.10.23
 click==8.5.0
 colorama==0.4.6 ; sys_platform == 'win32'
@@ -15,6 +16,8 @@ httpx==0.28.1
 identify==2.6.20
 idna==3.20
 iniconfig==2.3.1
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
 librt==0.16.0 ; platform_python_implementation != 'PyPy'
 lintro==0.173.7
 loguru==0.7.3
@@ -33,9 +36,12 @@ pytest-cov==7.1.0
 pytest-timeout==2.4.0
 pytest-xdist==3.8.0
 pyyaml==6.0.3
+referencing==0.37.0
 rich==15.0.0
 ripgrep==15.1.0
+rpds-py==2026.9.1
 tabulate==0.10.0
+types-jsonschema==4.26.0.20261006
 types-pyyaml==6.0.12.20261030
 typing-extensions==4.16.0
 typing-inspection==0.4.4

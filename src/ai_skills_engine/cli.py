@@ -8,6 +8,7 @@ from collections.abc import Callable
 from ai_skills_engine import package_sync, validate_skills
 from ai_skills_engine.bake import vendor_indexes, vendor_plugins
 from ai_skills_engine.generate import agents_md, marketplace, readme, skills_manifest
+from ai_skills_engine.manifest import cli as manifest_cli
 from ai_skills_engine.vendors import manage, repin
 
 
@@ -32,6 +33,11 @@ def main(argv: list[str] | None = None) -> int:
     for name, handler in routes.items():
         commands.add_parser(name, add_help=False).set_defaults(handler=handler)
     for name, targets in {
+        "manifest": {
+            "validate": manifest_cli.validate,
+            "migrate": manifest_cli.migration,
+            "legacy": manifest_cli.legacy,
+        },
         "generate": {
             "marketplace": marketplace.main,
             "readme": readme.main,

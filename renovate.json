@@ -15,15 +15,17 @@
       ]
     },
     {
-      "customType": "regex",
+      "customType": "jsonata",
       "managerFilePatterns": [
-        "/^vendors\\.yaml$/"
+        "/^ai-skills\\.yaml$/"
       ],
+      "description": "Track manifest vendor pins using native YAML records independent of indentation and field order",
       "matchStrings": [
-        "repo:\\s*(?<depName>[^\\s]+)\\s+sha:\\s*[\"']?(?<currentDigest>[0-9a-f]{40})[\"']?\\s+branch:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?(?:[ \t]+#[^\\r\\n]*)?[ \t]*(?:\\r?\\n|$)"
+        "vendors[$type(repo) = 'string' and $type(sha) = 'string' and $type(branch) = 'string'].{'depName': repo, 'currentDigest': sha, 'currentValue': branch}"
       ],
       "datasourceTemplate": "git-refs",
-      "packageNameTemplate": "https://github.com/{{{depName}}}"
+      "packageNameTemplate": "https://github.com/{{{depName}}}",
+      "fileFormat": "yaml"
     },
     {
       "customType": "regex",

@@ -1,0 +1,54 @@
+{
+  "revision": "03949855f66eea416afa726ec3ab23223cccf294",
+  "repository": "https://github.com/renovatebot/renovate",
+  "files": {
+    "lib/modules/manager/custom/jsonata/index.ts": {
+      "file": "lib__modules__manager__custom__jsonata__index.ts.txt",
+      "sha256": "69a0516d3bd51e02e09a5f149e1c00fd7985b4b5725f069ed0bd62437149edec"
+    },
+    "lib/modules/manager/custom/jsonata/schema.ts": {
+      "file": "lib__modules__manager__custom__jsonata__schema.ts.txt",
+      "sha256": "7c7fcbc712d939fe11b52f1110967bcb7c48b4cfb9d1dec59166f51f44b69718"
+    },
+    "lib/modules/manager/custom/jsonata/utils.ts": {
+      "file": "lib__modules__manager__custom__jsonata__utils.ts.txt",
+      "sha256": "8fbbf0392b526a9f791b47d451d334624ae3e0d84905477dc58aaa2dccf3ab61"
+    },
+    "lib/modules/manager/custom/utils.ts": {
+      "file": "lib__modules__manager__custom__utils.ts.txt",
+      "sha256": "c197b53f60f79dffbfe46f9954c485449c030df7c31fce5126f0dd199cfd2c21"
+    },
+    "lib/util/yaml.ts": {
+      "file": "lib__util__yaml.ts.txt",
+      "sha256": "c9f45cbe9b1c4efa9759d990df24861a54d2294b0a072c9d00977cb3059ea804"
+    },
+    "lib/workers/repository/update/branch/auto-replace.ts": {
+      "file": "lib__workers__repository__update__branch__auto-replace.ts.txt",
+      "sha256": "ae5c9df30c2d2a115f92353af381c5bde41a6414eebe37baf9df427bdcfe431c"
+    },
+    "lib/util/string.ts": {
+      "file": "lib__util__string.ts.txt",
+      "sha256": "827bb51a004e7b6f50dcaf28423066ccfafa2444fa26601c97852c14d95c1cb5"
+    },
+    "lib/modules/manager/custom/regex/index.ts": {
+      "file": "lib__modules__manager__custom__regex__index.ts.txt",
+      "sha256": "2662945975ea6640a3f321c8331629cdabe4b282000d8e635a23bdd312fc1e14"
+    },
+    "lib/modules/manager/custom/regex/strategies.ts": {
+      "file": "lib__modules__manager__custom__regex__strategies.ts.txt",
+      "sha256": "1836554fb953f425880a91f4d25644bfee53e7c0a1a66640a57a94e66b0c8a7b"
+    },
+    "lib/modules/manager/custom/regex/utils.ts": {
+      "file": "lib__modules__manager__custom__regex__utils.ts.txt",
+      "sha256": "11eac842bb88242be8c17865f6e1f548eea8cc5a7f8a6e7c0ae3abb7c304226f"
+    }
+  },
+  "version": "44.206.2",
+  "dependencies": {
+    "@sindresorhus/is": "8.1.0",
+    "handlebars": "4.7.10",
+    "jsonata": "2.2.1",
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  }
+}

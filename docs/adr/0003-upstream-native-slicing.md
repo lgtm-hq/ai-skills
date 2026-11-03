@@ -31,7 +31,7 @@ Slice with **upstream-native marketplace metadata**, not a physical
 restructure of `skills/`. First-party groups in `bundles.yaml` become
 marketplace plugins that share the repo root and list their skill paths.
 `strict: false` means the skills array is authoritative for Claude;
-plugin.json does not have to enumerate components.
+`plugin.json` does not have to enumerate `components`.
 
 Vendor bake may copy a subset into a new tree when the vendor is a loose
 skills repo. That is a bake-time mapping, still declared in the registry,

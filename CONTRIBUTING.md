@@ -13,13 +13,64 @@ document:
 
 ## What belongs in this repo
 
+- **Manifest:** `ai-skills.yaml` is the source of truth for publication and
+  pinned imports. Run `uv run ai-skills-engine manifest validate --terminology`
+  to validate it. The v1 JSON Schema is published at
+  `schemas/ai-skills.v1.schema.json`. `bundles.yaml` and `vendors.yaml` are derived
+  compatibility files; regenerate them with
+  `uv run ai-skills-engine manifest legacy`. CI uses the same writer with
+  `--check` to fail on byte drift. `manifest migrate` is a one-shot migration
+  from legacy registries and refuses to overwrite an existing manifest.
+  The `x-legacy-format` extension retains original bytes as hexadecimal layout
+  snapshots (short chunks avoid interpreting embedded YAML as prose), while
+  every generated value comes from manifest declarations. The `other` package
+  preserves the old ungrouped selection without adding it to host marketplaces.
+  Manifest loading also rejects comments immediately after quoted scalars
+  (`branch: "main"#comment`): PyYAML and Renovate's permissive YAML parser
+  accept those bytes, but YAML requires whitespace before the comment.
+  Validation and compatibility publication share this lexical check.
+  Each `vendors[].sha` must appear directly as an unescaped 40-hex scalar,
+  either plain or ordinary single/double quoted. Escape sequences, folded/block
+  scalars, YAML anchors (`&`), aliases (`*`) and tags are rejected before
+  rendering, writing or checking either compatibility registry. Errors name
+  the vendor index and ID. This source rule lets native Renovate update one
+  vendor's pin safely; escaped SHA text cannot be replaced, and shared SHA
+  anchors would update multiple vendors. Repository, branch and other field
+  spellings retain their existing validation rules.
+  Legacy output rejects payload roles/paths it cannot represent; it never
+  invents install behavior for newer declarations.
+  Compatibility publication also requires explicit exports for every local
+  marketplace package and mapped vendor package. Narrowed exports or vendor
+  selectors fail before either generated registry is written. An explicit
+  include of every mapped package and an empty exclude list are supported;
+  narrower selection requires a manifest-aware publisher. Exporting the reserved
+  ungrouped package is rejected because legacy marketplaces cannot publish it.
+  Non-empty capability `requires`/`resources` and local package `resources` also
+  require manifest-aware publication. Empty declarations and advisory `related`
+  metadata remain compatible with legacy output.
+  Local capabilities require an explicit `id` alongside `path`; migration
+  records the legacy skill name as that ID. This follows ADR 0011's stable
+  identity contract so moving a payload never silently changes its identity.
+  The Python engine ships a generated schema resource so installed commands work
+  without this checkout. Regenerate it and the npm schema data with
+  `uv run ai-skills-engine package-sync`; `package-sync --check` rejects drift
+  from the published schema. Edit only the canonical file under `schemas/`.
+- **Offline vendor validation:** use `manifest validate --vendor-root ID=PATH`
+  for each locally available vendor checkout. Its own `publisher.id` identifies
+  its packages. Consumer mapping is rejected when that checkout supplies a
+  manifest. Imported policy, overrides and extensions produce ignored-authority
+  diagnostics and are removed from the imported model; consumer policy is never
+  merged with them. Validation performs no fetches or vendor execution. Without
+  local vendor manifests, only consumer-mapped package exports can be resolved.
+  In v1, persisted collision records use `capability`, `action` (`keep`, `rename`
+  or `skip`) and a required `name` for `rename`.
 - **Skills:** each skill is `skills/<name>/SKILL.md` with YAML frontmatter (`name`,
   `description`, …) following the conventions used by existing skills.
 - **Index:** after adding, renaming, or removing skills, **`AGENTS.md` must stay in
   sync**. CI runs `scripts/generate_agents_md.py` / validation; run the same checks
   locally before opening a PR (see below).
-- **Plugins:** assign each skill to a plugin group in **`bundles.yaml`** (or
-  list it under `ungrouped` until it joins a plugin). Each group needs a
+- **Plugins:** assign each skill to a package in **`ai-skills.yaml`** (or
+  to package `other` until it joins a named publication). Each package needs a
   kebab-case **`id`** (the installable plugin name). Regenerate
   **`.claude-plugin/marketplace.json`** and
   **`.cursor-plugin/marketplace.json`** with
@@ -60,6 +111,11 @@ implementation as `scripts/generate_marketplace.py --check`. Commands discover a
 repository by walking up from cwd for `pyproject.toml` and `skills/`, or accept
 `--repo-root PATH`. Relative file operands retain their cwd-relative meaning.
 Tests import and monkeypatch the real package modules, never the script shims.
+The ordinary Python suite needs neither Bun nor npm dependencies. The gateway
+gate runs `scripts/ci/npm/manifest_yaml_boundary_tests.py` explicitly after its
+locked Bun dependency install. That required offline comparison uses Renovate's
+real production YAML parser options (`strict: false`); missing dependencies fail
+the gate rather than skipping it.
 `uv build` produces the typed wheel; runtime dependencies are separate from dev
 tooling. Consumer runtime bundling and install commands are subsequent work under
 ADR 0008.
@@ -337,10 +393,13 @@ uv run python scripts/repin_vendor.py --all
 uv run python scripts/repin_vendor.py --id mattpocock --json
 ```
 
-Renovate tracks the explicit `branch` after each vendor's `sha` (currently
-`main` for all five vendors). Keep that field immediately after `sha` so the
-custom manager can capture the branch and digest. `manage_vendors.py add`
-and `update` accept `--branch` and preserve this ordering.
+Renovate tracks each manifest vendor's explicit `branch` (currently `main`
+for all five vendors). Its native YAML/JSONata manager discovers complete vendor
+records at any valid indentation and in any field order, including comments
+and indentless sequences. YAML decoding supplies repository and branch values,
+so an escaped repository spelling still identifies the decoded dependency.
+`manage_vendors.py add` and `update` accept `--branch` and preserve their stable
+writer ordering. Vendor pins follow the SHA source contract above.
 
 To switch an existing vendor from branch tracking to a release tag, use the
 update-only `--clear-branch` flag together with `--display-ref` and the tag's
@@ -356,13 +415,14 @@ uv run python scripts/manage_vendors.py update --id owner-skills \
 `--branch`. Omitting both flags preserves existing branch tracking, even when
 `--display-ref` changes.
 
-Branch names containing either quote character are explicitly unsupported:
-Renovate's regex manager cannot decode arbitrary YAML scalar escapes. The
-registry rejects these names, as well as whitespace and control characters,
-instead of capturing a truncated ref. Simple quoted scalars remain supported.
-Balanced surrounding quotes are enforced by YAML/registry validation, not the
-Renovate RE2 regex. The regex permits optional surrounding quotes and valid
-inline comments; malformed quoting must still fail registry validation.
+The legacy registry still rejects branch names containing quotes, whitespace
+or control characters. Native discovery decodes complete YAML scalars without
+truncating them; manifest loading enforces YAML comment separation even though
+Renovate's production parser uses `strict: false`. The prepared gateway gate
+runs the byte-verified Renovate 44.206.2 extractor and updater snapshots in
+`tests/fixtures/manifest/renovate-runner.mjs`, with locked production dependency
+versions. Missing Bun or dependencies fail this gate; the Python-only suite
+does not require either runtime.
 
 [`.github/workflows/vendor-pin-regen.yml`](.github/workflows/vendor-pin-regen.yml)
 refreshes generated data on same-repository `renovate/**` PRs authored by

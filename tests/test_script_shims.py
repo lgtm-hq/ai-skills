@@ -70,7 +70,17 @@ def checkout_python(tmp_path_factory: pytest.TempPathFactory) -> Path:
         / f"python{sys.version_info.major}.{sys.version_info.minor}"
         / "site-packages"
     )
-    for name in ("yaml", "markdown_it", "mdurl"):
+    for name in (
+        "yaml",
+        "markdown_it",
+        "mdurl",
+        "jsonschema",
+        "jsonschema_specifications",
+        "referencing",
+        "rpds",
+        "attr",
+        "attrs",
+    ):
         spec = find_spec(name)
         if spec is None or spec.origin is None:
             raise RuntimeError(f"Missing runtime dependency: {name}")

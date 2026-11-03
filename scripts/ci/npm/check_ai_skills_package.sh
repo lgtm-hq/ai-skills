@@ -17,7 +17,16 @@ uv run --no-sync python scripts/ci/npm/sync_ai_skills_package.py --check --versi
 
 cd npm/ai-skills
 bun install --frozen-lockfile
-bunx tsc --noEmit
+# Maintained fixtures live outside the gateway's ordinary TypeScript include.
+bunx --no-install tsc --noEmit -p tsconfig.fixtures.json
+# The Python-only job has no Bun/node_modules. This prepared gate owns the
+# mandatory production parser/extractor/updater controls; never acquire in tests.
+UV_OFFLINE=1 uv run --no-sync pytest \
+  "$REPO_ROOT/scripts/ci/npm/manifest_fixture_type_tests.py" \
+  "$REPO_ROOT/scripts/ci/npm/manifest_yaml_boundary_tests.py" \
+  "$REPO_ROOT/scripts/ci/npm/manifest_scalar_tests.py" \
+  "$REPO_ROOT/scripts/ci/npm/manifest_renovate_tests.py"
+bunx --no-install tsc --noEmit
 bun test --coverage
 bun run build:launcher
 bun scripts/launcher-smoke.ts

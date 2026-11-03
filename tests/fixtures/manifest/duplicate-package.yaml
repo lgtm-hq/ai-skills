@@ -1,0 +1,117 @@
+---
+apiVersion: ai-skills.dev/v1
+publisher:
+  id: local
+  repo: owner/catalog
+packages:
+  - id: tools
+    name: Tools
+    description: Local capabilities.
+    capabilities:
+      - path: skills/run
+        id: execute
+        role: skill
+        requires:
+          - upstream/tools:skill/help
+        related:
+          - local/tools:workflow/*
+        resources:
+          - local/tools:resource/notice
+    resources:
+      - id: notice
+        path: NOTICE.md
+  - id: tools
+    name: Tools
+    description: Local capabilities.
+    capabilities:
+      - path: skills/run
+        id: execute
+        role: skill
+        requires:
+          - upstream/tools:skill/help
+        related:
+          - local/tools:workflow/*
+        resources:
+          - local/tools:resource/notice
+    resources:
+      - id: notice
+        path: NOTICE.md
+vendors:
+  - id: upstream
+    repo: owner/upstream
+    sha: 0123456789abcdef0123456789abcdef01234567
+    branch: main
+    displayRef: latest
+    license: MIT
+    homepage: https://example.test/upstream
+    mapping:
+      skillRoots:
+        - skills
+      packages:
+        - id: tools
+          description: Mapped capabilities.
+          skillsRoot: skills
+          skills: '*'
+          extraSkills:
+            - extras/help
+          extraFiles:
+            - NOTICE.md
+          renameSkills:
+            help: help-upstream
+          agents:
+            - reviewer
+          capabilities:
+            help:
+              id: helper
+              requires:
+                - local/tools:skill/execute
+              related:
+                - upstream/tools:skill/*
+              resources:
+                - local/tools:resource/notice
+    include:
+      - upstream/tools*
+    exclude: []
+exports:
+  - tools
+  - upstream/tools
+policy:
+  provenance:
+    mode: strict
+    acceptAttestations: false
+  deny:
+    origins:
+      - github.com/denied/repository
+  roles:
+    - skill
+    - instruction
+    - specialist
+    - workflow
+    - lifecycle
+    - integration
+  modes:
+    codex: user-explode
+    claude-code: native-plugin
+    cursor: repo-materialize
+  transports:
+    - npm
+    - release-asset
+    - git-marketplace
+    - offline
+overrides:
+  migrations:
+    - from: local/tools:skill/old
+      to: local/tools:skill/execute
+  attestations:
+    - capability: local/tools:skill/execute
+      path: NOTICE.md
+      independentlyAuthored: true
+      reason: Independently written.
+  collisions:
+    - capability: local/tools:skill/execute
+      action: rename
+      name: execute-local
+x-example:
+  opaque:
+    - bundle
+    - arbitrary: true

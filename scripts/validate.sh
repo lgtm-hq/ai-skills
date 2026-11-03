@@ -29,6 +29,10 @@ Checks:
   10. vendors.yaml schema, baked vendor indexes, and NOTICE.md are current via:
      uv run python scripts/bake_vendor_indexes.py --check
      (vendor plugin bake is a CI/publish gate, not a committed-tree check)
+  11. ai-skills.yaml schema, identities, selectors and maintained terminology
+      (uv run ai-skills-engine manifest validate --terminology)
+  12. Generated legacy registries have no byte drift from ai-skills.yaml
+      (uv run ai-skills-engine manifest legacy --check)
 EOF
   exit 0
 fi
@@ -39,6 +43,13 @@ if [[ ! -d "skills" ]]; then
 fi
 
 errors=0
+
+if ! uv run ai-skills-engine manifest validate --terminology; then
+  errors=$((errors + 1))
+fi
+if ! uv run ai-skills-engine manifest legacy --check; then
+  errors=$((errors + 1))
+fi
 
 for dir in skills/*; do
   [[ -d "$dir" ]] || continue
