@@ -28,6 +28,64 @@ pytest_plugins = ["inventory_helpers"]
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize(
+    "control,expected",
+    [("same-stem", 0), ("ordinary", 0), ("specialist-only", 1), ("unused", 1)],
+)
+def test_installed_skill_aliases_do_not_rename_specialists(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    control: str,
+    expected: int,
+) -> None:
+    """Real installed inventory and validation enforce the skill rename boundary."""
+    from inventory_helpers import configure_inventory_aliases, inventory_snapshot
+
+    root, vendor = inventory_repo
+    configure_inventory_aliases(root=root, vendor=vendor, control=control)
+    before = inventory_snapshot(root, vendor)
+    operands = ["--repo-root", str(root), "--vendor-root", f"vendor={vendor}"]
+    for command in (["inventory", "--json"], ["manifest", "validate"]):
+        result = _run(
+            args=[str(installed_command), *command, *operands],
+            cwd=root.parent,
+            expected=expected,
+        )
+        assert_that(cli.main([*command, *operands])).is_equal_to(expected)
+        source = capsys.readouterr()
+        assert_that((result.stdout, result.stderr)).is_equal_to(
+            (source.out, source.err)
+        )
+        if expected:
+            assert_that(result.stdout).contains(
+                "inventory.invalid-payload",
+                "Unused mapped capability/renameSkills",
+                "reviewer" if control == "specialist-only" else "absent",
+            )
+        elif command[0] == "inventory":
+            repeat = _run(
+                args=[str(installed_command), *command, *operands], cwd=root.parent
+            )
+            assert_that(repeat.stdout).is_equal_to(result.stdout)
+            capabilities = json.loads(result.stdout)["capabilities"]
+            records = {item["id"]: item for item in capabilities}
+            assert_that(
+                records["vendor/tools:specialist/reviewer"]["aliases"]
+            ).is_empty()
+            assert_that(records["vendor/tools:skill/helper"]["aliases"]).is_equal_to(
+                ["help-alias" if control == "same-stem" else "ordinary-helper"]
+            )
+            if control == "same-stem":
+                assert_that(
+                    records["vendor/tools:skill/reviewer"]["aliases"]
+                ).is_equal_to(["review-helper"])
+            for item in capabilities:
+                if item["role"] != "skill":
+                    assert_that(item["aliases"]).described_as(item["id"]).is_empty()
+    assert_that(inventory_snapshot(root, vendor)).is_equal_to(before)
+
+
 def test_installed_inventory_modes_survive_real_tarball_acquisition(
     installed_command: Path, inventory_repo: tuple[Path, Path], tmp_path: Path
 ) -> None:

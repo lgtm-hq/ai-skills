@@ -13,6 +13,7 @@ from ai_skills_engine.inventory.resource_id import ResourceId
 from ai_skills_engine.inventory.resource_record import Resource
 from ai_skills_engine.inventory.roles import inspect_role
 from ai_skills_engine.manifest.diagnostic import Diagnostic
+from ai_skills_engine.manifest.identity import Role
 from ai_skills_engine.manifest.package import Package
 from ai_skills_engine.manifest.vendor import Vendor
 
@@ -62,7 +63,7 @@ def collect_package(
         package: Publication declarations.
         package_id: Qualified package.
         origin: Original repository resource_identity.
-        aliases: Explicit destination-name aliases.
+        aliases: Explicit skill destination-name aliases.
         vendor: Direct import boundary, absent for locals.
         pending: Capability accumulator.
         resources: Resource accumulator.
@@ -144,7 +145,11 @@ def collect_package(
                 source_path=PurePosixPath(declaration.path),
                 payload=payload,
                 tree_digest=tree_digest(payload),
-                aliases=(aliases[upstream],) if upstream in aliases else (),
+                aliases=(
+                    (aliases[upstream],)
+                    if declaration.role == Role.SKILL and upstream in aliases
+                    else ()
+                ),
                 host_attributes=attributes,
             )
             pending.append(
