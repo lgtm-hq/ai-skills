@@ -101,9 +101,9 @@ def _copy_runtime_dependencies(*, requirements: list[str], site: Path) -> None:
         assert_that(requirement.specifier.contains(dependency.version)).is_true()
         copied.add(name)
         pending.extend(dependency.requires or [])
-        base = Path(dependency.locate_file("")).resolve()
+        base = Path(str(dependency.locate_file(""))).resolve()
         for member in dependency.files or []:
-            source = Path(dependency.locate_file(member)).resolve()
+            source = Path(str(dependency.locate_file(member))).resolve()
             if source.is_file() and source.is_relative_to(base):
                 target = site / source.relative_to(base)
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -527,6 +527,49 @@ def test_installed_publication_requires_marketplace_acceptance(
             assert_that((tmp_path / name).read_bytes()).is_equal_to(
                 (ROOT / name).read_bytes()
             )
+
+
+@pytest.mark.parametrize(
+    ("option", "diagnostic"),
+    [("--sha", "schema"), ("--homepage", "Legacy publication")],
+)
+def test_installed_management_rejection_restores_exact_files(
+    installed_command: Path, tmp_path: Path, option: str, diagnostic: str
+) -> None:
+    """The installed management CLI rolls back before any vendor acquisition."""
+    shutil.copytree(src=ROOT / "skills", dst=tmp_path / "skills")
+    before = {}
+    for name in ("ai-skills.yaml", "bundles.yaml", "vendors.yaml"):
+        path = tmp_path / name
+        content = b"# original installed bytes\r\n" + (
+            ROOT / name
+        ).read_bytes().replace(b"\n", b"\r\n")
+        path.write_bytes(content)
+        path.chmod(0o640)
+        before[name] = (content, path.stat().st_mode)
+    vendor_id = read_document(tmp_path / "ai-skills.yaml")["vendors"][0]["id"]
+    result = _run(
+        args=[
+            str(installed_command),
+            "--repo-root",
+            str(tmp_path),
+            "vendors",
+            "update",
+            "--id",
+            vendor_id,
+            option,
+            "invalid",
+        ],
+        cwd=tmp_path.parent,
+        expected=1,
+    )
+    assert_that(result.stdout + result.stderr).contains(diagnostic)
+    assert_that(
+        {
+            name: ((tmp_path / name).read_bytes(), (tmp_path / name).stat().st_mode)
+            for name in before
+        }
+    ).is_equal_to(before)
 
 
 @pytest.mark.parametrize(
