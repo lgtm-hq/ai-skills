@@ -39,6 +39,36 @@ document:
   spellings retain their existing validation rules.
   Legacy output rejects payload roles/paths it cannot represent; it never
   invents install behavior for newer declarations.
+  `uv run ai-skills-engine inventory --json` observes local payloads, stable
+  qualified IDs, sorted SHA-256/mode records, direct declared edges and shared
+  resources. Both inventory and `manifest validate` include inventory diagnostics
+  and exit nonzero on errors. Prose mentions and actual Markdown destinations
+  produce lint only; they never create dependency edges. Code fences and code
+  spans are inert. External local links must stay within that capability's
+  explicitly referenced resources; a resource declaration in another package
+  alone does not grant access. Resource Markdown uses the same boundary.
+  Tree digests hash compact ASCII JSON arrays of sorted path/hash/mode triples;
+  payload modes are canonical Git-like `0644` (no owner execute bit) or `0755`
+  (owner execute bit set), for files in capability and resource payloads alike.
+  Other permission and special bits and directory permissions are not identity;
+  timestamps are also excluded. Owner execution matches Git and survives the
+  fetcher's safe tar data filter; group/other-only execution is not preserved
+  by that filter and does not mark a payload executable. Thus equivalent local
+  snapshots under umask `002` or `022` and fetched trees have the same digests.
+  Collection observes these modes without changing source permissions or
+  authorizing or executing vendor code.
+  Host-specific frontmatter retains canonical JSON values and explicit rules
+  from the wheel's `data/host_attributes.yaml`. Unknown hosts and strict
+  `unverified` rules refuse; collection does not certify host semantics.
+  YAML dates and timestamps use `{"$yaml":"date|datetime","value":"ISO-8601"}`.
+  Mappings with non-string keys or a literal `$yaml` key use
+  `{"$yaml":"mapping","items":[[key,value],...]}`, sorted by canonical JSON
+  key, preserving key types without string collisions. Other JSON values retain
+  their shapes. Unsupported types, non-finite floats, recursive aliases, depth
+  over 64 or expansion over 10,000 nodes raise `inventory.invalid-host-attribute`
+  errors while retaining the capability, payload and declared edges. Such an
+  inventory is invalid for use; an omitted attribute never authorizes projection.
+
   Compatibility publication also requires explicit exports for every local
   marketplace package and mapped vendor package. Narrowed exports or vendor
   selectors fail before either generated registry is written. An explicit
@@ -55,6 +85,7 @@ document:
   without this checkout. Regenerate it and the npm schema data with
   `uv run ai-skills-engine package-sync`; `package-sync --check` rejects drift
   from the published schema. Edit only the canonical file under `schemas/`.
+
 - **Offline vendor validation:** use `manifest validate --vendor-root ID=PATH`
   for each locally available vendor checkout. Its own `publisher.id` identifies
   its packages. Consumer mapping is rejected when that checkout supplies a
@@ -64,6 +95,26 @@ document:
   local vendor manifests, only consumer-mapped package exports can be resolved.
   In v1, persisted collision records use `capability`, `action` (`keep`, `rename`
   or `skip`) and a required `name` for `rename`.
+- **Inventory vendor inputs:** `inventory --vendor-root ID=PATH` reads explicit
+  offline snapshots, reporting that inventory has not verified their revision.
+  Missing inputs remain `inventory.vendor-unavailable` warnings; references to
+  their absent capabilities still fail. `inventory --fetch-vendors` explicitly
+  acquires missing trees with the existing SHA-pinned bake fetcher. Collection
+  hashes vendor files without importing modules, running scripts, hooks, commands
+  or endpoints, and never rewrites supplied snapshots. Fetched trees are validated
+  pristine: any symlink, including an unrelated documentation alias, fails the
+  fetch before collection. Legacy bake's documentation-alias pruning stays
+  confined to baking. A manifest vendor's own
+  publisher names its IDs; consumer authority remains separate. Legacy
+  `renameSkills` creates destination aliases. Legacy `extraFiles` declares
+  resources named by lowercase file stem (underscores become hyphens), and
+  per-name `resources` references grant capability access. A mapping with roots
+  only uses the vendor alias as its package ID. Explicit migrations resolve old
+  edge targets to current identities; inventory does not implement selection or
+  dependency closure. Other roles require explicit manifest declarations:
+  Markdown instructions (`.md`/`.mdc`), specialists and workflows (`.md`), command
+  event registrations (`hooks` JSON), or MCP server configurations (`mcpServers`
+  JSON). Unsupported shapes fail visibly without guessing a dialect.
 - **Skills:** each skill is `skills/<name>/SKILL.md` with YAML frontmatter (`name`,
   `description`, …) following the conventions used by existing skills.
 - **Index:** after adding, renaming, or removing skills, **`AGENTS.md` must stay in

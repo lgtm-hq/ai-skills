@@ -1,0 +1,48 @@
+---
+apiVersion: ai-skills.dev/v1
+publisher: {id: fixture, repo: fixture/catalog}
+packages:
+  - id: tools
+    capabilities:
+      - id: stable
+        path: skills/start
+        requires: [vendor/tools:skill/helper]
+        related: [fixture/tools:workflow/procedure]
+        resources: [fixture/tools:resource/guide]
+      - id: rule
+        path: rules/rule.mdc
+        role: instruction
+      - id: specialist
+        path: agents/specialist.md
+        role: specialist
+      - id: procedure
+        path: commands/procedure.md
+        role: workflow
+      - id: events
+        path: hooks/hooks.json
+        role: lifecycle
+      - id: connection
+        path: mcp/servers.json
+        role: integration
+    resources:
+      - id: guide
+        path: shared
+vendors:
+  - id: vendor
+    repo: upstream/tools
+    sha: 0123456789abcdef0123456789abcdef01234567
+    mapping:
+      skillRoots: [skills]
+      packages:
+        - id: tools
+          skillsRoot: skills
+          skills: '*'
+          agents: [reviewer]
+          extraFiles: [NOTICE.md]
+          renameSkills: {help: help-alias}
+          capabilities:
+            help:
+              id: helper
+              related: [fixture/tools:skill/stable]
+              resources: [vendor/tools:resource/notice]
+exports: [tools, vendor/tools]

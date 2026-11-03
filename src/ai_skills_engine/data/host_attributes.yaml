@@ -1,0 +1,80 @@
+---
+# Rules retain uncertainty from ADR 0009. Collector success is not fidelity.
+disable-model-invocation:
+  semantics: invocation-restriction
+  hosts:
+    claude-code: preserve
+    codex: unverified
+    cursor: unverified
+user-invocable:
+  semantics: invocation-restriction
+  hosts:
+    claude-code: preserve
+    codex: unverified
+    cursor: unverified
+allowed-tools:
+  semantics: permission
+  hosts:
+    claude-code: preserve
+    codex: unverified
+    cursor: unverified
+tools:
+  semantics: permission
+  hosts:
+    claude-code: preserve
+    codex: unverified
+    cursor: unverified
+disallowedTools:
+  semantics: permission
+  hosts:
+    claude-code: preserve
+    codex: unverified
+    cursor: unverified
+permissionMode:
+  semantics: permission
+  hosts:
+    claude-code: preserve
+    codex: unverified
+    cursor: unverified
+paths:
+  semantics: activation
+  hosts:
+    claude-code: preserve
+    codex: unverified
+    cursor: unverified
+globs:
+  semantics: activation
+  hosts:
+    claude-code: unverified
+    codex: unverified
+    cursor: preserve
+alwaysApply:
+  semantics: activation
+  hosts:
+    claude-code: unverified
+    codex: unverified
+    cursor: preserve
+context:
+  semantics: delegation
+  hosts:
+    claude-code: preserve
+    codex: unverified
+    cursor: unverified
+agent:
+  semantics: delegation
+  hosts:
+    claude-code: preserve
+    codex: unverified
+    cursor: unverified
+model:
+  semantics: model-selection
+  hosts:
+    claude-code: preserve
+    codex: unverified
+    cursor: unverified
+hooks:
+  semantics: activation
+  hosts:
+    claude-code: preserve
+    codex: unverified
+    cursor: unverified

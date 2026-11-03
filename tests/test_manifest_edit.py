@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 from assertpy import assert_that
 
-from ai_skills_engine.manifest import edit
 from ai_skills_engine.manifest.edit import patch_document
 from ai_skills_engine.registry.registry import load_unique_yaml_text
 
@@ -167,7 +166,10 @@ def test_final_verification_rejects_equal_value_with_wrong_type(
     text: str, desired: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Reload verification must reject a serializer that changes scalar types."""
-    monkeypatch.setattr(edit.yaml, "dump", lambda *args, **kwargs: "true\n...\n")
+    monkeypatch.setattr(
+        "ai_skills_engine.manifest.edit.yaml.dump",
+        lambda *args, **kwargs: "true\n...\n",
+    )
     with pytest.raises(ValueError, match="did not preserve the requested values"):
         patch_document(text=text, data=desired)
 

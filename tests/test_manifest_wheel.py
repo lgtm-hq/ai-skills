@@ -26,7 +26,165 @@ from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.legacy import GENERATED_HEADER
 from ai_skills_engine.manifest.load import read_document
 
+pytest_plugins = ["inventory_helpers"]
+
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize(
+    "control,expected",
+    [("same-stem", 0), ("ordinary", 0), ("specialist-only", 1), ("unused", 1)],
+)
+def test_installed_skill_aliases_do_not_rename_specialists(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    control: str,
+    expected: int,
+) -> None:
+    """Real installed inventory and validation enforce the skill rename boundary."""
+    from inventory_helpers import configure_inventory_aliases, inventory_snapshot
+
+    root, vendor = inventory_repo
+    configure_inventory_aliases(root=root, vendor=vendor, control=control)
+    before = inventory_snapshot(root, vendor)
+    operands = ["--repo-root", str(root), "--vendor-root", f"vendor={vendor}"]
+    for command in (["inventory", "--json"], ["manifest", "validate"]):
+        result = _run(
+            args=[str(installed_command), *command, *operands],
+            cwd=root.parent,
+            expected=expected,
+        )
+        assert_that(cli.main([*command, *operands])).is_equal_to(expected)
+        source = capsys.readouterr()
+        assert_that((result.stdout, result.stderr)).is_equal_to(
+            (source.out, source.err)
+        )
+        if expected:
+            assert_that(result.stdout).contains(
+                "inventory.invalid-payload",
+                "Unused mapped capability/renameSkills",
+                "reviewer" if control == "specialist-only" else "absent",
+            )
+        elif command[0] == "inventory":
+            repeat = _run(
+                args=[str(installed_command), *command, *operands], cwd=root.parent
+            )
+            assert_that(repeat.stdout).is_equal_to(result.stdout)
+            capabilities = json.loads(result.stdout)["capabilities"]
+            records = {item["id"]: item for item in capabilities}
+            assert_that(
+                records["vendor/tools:specialist/reviewer"]["aliases"]
+            ).is_empty()
+            assert_that(records["vendor/tools:skill/helper"]["aliases"]).is_equal_to(
+                ["help-alias" if control == "same-stem" else "ordinary-helper"]
+            )
+            if control == "same-stem":
+                assert_that(
+                    records["vendor/tools:skill/reviewer"]["aliases"]
+                ).is_equal_to(["review-helper"])
+            for item in capabilities:
+                if item["role"] != "skill":
+                    assert_that(item["aliases"]).described_as(item["id"]).is_empty()
+    assert_that(inventory_snapshot(root, vendor)).is_equal_to(before)
+
+
+def test_installed_inventory_modes_survive_real_tarball_acquisition(
+    installed_command: Path, inventory_repo: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """The installed public CLI agrees across permissions and actual extraction."""
+    from inventory_helpers import inventory_snapshot, inventory_tarball
+
+    root, vendor = inventory_repo
+    targets = [
+        vendor / "skills/help/danger.py",
+        vendor / "agents/reviewer.md",
+        vendor / "NOTICE.md",
+        root / "shared/guide.md",
+    ]
+    control = vendor / "skills/help/control.py"
+    control.write_bytes(targets[0].read_bytes())
+    for tree in (root, vendor):
+        for path in tree.rglob("*"):
+            if path.is_file():
+                path.chmod(0o664)
+    control.chmod(0o775)
+    before = inventory_snapshot(root, vendor)
+    archive = tmp_path / "snapshot.tar.gz"
+    archive.write_bytes(inventory_tarball(vendor))
+    arguments = [
+        str(installed_command),
+        "inventory",
+        "--repo-root",
+        str(root),
+        "--json",
+    ]
+    offline_arguments = [*arguments, "--vendor-root", f"vendor={vendor}"]
+    offline = _run(args=offline_arguments, cwd=tmp_path).stdout
+    python = _venv_executable(installed_command.parents[1], "python")
+    fetched = _run(
+        args=[
+            str(python),
+            "-I",
+            "-c",
+            """
+import sys
+from pathlib import Path
+from unittest.mock import patch
+from ai_skills_engine import cli
+from ai_skills_engine.bake import vendor_plugins
+from ai_skills_engine.inventory import payload
+print(payload.__file__, file=sys.stderr)
+with patch.object(
+    vendor_plugins, '_http_get_bytes', return_value=Path(sys.argv[1]).read_bytes()
+) as network:
+    status = cli.main(sys.argv[2:])
+    print(f'network_stub_calls={network.call_count}', file=sys.stderr)
+raise SystemExit(status)
+""",
+            str(archive),
+            *arguments[1:],
+            "--fetch-vendors",
+        ],
+        cwd=tmp_path,
+    )
+    assert_that(fetched.stderr).contains(
+        "site-packages/ai_skills_engine/inventory/payload.py", "network_stub_calls=1"
+    ).does_not_contain(str(ROOT / "src"))
+    baseline, acquired = json.loads(offline), json.loads(fetched.stdout)
+    for section in ("capabilities", "resources"):
+        assert_that(acquired[section]).is_equal_to(baseline[section])
+    helper = next(
+        item for item in acquired["capabilities"] if item["id"].endswith("/helper")
+    )
+    files = {item["path"]: item for item in helper["payload"]}
+    assert_that(files["danger.py"]["mode"]).is_equal_to(0o644)
+    assert_that(files["control.py"]["mode"]).is_equal_to(0o755)
+    assert_that(files["danger.py"]["sha256"]).is_equal_to(files["control.py"]["sha256"])
+    assert_that(inventory_snapshot(root, vendor)).is_equal_to(before)
+    for path in targets:
+        path.chmod(0o675)
+    control.chmod(0o751)
+    assert_that(_run(args=offline_arguments, cwd=tmp_path).stdout).is_equal_to(offline)
+    identities = (
+        "vendor/tools:skill/helper",
+        "vendor/tools:specialist/reviewer",
+        "vendor/tools:resource/notice",
+        "fixture/tools:resource/guide",
+    )
+    for path, identity in zip(targets, identities, strict=True):
+        section = "resources" if ":resource/" in identity else "capabilities"
+        original = next(item for item in baseline[section] if item["id"] == identity)
+        path.chmod(0o775)
+        changed = json.loads(_run(args=offline_arguments, cwd=tmp_path).stdout)
+        executable = next(item for item in changed[section] if item["id"] == identity)
+        assert_that(executable["tree_digest"]).is_not_equal_to(original["tree_digest"])
+        path.write_bytes(path.read_bytes() + b"\n# installed byte change\n")
+        changed = json.loads(_run(args=offline_arguments, cwd=tmp_path).stdout)
+        content = next(item for item in changed[section] if item["id"] == identity)
+        assert_that(content["tree_digest"]).is_not_equal_to(executable["tree_digest"])
+    assert_that(list(root.rglob("MUST-NOT-EXECUTE"))).is_empty()
+    assert_that(list(vendor.rglob("MUST-NOT-EXECUTE"))).is_empty()
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda case: case["name"])
@@ -294,6 +452,7 @@ def installed_command(tmp_path_factory: pytest.TempPathFactory) -> Path:
         assert_that(archive.read(schema)).is_equal_to(
             (ROOT / "schemas/ai-skills.v1.schema.json").read_bytes()
         )
+        assert_that(members).contains("ai_skills_engine/data/host_attributes.yaml")
     print(
         json.dumps(
             {
@@ -383,6 +542,177 @@ def test_installed_migration_and_legacy_match_source(
             )
 
 
+@pytest.mark.parametrize("key", ["disable-model-invocation", "vendor-permission"])
+@pytest.mark.parametrize(
+    "attribute,expected,normalized",
+    [
+        ("true", 0, True),
+        ("2026-11-02", 0, {"$yaml": "date", "value": "2026-11-02"}),
+        (
+            "{1: first, '1': second, nested: [true, text]}",
+            0,
+            {
+                "$yaml": "mapping",
+                "items": [["1", "second"], ["nested", [True, "text"]], [1, "first"]],
+            },
+        ),
+        ("!!binary aGVsbG8=", 1, None),
+    ],
+    ids=["bool", "date", "mixed-keys", "unsupported"],
+)
+def test_installed_inventory_and_resource_boundary_match_source(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    key: str,
+    attribute: str,
+    expected: int,
+    normalized: object,
+) -> None:
+    """An unrelated consumer gets identical installed/source records and failures."""
+    root, vendor = inventory_repo
+    skill = root / "skills/start/SKILL.md"
+    skill.write_text(
+        skill.read_text().replace(
+            "disable-model-invocation: true", f"{key}: {attribute}"
+        )
+    )
+    missing_root = _run(
+        args=[str(installed_command), "inventory", "--json"],
+        cwd=root.parent,
+        expected=2,
+    )
+    assert_that(missing_root.stderr).contains("No ai-skills repository", "--repo-root")
+    operands = ["--repo-root", str(root), "--vendor-root", f"vendor={vendor}"]
+    for command in (["inventory", "--json"], ["manifest", "validate"]):
+        first = _run(
+            args=[str(installed_command), *command, *operands],
+            cwd=root.parent,
+            expected=expected,
+        )
+        second = _run(
+            args=[str(installed_command), *command, *operands],
+            cwd=root.parent,
+            expected=expected,
+        )
+        assert_that(second.stdout).is_equal_to(first.stdout)
+        assert_that(cli.main([*command, *operands])).is_equal_to(expected)
+        source = capsys.readouterr()
+        assert_that((first.stdout, first.stderr)).is_equal_to((source.out, source.err))
+        if expected:
+            assert_that(first.stdout).contains(
+                "inventory.invalid-host-attribute", key, "bytes"
+            )
+        else:
+            assert_that(first.stdout).contains(
+                "inventory.host-specific-frontmatter",
+                "codex=unverified" if command[0] == "manifest" else '"codex"',
+            )
+            if command[0] == "inventory":
+                start = next(
+                    item
+                    for item in json.loads(first.stdout)["capabilities"]
+                    if item["id"] == "fixture/tools:skill/stable"
+                )
+                retained = next(
+                    item for item in start["host_attributes"] if item["key"] == key
+                )
+                assert_that(json.loads(retained["value_json"])).is_equal_to(normalized)
+                if key == "vendor-permission":
+                    assert_that(retained["semantics"]).is_equal_to("unknown")
+                    assert_that(dict(retained["hosts"])).is_equal_to(
+                        {
+                            "claude-code": "unverified",
+                            "codex": "unverified",
+                            "cursor": "unverified",
+                        }
+                    )
+                    assert_that(first.stdout).contains("inventory.unknown-frontmatter")
+    path = root / "ai-skills.yaml"
+    document = read_document(path)
+    document["packages"][0]["capabilities"][0]["resources"] = []
+    path.write_text(dump_document(document))
+    for command in (["inventory", "--json"], ["manifest", "validate"]):
+        result = _run(
+            args=[str(installed_command), *command, *operands],
+            cwd=root.parent,
+            expected=1,
+        )
+        assert_that(cli.main([*command, *operands])).is_equal_to(1)
+        source = capsys.readouterr()
+        assert_that((result.stdout, result.stderr)).is_equal_to(
+            (source.out, source.err)
+        )
+        assert_that(result.stdout).contains("inventory.undeclared-resource")
+
+
+@pytest.mark.parametrize("control", ["missing", "drop", "changed"])
+def test_installed_host_table_is_authoritative_without_checkout_fallback(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    control: str,
+) -> None:
+    """Installed package data cannot fall back to author data."""
+    root, vendor = inventory_repo
+    python = _venv_executable(installed_command.parent.parent, "python")
+    probe = _run(
+        args=[
+            str(python),
+            "-I",
+            "-c",
+            (
+                "from importlib.resources import files; "
+                'print(files("ai_skills_engine.data").joinpath("host_attributes.yaml"))'
+            ),
+        ],
+        cwd=root.parent,
+    )
+    table = Path(probe.stdout.strip())
+    assert_that(table.is_relative_to(installed_command.parent.parent)).is_true()
+    assert_that(table.is_relative_to(ROOT)).is_false()
+    original = table.read_bytes()
+    try:
+        if control == "missing":
+            table.unlink()
+        else:
+            table.write_text(
+                original.decode().replace(
+                    "codex: unverified",
+                    f"codex: {'drop' if control == 'drop' else 'refuse'}",
+                )
+            )
+        result = _run(
+            args=[
+                str(installed_command),
+                "inventory",
+                "--json",
+                "--repo-root",
+                str(root),
+                "--vendor-root",
+                f"vendor={vendor}",
+            ],
+            cwd=root.parent,
+            expected=0 if control == "changed" else 1,
+        )
+        if control == "changed":
+            document = json.loads(result.stdout)
+            start = next(
+                item
+                for item in document["capabilities"]
+                if item["id"] == "fixture/tools:skill/stable"
+            )
+            assert_that(
+                dict(start["host_attributes"][0]["hosts"])["codex"]
+            ).is_equal_to("refuse")
+        else:
+            assert_that(result.stdout).contains(
+                "inventory.invalid-payload",
+                "host_attributes.yaml" if control == "missing" else "drop is forbidden",
+            )
+    finally:
+        table.write_bytes(original)
+
+
 @pytest.mark.parametrize(
     "change",
     [
@@ -413,6 +743,7 @@ def test_installed_publication_requires_marketplace_acceptance(
         data["packages"][0]["capabilities"].append(
             {"id": "unknown", "path": "skills/unknown"}
         )
+        shutil.copytree(src=ROOT / "skills/branch", dst=tmp_path / "skills/unknown")
     (tmp_path / "ai-skills.yaml").write_text(dump_document(data))
     before = {
         name: f"# installed sentinel {name}\n".encode()
@@ -422,6 +753,9 @@ def test_installed_publication_requires_marketplace_acceptance(
         (tmp_path / name).write_bytes(content)
     args = [str(installed_command), "--repo-root", str(tmp_path)]
     _run(args=[*args, "manifest", "validate"], cwd=tmp_path)
+    if change == "unknown-skill":
+        # Recheck source loss after a successful real installed inventory check.
+        shutil.rmtree(tmp_path / "skills/unknown")
     expected = 0 if change == "baseline" else 1
     for flags in ([], ["--check"]):
         result = _run(
@@ -693,6 +1027,7 @@ def test_installed_repin_prepublication_transaction(
 )
 def test_wheel_fixture_selects_platform_executables(
     installed_command: Path,
+    inventory_repo: tuple[Path, Path],
     tmp_path_factory: pytest.TempPathFactory,
     monkeypatch: pytest.MonkeyPatch,
     platform: str,
@@ -725,6 +1060,13 @@ def test_wheel_fixture_selects_platform_executables(
                         target.write_bytes(archive.read(name))
         elif "sysconfig" in args[-1]:
             output = str(environments[0] / "site-packages")
+        elif "importlib.resources" in args[-1]:
+            output = str(
+                environments[0]
+                / "site-packages/ai_skills_engine/data/host_attributes.yaml"
+            )
+        elif args[1:3] == ["inventory", "--json"]:
+            output = "inventory.invalid-payload host_attributes.yaml"
         else:
             output = str(
                 environments[0] / "site-packages/ai_skills_engine/manifest/validate.py"
@@ -745,4 +1087,12 @@ def test_wheel_fixture_selects_platform_executables(
     assert_that(install[install.index("--python") + 1]).is_equal_to(str(python))
     probes = [args for args in calls if args[1:3] == ["-I", "-c"]]
     assert_that(probes).is_length(2)
+    assert_that([args[0] for args in probes]).contains_only(str(python))
+    # The later host-data control also launches an interpreter. Exercise that
+    # lookup for every platform rather than certifying only fixture setup.
+    test_installed_host_table_is_authoritative_without_checkout_fallback(
+        installed_command=command, inventory_repo=inventory_repo, control="missing"
+    )
+    probes = [args for args in calls if args[1:3] == ["-I", "-c"]]
+    assert_that(probes).is_length(3)
     assert_that([args[0] for args in probes]).contains_only(str(python))

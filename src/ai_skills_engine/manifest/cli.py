@@ -4,10 +4,12 @@ import argparse
 from collections.abc import Callable
 from pathlib import Path
 
+from ai_skills_engine.inventory.cli import vendor_roots
 from ai_skills_engine.manifest.legacy import write_legacy
-from ai_skills_engine.manifest.load import load_consumer, read_document
+from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.manifest.migrate import migrate
 from ai_skills_engine.manifest.terminology import lint_terminology
+from ai_skills_engine.manifest.validate import validate_inventory
 from ai_skills_engine.paths import resolve_repo_root
 
 
@@ -62,14 +64,9 @@ def validate(argv: list[str] | None = None) -> int:
 
     def operation(root: Path, args: argparse.Namespace) -> int:
         """Validate offline declarations and report warnings separately."""
-        roots = {}
-        for item in args.vendor_root:
-            name, separator, path = item.partition("=")
-            if not separator:
-                raise ValueError("--vendor-root requires ID=PATH")
-            roots[name] = Path(path)
-        _, _, diagnostics = load_consumer(root / "ai-skills.yaml", vendor_roots=roots)
-        findings = list(diagnostics)
+        findings = list(
+            validate_inventory(root, vendor_roots=vendor_roots(args.vendor_root))
+        )
         if args.terminology:
             findings.extend(
                 lint_terminology(root, read_document(root / "ai-skills.yaml"))

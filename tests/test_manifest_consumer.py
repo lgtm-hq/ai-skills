@@ -50,10 +50,15 @@ def test_actual_marketplace_acceptance_before_publication(
         data["packages"][0]["capabilities"].append(
             {"id": "unknown", "path": "skills/unknown"}
         )
+        shutil.copytree(src=ROOT / "skills/branch", dst=tmp_path / "skills/unknown")
     assert_that(validate_document(data)).is_empty()
     (tmp_path / "ai-skills.yaml").write_text(dump_document(data))
     args = ["--repo-root", str(tmp_path), "manifest"]
     assert_that(cli.main([*args, "validate"])).is_zero()
+    if change == "unknown-skill":
+        # Inventory validation needs real payloads. Remove this genuine copied
+        # skill afterward: publication must still check the current source tree.
+        shutil.rmtree(tmp_path / "skills/unknown")
     # Independently reproduce the actual consumer's acceptance of these declarations.
     consumer = tmp_path / "consumer"
     consumer.mkdir()

@@ -1,6 +1,7 @@
 """Legacy publication fails closed when it cannot honor manifest declarations."""
 
 import copy
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,19 @@ pytest_plugins = ("manifest_helpers",)
 pytestmark = pytest.mark.usefixtures("author_skills")
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _write_publication_skill(directory: Path, name: str) -> None:
+    """Materialize a real skill payload for publication inventory validation.
+
+    Args:
+        directory: Declared payload directory in an isolated fixture.
+        name: Skill identity for its frontmatter.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: Publication fixture.\n---\n"
+    )
 
 
 @pytest.mark.parametrize(
@@ -170,14 +184,9 @@ def test_legacy_rejects_duplicate_effective_destinations_before_writes(
         duplicate["id"] = "duplicate-copy"
         duplicate["capabilities"] = [{"id": "distinct", "path": "skills/distinct"}]
         duplicate["x-useful-note"] = {"preserve": True}
+        shutil.copytree(src=ROOT / "skills/branch", dst=tmp_path / "skills/distinct")
         if change == "disjoint":
             duplicate["x-legacy-group"] = duplicate["id"]
-            payload = tmp_path / "skills/distinct"
-            payload.mkdir()
-            (payload / "SKILL.md").write_text(
-                "---\nname: distinct\ndescription: Distinct fixture skill.\n---\n"
-                "\nA declared local publication fixture.\n"
-            )
         elif change == "extension-default":
             first["x-legacy-group"] = duplicate["id"]
             duplicate.pop("x-legacy-group")
@@ -257,10 +266,18 @@ def test_legacy_cli_rejects_unrepresentable_dependencies_before_writes(
 ) -> None:
     """Schema-valid dependencies cannot disappear through legacy publication."""
     data = read_document(ROOT / "ai-skills.yaml")
+    vendor = next(item for item in data["vendors"] if item["id"] == "anthropics")
+    vendor_root = tmp_path / "vendor"
+    for mapped_package in vendor["mapping"]["packages"]:
+        for name in mapped_package["skills"]:
+            _write_publication_skill(
+                directory=vendor_root / mapped_package["skillsRoot"] / name,
+                name=name,
+            )
     if owner == "vendor":
-        vendor = next(item for item in data["vendors"] if item["id"] == "anthropics")
         package = vendor["mapping"]["packages"][0]
-        package["skills"] = ["docx"]
+        # Keep the declared dependency target in the observed vendor inventory.
+        package["skills"] = ["docx", "pdf"]
         qualified = f"anthropics/{package['id']}"
         capability: dict[str, Any] = {}
         package["capabilities"] = {"docx": capability}
@@ -272,6 +289,10 @@ def test_legacy_cli_rejects_unrepresentable_dependencies_before_writes(
         capability["requires"] = ["anthropics/document-skills:skill/pdf"]
     elif declaration == "resources":
         capability["resources"] = [f"{qualified}:resource/guide"]
+        if owner == "local":
+            package["resources"] = [{"id": "guide", "path": "shared/guide.md"}]
+        else:
+            package["extraFiles"] = ["guide.md"]
     elif declaration == "package-resources":
         package["resources"] = [{"id": "guide", "path": "shared/guide.md"}]
     elif declaration == "empty":
@@ -280,17 +301,32 @@ def test_legacy_cli_rejects_unrepresentable_dependencies_before_writes(
             package["resources"] = []
     elif declaration == "related":
         capability["related"] = ["anthropics/document-skills:skill/pdf"]
+    if declaration in {"resources", "package-resources"}:
+        guide = (
+            tmp_path / "shared/guide.md"
+            if owner == "local"
+            else vendor_root / "guide.md"
+        )
+        guide.parent.mkdir(parents=True, exist_ok=True)
+        guide.write_text("# Publication resource fixture\n")
     path = tmp_path / "ai-skills.yaml"
     path.write_text(dump_document(data))
     args = ["--repo-root", str(tmp_path), "manifest"]
     # Establish actual schema and semantic validity before testing publication.
-    assert_that(cli.main([*args, "validate"])).is_zero()
+    assert_that(
+        cli.main([*args, "validate", "--vendor-root", f"anthropics={vendor_root}"])
+    ).is_zero()
     expected = 1 if declaration in {"requires", "resources", "package-resources"} else 0
     before = {}
     for name in ("bundles.yaml", "vendors.yaml"):
         before[name] = b"# preexisting sentinel: " + name.encode() + b"\n"
         (tmp_path / name).write_bytes(before[name])
     manifest_before = path.read_bytes()
+    payloads_before = {
+        item.relative_to(tmp_path): item.read_bytes()
+        for item in tmp_path.rglob("*")
+        if item.is_file() and item.name not in before
+    }
     if expected:
         with pytest.raises(ValueError, match="Legacy.*cannot represent"):
             render_legacy(tmp_path)
@@ -321,9 +357,16 @@ def test_legacy_cli_rejects_unrepresentable_dependencies_before_writes(
         else:
             published = read_document(tmp_path / "vendors.yaml")["vendors"]
             mapped = next(item for item in published if item["id"] == "anthropics")
-            assert_that(mapped["plugins"][0]["skills"]).is_equal_to(["docx"])
+            assert_that(mapped["plugins"][0]["skills"]).is_equal_to(["docx", "pdf"])
             assert_that(mapped["plugins"][0]).does_not_contain_key("capabilities")
     assert_that(path.read_bytes()).is_equal_to(manifest_before)
+    assert_that(
+        {
+            item.relative_to(tmp_path): item.read_bytes()
+            for item in tmp_path.rglob("*")
+            if item.is_file() and item.name not in before
+        }
+    ).is_equal_to(payloads_before)
 
 
 @pytest.mark.parametrize(
@@ -375,7 +418,9 @@ def test_actual_legacy_cli_publication_contract(
     for name in ("bundles.yaml", "vendors.yaml"):
         (tmp_path / name).write_bytes((ROOT / name).read_bytes())
     before = {
-        path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
     }
     args = ["--repo-root", str(tmp_path), "manifest"]
     assert_that(cli.main([*args, "validate"])).is_zero()
@@ -386,8 +431,8 @@ def test_actual_legacy_cli_publication_contract(
             assert_that(capsys.readouterr().out).contains("Legacy", "cannot represent")
         assert_that(
             {
-                path.name: path.read_bytes()
-                for path in tmp_path.iterdir()
+                path.relative_to(tmp_path): path.read_bytes()
+                for path in tmp_path.rglob("*")
                 if path.is_file()
             }
         ).is_equal_to(before)
@@ -418,12 +463,7 @@ def test_actual_cli_collection_additions_are_lintable(
             f"new-vendor/{package['id']}" for package in vendor["mapping"]["packages"]
         )
     if change in {"package", "skill"}:
-        payload = tmp_path / "skills/new-skill"
-        payload.mkdir()
-        (payload / "SKILL.md").write_text(
-            "---\nname: new-skill\ndescription: New fixture skill.\n---\n"
-            "\nA declared local publication fixture.\n"
-        )
+        shutil.copytree(src=ROOT / "skills/branch", dst=tmp_path / "skills/new-skill")
     (tmp_path / "ai-skills.yaml").write_text(dump_document(data))
     args = ["--repo-root", str(tmp_path), "manifest"]
     assert_that(cli.main([*args, "legacy"])).is_zero()

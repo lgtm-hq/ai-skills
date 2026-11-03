@@ -5,12 +5,32 @@ from collections.abc import Mapping
 
 # nosemgrep: python37-compatibility-importlib2 - pyproject.toml requires Python >=3.13
 from importlib import resources
+from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator
 
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.identity import parse_id
+
+
+def validate_inventory(
+    root: Path,
+    *,
+    vendor_roots: Mapping[str, Path] | None = None,
+) -> tuple[Diagnostic, ...]:
+    """Validate payloads and explicit edges using the production offline loader.
+
+    Args:
+        root: Consumer repository root.
+        vendor_roots: Explicit offline vendor snapshots.
+
+    Returns:
+        Inventory diagnostics, preserving warning/error severities.
+    """
+    from ai_skills_engine.inventory.load import load_inventory
+
+    return load_inventory(root, vendor_roots=vendor_roots).diagnostics
 
 
 def schema_path() -> resources.abc.Traversable:
