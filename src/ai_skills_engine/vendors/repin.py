@@ -25,6 +25,7 @@ import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
 import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
 import ai_skills_engine.vendors.manage as manage_vendors
 from ai_skills_engine.manifest import legacy
+from ai_skills_engine.manifest.transaction import restore_files, snapshot_files
 from ai_skills_engine.paths import resolve_repo_root
 from ai_skills_engine.registry.registry import load_registry
 from ai_skills_engine.registry.vendor import Vendor
@@ -301,8 +302,7 @@ def repin_vendor(
         msg = "baseline_ref and baseline_registry_text are mutually exclusive"
         raise ValueError(msg)
     manifest_path = repo_root / "ai-skills.yaml"
-    manifest_bytes = manifest_path.read_bytes() if manifest_path.is_file() else None
-    if manifest_bytes is not None:
+    if manifest_path.is_file():
         legacy.write_legacy(repo_root)
     vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
     registry_path = repo_root / "vendors.yaml"
@@ -326,26 +326,20 @@ def repin_vendor(
         new_sha = resolve_sha(vendor)
     else:
         new_sha = resolve_upstream_sha(vendor=vendor)
-    if new_sha == vendor.sha and baseline_text == working_text:
-        before = _snapshot_vendor(
-            repo_root=repo_root,
-            vendor=vendor,
-            vendor_trees=vendor_trees,
-        )
-        after = VendorRepinSnapshot(
-            vendor_id=before.vendor_id,
-            sha=before.sha,
-            explode_names=before.explode_names,
-            skipped=before.skipped,
-            ingested_count=before.ingested_count,
-            collisions=before.collisions,
-            skill_digests=before.skill_digests,
-        )
-        return diff_snapshots(before=before, after=after)
+    originals = snapshot_files(
+        (manifest_path, registry_path, repo_root / "bundles.yaml")
+    )
     artifact_paths = manage_vendors._generated_artifact_paths(repo_root=repo_root)
     snapshot, directories = manage_vendors._snapshot_artifacts(paths=artifact_paths)
-    completed = False
     try:
+        if new_sha == vendor.sha and baseline_text == working_text:
+            before = _snapshot_vendor(
+                repo_root=repo_root,
+                vendor=vendor,
+                vendor_trees=vendor_trees,
+            )
+            after = replace(before)
+            return diff_snapshots(before=before, after=after)
         if baseline_text != working_text:
             registry_path.write_text(baseline_text, encoding="utf-8")
             load_registry(registry_path=registry_path)
@@ -371,18 +365,16 @@ def repin_vendor(
             vendor_trees=vendor_trees,
         )
         manage_vendors._sync_artifacts(repo_root=repo_root, check_only=False)
-        completed = True
         return diff_snapshots(before=before, after=after)
-    finally:
-        if not completed:
-            if manifest_bytes is not None:
-                manifest_path.write_bytes(manifest_bytes)
-            registry_path.write_text(working_text, encoding="utf-8")
-            manage_vendors._restore_artifacts(
-                paths=artifact_paths,
-                snapshot=snapshot,
-                directories=directories,
-            )
+    except BaseException as error:
+        restore_files(originals=originals, error=error)
+        manage_vendors._restore_artifacts(
+            paths=artifact_paths,
+            snapshot=snapshot,
+            directories=directories,
+            error=error,
+        )
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -502,6 +494,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if failed else 0
     except _CLI_FAILURES as error:
         print(error, file=sys.stderr)
+        for note in getattr(error, "__notes__", ()):
+            print(note, file=sys.stderr)
         return 1
 
 

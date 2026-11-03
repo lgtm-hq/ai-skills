@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import runpy
 import shutil
 import subprocess  # nosec B404 - bounded local build/CLI processes, no shell
 import sys
@@ -443,6 +444,96 @@ def test_installed_cli_restores_independent_snapshots(
         assert_that(report["events"]).contains(f"cleanup:{blocked}")
         if boundary == "refresh":
             assert_that(report["output"]).contains("cleanup", blocked)
+
+
+@pytest.mark.parametrize(
+    ("mode", "boundary", "blocked", "operation"),
+    [
+        ("new", "none", "none", "write"),
+        ("noop", "none", "none", "write"),
+        ("keep", "none", "none", "write"),
+        ("baseline", "none", "none", "write"),
+        ("new", "index", "none", "write"),
+        ("new", "sync", "none", "write"),
+        ("new", "index", "ai-skills.yaml", "write"),
+        ("new", "index", "vendors.yaml", "write"),
+        ("new", "index", "ai-skills.yaml", "mode"),
+        ("new", "index", "vendors.yaml", "mode"),
+        ("baseline", "sync", "ai-skills.yaml", "write"),
+        ("baseline", "sync", "vendors.yaml", "write"),
+        ("new", "sync", "NOTICE.md", "write"),
+        ("new", "sync", "NOTICE.md", "mode"),
+        ("new", "sync", "npm/ai-skills/NOTICE.md", "unlink"),
+    ],
+)
+def test_installed_repin_restores_after_actual_bakes(
+    installed_command: Path,
+    tmp_path: Path,
+    mode: str,
+    boundary: str,
+    blocked: str,
+    operation: str,
+) -> None:
+    """The installed management command runs real repin, bake, sync and rollback."""
+    helpers = runpy.run_path(str(ROOT / "tests/test_repin_vendor.py"))
+    root, trees = tmp_path / "repository", tmp_path / "trees"
+    root.mkdir()
+    helpers["_write_registry"](repo_root=root)
+    helpers["_write_before_tree"](dest=trees / "before")
+    helpers["_write_after_tree"](dest=trees / "after")
+    result = _run(
+        args=[
+            str(_venv_executable(installed_command.parent.parent, "python")),
+            "-I",
+            str(ROOT / "tests/fixtures/manifest/repin-cli.py"),
+            str(installed_command),
+            str(root),
+            str(trees),
+            mode,
+            boundary,
+            blocked,
+            operation,
+        ],
+        cwd=tmp_path,
+    )
+    report = json.loads(result.stdout)
+    assert_that(
+        Path(report["module"]).is_relative_to(installed_command.parent.parent)
+    ).is_true()
+    if boundary == "none":
+        assert_that(report["status"]).is_zero()
+        assert_that(report["sha"]).is_equal_to(
+            helpers["_EXISTING_SHA"]
+            if mode in {"noop", "keep"}
+            else helpers["_NEW_SHA"]
+        )
+        if mode in {"noop", "keep"}:
+            assert_that(report["changed"]).is_empty()
+            assert_that(report["events"]).is_empty()
+        else:
+            assert_that(report["events"]).is_equal_to(["index", "sync"])
+            assert_that(report["output"]).contains("delta", "gamma")
+        if mode == "baseline":
+            assert_that(report["output"]).contains(helpers["_BASELINE_SHA"])
+    else:
+        assert_that(report["status"]).is_equal_to(1)
+        assert_that(report["output"]).contains("primary installed repin failure")
+        assert_that(report["events"]).contains("index")
+        if boundary == "sync":
+            assert_that(report["events"]).contains("sync")
+        assert_that(report["changed"]).is_equal_to(
+            [blocked] if blocked not in {"none", "npm/ai-skills/NOTICE.md"} else []
+        )
+        assert_that(report["absent_exists"]).is_equal_to(operation == "unlink")
+        assert_that(report["changed_artifacts"]).is_equal_to(
+            [blocked] if blocked in {"NOTICE.md", "npm/ai-skills/NOTICE.md"} else []
+        )
+        if blocked != "none":
+            assert_that(report["events"]).contains(f"cleanup:{blocked}:{operation}")
+            assert_that(report["output"]).contains("cleanup", blocked)
+            assert_that("\n".join(report["notes"])).contains(blocked)
+        else:
+            assert_that(report["notes"]).is_empty()
 
 
 @pytest.mark.parametrize(
