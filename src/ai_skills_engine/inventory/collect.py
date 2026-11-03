@@ -12,10 +12,15 @@ from ai_skills_engine.inventory.pending import PendingCapability
 from ai_skills_engine.inventory.resource_id import ResourceId
 from ai_skills_engine.inventory.resource_record import Resource
 from ai_skills_engine.inventory.roles import inspect_role
+from ai_skills_engine.manifest.capability import Capability as CapabilityDeclaration
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.identity import Role
 from ai_skills_engine.manifest.package import Package
+from ai_skills_engine.manifest.resource_record import Resource as ResourceDeclaration
 from ai_skills_engine.manifest.vendor import Vendor
+from ai_skills_engine.registry.ingest_checks import scan_paths
+from ai_skills_engine.registry.ingest_limits import IngestLimits
+from ai_skills_engine.registry.safe_tree import walk_files
 
 
 def _included(*, identity: str, vendor: Vendor | None) -> bool:
@@ -70,6 +75,40 @@ def collect_package(
         resource_paths: Physical resource boundaries.
         diagnostics: Findings accumulator.
     """
+    if vendor is not None:
+        try:
+            selected: set[Path] = set()
+            declarations: tuple[ResourceDeclaration | CapabilityDeclaration, ...] = (
+                *package.resources,
+                *package.capabilities,
+            )
+            for selected_declaration in declarations:
+                role = getattr(selected_declaration, "role", "resource")
+                selected_identity = f"{package_id}:{role}/{selected_declaration.id}"
+                if not _included(identity=selected_identity, vendor=vendor):
+                    continue
+                source = source_path(root=root, relative=selected_declaration.path)
+                selected.update(
+                    walk_files(root=source) if source.is_dir() else (source,)
+                )
+            scan_paths(
+                paths=(
+                    (path, path.relative_to(root).as_posix())
+                    for path in sorted(selected)
+                ),
+                vendor=vendor.id,
+                limits=vendor.ingest_limits or IngestLimits(),
+                allow=vendor.ingest_allow,
+            )
+        except (OSError, TypeError, ValueError) as error:
+            diagnostics.append(
+                Diagnostic(
+                    "inventory.invalid-payload",
+                    str(package_id),
+                    str(error).replace(str(root), "."),
+                )
+            )
+            return
     for resource_declaration in package.resources:
         try:
             resource_identity = ResourceId(

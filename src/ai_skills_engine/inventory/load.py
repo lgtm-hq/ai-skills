@@ -20,6 +20,12 @@ from ai_skills_engine.manifest.load import load_consumer, read_document
 from ai_skills_engine.manifest.package import Package
 from ai_skills_engine.manifest.validate import validate_document
 from ai_skills_engine.manifest.vendor import Vendor
+from ai_skills_engine.registry.ingest_checks import (
+    parse_allow,
+    parse_limits,
+    validate_input_tree,
+)
+from ai_skills_engine.registry.ingest_limits import IngestLimits
 from ai_skills_engine.registry.vendor import Vendor as RegistryVendor
 
 
@@ -71,6 +77,14 @@ def load_inventory(
                         ),
                         license=item.get("license", ""),
                         homepage=item.get("homepage", ""),
+                        ingest_allow=parse_allow(
+                            item.get("ingestAllow", []), label=item["id"]
+                        ),
+                        ingest_limits=(
+                            parse_limits(item["ingestLimits"], label=item["id"])
+                            if "ingestLimits" in item
+                            else IngestLimits()
+                        ),
                     )
                     roots[vendor.id] = _materialize_vendor_tree(
                         vendor=vendor,
@@ -78,6 +92,17 @@ def load_inventory(
                         temporary_root=Path(temporary),
                         prune_content_free_symlinks=False,
                     )
+        for item in document.get("vendors", []):
+            if item["id"] in roots:
+                validate_input_tree(
+                    root=roots[item["id"]],
+                    vendor=item["id"],
+                    limits=(
+                        parse_limits(item["ingestLimits"], label=item["id"])
+                        if "ingestLimits" in item
+                        else IngestLimits()
+                    ),
+                )
         return _collect(root=root, roots=roots, supplied=set(vendor_roots or {}))
 
 

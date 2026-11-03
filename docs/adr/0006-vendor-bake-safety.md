@@ -66,3 +66,49 @@ Write bake output to a temp directory and swap atomically. A partial
   reviewed, not forgotten.
 
 [lab-decisions]: https://github.com/lgtm-hq/plugin-engine-lab/blob/main/DECISIONS.md
+
+## Ingest limits and content checks
+
+Ingestion treats every vendor byte as untrusted and never runs package lifecycle
+scripts, Python setup files, Makefiles or executable hooks. Checks apply to both
+pinned downloads and explicit offline trees, including public ingestion APIs.
+
+Defaults are 100 MiB compressed download, 20,000 archive headers (including
+extended headers), 25 MiB per member, 500 MiB inflated archive and a 100:1 inflated
+to compressed ratio. Inflated bytes include metadata, padding and trailing data:
+these also consume runner resources. Downloads are read in bounded chunks and an
+oversized Content-Length is rejected before reading. Decompression is bounded
+before tar processing, and headers are checked before PAX/GNU metadata allocation.
+Hard links, devices, FIFOs and sparse entries are rejected. A complete preflight
+precedes extraction with the data filter into a private staging tree.
+
+Only selected plugin payloads receive content checks: 5 MiB per file, 50 MiB per
+plugin, Git LFS pointer rejection and versioned secret-shape rules. Nothing fetches
+LFS objects. A NUL in the first 8 KiB marks a binary file. Text tripwires cover PEM
+private keys and AWS, GitHub, Slack, Google, npm, Stripe, Anthropic and OpenAI key
+shapes. Diagnostics contain path, line and stable rule ID, never matched values.
+Reasons and other report context are redacted too. Scanning is a **tripwire, not a
+trust guarantee**: it neither proves absence of secrets nor approves vendor code.
+
+Consumer-owned `vendors[].ingestLimits` may override individual positive integer
+limits (`downloadBytes`, `archiveMembers`, `archiveBytes`, `memberBytes`,
+`compressionRatio`, `fileBytes`, `pluginBytes`) with a required nonblank `reason`.
+`vendors[].ingestAllow` acknowledges `{path, rule, sha256, reason}` for a specific
+published file. Bake paths are plugin-relative, after slicing and renaming, and
+SHA-256 covers the exact published bytes, including rewritten skill frontmatter.
+Inventory paths refer to the original repository bytes it observes. Changes to
+path, rule or bytes invalidate an acknowledgement. Own-package acknowledgements
+are represented by `overrides.ingestAllow` for the manifest validation workflow.
+Vendor-supplied policy never grants consumer trust. These fields survive the
+manifest-to-legacy projection and are parsed strictly by the registry reader.
+
+Setuid, setgid and sticky bits are rejected before tar filtering or offline copying.
+Regular ingested files become 0755 when owner-executable, otherwise 0644, matching
+inventory's Git-like mode identity. Inventory observes without chmodding inputs.
+Transactional backup and rollback copies retain their exact original modes.
+
+`BAKE.json.ingestChecks` and the coverage report's "Ingest checks" section record
+the rule-set version, effective limits and acknowledged findings. Offline `--check`
+re-scans and bounds actual bytes with the current registry policy before trusting
+lock digests. Editing the lock cannot grant an acknowledgement, increase limits or
+hide a finding. Rejection never publishes a partially baked plugin tree.

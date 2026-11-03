@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from ai_skills_engine.registry.ingest_allow import IngestAllow
+from ai_skills_engine.registry.ingest_limits import IngestLimits
 from ai_skills_engine.registry.vendor_plugin import VendorPlugin
 
 
@@ -26,3 +28,5 @@ class Vendor:
     display_ref: str | None = None
     plugins: tuple[VendorPlugin, ...] = ()
     branch: str | None = None
+    ingest_allow: tuple[IngestAllow, ...] = ()
+    ingest_limits: IngestLimits = field(default_factory=IngestLimits)

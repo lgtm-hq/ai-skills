@@ -334,6 +334,12 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "ingestAllow": {
+          "$ref": "#/$defs/ingestAllow"
+        },
+        "ingestLimits": {
+          "$ref": "#/$defs/ingestLimits"
         }
       },
       "required": ["id", "repo", "sha"],
@@ -510,6 +516,9 @@
           "items": {
             "$ref": "#/$defs/collision"
           }
+        },
+        "ingestAllow": {
+          "$ref": "#/$defs/ingestAllow"
         }
       },
       "required": [],
@@ -533,6 +542,82 @@
     },
     "transport": {
       "enum": ["npm", "release-asset", "git-marketplace", "offline"]
+    },
+    "ingestAllow": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)(?:\\.{1,2})?(?:/|$))[^\\u0000]+$"
+          },
+          "rule": {
+            "enum": [
+              "pem-private-key",
+              "aws-access-key-id",
+              "github-token",
+              "slack-token",
+              "google-api-key",
+              "npm-token",
+              "stripe-live-key",
+              "anthropic-api-key",
+              "openai-project-key"
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "reason": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        },
+        "required": ["path", "rule", "sha256", "reason"],
+        "additionalProperties": false
+      }
+    },
+    "ingestLimits": {
+      "type": "object",
+      "properties": {
+        "downloadBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "archiveMembers": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "archiveBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memberBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "compressionRatio": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fileBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pluginBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "\\S"
+        }
+      },
+      "required": ["reason"],
+      "minProperties": 2,
+      "additionalProperties": false
     }
   }
 }
