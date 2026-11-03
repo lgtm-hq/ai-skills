@@ -185,3 +185,51 @@ def test_unicode_scalar_edits_retain_codepoints(quoted: str, replacement: str) -
     assert_that(load_unique_yaml_text(text=result)).is_equal_to(desired)
     assert_that(result).contains(" # preserve\n")
     assert_that(patch_document(text=result, data=desired)).is_equal_to(result)
+
+
+@pytest.mark.parametrize(
+    ("text", "desired"),
+    [
+        ("items: [{id: one}]\n", {"items": [{"id": "one", "name": "One"}]}),
+        ("items: {one: {id: one}}\n", {"items": {"one": {"id": "one", "name": "One"}}}),
+        ("items: [{values: [one]}]\n", {"items": [{"values": ["one", "two"]}]}),
+        ("items: [{value: one}]\n", {"items": [{"value": {"nested": [True, 1, 1.0]}}]}),
+        (
+            "items: [{value: {id: one}}]\n",
+            {"items": [{"value": ["😀\x85end", "a\u2028b", "line\nend"]}]},
+        ),
+        ("items: [[{id: one}]]\n", {"items": [[{"id": "one", "name": "😀"}]]}),
+    ],
+)
+def test_nested_flow_shape_changes_preserve_values_and_surrounding_bytes(
+    text: str, desired: object
+) -> None:
+    """Shape edits stay legal inside flow parents and retain untouched comments."""
+    text = "# before\n" + text.rstrip("\n") + " # keep\nother: 'untouched'\n"
+    desired = {**desired, "other": "untouched"}
+    result = patch_document(text=text, data=desired)
+    assert_that(json.dumps(load_unique_yaml_text(text=result))).is_equal_to(
+        json.dumps(desired)
+    )
+    assert_that(result).starts_with("# before\n")
+    assert_that(result).ends_with(" # keep\nother: 'untouched'\n")
+    assert_that(patch_document(text=result, data=desired)).is_equal_to(result)
+
+
+def test_flow_alias_shape_changes_fail_closed() -> None:
+    """Shared flow nodes cannot silently receive distinct requested shapes."""
+    with pytest.raises(ValueError):
+        patch_document(
+            text="items: [&shared {id: one}, *shared]\n",
+            data={"items": [{"id": "one", "name": "One"}, {"id": "one"}]},
+        )
+
+
+def test_matched_block_shape_change_control() -> None:
+    """The corresponding normal block mapping still renders correctly."""
+    assert_that(
+        patch_document(
+            text="items:\n  - id: one\n",
+            data={"items": [{"id": "one", "name": "One"}]},
+        )
+    ).is_equal_to("items:\n  - id: one\n    name: One\n")
