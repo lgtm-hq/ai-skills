@@ -10,6 +10,7 @@ from ai_skills_engine.generate.marketplace import _load_bundles, _validate_bundl
 from ai_skills_engine.manifest.edit import dump_document, patch_document
 from ai_skills_engine.manifest.layout import decode_template
 from ai_skills_engine.manifest.load import load_manifest, read_document
+from ai_skills_engine.manifest.transaction import restore_files, snapshot_files
 from ai_skills_engine.registry.registry import load_registry
 
 GENERATED_HEADER = "# generated from ai-skills.yaml; do not edit.\n"
@@ -266,21 +267,28 @@ def write_legacy(repo_root: Path, *, check: bool = False) -> int:
         Zero when written/current, one when check finds drift.
     """
     files = render_legacy(repo_root)
+    originals = snapshot_files(files)
     drift = False
-    for path, expected in files.items():
-        actual = path.read_bytes() if path.exists() else b""
-        if actual == expected:
-            continue
-        if check:
-            drift = True
-            sys.stderr.writelines(
-                difflib.unified_diff(
-                    actual.decode().splitlines(keepends=True),
-                    expected.decode().splitlines(keepends=True),
-                    fromfile=path.name,
-                    tofile="generated from ai-skills.yaml",
+    try:
+        for path, expected in files.items():
+            previous = originals[path]
+            actual = previous[0] if previous is not None else b""
+            if actual == expected:
+                continue
+            if check:
+                drift = True
+                sys.stderr.writelines(
+                    difflib.unified_diff(
+                        actual.decode().splitlines(keepends=True),
+                        expected.decode().splitlines(keepends=True),
+                        fromfile=path.name,
+                        tofile="generated from ai-skills.yaml",
+                    )
                 )
-            )
-        else:
-            path.write_bytes(expected)
+            else:
+                path.write_bytes(expected)
+    except OSError as error:
+        if not check:
+            restore_files(originals=originals, error=error)
+        raise
     return int(drift)

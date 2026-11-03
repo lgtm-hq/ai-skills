@@ -15,21 +15,17 @@
       ]
     },
     {
-      "customType": "regex",
+      "customType": "jsonata",
       "managerFilePatterns": [
         "/^ai-skills\\.yaml$/"
       ],
-      "matchStringsStrategy": "recursive",
-      "description": "Track manifest vendor pins with record-scoped captures independent of field order",
+      "description": "Track manifest vendor pins using native YAML records independent of indentation and field order",
       "matchStrings": [
-        "(?m)^vendors:[ \\t]*(?:#[^\\r\\n]*)?\\r?\\n(?:[ \\t]+[^\\r\\n]*(?:\\r?\\n|$)|-[ \\t]+[^\\r\\n]*(?:\\r?\\n|$)|[ \\t]*\\r?\\n|#[^\\r\\n]*(?:\\r?\\n|$))*",
-        "(?m)^(?:-[ \\t]+[^\\r\\n]*(?:\\r?\\n|$)(?:  [^\\r\\n]*(?:\\r?\\n|$)|(?:[ \\t]*\\r?\\n|[ \\t]*#[^\\r\\n]*(?:\\r?\\n|$)))*|  -[ \\t]+[^\\r\\n]*(?:\\r?\\n|$)(?:    [^\\r\\n]*(?:\\r?\\n|$)|(?:[ \\t]*\\r?\\n|[ \\t]*#[^\\r\\n]*(?:\\r?\\n|$)))*|    -[ \\t]+[^\\r\\n]*(?:\\r?\\n|$)(?:      [^\\r\\n]*(?:\\r?\\n|$)|(?:[ \\t]*\\r?\\n|[ \\t]*#[^\\r\\n]*(?:\\r?\\n|$)))*|      -[ \\t]+[^\\r\\n]*(?:\\r?\\n|$)(?:        [^\\r\\n]*(?:\\r?\\n|$)|(?:[ \\t]*\\r?\\n|[ \\t]*#[^\\r\\n]*(?:\\r?\\n|$)))*|        -[ \\t]+[^\\r\\n]*(?:\\r?\\n|$)(?:          [^\\r\\n]*(?:\\r?\\n|$)|(?:[ \\t]*\\r?\\n|[ \\t]*#[^\\r\\n]*(?:\\r?\\n|$)))*)",
-        "^(?:-[ \\t]+|-[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?  |  -[ \\t]+|  -[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?    |    -[ \\t]+|    -[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?      |      -[ \\t]+|      -[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?        |        -[ \\t]+|        -[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?          )repo:[ \\t]*[\"']?(?<depName>[^\\s\"'#]+/[^\\s\"'#]+)[\"']?(?:[ \\t]+#[^\\r\\n]*)?[ \\t]*(?:\\r?\\n|$)[\\s\\S]*",
-        "^(?:-[ \\t]+|-[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?  |  -[ \\t]+|  -[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?    |    -[ \\t]+|    -[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?      |      -[ \\t]+|      -[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?        |        -[ \\t]+|        -[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?          )sha:[ \\t]*[\"']?(?<currentDigest>[0-9a-f]{40})[\"']?(?:[ \\t]+#[^\\r\\n]*)?[ \\t]*(?:\\r?\\n|$)[\\s\\S]*",
-        "^(?:-[ \\t]+|-[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?  |  -[ \\t]+|  -[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?    |    -[ \\t]+|    -[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?      |      -[ \\t]+|      -[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?        |        -[ \\t]+|        -[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?          )branch:[ \\t]*[\"']?(?<currentValue>[^\\s\"'#]+)[\"']?(?:[ \\t]+#[^\\r\\n]*)?[ \\t]*(?:\\r?\\n|$)[\\s\\S]*"
+        "vendors[$type(repo) = 'string' and $type(sha) = 'string' and $type(branch) = 'string'].{'depName': repo, 'currentDigest': sha, 'currentValue': branch}"
       ],
       "datasourceTemplate": "git-refs",
-      "packageNameTemplate": "https://github.com/{{{depName}}}"
+      "packageNameTemplate": "https://github.com/{{{depName}}}",
+      "fileFormat": "yaml"
     },
     {
       "customType": "regex",

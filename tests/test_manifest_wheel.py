@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import runpy
 import shutil
 import subprocess  # nosec B404 - bounded local build/CLI processes, no shell
 import sys
@@ -12,10 +13,12 @@ from email import message_from_bytes
 from importlib.metadata import distribution
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from zipfile import ZipFile
 
 import pytest
 from assertpy import assert_that
+from ci.npm.scalar_helpers import CASES, line_break_source, scalar_source
 from inventory_helpers import snapshot
 from packaging.requirements import Requirement
 from selection_helpers import collision_migration_case, edge_diagnostic_case
@@ -191,6 +194,92 @@ raise SystemExit(status)
         assert_that(content["tree_digest"]).is_not_equal_to(executable["tree_digest"])
     assert_that(list(root.rglob("MUST-NOT-EXECUTE"))).is_empty()
     assert_that(list(vendor.rglob("MUST-NOT-EXECUTE"))).is_empty()
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda case: case["name"])
+@pytest.mark.parametrize("quote", ["", "'", '"'])
+def test_installed_scalar_source_parity(
+    installed_command: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    case: dict[str, Any],
+    quote: str,
+) -> None:
+    """Real wheel/source CLIs reject plain divergence with exact bytes/modes intact."""
+    # The console script has an absolute interpreter; validation/publication
+    # must work with no ambient Bun, vendor executable or acquisition tool.
+    monkeypatch.setenv("PATH", str(tmp_path / "no-executables"))
+    (tmp_path / "skills").mkdir()
+    path = tmp_path / "ai-skills.yaml"
+    path.write_text(scalar_source(case, quote))
+    path.chmod(0o640)
+    for name in ("bundles.yaml", "vendors.yaml"):
+        (tmp_path / name).write_bytes(b"# wheel scalar sentinel\r\n")
+        (tmp_path / name).chmod(0o600)
+    paths = [
+        tmp_path / name for name in ("ai-skills.yaml", "bundles.yaml", "vendors.yaml")
+    ]
+    before = {item: (item.read_bytes(), item.stat().st_mode) for item in paths}
+    rejected = case["ambiguous"] and not quote
+    for command in (["validate"], ["legacy"], ["legacy", "--check"]):
+        args = ["--repo-root", str(tmp_path), "manifest", *command]
+        expected = int(
+            bool(rejected) or (command[0] == "legacy" and not case["publish"])
+        )
+        result = _run(
+            args=[str(installed_command), *args], cwd=tmp_path, expected=expected
+        )
+        assert_that(cli.main(args)).is_equal_to(expected)
+        output = capsys.readouterr()
+        assert_that((result.stdout, result.stderr)).is_equal_to(
+            (output.out, output.err)
+        )
+        if rejected:
+            assert_that(result.stdout).contains(
+                f"/vendors/0/{case['field']}", "unquoted", f"{case['field']}: \""
+            )
+            assert_that(
+                {item: (item.read_bytes(), item.stat().st_mode) for item in paths}
+            ).is_equal_to(before)
+        else:
+            assert_that((path.read_bytes(), path.stat().st_mode)).is_equal_to(
+                before[path]
+            )
+
+
+@pytest.mark.parametrize("field", ["sha", "branch"])
+@pytest.mark.parametrize("separator", ["\x85", "\u2028", "\u2029"])
+@pytest.mark.parametrize("position", ["leading", "trailing"])
+def test_installed_scalar_boundary_parity(
+    installed_command: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    separator: str,
+    position: str,
+) -> None:
+    """Real wheel and source commands reject Unicode delimiters with zero writes."""
+    monkeypatch.setenv("PATH", str(tmp_path / "no-executables"))
+    path = tmp_path / "ai-skills.yaml"
+    path.write_text(
+        line_break_source(field=field, separator=separator, position=position)
+    )
+    path.chmod(0o640)
+    before = (path.read_bytes(), path.stat().st_mode)
+    for command in (["validate"], ["legacy"], ["legacy", "--check"]):
+        args = ["--repo-root", str(tmp_path), "manifest", *command]
+        result = _run(args=[str(installed_command), *args], cwd=tmp_path, expected=1)
+        assert_that(cli.main(args)).is_equal_to(1)
+        captured = capsys.readouterr()
+        assert_that((result.stdout, result.stderr)).is_equal_to(
+            (captured.out, captured.err)
+        )
+        assert_that(result.stdout).contains(f"/vendors/0/{field}", f'{field}: "')
+        assert_that((path.read_bytes(), path.stat().st_mode)).is_equal_to(before)
+        assert_that((tmp_path / "vendors.yaml").exists()).is_false()
+        assert_that((tmp_path / "bundles.yaml").exists()).is_false()
 
 
 def _venv_executable(environment: Path, name: str) -> Path:
@@ -735,6 +824,210 @@ def test_installed_management_rejection_restores_exact_files(
             for name in before
         }
     ).is_equal_to(before)
+
+
+@pytest.mark.parametrize(
+    ("boundary", "blocked"),
+    [
+        ("bundles.yaml", "none"),
+        ("vendors.yaml", "none"),
+        ("vendors.yaml", "bundles.yaml"),
+        ("refresh", "none"),
+        ("refresh", "vendors.yaml"),
+        ("refresh", "NOTICE.md"),
+    ],
+)
+def test_installed_cli_restores_independent_snapshots(
+    installed_command: Path,
+    tmp_path: Path,
+    boundary: str,
+    blocked: str,
+) -> None:
+    """The real wheel commands retain primary failures and restore other outputs."""
+    shutil.copytree(src=ROOT / "skills", dst=tmp_path / "skills")
+    for name in ("ai-skills.yaml", "bundles.yaml", "vendors.yaml"):
+        path = tmp_path / name
+        path.write_bytes(
+            b"# original wheel bytes\r\n"
+            + (ROOT / name).read_bytes().replace(b"\n", b"\r\n")
+        )
+        path.chmod(0o640)
+    result = _run(
+        args=[
+            str(_venv_executable(installed_command.parent.parent, "python")),
+            "-I",
+            str(ROOT / "tests/fixtures/manifest/rollback-cli.py"),
+            str(installed_command),
+            str(tmp_path),
+            boundary,
+            blocked,
+        ],
+        cwd=tmp_path.parent,
+    )
+    report = json.loads(result.stdout)
+    assert_that(report["status"]).is_equal_to(1)
+    assert_that(report["output"]).contains("primary installed")
+    assert_that(report["changed"]).is_equal_to([] if blocked == "none" else [blocked])
+    assert_that(
+        Path(report["module"]).is_relative_to(installed_command.parent.parent)
+    ).is_true()
+    if blocked != "none":
+        assert_that(report["events"]).contains(f"cleanup:{blocked}")
+        if boundary == "refresh":
+            assert_that(report["output"]).contains("cleanup", blocked)
+
+
+@pytest.mark.parametrize(
+    ("mode", "boundary", "blocked", "operation"),
+    [
+        ("new", "none", "none", "write"),
+        ("noop", "none", "none", "write"),
+        ("keep", "none", "none", "write"),
+        ("baseline", "none", "none", "write"),
+        ("new", "index", "none", "write"),
+        ("new", "sync", "none", "write"),
+        ("new", "index", "ai-skills.yaml", "write"),
+        ("new", "index", "vendors.yaml", "write"),
+        ("new", "index", "ai-skills.yaml", "mode"),
+        ("new", "index", "vendors.yaml", "mode"),
+        ("baseline", "sync", "ai-skills.yaml", "write"),
+        ("baseline", "sync", "vendors.yaml", "write"),
+        ("new", "sync", "NOTICE.md", "write"),
+        ("new", "sync", "NOTICE.md", "mode"),
+        ("new", "sync", "npm/ai-skills/NOTICE.md", "unlink"),
+    ],
+)
+def test_installed_repin_restores_after_actual_bakes(
+    installed_command: Path,
+    tmp_path: Path,
+    mode: str,
+    boundary: str,
+    blocked: str,
+    operation: str,
+) -> None:
+    """The installed management command runs real repin, bake, sync and rollback."""
+    helpers = runpy.run_path(str(ROOT / "tests/test_repin_vendor.py"))
+    root, trees = tmp_path / "repository", tmp_path / "trees"
+    root.mkdir()
+    helpers["_write_registry"](repo_root=root)
+    helpers["_write_before_tree"](dest=trees / "before")
+    helpers["_write_after_tree"](dest=trees / "after")
+    result = _run(
+        args=[
+            str(_venv_executable(installed_command.parent.parent, "python")),
+            "-I",
+            str(ROOT / "tests/fixtures/manifest/repin-cli.py"),
+            str(installed_command),
+            str(root),
+            str(trees),
+            mode,
+            boundary,
+            blocked,
+            operation,
+        ],
+        cwd=tmp_path,
+    )
+    report = json.loads(result.stdout)
+    assert_that(
+        Path(report["module"]).is_relative_to(installed_command.parent.parent)
+    ).is_true()
+    if boundary == "none":
+        assert_that(report["status"]).is_zero()
+        assert_that(report["sha"]).is_equal_to(
+            helpers["_EXISTING_SHA"]
+            if mode in {"noop", "keep"}
+            else helpers["_NEW_SHA"]
+        )
+        if mode in {"noop", "keep"}:
+            assert_that(report["changed"]).is_empty()
+            assert_that(report["events"]).is_empty()
+        else:
+            assert_that(report["events"]).is_equal_to(["index", "sync"])
+            assert_that(report["output"]).contains("delta", "gamma")
+        if mode == "baseline":
+            assert_that(report["output"]).contains(helpers["_BASELINE_SHA"])
+    else:
+        assert_that(report["status"]).is_equal_to(1)
+        assert_that(report["output"]).contains("primary installed repin failure")
+        assert_that(report["events"]).contains("index")
+        if boundary == "sync":
+            assert_that(report["events"]).contains("sync")
+        assert_that(report["changed"]).is_equal_to(
+            [blocked] if blocked not in {"none", "npm/ai-skills/NOTICE.md"} else []
+        )
+        assert_that(report["absent_exists"]).is_equal_to(operation == "unlink")
+        assert_that(report["changed_artifacts"]).is_equal_to(
+            [blocked] if blocked in {"NOTICE.md", "npm/ai-skills/NOTICE.md"} else []
+        )
+        if blocked != "none":
+            assert_that(report["events"]).contains(f"cleanup:{blocked}:{operation}")
+            assert_that(report["output"]).contains("cleanup", blocked)
+            assert_that("\n".join(report["notes"])).contains(blocked)
+        else:
+            assert_that(report["notes"]).is_empty()
+
+
+@pytest.mark.parametrize("state", ["current", "stale", "absent"])
+@pytest.mark.parametrize(
+    ("entry", "mode", "boundary", "blocked", "operation"),
+    [
+        (entry, *case)
+        for entry in ("api", "installed-cli")
+        for case in runpy.run_path(str(ROOT / "tests/test_repin_vendor.py"))[
+            "_PREPUBLICATION_CASES"
+        ]
+    ]
+    + [
+        ("installed-cli", mode, "none", "none", "write")
+        for mode in ("list", "all", "all-unchanged")
+    ],
+)
+def test_installed_repin_prepublication_transaction(
+    installed_command: Path,
+    tmp_path: Path,
+    state: str,
+    entry: str,
+    mode: str,
+    boundary: str,
+    blocked: str,
+    operation: str,
+) -> None:
+    """Bind public API and console-script rollback to actual built wheel bytes."""
+    helpers = runpy.run_path(str(ROOT / "tests/test_repin_vendor.py"))
+    root, trees = tmp_path / "repository", tmp_path / "trees"
+    root.mkdir()
+    helpers["_write_registry"](repo_root=root)
+    helpers["_write_before_tree"](dest=trees / "before")
+    helpers["_write_after_tree"](dest=trees / "after")
+    result = _run(
+        args=[
+            str(_venv_executable(installed_command.parent.parent, "python")),
+            "-I",
+            str(ROOT / "tests/fixtures/manifest/repin-cli.py"),
+            str(installed_command),
+            str(root),
+            str(trees),
+            mode,
+            boundary,
+            blocked,
+            operation,
+            state,
+            entry,
+        ],
+        cwd=tmp_path,
+    )
+    report = json.loads(result.stdout)
+    assert_that(
+        Path(report["module"]).is_relative_to(installed_command.parent.parent)
+    ).is_true()
+    helpers["_assert_prepublication_report"](
+        report=report,
+        state=state,
+        entry=entry,
+        mode=mode,
+        boundary=boundary,
+        blocked=blocked,
+    )
 
 
 @pytest.mark.parametrize(

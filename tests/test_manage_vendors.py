@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -20,9 +18,6 @@ from ai_skills_engine.manifest.migrate import migrate
 from ai_skills_engine.registry.registry import load_registry
 from ai_skills_engine.registry.vendor import Vendor
 
-if TYPE_CHECKING:
-    from manifest_helpers import VendorPinMatch
-
 pytest_plugins = ("manifest_helpers",)
 
 _EXISTING_SHA = "0123456789abcdef0123456789abcdef01234567"
@@ -33,7 +28,6 @@ _FETCHED_TREE = ["skills/alpha/SKILL.md", "skills/beta/SKILL.md"]
 def test_manifest_update_add_and_rollback(
     repo_root: Path,
     monkeypatch: pytest.MonkeyPatch,
-    vendor_pin_matches: Callable[[str], list[VendorPinMatch]],
 ) -> None:
     """Real management operations persist canonical fields and roll back both files."""
     migrate(repo_root)
@@ -70,19 +64,8 @@ def test_manifest_update_add_and_rollback(
     assert_that(
         read_document(repo_root / "ai-skills.yaml")["vendors"][-1]["id"]
     ).is_equal_to("brand-new")
-    config = json.loads(
-        (Path(__file__).resolve().parents[1] / "renovate.json").read_text()
-    )
-    manager = next(
-        item
-        for item in config["customManagers"]
-        if item.get("datasourceTemplate") == "git-refs"
-    )
-    assert_that(manager["matchStringsStrategy"]).is_equal_to("recursive")
-    matches = vendor_pin_matches((repo_root / "ai-skills.yaml").read_text())
-    assert_that([item["depName"] for item in matches]).is_equal_to(
-        ["owner/existing", "owner/brand-new"]
-    )
+    # Native extraction of management writer output runs in the prepared gateway
+    # gate; these management/rollback tests keep their Python-only boundary.
     before = {
         name: (repo_root / name).read_bytes()
         for name in ("ai-skills.yaml", "vendors.yaml", "bundles.yaml")
