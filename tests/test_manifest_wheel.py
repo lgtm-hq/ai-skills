@@ -13,10 +13,12 @@ from email import message_from_bytes
 from importlib.metadata import distribution
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from zipfile import ZipFile
 
 import pytest
 from assertpy import assert_that
+from ci.npm.scalar_helpers import CASES, line_break_source, scalar_source
 from packaging.requirements import Requirement
 
 from ai_skills_engine import cli
@@ -25,6 +27,92 @@ from ai_skills_engine.manifest.legacy import GENERATED_HEADER
 from ai_skills_engine.manifest.load import read_document
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda case: case["name"])
+@pytest.mark.parametrize("quote", ["", "'", '"'])
+def test_installed_scalar_source_parity(
+    installed_command: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    case: dict[str, Any],
+    quote: str,
+) -> None:
+    """Real wheel/source CLIs reject plain divergence with exact bytes/modes intact."""
+    # The console script has an absolute interpreter; validation/publication
+    # must work with no ambient Bun, vendor executable or acquisition tool.
+    monkeypatch.setenv("PATH", str(tmp_path / "no-executables"))
+    (tmp_path / "skills").mkdir()
+    path = tmp_path / "ai-skills.yaml"
+    path.write_text(scalar_source(case, quote))
+    path.chmod(0o640)
+    for name in ("bundles.yaml", "vendors.yaml"):
+        (tmp_path / name).write_bytes(b"# wheel scalar sentinel\r\n")
+        (tmp_path / name).chmod(0o600)
+    paths = [
+        tmp_path / name for name in ("ai-skills.yaml", "bundles.yaml", "vendors.yaml")
+    ]
+    before = {item: (item.read_bytes(), item.stat().st_mode) for item in paths}
+    rejected = case["ambiguous"] and not quote
+    for command in (["validate"], ["legacy"], ["legacy", "--check"]):
+        args = ["--repo-root", str(tmp_path), "manifest", *command]
+        expected = int(
+            bool(rejected) or (command[0] == "legacy" and not case["publish"])
+        )
+        result = _run(
+            args=[str(installed_command), *args], cwd=tmp_path, expected=expected
+        )
+        assert_that(cli.main(args)).is_equal_to(expected)
+        output = capsys.readouterr()
+        assert_that((result.stdout, result.stderr)).is_equal_to(
+            (output.out, output.err)
+        )
+        if rejected:
+            assert_that(result.stdout).contains(
+                f"/vendors/0/{case['field']}", "unquoted", f"{case['field']}: \""
+            )
+            assert_that(
+                {item: (item.read_bytes(), item.stat().st_mode) for item in paths}
+            ).is_equal_to(before)
+        else:
+            assert_that((path.read_bytes(), path.stat().st_mode)).is_equal_to(
+                before[path]
+            )
+
+
+@pytest.mark.parametrize("field", ["sha", "branch"])
+@pytest.mark.parametrize("separator", ["\x85", "\u2028", "\u2029"])
+@pytest.mark.parametrize("position", ["leading", "trailing"])
+def test_installed_scalar_boundary_parity(
+    installed_command: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    separator: str,
+    position: str,
+) -> None:
+    """Real wheel and source commands reject Unicode delimiters with zero writes."""
+    monkeypatch.setenv("PATH", str(tmp_path / "no-executables"))
+    path = tmp_path / "ai-skills.yaml"
+    path.write_text(
+        line_break_source(field=field, separator=separator, position=position)
+    )
+    path.chmod(0o640)
+    before = (path.read_bytes(), path.stat().st_mode)
+    for command in (["validate"], ["legacy"], ["legacy", "--check"]):
+        args = ["--repo-root", str(tmp_path), "manifest", *command]
+        result = _run(args=[str(installed_command), *args], cwd=tmp_path, expected=1)
+        assert_that(cli.main(args)).is_equal_to(1)
+        captured = capsys.readouterr()
+        assert_that((result.stdout, result.stderr)).is_equal_to(
+            (captured.out, captured.err)
+        )
+        assert_that(result.stdout).contains(f"/vendors/0/{field}", f'{field}: "')
+        assert_that((path.read_bytes(), path.stat().st_mode)).is_equal_to(before)
+        assert_that((tmp_path / "vendors.yaml").exists()).is_false()
+        assert_that((tmp_path / "bundles.yaml").exists()).is_false()
 
 
 def _venv_executable(environment: Path, name: str) -> Path:

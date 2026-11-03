@@ -26,9 +26,23 @@ Vendor SHA source is a direct, unescaped 40-hex scalar, plain or ordinary
 single/double quoted, without escape sequences, folded/block scalars, anchors,
 aliases or tags. Manifest loading enforces this before compatibility publication;
 native Renovate YAML/JSONata discovery decodes other fields while its updater can
-replace exactly one vendor's SHA. Other field spellings retain their existing
-validation rules (owner decision, 2026-11-03,
+replace exactly one vendor's SHA (owner decision, 2026-11-03,
 [#568](https://github.com/lgtm-hq/ai-skills/issues/568#issuecomment-6597021588)).
+
+Vendor `sha` and `branch` strings must be quoted whenever their plain spelling
+is read differently by our PyYAML loader and Renovate's pinned YAML parser.
+Writers preserve the semantic string and quote these values; validation rejects
+ambiguous unquoted source before compatibility publication, without writing any
+output, and names the field and quoted fix. This is a general parser-divergence
+rule, including scientific notation, YAML 1.2 octal and leading-zero decimal
+numbers; explicit YAML 1.1 directives also affect resolution. For example, use
+`sha: "1e11111111111111111111111111111111111111"` and `branch: "0o17"`.
+Writers escape Unicode line breaks in these fields to preserve the exact string
+across both parsers' different line folding rules.
+Future divergence cases in these two fields are covered by the same rule.
+All other fields retain their existing validation rules (owner decision,
+2026-11-03,
+[#568](https://github.com/lgtm-hq/ai-skills/issues/568#issuecomment-6601721842)).
 
 IDs are qualified and stable across path and display-name changes. They do not
 depend on content hashes. An identity change is a remove plus an add unless

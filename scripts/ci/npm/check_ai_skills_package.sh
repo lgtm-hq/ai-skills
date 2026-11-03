@@ -24,6 +24,7 @@ bunx --no-install tsc --noEmit -p tsconfig.fixtures.json
 UV_OFFLINE=1 uv run --no-sync pytest \
   "$REPO_ROOT/scripts/ci/npm/manifest_fixture_type_tests.py" \
   "$REPO_ROOT/scripts/ci/npm/manifest_yaml_boundary_tests.py" \
+  "$REPO_ROOT/scripts/ci/npm/manifest_scalar_tests.py" \
   "$REPO_ROOT/scripts/ci/npm/manifest_renovate_tests.py"
 bunx --no-install tsc --noEmit
 bun test --coverage

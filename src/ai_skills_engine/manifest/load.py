@@ -1,5 +1,6 @@
 """Duplicate-key-safe loading and the offline vendor authority boundary."""
 
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import replace
@@ -13,6 +14,7 @@ from yaml.tokens import ScalarToken
 from ai_skills_engine.manifest.codec import decode
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.model import Manifest
+from ai_skills_engine.manifest.scalars import ambiguous_vendor_scalars
 from ai_skills_engine.registry.registry import load_unique_yaml_text
 
 
@@ -57,6 +59,13 @@ def _check_sha_sources(*, text: str, path: Path) -> None:
             "direct, unescaped 40-hex scalar, plain or ordinary single/double "
             "quoted; no escape sequences, folded/block scalars, anchors, aliases "
             "or tags (required for native Renovate SHA updates)"
+        )
+    for index, field, node in ambiguous_vendor_scalars(text=text, root=root):
+        raise ValueError(
+            f"{path}: schema /vendors/{index}/{field}: unquoted {field} is read "
+            "differently by PyYAML and Renovate; use "
+            f"{field}: {json.dumps(node.value)} (quote the value to preserve "
+            "the same string before compatibility publication)"
         )
 
 
