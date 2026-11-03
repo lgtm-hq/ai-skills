@@ -990,6 +990,8 @@ def main(argv: list[str] | None = None) -> int:
         return check(repo_root=repo_root)
     except (OSError, RuntimeError, TypeError, ValueError, yaml.YAMLError) as error:
         print(error, file=sys.stderr)
+        for note in getattr(error, "__notes__", ()):
+            print(note, file=sys.stderr)
         return 1
 
 
