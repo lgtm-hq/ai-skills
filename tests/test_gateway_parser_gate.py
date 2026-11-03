@@ -2,6 +2,7 @@
 
 import json
 import os
+import runpy
 import shutil
 import subprocess  # nosec B404 - local trusted runner and offline command stubs
 import sys
@@ -16,6 +17,43 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNNER = Path("scripts/ci/npm/check_ai_skills_package.sh")
 COMPARISON = Path("scripts/ci/npm/manifest_yaml_boundary_tests.py")
 DISCOVERY = Path("scripts/ci/npm/manifest_renovate_tests.py")
+FIXTURE_TYPES = [
+    "bunx",
+    ["--no-install", "tsc", "--noEmit", "-p", "tsconfig.fixtures.json"],
+]
+
+
+def test_real_renovate_entrypoint_is_in_strict_fixture_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The actual Python helper launches a maintained, typechecked TS fixture."""
+    command = tmp_path / "bun"
+    command.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\n"
+        "print(json.dumps({'entrypoint': sys.argv[1]}))\n"
+    )
+    command.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    run = runpy.run_path(str(ROOT / "scripts/ci/npm/renovate_helpers.py"))[
+        "_run_renovate"
+    ]
+    monkeypatch.setitem(run.__wrapped__.__globals__, "_renovate_modules", dict)
+    entrypoint = Path(run("vendors: []\n")["entrypoint"])
+    assert_that(entrypoint.is_file()).is_true()
+    assert_that(entrypoint.suffix).is_equal_to(".ts")
+    project = ROOT / "npm/ai-skills/tsconfig.fixtures.json"
+    config = json.loads(project.read_text())
+    included = {
+        path.resolve()
+        for pattern in config["include"]
+        for path in project.parent.glob(pattern)
+    }
+    assert_that(included).contains(entrypoint)
+    base = json.loads((project.parent / config["extends"]).read_text())
+    options = {**base["compilerOptions"], **config.get("compilerOptions", {})}
+    for key in ("strict", "noUncheckedIndexedAccess"):
+        assert_that(options[key]).is_true()
 
 
 @pytest.mark.parametrize("prepared_gate", [False, True])
@@ -106,11 +144,13 @@ def test_workflow_prepares_gateway_parser_gate() -> None:
     assert_that(jobs["test"]["with"]["test-path"]).is_equal_to("tests")
 
 
-@pytest.mark.parametrize("comparison_exit", [0, 23])
+@pytest.mark.parametrize(
+    ("comparison_exit", "typecheck_exit"), [(0, 0), (23, 0), (0, 29)]
+)
 def test_actual_gateway_runner_requires_offline_comparison(
-    tmp_path: Path, comparison_exit: int
+    tmp_path: Path, comparison_exit: int, typecheck_exit: int
 ) -> None:
-    """Execute the changed shell helper; parser failures must stop the full gate."""
+    """Run the real shell gate; typecheck and parser failures stop later commands."""
     runner = tmp_path / RUNNER
     runner.parent.mkdir(parents=True)
     shutil.copy2(src=ROOT / RUNNER, dst=runner)
@@ -128,6 +168,8 @@ def test_actual_gateway_runner_requires_offline_comparison(
         "    stream.write(json.dumps([Path(sys.argv[0]).name, args, "
         "os.environ.get('UV_OFFLINE'), str(Path.cwd())]) + '\\n')\n"
         "if '-e' in args:\n    print('0.0.0-dev')\n"
+        "if 'tsconfig.fixtures.json' in args:\n"
+        "    sys.exit(int(os.environ['TYPECHECK_EXIT']))\n"
         "if 'pytest' in args:\n    sys.exit(int(os.environ['COMPARISON_EXIT']))\n"
     )
     for name in ("uv", "bun", "bunx"):
@@ -143,6 +185,7 @@ def test_actual_gateway_runner_requires_offline_comparison(
                 "PATH": f"{commands}{os.pathsep}{os.environ['PATH']}",
                 "TRACE": str(trace),
                 "COMPARISON_EXIT": str(comparison_exit),
+                "TYPECHECK_EXIT": str(typecheck_exit),
             },
             capture_output=True,
             text=True,
@@ -151,9 +194,18 @@ def test_actual_gateway_runner_requires_offline_comparison(
         )
     )
     assert_that(result.returncode).described_as(result.stderr).is_equal_to(
-        comparison_exit
+        typecheck_exit or comparison_exit
     )
     calls = [json.loads(line) for line in trace.read_text().splitlines()]
+    install = next(
+        call for call in calls if call[:2] == ["bun", ["install", "--frozen-lockfile"]]
+    )
+    typecheck = next(call for call in calls if call[:2] == FIXTURE_TYPES)
+    assert_that(calls.index(install)).is_less_than(calls.index(typecheck))
+    assert_that(typecheck[3]).is_equal_to(str(tmp_path / "npm/ai-skills"))
+    if typecheck_exit:
+        assert_that(calls[calls.index(typecheck) + 1 :]).is_empty()
+        return
     comparisons = [call for call in calls if "pytest" in call[1]]
     assert_that(comparisons).is_length(1)
     comparison = comparisons[0]
@@ -171,14 +223,17 @@ def test_actual_gateway_runner_requires_offline_comparison(
             str(tmp_path / "npm/ai-skills"),
         ]
     )
-    install = next(
-        call for call in calls if call[:2] == ["bun", ["install", "--frozen-lockfile"]]
-    )
-    assert_that(calls.index(install)).is_less_than(calls.index(comparison))
+    assert_that(calls.index(typecheck)).is_less_than(calls.index(comparison))
     subsequent = calls[calls.index(comparison) + 1 :]
     if comparison_exit:
         assert_that(subsequent).is_empty()
     else:
-        assert_that([call[:2] for call in subsequent]).contains(
-            ["bunx", ["tsc", "--noEmit"]], ["bun", ["test", "--coverage"]]
+        assert_that([call[:2] for call in subsequent]).is_equal_to(
+            [
+                ["bunx", ["--no-install", "tsc", "--noEmit"]],
+                ["bun", ["test", "--coverage"]],
+                ["bun", ["run", "build:launcher"]],
+                ["bun", ["scripts/launcher-smoke.ts"]],
+                ["bun", ["scripts/check-pack.ts"]],
+            ]
         )

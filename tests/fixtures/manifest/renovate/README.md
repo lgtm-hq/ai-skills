@@ -7,7 +7,7 @@ Keep the `.ts.txt` files unchanged; the runner verifies their digests before
 bundling them with Bun. Update the revision, source bytes, digests and locked
 production dependency versions together when refreshing this fixture.
 
-`../renovate-runner.mjs` executes the actual YAML parser, JSONata extractor,
+`../renovate-runner.ts` executes the actual YAML parser, JSONata extractor,
 dependency construction, auto-replacement and re-extraction confirmation.
 Production YAML options include `strict: false`. Parser/query/updater logic
 is never reimplemented in the Python assertions. CST ranges only support
@@ -25,3 +25,11 @@ depend on those legacy adapters.
 Tests live in `scripts/ci/npm/manifest_renovate_tests.py` and run mandatorily in
 the prepared gateway gate after its frozen dependency install. Missing Bun or
 locked dependencies cause errors, never skips or test-time installation.
+The gate first runs `bunx --no-install tsc --noEmit -p tsconfig.fixtures.json`
+from `npm/ai-skills`. This includes both maintained `.ts` fixtures and inherits
+the gateway's `strict` and `noUncheckedIndexedAccess` settings. Bun's prepared
+types describe the runtime and bundler API. The runner describes only the
+consumed exports of the byte-verified bundle and locked YAML parser; JSON input,
+snapshot metadata and optional CST nodes are checked at their unknown boundaries.
+Shim source strings and the in-memory bundle remain runtime-generated; upstream
+`.ts.txt` snapshots remain immutable. No maintained JavaScript fixture is allowed.

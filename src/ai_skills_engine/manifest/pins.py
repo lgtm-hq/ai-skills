@@ -1,6 +1,5 @@
 """Authoritative vendor edits retaining consumer-owned declaration fields."""
 
-import stat
 from pathlib import Path
 from typing import Any
 
@@ -8,37 +7,7 @@ from ai_skills_engine.manifest.edit import dump_document, patch_document
 from ai_skills_engine.manifest.legacy import LEGACY_PACKAGE_FIELDS, write_legacy
 from ai_skills_engine.manifest.load import load_manifest, read_document
 from ai_skills_engine.manifest.migrate import vendor_declaration
-
-
-def _restore_files(
-    *, originals: dict[Path, tuple[bytes, int] | None], error: Exception
-) -> None:
-    """Restore each publication independently, retaining cleanup evidence on failure.
-
-    Args:
-        originals: Original bytes and modes, or absence, for every destination.
-        error: Original failure to annotate without replacing it.
-    """
-    for destination, previous in originals.items():
-        try:
-            if previous is None:
-                destination.unlink(missing_ok=True)
-            else:
-                content, mode = previous
-                if not destination.exists() or destination.read_bytes() != content:
-                    destination.write_bytes(content)
-                if stat.S_IMODE(destination.stat().st_mode) != mode:
-                    destination.chmod(mode)
-        except OSError as cleanup_error:
-            action = (
-                "remove the newly created file"
-                if previous is None
-                else f"restore its original bytes and mode {previous[1]:#o}"
-            )
-            error.add_note(
-                f"Transaction cleanup failed for {destination}: {cleanup_error!r}; "
-                f"manually {action} before retrying."
-            )
+from ai_skills_engine.manifest.transaction import restore_files, snapshot_files
 
 
 def write_vendors(path: Path, vendors: list[dict[str, Any]]) -> str:
@@ -120,21 +89,9 @@ def write_vendors(path: Path, vendors: list[dict[str, Any]]) -> str:
     updated = (
         dump_document(data) if structural else patch_document(text=original, data=data)
     )
-    originals = {
-        destination: (
-            (
-                destination.read_bytes(),
-                stat.S_IMODE(destination.stat().st_mode),
-            )
-            if destination.exists()
-            else None
-        )
-        for destination in (
-            path,
-            path.parent / "bundles.yaml",
-            path.parent / "vendors.yaml",
-        )
-    }
+    originals = snapshot_files(
+        (path, path.parent / "bundles.yaml", path.parent / "vendors.yaml")
+    )
     try:
         if updated != original:
             path.write_text(updated, encoding="utf-8")
@@ -144,6 +101,6 @@ def write_vendors(path: Path, vendors: list[dict[str, Any]]) -> str:
 
         load_registry(registry_path=path.parent / "vendors.yaml")
     except (OSError, TypeError, ValueError) as error:
-        _restore_files(originals=originals, error=error)
+        restore_files(originals=originals, error=error)
         raise
     return original

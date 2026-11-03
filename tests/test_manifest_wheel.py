@@ -395,6 +395,57 @@ def test_installed_management_rejection_restores_exact_files(
 
 
 @pytest.mark.parametrize(
+    ("boundary", "blocked"),
+    [
+        ("bundles.yaml", "none"),
+        ("vendors.yaml", "none"),
+        ("vendors.yaml", "bundles.yaml"),
+        ("refresh", "none"),
+        ("refresh", "vendors.yaml"),
+        ("refresh", "NOTICE.md"),
+    ],
+)
+def test_installed_cli_restores_independent_snapshots(
+    installed_command: Path,
+    tmp_path: Path,
+    boundary: str,
+    blocked: str,
+) -> None:
+    """The real wheel commands retain primary failures and restore other outputs."""
+    shutil.copytree(src=ROOT / "skills", dst=tmp_path / "skills")
+    for name in ("ai-skills.yaml", "bundles.yaml", "vendors.yaml"):
+        path = tmp_path / name
+        path.write_bytes(
+            b"# original wheel bytes\r\n"
+            + (ROOT / name).read_bytes().replace(b"\n", b"\r\n")
+        )
+        path.chmod(0o640)
+    result = _run(
+        args=[
+            str(_venv_executable(installed_command.parent.parent, "python")),
+            "-I",
+            str(ROOT / "tests/fixtures/manifest/rollback-cli.py"),
+            str(installed_command),
+            str(tmp_path),
+            boundary,
+            blocked,
+        ],
+        cwd=tmp_path.parent,
+    )
+    report = json.loads(result.stdout)
+    assert_that(report["status"]).is_equal_to(1)
+    assert_that(report["output"]).contains("primary installed")
+    assert_that(report["changed"]).is_equal_to([] if blocked == "none" else [blocked])
+    assert_that(
+        Path(report["module"]).is_relative_to(installed_command.parent.parent)
+    ).is_true()
+    if blocked != "none":
+        assert_that(report["events"]).contains(f"cleanup:{blocked}")
+        if boundary == "refresh":
+            assert_that(report["output"]).contains("cleanup", blocked)
+
+
+@pytest.mark.parametrize(
     ("platform", "scripts", "suffix"),
     [("linux", "bin", ""), ("darwin", "bin", ""), ("win32", "Scripts", ".exe")],
 )

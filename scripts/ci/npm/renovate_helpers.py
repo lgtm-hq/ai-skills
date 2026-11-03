@@ -91,7 +91,7 @@ def _run_renovate(text: str, updates: str = "[]") -> dict[str, Any]:
     result = subprocess.run(  # nosec B603 B607 - fixed local tools/fixtures; no shell or acquisition
         [
             "bun",
-            str(SCRIPTS_DIR.parent / "tests/fixtures/manifest/renovate-runner.mjs"),
+            str(SCRIPTS_DIR.parent / "tests/fixtures/manifest/renovate-runner.ts"),
         ],
         input=json.dumps(
             {
@@ -107,7 +107,10 @@ def _run_renovate(text: str, updates: str = "[]") -> dict[str, Any]:
         timeout=30,
     )
     assert_that(result.returncode).described_as(result.stderr).is_zero()
-    return json.loads(result.stdout)
+    output: object = json.loads(result.stdout)
+    if not isinstance(output, dict):
+        raise TypeError("Renovate runner must return a JSON object")
+    return output
 
 
 @pytest.fixture

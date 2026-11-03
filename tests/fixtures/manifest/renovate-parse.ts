@@ -1,9 +1,5 @@
 // Match Renovate lib/util/yaml.ts defaults, including strict:false.
-// This fixture runs only in Bun; describe its small runtime boundary locally.
-declare const Bun: {
-  argv: string[];
-  stdin: { text(): Promise<string> };
-};
+// This fixture runs only in Bun; describe the locked external parser boundary.
 interface ParsedDocument {
   errors: { message: string }[];
   toJS(options: { maxAliasCount: number }): unknown;
@@ -14,7 +10,9 @@ interface YamlParser {
     options: { prettyErrors: boolean; uniqueKeys: boolean; strict: boolean }
   ): ParsedDocument[];
 }
-const { parseAllDocuments } = (await import(Bun.argv[2])) as YamlParser;
+const parserPath = Bun.argv[2];
+if (!parserPath) throw new Error('Missing prepared YAML parser path');
+const { parseAllDocuments } = (await import(parserPath)) as YamlParser;
 const source = await Bun.stdin.text();
 const documents = parseAllDocuments(source, {
   prettyErrors: true,
