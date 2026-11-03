@@ -25,6 +25,10 @@ document:
   snapshots (short chunks avoid interpreting embedded YAML as prose), while
   every generated value comes from manifest declarations. The `other` package
   preserves the old ungrouped selection without adding it to host marketplaces.
+  Manifest loading also rejects comments immediately after quoted scalars
+  (`branch: "main"#comment`): PyYAML and Renovate's permissive YAML parser
+  accept those bytes, but YAML requires whitespace before the comment.
+  Validation and compatibility publication share this lexical check.
   Legacy output rejects payload roles/paths it cannot represent; it never
   invents install behavior for newer declarations.
   Compatibility publication also requires explicit exports for every local
