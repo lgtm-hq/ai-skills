@@ -29,6 +29,14 @@ document:
   (`branch: "main"#comment`): PyYAML and Renovate's permissive YAML parser
   accept those bytes, but YAML requires whitespace before the comment.
   Validation and compatibility publication share this lexical check.
+  Each `vendors[].sha` must appear directly as an unescaped 40-hex scalar,
+  either plain or ordinary single/double quoted. Escape sequences, folded/block
+  scalars, YAML anchors (`&`), aliases (`*`) and tags are rejected before
+  rendering, writing or checking either compatibility registry. Errors name
+  the vendor index and ID. This source rule lets native Renovate update one
+  vendor's pin safely; escaped SHA text cannot be replaced, and shared SHA
+  anchors would update multiple vendors. Repository, branch and other field
+  spellings retain their existing validation rules.
   Legacy output rejects payload roles/paths it cannot represent; it never
   invents install behavior for newer declarations.
   Compatibility publication also requires explicit exports for every local
@@ -385,10 +393,13 @@ uv run python scripts/repin_vendor.py --all
 uv run python scripts/repin_vendor.py --id mattpocock --json
 ```
 
-Renovate tracks the explicit `branch` after each vendor's `sha` (currently
-`main` for all five vendors). Keep that field immediately after `sha` so the
-custom manager can capture the branch and digest. `manage_vendors.py add`
-and `update` accept `--branch` and preserve this ordering.
+Renovate tracks each manifest vendor's explicit `branch` (currently `main`
+for all five vendors). Its native YAML/JSONata manager discovers complete vendor
+records at any valid indentation and in any field order, including comments
+and indentless sequences. YAML decoding supplies repository and branch values,
+so an escaped repository spelling still identifies the decoded dependency.
+`manage_vendors.py add` and `update` accept `--branch` and preserve their stable
+writer ordering. Vendor pins follow the SHA source contract above.
 
 To switch an existing vendor from branch tracking to a release tag, use the
 update-only `--clear-branch` flag together with `--display-ref` and the tag's
@@ -404,13 +415,14 @@ uv run python scripts/manage_vendors.py update --id owner-skills \
 `--branch`. Omitting both flags preserves existing branch tracking, even when
 `--display-ref` changes.
 
-Branch names containing either quote character are explicitly unsupported:
-Renovate's regex manager cannot decode arbitrary YAML scalar escapes. The
-registry rejects these names, as well as whitespace and control characters,
-instead of capturing a truncated ref. Simple quoted scalars remain supported.
-Balanced surrounding quotes are enforced by YAML/registry validation, not the
-Renovate RE2 regex. The regex permits optional surrounding quotes and valid
-inline comments; malformed quoting must still fail registry validation.
+The legacy registry still rejects branch names containing quotes, whitespace
+or control characters. Native discovery decodes complete YAML scalars without
+truncating them; manifest loading enforces YAML comment separation even though
+Renovate's production parser uses `strict: false`. The prepared gateway gate
+runs the byte-verified Renovate 44.206.2 extractor and updater snapshots in
+`tests/fixtures/manifest/renovate-runner.mjs`, with locked production dependency
+versions. Missing Bun or dependencies fail this gate; the Python-only suite
+does not require either runtime.
 
 [`.github/workflows/vendor-pin-regen.yml`](.github/workflows/vendor-pin-regen.yml)
 refreshes generated data on same-repository `renovate/**` PRs authored by

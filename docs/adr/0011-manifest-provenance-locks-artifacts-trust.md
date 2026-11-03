@@ -22,6 +22,14 @@ belong to [ADR 0009](./0009-capabilities-and-parity.md), delivery and recovery t
 re-export requires an explicit export. Consumers map vendors without manifests.
 A vendor manifest can never grant trust or loosen consumer policy.
 
+Vendor SHA source is a direct, unescaped 40-hex scalar, plain or ordinary
+single/double quoted, without escape sequences, folded/block scalars, anchors,
+aliases or tags. Manifest loading enforces this before compatibility publication;
+native Renovate YAML/JSONata discovery decodes other fields while its updater can
+replace exactly one vendor's SHA. Other field spellings retain their existing
+validation rules (owner decision, 2026-11-03,
+[#568](https://github.com/lgtm-hq/ai-skills/issues/568#issuecomment-6597021588)).
+
 IDs are qualified and stable across path and display-name changes. They do not
 depend on content hashes. An identity change is a remove plus an add unless
 explicitly migrated. Selection follows

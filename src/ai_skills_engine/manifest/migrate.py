@@ -17,7 +17,7 @@ def vendor_declaration(raw: dict[str, Any]) -> dict[str, Any]:
         raw: Validated legacy vendor, including all optional slice fields.
 
     Returns:
-        Manifest vendor; repo and sha stay adjacent for Renovate.
+        Manifest vendor with stable writer ordering for readable diffs.
     """
     return {
         **{

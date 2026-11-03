@@ -18,8 +18,10 @@ uv run --no-sync python scripts/ci/npm/sync_ai_skills_package.py --check --versi
 cd npm/ai-skills
 bun install --frozen-lockfile
 # The Python-only job has no Bun/node_modules. This prepared gate owns the
-# mandatory production strict:false differential; never acquire inside tests.
-UV_OFFLINE=1 uv run --no-sync pytest "$REPO_ROOT/scripts/ci/npm/manifest_yaml_boundary_tests.py"
+# mandatory production parser/extractor/updater controls; never acquire in tests.
+UV_OFFLINE=1 uv run --no-sync pytest \
+  "$REPO_ROOT/scripts/ci/npm/manifest_yaml_boundary_tests.py" \
+  "$REPO_ROOT/scripts/ci/npm/manifest_renovate_tests.py"
 bunx tsc --noEmit
 bun test --coverage
 bun run build:launcher

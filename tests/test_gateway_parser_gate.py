@@ -15,6 +15,7 @@ from assertpy import assert_that
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = Path("scripts/ci/npm/check_ai_skills_package.sh")
 COMPARISON = Path("scripts/ci/npm/manifest_yaml_boundary_tests.py")
+DISCOVERY = Path("scripts/ci/npm/manifest_renovate_tests.py")
 
 
 @pytest.mark.parametrize("prepared_gate", [False, True])
@@ -159,7 +160,13 @@ def test_actual_gateway_runner_requires_offline_comparison(
     assert_that(comparison).is_equal_to(
         [
             "uv",
-            ["run", "--no-sync", "pytest", str(tmp_path / COMPARISON)],
+            [
+                "run",
+                "--no-sync",
+                "pytest",
+                str(tmp_path / COMPARISON),
+                str(tmp_path / DISCOVERY),
+            ],
             "1",
             str(tmp_path / "npm/ai-skills"),
         ]

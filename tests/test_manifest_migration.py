@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from collections.abc import Callable
-from itertools import permutations
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 from assertpy import assert_that
@@ -15,11 +11,8 @@ from ai_skills_engine import cli, package_sync
 from ai_skills_engine.manifest.edit import patch_document
 from ai_skills_engine.manifest.legacy import GENERATED_HEADER, render_legacy
 from ai_skills_engine.manifest.load import load_manifest, read_document
-from ai_skills_engine.registry.registry import load_registry, load_unique_yaml_text
+from ai_skills_engine.registry.registry import load_registry
 from ai_skills_engine.vendors import manage
-
-if TYPE_CHECKING:
-    from manifest_helpers import VendorPinMatch
 
 pytest_plugins = ("manifest_helpers",)
 pytestmark = pytest.mark.usefixtures("author_skills")
@@ -153,166 +146,6 @@ def test_migrated_identity_survives_a_payload_move(legacy_repo: Path) -> None:
     after = load_manifest(path).packages[0].capabilities[0]
     assert_that(after.id).is_equal_to(before.id)
     assert_that(after.path).is_not_equal_to(before.path)
-
-
-@pytest.mark.parametrize("indent", [0, 2, 4, 6, 8])
-def test_renovate_matches_manifest_and_regeneration(
-    legacy_repo: Path,
-    indent: int,
-    vendor_pin_matches: Callable[[str], list[VendorPinMatch]],
-) -> None:
-    """The actual custom manager extracts and edits every authoritative pin."""
-    assert_that(
-        cli.main(["--repo-root", str(legacy_repo), "manifest", "migrate"])
-    ).is_zero()
-    manager = next(
-        item
-        for item in json.loads((ROOT / "renovate.json").read_text())["customManagers"]
-        if item.get("datasourceTemplate") == "git-refs"
-    )
-    assert_that(manager["managerFilePatterns"]).is_equal_to([r"/^ai-skills\.yaml$/"])
-    path = legacy_repo / "ai-skills.yaml"
-    text = path.read_text()
-    lines = text.splitlines(keepends=True)
-    in_vendors = False
-    for index, line in enumerate(lines):
-        if line.startswith("vendors:"):
-            in_vendors = True
-        elif in_vendors and line.startswith(" "):
-            lines[index] = " " * indent + line[2:]
-        elif in_vendors and line.strip():
-            in_vendors = False
-    text = "".join(lines)
-    assert_that(read_document(path)).is_equal_to(load_unique_yaml_text(text=text))
-    matches = vendor_pin_matches(text)
-    vendors = load_registry(registry_path=legacy_repo / "vendors.yaml")
-    assert_that(
-        [
-            (item["depName"], item["currentDigest"], item["currentValue"])
-            for item in matches
-        ]
-    ).is_equal_to([(vendor.repo, vendor.sha, vendor.branch) for vendor in vendors])
-    for match in reversed(matches):
-        start, end = match.span("currentDigest")
-        text = text[:start] + "f" * 40 + text[end:]
-    path.write_text(text)
-    assert_that(
-        cli.main(["--repo-root", str(legacy_repo), "manifest", "legacy"])
-    ).is_zero()
-    assert_that(
-        {
-            vendor.sha
-            for vendor in load_registry(registry_path=legacy_repo / "vendors.yaml")
-        }
-    ).is_equal_to({"f" * 40})
-
-
-@pytest.mark.parametrize("indent", [0, 2, 4, 6, 8])
-@pytest.mark.parametrize("order", list(permutations(("id", "repo", "sha", "branch"))))
-@pytest.mark.parametrize("comments", [False, True])
-def test_renovate_extracts_reordered_vendor_records(
-    vendor_pin_matches: Callable[[str], list[VendorPinMatch]],
-    indent: int,
-    order: tuple[str, ...],
-    comments: bool,
-) -> None:
-    """Recursive extraction merges fields per vendor across reordering and comments."""
-    records = []
-    expected = []
-    for name, digest in (("first", "a" * 40), ("second", "b" * 40)):
-        fields = {
-            "id": name,
-            "repo": f'"owner/{name}"',
-            "sha": f"'{digest}'",
-            "branch": "'release/next'",
-        }
-        lines = [f"{' ' * indent}- {order[0]}: {fields[order[0]]}\n"]
-        for key in order[1:]:
-            if comments:
-                lines.extend(["\n", f"{' ' * (indent + 2)}# repo: ignored/comment\n"])
-            lines.append(f"{' ' * (indent + 2)}{key}: {fields[key]} # tracked\n")
-        records.append("".join(lines))
-        expected.append(
-            {
-                "depName": f"owner/{name}",
-                "currentDigest": digest,
-                "currentValue": "release/next",
-            }
-        )
-    text = "vendors: # declarations\n" + "".join(records) + "exports: []\n"
-    # Both layouts are real YAML, not just strings accepted by the regex model.
-    assert_that(load_unique_yaml_text(text=text)["vendors"]).is_length(2)
-    matches = vendor_pin_matches(text)
-    assert_that([match.groupdict() for match in matches]).is_equal_to(expected)
-    for match in matches:
-        start, end = match.span("currentDigest")
-        assert_that(text[start:end]).is_equal_to(match["currentDigest"])
-
-
-@pytest.mark.parametrize("indent", [0, 2, 4, 6, 8])
-@pytest.mark.parametrize("missing", ["repo", "sha", "branch", "none"])
-def test_renovate_never_borrows_fields_outside_vendor_record(
-    vendor_pin_matches: Callable[[str], list[VendorPinMatch]],
-    indent: int,
-    missing: str,
-) -> None:
-    """Nested mappings, adjacent vendors and later top-level sequences stay isolated."""
-    pad = " " * (indent + 2)
-    nested = pad + "  "
-    fields = {"repo": "owner/first", "sha": "a" * 40, "branch": "main"}
-    text = "vendors:\n" + " " * indent + "- id: first\n"
-    text += (
-        f"{pad}mapping:\n{nested}repo: ignored/mapping\n"
-        f"{nested}sha: {'d' * 40}\n{nested}branch: hidden\n"
-        f"{nested}packages:\n{nested}  - id: nested\n"
-        f"{nested}    repo: ignored/nested\n"
-        f"{nested}    sha: {'e' * 40}\n{nested}    branch: hidden\n"
-    )
-    text += "".join(
-        f"{pad}{key}: {value}\n" for key, value in fields.items() if key != missing
-    )
-    text += (
-        f"{' ' * indent}- id: second\n{pad}repo: owner/second\n"
-        f"{pad}sha: {'b' * 40}\n{pad}branch: next\n"
-        "x-other:\n- id: other\n  repo: ignored/top-level\n"
-        f"  sha: {'c' * 40}\n  branch: hidden\n"
-    )
-    assert_that(load_unique_yaml_text(text=text)["vendors"]).is_length(2)
-    expected = []
-    if missing == "none":
-        expected.append(
-            {
-                "depName": "owner/first",
-                "currentDigest": "a" * 40,
-                "currentValue": "main",
-            }
-        )
-    expected.append(
-        {"depName": "owner/second", "currentDigest": "b" * 40, "currentValue": "next"}
-    )
-    assert_that([match.groupdict() for match in vendor_pin_matches(text)]).is_equal_to(
-        expected
-    )
-
-
-def test_renovate_ignores_mapping_templates_and_unrelated_repos(
-    vendor_pin_matches: Callable[[str], list[VendorPinMatch]],
-) -> None:
-    """Only vendor item headers declare dependencies, not incidental repo fields."""
-    text = (
-        "publisher:\n    repo: irrelevant/publisher\n"
-        f"    sha: {'a' * 40}\n    branch: main\n"
-        "vendors:\n  - id: real-vendor\n    repo: example/real\n"
-        f"    sha: {'b' * 40}\n    branch: main # tracked\n"
-        "    mapping:\n      repo: irrelevant/mapping\n"
-        f"      sha: {'c' * 40}\n      branch: hidden\n"
-        "x-template: |\n    repo: irrelevant/template\n"
-        f"    sha: {'d' * 40}\n    branch: hidden\n"
-        "x-unrelated:\n  - id: unrelated\n    repo: irrelevant/other\n"
-        f"    sha: {'e' * 40}\n    branch: hidden\n"
-    )
-    matches = vendor_pin_matches(text)
-    assert_that([match["depName"] for match in matches]).is_equal_to(["example/real"])
 
 
 @pytest.mark.parametrize(
