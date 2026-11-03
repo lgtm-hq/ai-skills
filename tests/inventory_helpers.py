@@ -1,6 +1,9 @@
 """Shared inventory fixture preparation, with no network or vendor execution."""
 
+import io
 import shutil
+import stat
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -22,6 +25,40 @@ def snapshot(*roots: Path) -> dict[str, tuple[bytes, int]]:
         for root in roots
         for path in root.rglob("*")
         if path.is_file()
+    }
+
+
+def inventory_tarball(root: Path) -> bytes:
+    """Archive actual fixture bytes and modes with GitHub's root prefix.
+
+    Args:
+        root: Safe fixture snapshot to acquire through the real fetcher.
+
+    Returns:
+        Gzip tar bytes for the network boundary stub.
+    """
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        archive.add(root, arcname="snapshot")
+    return buffer.getvalue()
+
+
+def inventory_snapshot(*roots: Path) -> dict[Path, tuple[bytes | None, int]]:
+    """Observe fixture bytes and all file/directory modes without executing code.
+
+    Args:
+        roots: Input trees to observe before and after acquisition.
+
+    Returns:
+        Exact bytes and permission bits keyed by input path.
+    """
+    return {
+        path: (
+            path.read_bytes() if path.is_file() else None,
+            stat.S_IMODE(path.stat().st_mode),
+        )
+        for root in roots
+        for path in (root, *root.rglob("*"))
     }
 
 

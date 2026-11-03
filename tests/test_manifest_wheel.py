@@ -31,6 +31,104 @@ pytest_plugins = ["inventory_helpers"]
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_installed_inventory_modes_survive_real_tarball_acquisition(
+    installed_command: Path, inventory_repo: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """The installed public CLI agrees across permissions and actual extraction."""
+    from inventory_helpers import inventory_snapshot, inventory_tarball
+
+    root, vendor = inventory_repo
+    targets = [
+        vendor / "skills/help/danger.py",
+        vendor / "agents/reviewer.md",
+        vendor / "NOTICE.md",
+        root / "shared/guide.md",
+    ]
+    control = vendor / "skills/help/control.py"
+    control.write_bytes(targets[0].read_bytes())
+    for tree in (root, vendor):
+        for path in tree.rglob("*"):
+            if path.is_file():
+                path.chmod(0o664)
+    control.chmod(0o775)
+    before = inventory_snapshot(root, vendor)
+    archive = tmp_path / "snapshot.tar.gz"
+    archive.write_bytes(inventory_tarball(vendor))
+    arguments = [
+        str(installed_command),
+        "inventory",
+        "--repo-root",
+        str(root),
+        "--json",
+    ]
+    offline_arguments = [*arguments, "--vendor-root", f"vendor={vendor}"]
+    offline = _run(args=offline_arguments, cwd=tmp_path).stdout
+    python = _venv_executable(installed_command.parents[1], "python")
+    fetched = _run(
+        args=[
+            str(python),
+            "-I",
+            "-c",
+            """
+import sys
+from pathlib import Path
+from unittest.mock import patch
+from ai_skills_engine import cli
+from ai_skills_engine.bake import vendor_plugins
+from ai_skills_engine.inventory import payload
+print(payload.__file__, file=sys.stderr)
+with patch.object(
+    vendor_plugins, '_http_get_bytes', return_value=Path(sys.argv[1]).read_bytes()
+) as network:
+    status = cli.main(sys.argv[2:])
+    print(f'network_stub_calls={network.call_count}', file=sys.stderr)
+raise SystemExit(status)
+""",
+            str(archive),
+            *arguments[1:],
+            "--fetch-vendors",
+        ],
+        cwd=tmp_path,
+    )
+    assert_that(fetched.stderr).contains(
+        "site-packages/ai_skills_engine/inventory/payload.py", "network_stub_calls=1"
+    ).does_not_contain(str(ROOT / "src"))
+    baseline, acquired = json.loads(offline), json.loads(fetched.stdout)
+    for section in ("capabilities", "resources"):
+        assert_that(acquired[section]).is_equal_to(baseline[section])
+    helper = next(
+        item for item in acquired["capabilities"] if item["id"].endswith("/helper")
+    )
+    files = {item["path"]: item for item in helper["payload"]}
+    assert_that(files["danger.py"]["mode"]).is_equal_to(0o644)
+    assert_that(files["control.py"]["mode"]).is_equal_to(0o755)
+    assert_that(files["danger.py"]["sha256"]).is_equal_to(files["control.py"]["sha256"])
+    assert_that(inventory_snapshot(root, vendor)).is_equal_to(before)
+    for path in targets:
+        path.chmod(0o675)
+    control.chmod(0o751)
+    assert_that(_run(args=offline_arguments, cwd=tmp_path).stdout).is_equal_to(offline)
+    identities = (
+        "vendor/tools:skill/helper",
+        "vendor/tools:specialist/reviewer",
+        "vendor/tools:resource/notice",
+        "fixture/tools:resource/guide",
+    )
+    for path, identity in zip(targets, identities, strict=True):
+        section = "resources" if ":resource/" in identity else "capabilities"
+        original = next(item for item in baseline[section] if item["id"] == identity)
+        path.chmod(0o775)
+        changed = json.loads(_run(args=offline_arguments, cwd=tmp_path).stdout)
+        executable = next(item for item in changed[section] if item["id"] == identity)
+        assert_that(executable["tree_digest"]).is_not_equal_to(original["tree_digest"])
+        path.write_bytes(path.read_bytes() + b"\n# installed byte change\n")
+        changed = json.loads(_run(args=offline_arguments, cwd=tmp_path).stdout)
+        content = next(item for item in changed[section] if item["id"] == identity)
+        assert_that(content["tree_digest"]).is_not_equal_to(executable["tree_digest"])
+    assert_that(list(root.rglob("MUST-NOT-EXECUTE"))).is_empty()
+    assert_that(list(vendor.rglob("MUST-NOT-EXECUTE"))).is_empty()
+
+
 def _venv_executable(environment: Path, name: str) -> Path:
     """Locate a uv virtual environment executable on the current platform.
 
@@ -104,9 +202,9 @@ def _copy_runtime_dependencies(*, requirements: list[str], site: Path) -> None:
         assert_that(requirement.specifier.contains(dependency.version)).is_true()
         copied.add(name)
         pending.extend(dependency.requires or [])
-        base = Path(dependency.locate_file("")).resolve()
+        base = Path(str(dependency.locate_file(""))).resolve()
         for member in dependency.files or []:
-            source = Path(dependency.locate_file(member)).resolve()
+            source = Path(str(dependency.locate_file(member))).resolve()
             if source.is_file() and source.is_relative_to(base):
                 target = site / source.relative_to(base)
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -530,6 +628,49 @@ def test_installed_publication_requires_marketplace_acceptance(
             assert_that((tmp_path / name).read_bytes()).is_equal_to(
                 (ROOT / name).read_bytes()
             )
+
+
+@pytest.mark.parametrize(
+    ("option", "diagnostic"),
+    [("--sha", "schema"), ("--homepage", "Legacy publication")],
+)
+def test_installed_management_rejection_restores_exact_files(
+    installed_command: Path, tmp_path: Path, option: str, diagnostic: str
+) -> None:
+    """The installed management CLI rolls back before any vendor acquisition."""
+    shutil.copytree(src=ROOT / "skills", dst=tmp_path / "skills")
+    before = {}
+    for name in ("ai-skills.yaml", "bundles.yaml", "vendors.yaml"):
+        path = tmp_path / name
+        content = b"# original installed bytes\r\n" + (
+            ROOT / name
+        ).read_bytes().replace(b"\n", b"\r\n")
+        path.write_bytes(content)
+        path.chmod(0o640)
+        before[name] = (content, path.stat().st_mode)
+    vendor_id = read_document(tmp_path / "ai-skills.yaml")["vendors"][0]["id"]
+    result = _run(
+        args=[
+            str(installed_command),
+            "--repo-root",
+            str(tmp_path),
+            "vendors",
+            "update",
+            "--id",
+            vendor_id,
+            option,
+            "invalid",
+        ],
+        cwd=tmp_path.parent,
+        expected=1,
+    )
+    assert_that(result.stdout + result.stderr).contains(diagnostic)
+    assert_that(
+        {
+            name: ((tmp_path / name).read_bytes(), (tmp_path / name).stat().st_mode)
+            for name in before
+        }
+    ).is_equal_to(before)
 
 
 @pytest.mark.parametrize(

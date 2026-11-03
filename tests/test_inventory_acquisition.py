@@ -86,7 +86,12 @@ def test_pristine_fetch_matches_offline_payloads_and_modes(
     helper = next(item for item in fetched.capabilities if item.id.name == "helper")
     assert_that(
         next(item.mode for item in helper.payload if str(item.path) == "danger.py")
-    ).is_equal_to(0o751)
+    ).is_equal_to(0o755)
+    # Keep the 0751 input: canonical identity retains execution without changing
+    # the supplied permissions or requiring every execute bit to be present.
+    assert_that((vendor / "skills/help/danger.py").stat().st_mode & 0o777).is_equal_to(
+        0o751
+    )
     assert_that(list(vendor.rglob("MUST-NOT-EXECUTE"))).is_empty()
 
 

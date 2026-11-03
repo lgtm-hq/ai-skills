@@ -37,11 +37,16 @@ def source_path(*, root: Path, relative: str) -> Path:
 def payload_files(source: Path) -> tuple[PayloadFile, ...]:
     """Hash a safe regular file or directory without interpreting its code.
 
+    Modes record Git-like executable identity: owner execute means 0755,
+    otherwise 0644. Read/write, group/other execute and special bits are not
+    identity. The owner bit also survives tarfile's data filter, unlike a
+    group/other-only execute bit. Collection never chmods source files.
+
     Args:
         source: Previously boundary-checked path.
 
     Returns:
-        Sorted file observations with POSIX permission bits.
+        Sorted file observations with canonical 0644 or 0755 modes.
     """
     base = source if source.is_dir() else source.parent
     files = walk_files(root=source) if source.is_dir() else iter((source,))
@@ -51,7 +56,7 @@ def payload_files(source: Path) -> tuple[PayloadFile, ...]:
                 PayloadFile(
                     path=PurePosixPath(path.relative_to(base).as_posix()),
                     sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
-                    mode=stat.S_IMODE(path.stat().st_mode),
+                    mode=0o755 if path.stat().st_mode & stat.S_IXUSR else 0o644,
                 )
                 for path in files
             ),
