@@ -20,6 +20,10 @@ import pytest
 from assertpy import assert_that
 from ci.npm.scalar_helpers import CASES, line_break_source, scalar_source
 from inventory_helpers import snapshot
+from manifest_helpers import (
+    PUBLICATION_SELECTION_CONTROLS,
+    configure_publication_selection,
+)
 from packaging.requirements import Requirement
 from selection_helpers import collision_migration_case, edge_diagnostic_case
 from test_selection_migrations import live_migration_case
@@ -35,9 +39,54 @@ from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.legacy import GENERATED_HEADER
 from ai_skills_engine.manifest.load import read_document
 
-pytest_plugins = ["inventory_helpers"]
+pytest_plugins = ["inventory_helpers", "manifest_helpers"]
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.usefixtures("author_skills")
+@pytest.mark.parametrize("owner", ["local", "vendor"])
+@pytest.mark.parametrize(("control", "expected"), PUBLICATION_SELECTION_CONTROLS)
+def test_installed_publication_whole_package_includes(
+    installed_command: Path,
+    tmp_path: Path,
+    owner: str,
+    control: str,
+    expected: int,
+) -> None:
+    """Actual installed publication accepts whole-package wildcards outside checkout."""
+    configure_publication_selection(root=tmp_path, owner=owner, control=control)
+    for name in ("bundles.yaml", "vendors.yaml"):
+        path = tmp_path / name
+        path.write_bytes(b"# installed publication sentinel\r\n")
+        path.chmod(0o640)
+    before = snapshot(tmp_path)
+    args = [str(installed_command), "--repo-root", str(tmp_path), "manifest"]
+    _run(args=[*args, "validate"], cwd=tmp_path.parent)
+    # Check mode reports existing drift and preserves all bytes, even on success.
+    _run(args=[*args, "legacy", "--check"], cwd=tmp_path.parent, expected=1)
+    assert_that(snapshot(tmp_path)).is_equal_to(before)
+    result = _run(args=[*args, "legacy"], cwd=tmp_path.parent, expected=expected)
+    _run(args=[*args, "legacy", "--check"], cwd=tmp_path.parent, expected=expected)
+    if expected:
+        assert_that(result.stdout).contains("cannot represent include/exclude")
+        assert_that(snapshot(tmp_path)).is_equal_to(before)
+    else:
+        for name in ("bundles.yaml", "vendors.yaml"):
+            path = tmp_path / name
+            assert_that(path.read_bytes()).is_equal_to((ROOT / name).read_bytes())
+            assert_that(snapshot(tmp_path)[str(path)][1]).is_equal_to(
+                before[str(path)][1]
+            )
+        published = snapshot(tmp_path)
+        _run(args=[*args, "legacy"], cwd=tmp_path.parent)
+        assert_that(snapshot(tmp_path)).is_equal_to(published)
+        registries = {str(tmp_path / name) for name in ("bundles.yaml", "vendors.yaml")}
+        assert_that(
+            {key: value for key, value in published.items() if key not in registries}
+        ).is_equal_to(
+            {key: value for key, value in before.items() if key not in registries}
+        )
 
 
 @pytest.mark.parametrize(
