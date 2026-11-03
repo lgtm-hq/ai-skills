@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "rootDir": "../.."
+  },
+  "include": ["../../tests/fixtures/manifest/*.ts"]
+}

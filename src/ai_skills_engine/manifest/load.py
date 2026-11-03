@@ -1,16 +1,20 @@
 """Duplicate-key-safe loading and the offline vendor authority boundary."""
 
+import json
+import re
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
 import yaml
+from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 from yaml.tokens import ScalarToken
 
 from ai_skills_engine.manifest.codec import decode
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.model import Manifest
+from ai_skills_engine.manifest.scalars import ambiguous_vendor_scalars
 from ai_skills_engine.registry.registry import load_unique_yaml_text
 
 
@@ -29,6 +33,57 @@ def _publication_packages(document: dict[str, Any]) -> set[str]:
     } | {value for value in document.get("exports", []) if "/" in value}
 
 
+def _check_sha_sources(*, text: str, path: Path) -> None:
+    """Check SHA source bytes before YAML decoding erases escapes and aliases.
+
+    Args:
+        text: Unmodified YAML source.
+        path: Source path for actionable errors.
+
+    Raises:
+        ValueError: If a vendor SHA is not a directly replaceable scalar.
+    """
+    try:
+        root = yaml.compose(text, Loader=yaml.SafeLoader)
+    except yaml.YAMLError as error:
+        raise ValueError(f"invalid YAML in {path}: {error}") from error
+
+    def fields(node: Node | None) -> dict[str, Node]:
+        """Read structural keys without constructing values or interpreting tags."""
+        if not isinstance(node, MappingNode):
+            return {}
+        return {
+            key.value: value for key, value in node.value if isinstance(key, ScalarNode)
+        }
+
+    vendors = fields(root).get("vendors")
+    if not isinstance(vendors, SequenceNode):
+        return
+    for index, vendor in enumerate(vendors.value):
+        record = fields(vendor)
+        sha = record.get("sha")
+        if sha is None:
+            continue  # The schema owns required fields and other structure.
+        raw = text[sha.start_mark.index : sha.end_mark.index]
+        if re.fullmatch(r"[0-9a-f]{40}|'[0-9a-f]{40}'|\"[0-9a-f]{40}\"", raw):
+            continue
+        identity = record.get("id")
+        alias = identity.value if isinstance(identity, ScalarNode) else "unknown"
+        raise ValueError(
+            f"{path}: schema /vendors/{index}/sha (vendor {alias}): SHA must be a "
+            "direct, unescaped 40-hex scalar, plain or ordinary single/double "
+            "quoted; no escape sequences, folded/block scalars, anchors, aliases "
+            "or tags (required for native Renovate SHA updates)"
+        )
+    for index, field, node in ambiguous_vendor_scalars(text=text, root=root):
+        raise ValueError(
+            f"{path}: schema /vendors/{index}/{field}: unquoted {field} is read "
+            "differently by PyYAML and Renovate; use "
+            f"{field}: {json.dumps(node.value)} (quote the value to preserve "
+            "the same string before compatibility publication)"
+        )
+
+
 def read_document(path: Path) -> dict[str, Any]:
     """Load a manifest mapping using the existing duplicate-key-safe loader.
 
@@ -42,6 +97,7 @@ def read_document(path: Path) -> dict[str, Any]:
         ValueError: On malformed YAML, duplicate keys or a non-mapping root.
     """
     text = path.read_text(encoding="utf-8")
+    _check_sha_sources(text=text, path=path)
     data = load_unique_yaml_text(text=text, source=str(path))
     # PyYAML accepts an unseparated comment after a quoted scalar. Enforce
     # YAML's lexical boundary here before validation or compatibility publication.

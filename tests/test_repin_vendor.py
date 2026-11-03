@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import json
+import runpy
+import stat
+import subprocess  # nosec B404 - monkeypatch the fixed git baseline reader
+import sys
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
+from typing import Any, Never
 
 import pytest
 import yaml
@@ -13,6 +19,7 @@ from assertpy import assert_that
 
 import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
 import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
+import ai_skills_engine.vendors.manage as manage_vendors
 import ai_skills_engine.vendors.repin as repin_vendor
 from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.legacy import write_legacy
@@ -21,6 +28,7 @@ from ai_skills_engine.manifest.migrate import migrate
 from ai_skills_engine.registry.registry import load_registry
 from ai_skills_engine.registry.vendor import Vendor
 from ai_skills_engine.registry.vendor_repin_diff import (
+    VendorRepinDiff,
     diff_snapshots,
     render_json,
     render_markdown,
@@ -39,6 +47,229 @@ _PLUGINS_YAML = (
     '        skills: "*"\n'
 )
 
+_PREPUBLICATION_CASES = [
+    ("new", "bundles.yaml", "none", "write"),
+    ("new", "vendors.yaml", "none", "write"),
+    ("new", "resolve", "none", "write"),
+    ("new", "unknown", "none", "write"),
+    ("new", "baseline", "none", "write"),
+    ("new", "baseline-parse", "none", "write"),
+    ("new", "index", "none", "write"),
+    ("baseline", "sync", "none", "write"),
+    ("new", "resolve", "vendors.yaml", "write"),
+    ("new", "resolve", "bundles.yaml", "write"),
+    ("new", "sync", "ai-skills.yaml", "write"),
+    ("new", "sync", "NOTICE.md", "mode"),
+    ("new", "sync", "npm/ai-skills/NOTICE.md", "unlink"),
+    ("new", "none", "none", "write"),
+    ("noop", "none", "none", "write"),
+    ("keep", "none", "none", "write"),
+    ("baseline", "none", "none", "write"),
+]
+
+
+def _assert_prepublication_report(
+    *,
+    report: dict[str, Any],
+    state: str,
+    entry: str,
+    mode: str,
+    boundary: str,
+    blocked: str,
+) -> None:
+    """Check independent observations shared by source and installed-wheel runs."""
+    if boundary == "none":
+        assert_that(report["status"]).is_zero()
+        assert_that(report["sha"]).is_equal_to(
+            _EXISTING_SHA
+            if mode in {"noop", "keep", "list", "all", "all-unchanged"}
+            else _NEW_SHA
+        )
+        if mode == "list":
+            assert_that(json.loads(report["output"])).is_equal_to(["example-vendor"])
+        if mode in {"list", "all-unchanged"}:
+            assert_that(report["changed"]).is_empty()
+            assert_that(report["changed_artifacts"]).is_empty()
+            assert_that(report["events"]).is_empty()
+        if mode == "baseline":
+            assert_that(report["output"]).contains(_BASELINE_SHA, "delta", "gamma")
+        if mode not in {"list", "all-unchanged"}:
+            assert_that(report["published"]).is_equal_to(
+                [
+                    [
+                        "example-vendor",
+                        "owner/example" if state == "current" else "changed/repository",
+                        None if state == "current" else "release/changed",
+                        report["sha"],
+                    ]
+                ]
+            )
+    else:
+        assert_that(report["status"]).is_equal_to(1)
+        diagnostic = (
+            "Unknown vendor id"
+            if boundary == "unknown"
+            else (
+                "invalid baseline-ref"
+                if boundary == "baseline"
+                else (
+                    "must be a non-empty list"
+                    if boundary == "baseline-parse"
+                    else "primary installed repin failure"
+                )
+            )
+        )
+        assert_that(report["output"]).contains(diagnostic)
+        if entry == "api" and boundary not in {"unknown", "baseline", "baseline-parse"}:
+            assert_that(report["caught_primary"]).is_true()
+        effective_block = blocked
+        if boundary == "resolve" and state != "stale":
+            effective_block = "none"  # Current bytes or original absence need no write.
+        assert_that(report["changed"]).is_equal_to(
+            [effective_block]
+            if effective_block not in {"none", "npm/ai-skills/NOTICE.md"}
+            else []
+        )
+        assert_that(report["changed_artifacts"]).is_equal_to(
+            [effective_block]
+            if effective_block in {"NOTICE.md", "npm/ai-skills/NOTICE.md"}
+            else []
+        )
+        assert_that(report["absent_exists"]).is_equal_to(
+            effective_block == "npm/ai-skills/NOTICE.md"
+        )
+        if effective_block != "none":
+            assert_that(report["output"]).contains("cleanup", effective_block)
+            assert_that("\n".join(report["notes"])).contains(effective_block)
+        else:
+            assert_that(report["notes"]).is_empty()
+    if boundary in {"none", "resolve", "index", "sync"}:
+        assert_that(report["resolved"]).is_equal_to(
+            []
+            if mode in {"keep", "list", "all", "all-unchanged"}
+            else [
+                [
+                    "owner/example" if state == "current" else "changed/repository",
+                    None if state == "current" else "release/changed",
+                    _EXISTING_SHA,
+                ]
+            ]
+        )
+    else:
+        assert_that(report["resolved"]).is_empty()
+
+
+@pytest.mark.parametrize("state", ["current", "stale", "absent"])
+@pytest.mark.parametrize(
+    ("entry", "mode", "boundary", "blocked", "operation"),
+    [
+        (entry, *case)
+        for entry in ("api", "source-cli")
+        for case in _PREPUBLICATION_CASES
+    ]
+    + [
+        ("source-cli", mode, "none", "none", "write")
+        for mode in ("list", "all", "all-unchanged")
+    ],
+)
+def test_repin_transaction_starts_before_publication(
+    repo_root: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
+    entry: str,
+    mode: str,
+    boundary: str,
+    blocked: str,
+    operation: str,
+) -> None:
+    """Real API/CLI failures restore the pre-publication state, including absence."""
+    trees = tmp_path / "trees"
+    _write_before_tree(dest=trees / "before")
+    _write_after_tree(dest=trees / "after")
+    fixture = _REPO_ROOT / "tests/fixtures/manifest/repin-cli.py"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(fixture),
+            "unused",
+            str(repo_root),
+            str(trees),
+            mode,
+            boundary,
+            blocked,
+            operation,
+            state,
+            entry,
+        ],
+    )
+    runpy.run_path(str(fixture), run_name="__main__")
+    report = json.loads(capsys.readouterr().out)
+    _assert_prepublication_report(
+        report=report,
+        state=state,
+        entry=entry,
+        mode=mode,
+        boundary=boundary,
+        blocked=blocked,
+    )
+
+
+def test_all_keeps_successful_vendor_when_later_resolution_fails(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """CLI selection follows a stale manifest while rollback stays per vendor."""
+    migrate(repo_root)
+    manage_vendors.refresh(repo_root=repo_root)
+    manifest = repo_root / "ai-skills.yaml"
+    data = read_document(manifest)
+    second = deepcopy(data["vendors"][0])
+    second["id"] = "second-vendor"
+    second["mapping"]["packages"][0]["id"] = "second-plugin"
+    data["vendors"].append(second)
+    data["exports"].append("second-vendor/second-plugin")
+    data["vendors"][0]["branch"] = "release/changed"
+    manifest.write_text(dump_document(data))
+    paths = [
+        repo_root / name for name in ("ai-skills.yaml", "vendors.yaml", "bundles.yaml")
+    ]
+    artifact_paths = manage_vendors._generated_artifact_paths(repo_root=repo_root)
+    checkpoint = {}
+    artifacts = []
+    calls = []
+
+    def resolve(*, vendor: Vendor) -> str:
+        """Fail only after the first actual repin has committed its outputs."""
+        calls.append(vendor.id)
+        if vendor.id == "second-vendor":
+            checkpoint.update(
+                {path: (path.read_bytes(), path.stat().st_mode) for path in paths}
+            )
+            artifacts.append(manage_vendors._snapshot_artifacts(paths=artifact_paths))
+            raise RuntimeError("second vendor upstream failure")
+        assert_that(vendor.branch).is_equal_to("release/changed")
+        return _NEW_SHA
+
+    monkeypatch.setattr(repin_vendor, "resolve_upstream_sha", resolve)
+    assert_that(
+        repin_vendor.main(["--repo-root", str(repo_root), "--all"])
+    ).is_equal_to(1)
+    assert_that(capsys.readouterr().err).contains("second vendor upstream failure")
+    assert_that(calls).is_equal_to(["example-vendor", "second-vendor"])
+    assert_that(
+        [vendor["sha"] for vendor in read_document(manifest)["vendors"]]
+    ).is_equal_to([_NEW_SHA, _EXISTING_SHA])
+    assert_that(
+        {path: (path.read_bytes(), path.stat().st_mode) for path in paths}
+    ).is_equal_to(checkpoint)
+    assert_that(manage_vendors._snapshot_artifacts(paths=artifact_paths)).is_equal_to(
+        artifacts[0]
+    )
+
 
 @pytest.mark.parametrize("mode", ["keep", "resolve-current", "resolve-new", "rollback"])
 @pytest.mark.parametrize("baseline", [False, True])
@@ -50,7 +281,7 @@ def test_direct_repin_uses_manifest_only_edits(
 ) -> None:
     """Direct API resolution and real snapshots use manifest declarations."""
     migrate(repo_root)
-    manage = repin_vendor.manage_vendors
+    manage = manage_vendors
     manage.refresh(repo_root=repo_root)
     baseline_text = (repo_root / "vendors.yaml").read_text()
     path = repo_root / "ai-skills.yaml"
@@ -103,7 +334,7 @@ def test_direct_repin_uses_manifest_only_edits(
 
         monkeypatch.setattr(bake_vendor_indexes, "bake", fail_bake)
 
-    def repin() -> repin_vendor.VendorRepinDiff:
+    def repin() -> VendorRepinDiff:
         """Call the production API directly with the unchanged legacy registry."""
         return repin_vendor.repin_vendor(
             repo_root=repo_root,
@@ -120,7 +351,7 @@ def test_direct_repin_uses_manifest_only_edits(
         assert_that(path.read_bytes()).is_equal_to(manifest_bytes)
         assert_that(
             {name: (repo_root / name).read_bytes() for name in generated}
-        ).is_equal_to(generated)
+        ).is_equal_to(stale)
         assert_that(manage._snapshot_artifacts(paths=artifacts)).is_equal_to(
             artifact_snapshot
         )
@@ -153,7 +384,7 @@ def test_manifest_repin_and_failure_restore(
 ) -> None:
     """Re-pin production declarations and restore source plus outputs on failure."""
     migrate(repo_root)
-    repin_vendor.manage_vendors.refresh(repo_root=repo_root)
+    manage_vendors.refresh(repo_root=repo_root)
     diff = repin_vendor.repin_vendor(
         repo_root=repo_root, vendor_id="example-vendor", resolve_sha=_fixed_new_sha
     )
@@ -185,12 +416,207 @@ def test_manifest_repin_and_failure_restore(
     )
 
 
+@pytest.mark.parametrize("boundary", ["index", "sync"])
+@pytest.mark.parametrize(
+    ("blocked", "operation"),
+    [
+        (None, "write"),
+        ("ai-skills.yaml", "write"),
+        ("vendors.yaml", "write"),
+        ("bundles.yaml", "write"),
+        ("ai-skills.yaml", "mode"),
+        ("vendors.yaml", "mode"),
+        ("NOTICE.md", "write"),
+        ("NOTICE.md", "mode"),
+        ("npm/ai-skills/NOTICE.md", "unlink"),
+        ("ai-skills.yaml,vendors.yaml,NOTICE.md", "write"),
+    ],
+)
+def test_actual_repin_cleanup_preserves_primary_and_other_destinations(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    boundary: str,
+    blocked: str | None,
+    operation: str,
+) -> None:
+    """Real snapshots, pin edits and bakes survive independent cleanup I/O errors."""
+    migrate(repo_root)
+    manage = manage_vendors
+    manage.refresh(repo_root=repo_root)
+    manifest = repo_root / "ai-skills.yaml"
+    manifest.write_bytes(b"# source bytes\r\n" + manifest.read_bytes())
+    notice = repo_root / "NOTICE.md"
+    notice.write_bytes(b"original notice\r\n")
+    absent = repo_root / "npm/ai-skills/NOTICE.md"
+    absent.unlink()
+    paths = [
+        repo_root / name
+        for name in ("ai-skills.yaml", "vendors.yaml", "bundles.yaml", "NOTICE.md")
+    ]
+    for path in paths:
+        path.chmod(0o640)
+    before = {path: (path.read_bytes(), path.stat().st_mode) for path in paths}
+    artifacts = manage._generated_artifact_paths(repo_root=repo_root)
+    artifact_snapshot = manage._snapshot_artifacts(paths=artifacts)
+    real_bake, real_sync = bake_vendor_indexes.bake, manage._sync_artifacts
+    real_write, real_chmod, real_unlink = Path.write_bytes, Path.chmod, Path.unlink
+    failure = ValueError("primary actual repin failure")
+    cleaning = False
+    denied: list[str] = []
+    blocked_paths = [repo_root / name for name in blocked.split(",")] if blocked else []
+
+    def fail() -> None:
+        """Fail after production writes, also changing modes and a legacy output."""
+        nonlocal cleaning
+        assert_that(read_document(manifest)["vendors"][0]["sha"]).is_equal_to(_NEW_SHA)
+        (repo_root / "bundles.yaml").write_bytes(b"partial bundles")
+        notice.write_bytes(b"partial notice")
+        absent.write_bytes(b"new notice")
+        for path in paths:
+            path.chmod(0o666)
+        cleaning = True
+        raise failure
+
+    def bake(*, repo_root: Path) -> None:
+        """Run the real index bake before injecting its downstream error."""
+        real_bake(repo_root=repo_root)
+        if boundary == "index":
+            fail()
+
+    def sync(*, repo_root: Path, check_only: bool) -> None:
+        """Run the real package sync before injecting its downstream error."""
+        real_sync(repo_root=repo_root, check_only=check_only)
+        fail()
+
+    def deny(path: Path, action: str) -> None:
+        """Deny only the selected actual cleanup operation after the bake error."""
+        if cleaning and path in blocked_paths and operation == action:
+            denied.append(str(path.relative_to(repo_root)))
+            raise PermissionError(f"cleanup {action} denied")
+
+    def write(path: Path, content: bytes) -> int:
+        """Observe the actual restoration write boundary."""
+        deny(path, "write")
+        return real_write(path, content)
+
+    def chmod(path: Path, mode: int, *, follow_symlinks: bool = True) -> None:
+        """Observe mode restoration without changing privilege boundaries."""
+        deny(path, "mode")
+        real_chmod(path, mode, follow_symlinks=follow_symlinks)
+
+    def unlink(path: Path, missing_ok: bool = False) -> None:
+        """Observe cleanup of a generated output that did not originally exist."""
+        deny(path, "unlink")
+        real_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(bake_vendor_indexes, "bake", bake)
+    monkeypatch.setattr(manage, "_sync_artifacts", sync)
+    monkeypatch.setattr(Path, "write_bytes", write)
+    monkeypatch.setattr(Path, "chmod", chmod)
+    monkeypatch.setattr(Path, "unlink", unlink)
+    with pytest.raises(ValueError) as caught:
+        repin_vendor.repin_vendor(
+            repo_root=repo_root,
+            vendor_id="example-vendor",
+            resolve_sha=_fixed_new_sha,
+        )
+    assert_that(caught.value).is_same_as(failure)
+    assert_that(denied).is_equal_to(blocked.split(",") if blocked else [])
+    if blocked:
+        assert_that(caught.value.__notes__).is_length(len(blocked_paths))
+        for name in blocked.split(","):
+            assert_that("\n".join(caught.value.__notes__)).contains(name, "cleanup")
+    else:
+        assert_that(getattr(caught.value, "__notes__", [])).is_empty()
+    for path, original in before.items():
+        if path not in blocked_paths:
+            assert_that((path.read_bytes(), path.stat().st_mode)).is_equal_to(original)
+        elif operation == "mode":
+            assert_that(path.read_bytes()).is_equal_to(original[0])
+            assert_that(stat.S_IMODE(path.stat().st_mode)).is_equal_to(0o666)
+    after_snapshot, after_directories = manage._snapshot_artifacts(paths=artifacts)
+    expected_snapshot, expected_directories = artifact_snapshot
+    for path, original in expected_snapshot.items():
+        if path not in blocked_paths:
+            assert_that(after_snapshot[path]).described_as(str(path)).is_equal_to(
+                original
+            )
+    assert_that(after_directories).is_equal_to(expected_directories)
+    assert_that(absent.exists()).is_equal_to(operation == "unlink")
+
+
+@pytest.mark.parametrize("mode", ["new", "baseline", "keep", "noop"])
+@pytest.mark.parametrize("manifest", [False, True])
+def test_actual_repin_snapshot_failure_restores_bytes_modes_and_absence(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    manifest: bool,
+) -> None:
+    """A production before bake failure restores legacy and unchanged-pin paths."""
+    if manifest:
+        migrate(repo_root)
+    manage = manage_vendors
+    manage.refresh(repo_root=repo_root)
+    if not manifest:
+        registry = repo_root / "vendors.yaml"
+        registry.write_bytes(registry.read_bytes().replace(b"\n", b"\r\n"))
+        (repo_root / "bundles.yaml").unlink()
+    notice = repo_root / "NOTICE.md"
+    notice.unlink()
+    paths = [
+        repo_root / name for name in ("ai-skills.yaml", "vendors.yaml", "bundles.yaml")
+    ]
+    before = {
+        path: (path.read_bytes(), path.stat().st_mode) if path.exists() else None
+        for path in paths
+    }
+    artifacts = manage._generated_artifact_paths(repo_root=repo_root)
+    snapshot = manage._snapshot_artifacts(paths=artifacts)
+    baseline = (
+        (repo_root / "vendors.yaml").read_text().replace(_EXISTING_SHA, _BASELINE_SHA)
+    )
+    real_collect = bake_vendor_plugins.collect_bake
+    failure = ValueError("primary before snapshot failure")
+
+    def collect(
+        *,
+        repo_root: Path,
+        vendor_trees: Mapping[str, Path] | None = None,
+        install: bool = True,
+    ) -> Never:
+        """Complete the production plugin bake before raising its failure."""
+        real_collect(repo_root=repo_root, vendor_trees=vendor_trees, install=install)
+        notice.write_bytes(b"new artifact")
+        raise failure
+
+    monkeypatch.setattr(bake_vendor_plugins, "collect_bake", collect)
+    with pytest.raises(ValueError) as caught:
+        repin_vendor.repin_vendor(
+            repo_root=repo_root,
+            vendor_id="example-vendor",
+            resolve_sha=(
+                _fixed_new_sha if mode in {"new", "baseline"} else lambda v: v.sha
+            ),
+            keep_sha=mode == "keep",
+            baseline_registry_text=baseline if mode == "baseline" else None,
+        )
+    assert_that(caught.value).is_same_as(failure)
+    assert_that(
+        {
+            path: (path.read_bytes(), path.stat().st_mode) if path.exists() else None
+            for path in paths
+        }
+    ).is_equal_to(before)
+    assert_that(manage._snapshot_artifacts(paths=artifacts)).is_equal_to(snapshot)
+
+
 def test_manifest_renovate_summary_uses_selected_pin(
     repo_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Actual summary CLI regenerates stale legacy pins after a Renovate edit."""
     migrate(repo_root)
-    repin_vendor.manage_vendors.refresh(repo_root=repo_root)
+    manage_vendors.refresh(repo_root=repo_root)
     baseline = (repo_root / "vendors.yaml").read_text()
     path = repo_root / "ai-skills.yaml"
     path.write_text(path.read_text().replace(_EXISTING_SHA, _NEW_SHA, 1))
@@ -729,7 +1155,7 @@ def test_registry_text_at_ref_reads_git_show(
         assert_that(cwd).is_equal_to(tmp_path)
         return "vendors:\n"
 
-    monkeypatch.setattr(repin_vendor.subprocess, "check_output", fake_show)
+    monkeypatch.setattr(subprocess, "check_output", fake_show)
     text = repin_vendor._registry_text_at_ref(
         repo_root=tmp_path,
         git_ref="abc123",
@@ -967,7 +1393,6 @@ def test_keep_sha_summarizes_baseline_without_resolving_upstream(
     """Renovate summaries keep the selected digest even if upstream moves."""
     registry_path = repo_root / "vendors.yaml"
     baseline = registry_path.read_text(encoding="utf-8")
-    manage_vendors = repin_vendor.manage_vendors
     manage_vendors.set_sha(
         repo_root=repo_root,
         vendor_id="example-vendor",
@@ -997,7 +1422,7 @@ def test_keep_sha_all_summarizes_only_changed_vendors(
     """The workflow CLI summarizes only vendors that differ from its baseline."""
     registry = repo_root / "vendors.yaml"
     baseline = registry.read_text(encoding="utf-8")
-    repin_vendor.manage_vendors.set_sha(
+    manage_vendors.set_sha(
         repo_root=repo_root,
         vendor_id="example-vendor",
         sha=_NEW_SHA,
@@ -1083,7 +1508,7 @@ def test_real_summary_before_refresh_preserves_generated_outputs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Real summary and refresh CLIs produce the same bytes as refresh alone."""
-    manage = repin_vendor.manage_vendors
+    manage = manage_vendors
     registry = repo_root / "vendors.yaml"
     baseline = registry.read_text(encoding="utf-8")
     manage.refresh(repo_root=repo_root)

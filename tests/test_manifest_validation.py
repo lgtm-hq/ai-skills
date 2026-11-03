@@ -17,6 +17,7 @@ from ai_skills_engine.manifest.codec import encode, field_key
 from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.load import load_manifest, read_document
 from ai_skills_engine.manifest.validate import schema_path, validate_document
+from ai_skills_engine.registry.registry import load_unique_yaml_text
 
 FIXTURES = Path(__file__).parent / "fixtures" / "manifest"
 
@@ -134,7 +135,9 @@ def test_negative_fixture_and_cli(
     """The same invalid input fails both the real loader and production CLI."""
     path = manifest_repo / "ai-skills.yaml"
     path.write_bytes((FIXTURES / f"{fixture}.yaml").read_bytes())
-    findings = validate_document(read_document(path))
+    # Schema diagnostics inspect decoded data; the real loader also enforces
+    # source spelling before constructing its model (including bad SHA literals).
+    findings = validate_document(load_unique_yaml_text(text=path.read_text()))
     assert_that([item.code for item in findings]).contains(code)
     assert_that(
         all(item.location.startswith("/") and item.message for item in findings)
