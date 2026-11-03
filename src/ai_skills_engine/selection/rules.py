@@ -65,7 +65,7 @@ def select(
         migrations=migration_map,
     )
     names, skips, reserved, namespace_findings = names_and_skips(
-        capabilities=caps, overrides=overrides
+        capabilities=caps, overrides=overrides, migrations=migration_map
     )
     findings.extend(namespace_findings)
     excluded.update({identity: "overrides.collisions: skip" for identity in skips})
@@ -160,11 +160,22 @@ def select(
                     ),
                 )
             )
-    # Only payload-scoped failures with trusted candidate evidence can be trimmed.
+    # Trim payloads and required-edge failures only with trusted source evidence.
     # Unknown identities, duplicates and structural/acquisition failures stay fatal.
     for item in inventory.diagnostics:
         if item.code == "inventory.unknown-related":
             continue  # Structured targets below produce directional warnings.
+        if (
+            item.code
+            in {
+                "inventory.unknown-requires",
+                "inventory.unknown-resources",
+                "inventory.non-imported-requires",
+            }
+            and item.location in caps
+            and item.location not in kept
+        ):
+            continue
         if (
             item.code
             in {

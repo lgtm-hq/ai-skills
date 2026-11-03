@@ -18,6 +18,7 @@ import pytest
 from assertpy import assert_that
 from inventory_helpers import snapshot
 from packaging.requirements import Requirement
+from selection_helpers import collision_migration_case, edge_diagnostic_case
 
 from ai_skills_engine import cli
 from ai_skills_engine.manifest.edit import dump_document
@@ -677,3 +678,127 @@ def test_installed_plan_rejected_payload_and_advisory_controls(
     codes = [item["code"] for item in json.loads(source.out)["diagnostics"]]
     assert_that("selection.selector-unmatched" in codes).is_equal_to(control == "stale")
     assert_that(snapshot(root, vendor)).is_equal_to(before)
+
+
+def _compare_installed_plan(
+    *,
+    installed_command: Path,
+    root: Path,
+    vendor: Path,
+    capsys: pytest.CaptureFixture[str],
+    expected: int,
+) -> None:
+    """Check real wheel/source plan output and complete input bytes/modes.
+
+    Args:
+        installed_command: Wheel-installed console script.
+        root: Consumer fixture root.
+        vendor: Offline vendor snapshot.
+        capsys: Source CLI output capture.
+        expected: Required exit status.
+    """
+    before = snapshot(root, vendor)
+    args = [
+        "plan",
+        "--json",
+        "--repo-root",
+        str(root),
+        "--vendor-root",
+        f"vendor={vendor}",
+    ]
+    installed = _run(
+        args=[str(installed_command), *args], cwd=root.parent, expected=expected
+    )
+    assert_that(cli.main(args)).is_equal_to(expected)
+    source_output = capsys.readouterr()
+    assert_that((source_output.out, source_output.err)).is_equal_to(
+        (installed.stdout, installed.stderr)
+    )
+    assert_that(snapshot(root, vendor)).is_equal_to(before)
+
+
+@pytest.mark.parametrize("source", ["local", "mapped", "manifest"])
+@pytest.mark.parametrize(
+    "edge",
+    [
+        "requires-rejected",
+        "requires-missing",
+        "resources-rejected",
+        "resources-missing",
+        "nonimported",
+    ],
+)
+@pytest.mark.parametrize(
+    "control", ["excluded", "narrow", "kept", "required", "transitive", "stale"]
+)
+def test_installed_plan_edge_diagnostic_scope(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    source: str,
+    edge: str,
+    control: str,
+) -> None:
+    """The installed CLI trims only unreachable edges and matches source bytes."""
+    root, vendor = inventory_repo
+    edge_diagnostic_case(
+        root=root, vendor=vendor, source=source, edge=edge, control=control
+    )
+    expected = 0 if control in {"excluded", "narrow"} else 1
+    _compare_installed_plan(
+        installed_command=installed_command,
+        root=root,
+        vendor=vendor,
+        capsys=capsys,
+        expected=expected,
+    )
+
+
+@pytest.mark.parametrize("kind", ["capability", "package"])
+@pytest.mark.parametrize("action", ["rename", "skip"])
+@pytest.mark.parametrize(
+    "control", ["migrated", "current", "stale", "malformed", "cycle", "duplicate"]
+)
+def test_installed_plan_collision_migrations(
+    installed_command: Path,
+    inventory_repo: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+    action: str,
+    control: str,
+) -> None:
+    """Actual wheel decisions migrate and reject duplicates without changing inputs."""
+    root, vendor = inventory_repo
+    collision_migration_case(root=root, control=control, action=action, kind=kind)
+    expected = 0 if control in {"migrated", "current"} else 1
+    _compare_installed_plan(
+        installed_command=installed_command,
+        root=root,
+        vendor=vendor,
+        capsys=capsys,
+        expected=expected,
+    )
+
+
+def test_installed_selection_import_identity(
+    installed_command: Path, tmp_path: Path
+) -> None:
+    """Bind the selection modules to the installed wheel, outside the checkout."""
+    probe = _run(
+        args=[
+            str(_venv_executable(installed_command.parent.parent, "python")),
+            "-I",
+            "-c",
+            (
+                "import json; from ai_skills_engine.selection import rules, namespace; "
+                "print(json.dumps([rules.__file__, namespace.__file__]))"
+            ),
+        ],
+        cwd=tmp_path,
+    )
+    for path in json.loads(probe.stdout):
+        assert_that(
+            Path(path).is_relative_to(installed_command.parent.parent)
+        ).is_true()
+        assert_that(Path(path).is_relative_to(ROOT)).is_false()
+    print(probe.stdout)

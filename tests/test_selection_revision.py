@@ -211,6 +211,8 @@ def test_payload_resource_grants_follow_retained_capabilities(
         "inventory.invalid-resource",
         "inventory.duplicate-id",
         "inventory.unknown-requires",
+        "inventory.unknown-resources",
+        "inventory.non-imported-requires",
     ],
 )
 def test_diagnostic_locations_are_not_candidate_identity_evidence(code: str) -> None:
@@ -223,6 +225,32 @@ def test_diagnostic_locations_are_not_candidate_identity_evidence(code: str) -> 
                 Diagnostic(code, "vendor/tools:skill/fake", "untrusted location"),
             ),
         )
+    )
+    assert_that(result.valid).is_false()
+    assert_that([item.code for item in result.diagnostics]).contains(code)
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "inventory.duplicate-id",
+        "inventory.self-requires",
+        "inventory.vendor-unavailable",
+        "inventory.invalid-mapping",
+        "invalid-id",
+    ],
+)
+def test_nonpayload_failures_stay_fatal_for_excluded_known_identity(code: str) -> None:
+    """Selection cannot trim structural, acquisition or manifest validation failures."""
+    from dataclasses import replace
+
+    graph = inventory_graph({"capabilities": {"excluded": {}}})
+    result = plan(
+        replace(
+            graph,
+            diagnostics=(Diagnostic(code, PREFIX + "excluded", "failure"),),
+        ),
+        exclude=(PREFIX + "excluded",),
     )
     assert_that(result.valid).is_false()
     assert_that([item.code for item in result.diagnostics]).contains(code)

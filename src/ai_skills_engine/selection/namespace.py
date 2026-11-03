@@ -4,7 +4,8 @@ from collections import defaultdict
 from collections.abc import Mapping
 
 from ai_skills_engine.inventory.capability import Capability
-from ai_skills_engine.manifest.identity import Role
+from ai_skills_engine.manifest.identity import Role, parse_id
+from ai_skills_engine.manifest.migrations import migrate
 from ai_skills_engine.manifest.overrides import Overrides
 from ai_skills_engine.selection.closure import dependency_chain
 from ai_skills_engine.selection.diagnostic import SelectionDiagnostic
@@ -14,26 +15,62 @@ def names_and_skips(
     *,
     capabilities: Mapping[str, Capability],
     overrides: Overrides | None,
+    migrations: Mapping[str, str],
 ) -> tuple[dict[str, tuple[str, ...]], set[str], set[str], list[SelectionDiagnostic]]:
     """Replay persistent names and skips without changing qualified identity.
 
     Args:
         capabilities: Unfiltered catalog.
         overrides: Consumer persisted decisions.
+        migrations: Validated consumer and publisher-local identity migrations.
 
     Returns:
         Effective names, skipped IDs, reserved alias owners and invalid findings.
     """
-    names = {
-        key: item.aliases or item.destination_names or (item.id.name,)
-        for key, item in capabilities.items()
-    }
+    names: dict[str, tuple[str, ...]] = {}
     reserved = {key for key, item in capabilities.items() if item.aliases}
     skips: set[str] = set()
     findings: list[SelectionDiagnostic] = []
+    multi_key = {
+        key
+        for key, item in capabilities.items()
+        if item.role in {Role.INTEGRATION, Role.LIFECYCLE}
+        and len(item.destination_names) > 1
+    }
+    for key, item in capabilities.items():
+        if key in multi_key and item.aliases:
+            names[key] = item.destination_names
+            findings.append(
+                SelectionDiagnostic(
+                    code="selection.invalid-alias",
+                    location=key,
+                    message="Cannot alias a multi-key configuration as one capability",
+                    chain=(key,),
+                    fix=(
+                        "Split the configuration into single-key capabilities, "
+                        "or remove the capability-wide alias."
+                    ),
+                )
+            )
+        else:
+            names[key] = item.aliases or item.destination_names or (item.id.name,)
     decisions: set[str] = set()
     for override in overrides.collisions if overrides else ():
-        identity = override.capability
+        try:
+            parse_id(override.capability)
+            identity = migrate(selector=override.capability, migrations=migrations)
+            parse_id(identity)
+        except ValueError as error:
+            findings.append(
+                SelectionDiagnostic(
+                    code="selection.invalid-collision-override",
+                    location=override.capability,
+                    message=str(error),
+                    chain=(override.capability,),
+                    fix="Use a qualified capability ID and repair cyclic migrations.",
+                )
+            )
+            continue
         if identity not in capabilities or identity in decisions:
             findings.append(
                 SelectionDiagnostic(
@@ -47,14 +84,10 @@ def names_and_skips(
                     ),
                 )
             )
+            continue
         decisions.add(identity)
         if override.action == "rename" and override.name:
-            capability = capabilities.get(identity)
-            if (
-                capability
-                and capability.role in {Role.INTEGRATION, Role.LIFECYCLE}
-                and len(capability.destination_names) > 1
-            ):
+            if identity in multi_key:
                 findings.append(
                     SelectionDiagnostic(
                         code="selection.invalid-collision-override",

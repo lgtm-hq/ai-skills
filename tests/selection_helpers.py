@@ -18,6 +18,8 @@ from ai_skills_engine.inventory.model import (
     Role,
 )
 from ai_skills_engine.manifest.diagnostic import Diagnostic
+from ai_skills_engine.manifest.edit import dump_document
+from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.selection import SelectionResult, SelectionScope, select
 
 PREFIX = "fixture/tools:skill/"
@@ -183,3 +185,173 @@ def change(inventory: Inventory, name: str, **kwargs: Any) -> Inventory:
             for item in inventory.capabilities
         ),
     )
+
+
+def edge_diagnostic_case(
+    *, root: Path, vendor: Path, source: str, edge: str, control: str
+) -> tuple[str, str, tuple[str, ...]]:
+    """Prepare real source declarations with an unavailable required target.
+
+    Args:
+        root: Consumer fixture root.
+        vendor: Offline vendor fixture.
+        source: Local, mapped or vendor-manifest requiring declaration.
+        edge: Rejected/missing capability/resource or nonimported requirement.
+        control: Excluded, narrow, kept, required, transitive or stale selection.
+
+    Returns:
+        Requirer, target and shortest retained witness (empty when unselected).
+    """
+    document = read_document(root / "ai-skills.yaml")
+    package = document["packages"][0]
+    imported = document["vendors"][0]
+    package["include"] = []
+    imported["include"] = []
+    package["capabilities"][0]["requires"] = []
+    publisher = "fixture" if source == "local" else "vendor"
+    owner = root if source == "local" else vendor
+    boundary = package if source == "local" else imported
+    declaration = (
+        package["capabilities"][0]
+        if source == "local"
+        else imported["mapping"]["packages"][0]["capabilities"]["help"]
+    )
+    requirer = f"{publisher}/tools:skill/" + (
+        "stable" if source == "local" else "helper"
+    )
+    vendor_package: dict[str, Any] = {
+        "id": "tools",
+        "capabilities": [{"id": "helper", "path": "skills/help"}],
+    }
+    if source == "manifest":
+        imported.pop("mapping")
+        declaration = vendor_package["capabilities"][0]
+        (vendor / "skills/help/SKILL.md").write_text(
+            "---\nname: help\ndescription: Helper.\n---\n"
+        )
+    resource = edge.startswith("resources")
+    target = f"{publisher}/tools:{'resource' if resource else 'skill'}/broken"
+    if edge == "nonimported":
+        target = "absent/tools:skill/broken"
+    declaration["resources" if resource else "requires"] = [target]
+    rejected = edge.endswith("rejected")
+    if rejected:
+        if resource:
+            record = {"id": "broken", "path": "absent.txt"}
+            if source == "mapped":
+                imported["mapping"]["packages"][0]["extraFiles"].append("broken.txt")
+            else:
+                (package if source == "local" else vendor_package).setdefault(
+                    "resources", []
+                ).append(record)
+        else:
+            broken = owner / "skills/broken"
+            broken.mkdir()
+            (broken / "SKILL.md").write_text("---\nname: broken\n---\nbody\n")
+            if source != "mapped":
+                (package if source == "local" else vendor_package)[
+                    "capabilities"
+                ].append({"id": "broken", "path": "skills/broken"})
+        if control != "required":
+            boundary["exclude"] = [target]
+    chain: tuple[str, ...] = ()
+    if control in {"excluded", "kept", "stale"}:
+        boundary["include"] = [requirer]
+        if control == "excluded":
+            boundary.setdefault("exclude", []).append(requirer)
+        elif control == "stale":
+            boundary.setdefault("exclude", []).append(
+                f"{publisher}/tools:skill/previous"
+            )
+        else:
+            chain = (requirer, target)
+    elif control in {"required", "transitive"}:
+        for name in ("entry", "middle"):
+            payload = root / "skills" / name
+            payload.mkdir()
+            (payload / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: Test root.\n---\n"
+            )
+            package["capabilities"].append(
+                {
+                    "id": name,
+                    "path": f"skills/{name}",
+                    "requires": [requirer],
+                }
+            )
+        package["include"] = [PREFIX + "entry"]
+        chain = (PREFIX + "entry", requirer, target)
+        if control == "transitive":
+            package["capabilities"][-2]["requires"] = [PREFIX + "middle"]
+            chain = (PREFIX + "entry", PREFIX + "middle", requirer, target)
+    if source == "manifest":
+        (vendor / "ai-skills.yaml").write_text(
+            dump_document(
+                {
+                    "apiVersion": "ai-skills.dev/v1",
+                    "publisher": {"id": "vendor"},
+                    "packages": [vendor_package],
+                }
+            )
+        )
+    (root / "ai-skills.yaml").write_text(dump_document(document))
+    (root / "ai-skills.lock").write_bytes(b"unchanged lock\n")
+    (root / "installed-generation").write_bytes(b"unchanged generation\n")
+    return requirer, target, chain
+
+
+def collision_migration_case(
+    *, root: Path, control: str, action: str, kind: str
+) -> str:
+    """Prepare persisted collision decisions over a renamed qualified identity.
+
+    Args:
+        root: Consumer fixture root.
+        control: Migrated/current decision or stale/malformed/cycle/duplicate input.
+        action: Rename or skip collision decision.
+        kind: Capability or package migration.
+
+    Returns:
+        Current capability identity.
+    """
+    document = read_document(root / "ai-skills.yaml")
+    current = PREFIX + "stable"
+    previous = PREFIX + "previous" if kind == "capability" else "old/tools:skill/stable"
+    migrations = [
+        {
+            "from": previous if kind == "capability" else "old/tools",
+            "to": current if kind == "capability" else "fixture/tools",
+        }
+    ]
+    identity = current if control == "current" else previous
+    if control == "stale":
+        migrations = []
+    elif control == "malformed":
+        identity = "previous"
+    elif control == "cycle":
+        migrations.append({"from": current, "to": previous})
+    decision = {
+        "capability": identity,
+        "action": action,
+        **({"name": "renamed"} if action == "rename" else {}),
+    }
+    document["overrides"] = {"migrations": migrations, "collisions": [decision]}
+    if control == "duplicate":
+        document["overrides"]["collisions"].append({**decision, "capability": current})
+    # Keep the cycle control at collision replay, rather than resolving a
+    # preexisting related edge through the same intentionally cyclic map.
+    document["vendors"][0]["mapping"]["packages"][0]["capabilities"]["help"][
+        "related"
+    ] = []
+    payload = root / "skills/other"
+    payload.mkdir()
+    (payload / "SKILL.md").write_text(
+        "---\nname: start\ndescription: Conflicting destination.\n---\n"
+    )
+    document["packages"][0]["capabilities"].append(
+        {"id": "other", "path": "skills/other"}
+    )
+    (root / "ai-skills.yaml").write_text(dump_document(document))
+    (root / "ai-skills.lock").write_bytes(b"unchanged lock\n")
+    (root / "installed-generation").write_bytes(b"unchanged generation\n")
+    return current
