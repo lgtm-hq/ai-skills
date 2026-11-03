@@ -30,7 +30,7 @@ def test_skill_aliases_preserve_other_roles_and_stable_ids(
     capsys: pytest.CaptureFixture[str],
     control: str,
 ) -> None:
-    """Mapped inventory and public CLI change only the selected skill aliases."""
+    """Aliases preserve payloads, roles and IDs, while recording their transforms."""
     root, vendor = inventory_repo
     configure_inventory_aliases(root=root, vendor=vendor, control=control)
     path = root / "ai-skills.yaml"
@@ -54,7 +54,33 @@ def test_skill_aliases_preserve_other_roles_and_stable_ids(
         assert_that(item.aliases).described_as(str(item.id)).is_equal_to(
             expected.get(str(item.id), ())
         )
-        assert_that(replace(item, aliases=())).is_equal_to(originals[item.id])
+        ancestry = tuple(
+            replace(
+                chain,
+                lineage=tuple(
+                    replace(
+                        hop,
+                        transforms=tuple(
+                            transform
+                            for transform in hop.transforms
+                            if transform != "alias"
+                        ),
+                    )
+                    for hop in chain.lineage
+                ),
+            )
+            for chain in item.lineage
+        )
+        assert_that(replace(item, aliases=(), lineage=ancestry)).is_equal_to(
+            originals[item.id]
+        )
+        assert_that(
+            any(
+                "alias" in hop.transforms
+                for chain in item.lineage
+                for hop in chain.lineage
+            )
+        ).is_equal_to(bool(item.aliases))
     args = ["--repo-root", str(root), "--vendor-root", f"vendor={vendor}"]
     for _ in range(2):
         assert_that(cli.main(["inventory", "--json", *args])).is_zero()

@@ -1,0 +1,15 @@
+---
+apiVersion: ai-skills.dev/v1
+publisher:
+  id: x
+  repo: fixture/x
+packages:
+  - id: tools
+    capabilities:
+      - id: plain
+        path: skills/plain
+    resources:
+      - id: script
+        path: shared
+exports:
+  - tools

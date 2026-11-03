@@ -14,6 +14,21 @@ from ai_skills_engine.manifest.model import Manifest
 from ai_skills_engine.registry.registry import load_unique_yaml_text
 
 
+def _publication_packages(document: dict[str, Any]) -> set[str]:
+    """Read publication package names without importing vendor authority.
+
+    Args:
+        document: Structurally validated vendor manifest.
+
+    Returns:
+        Own packages and explicitly qualified re-exports.
+    """
+    return {
+        f"{document['publisher']['id']}/{item['id']}"
+        for item in document.get("packages", [])
+    } | {value for value in document.get("exports", []) if "/" in value}
+
+
 def read_document(path: Path) -> dict[str, Any]:
     """Load a manifest mapping using the existing duplicate-key-safe loader.
 
@@ -72,6 +87,7 @@ def load_consumer(
     path: Path,
     *,
     vendor_roots: Mapping[str, Path] | None = None,
+    ignore_authority: bool = False,
 ) -> tuple[Manifest, Mapping[str, Manifest], tuple[Diagnostic, ...]]:
     """Validate consumer and explicitly supplied offline vendor declarations.
 
@@ -82,6 +98,7 @@ def load_consumer(
     Args:
         path: Consumer declaration.
         vendor_roots: Consumer vendor ID to locally available repository root.
+        ignore_authority: Strip current publisher authority during recursive imports.
 
     Returns:
         Consumer, sanitized imports keyed by consumer alias, and diagnostics.
@@ -92,6 +109,12 @@ def load_consumer(
     from ai_skills_engine.manifest.validate import validate_document
 
     data = read_document(path)
+    if ignore_authority:
+        data = {
+            key: value
+            for key, value in data.items()
+            if key not in {"policy", "overrides"} and not key.startswith("x-")
+        }
     structural = [item for item in validate_document(data) if item.code == "schema"]
     if structural:
         raise ValueError(str(structural))
@@ -115,7 +138,32 @@ def load_consumer(
                     )
                 )
                 document.pop(key)
-        findings = validate_document(document)
+        nested_packages: dict[str, set[str]] = {}
+        for nested in document.get("vendors", []):
+            nested_root = (vendor_roots or {}).get(alias + "/" + nested["id"])
+            if nested_root and (nested_root / "ai-skills.yaml").is_file():
+                from ai_skills_engine.inventory.payload import source_path
+
+                source_path(root=nested_root, relative="ai-skills.yaml")
+                nested_document = read_document(nested_root / "ai-skills.yaml")
+                nested_document = {
+                    key: value
+                    for key, value in nested_document.items()
+                    if key not in {"policy", "overrides"} and not key.startswith("x-")
+                }
+                if any(
+                    item.code == "schema" for item in validate_document(nested_document)
+                ):
+                    raise ValueError(f"Invalid nested vendor manifest {nested['id']}")
+                nested_packages[nested["id"]] = _publication_packages(nested_document)
+        findings = validate_document(document, imported_packages=nested_packages)
+        if document.get("vendors"):
+            # Recursive inventory validates re-exports against the actual pins.
+            # Offline missing nested inputs must retain provenance diagnostics.
+            diagnostics.extend(
+                item for item in findings if item.code == "dangling-export"
+            )
+            findings = [item for item in findings if item.code != "dangling-export"]
         if findings:
             raise ValueError(f"Invalid vendor manifest {alias}: {findings}")
         imported[alias] = replace(
@@ -128,8 +176,11 @@ def load_consumer(
             data,
             imported_packages={
                 alias: {
-                    f"{manifest.publisher.id}/{package.id}"
-                    for package in manifest.packages
+                    *[
+                        f"{manifest.publisher.id}/{package.id}"
+                        for package in manifest.packages
+                    ],
+                    *[value for value in manifest.exports if "/" in value],
                 }
                 for alias, manifest in imported.items()
             },

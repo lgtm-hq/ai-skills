@@ -1,6 +1,7 @@
 """Single consumer deny entry point, independent of aliases and content hashes."""
 
 from ai_skills_engine.manifest.policy import Policy
+from ai_skills_engine.provenance.origins import denied_origin
 from ai_skills_engine.selection.deny_match import DenyMatch
 from ai_skills_engine.selection.deny_subject import DenySubject
 
@@ -16,15 +17,12 @@ def deny_matches(capability: DenySubject, policy: Policy | None) -> DenyMatch | 
         Deterministic matching evidence, or None. Independent equal bytes have
         no effect: only explicitly supplied origins participate.
     """
-    origins = policy.deny.origins if policy and policy.deny else ()
-    for origin in (capability.origin, *capability.lineage):
-        for selector in sorted(origins):
-            if origin == selector or (
-                selector.endswith("*") and origin.startswith(selector[:-1])
-            ):
-                return DenyMatch(
-                    origin=origin, selector=selector, chain=(capability.id,)
-                )
+    matched = denied_origin(
+        origins=(capability.origin, *capability.lineage), policy=policy
+    )
+    if matched:
+        origin, selector = matched
+        return DenyMatch(origin=origin, selector=selector, chain=(capability.id,))
     for resource in sorted(capability.resources, key=lambda item: item.id):
         match = deny_matches(capability=resource, policy=policy)
         if match:

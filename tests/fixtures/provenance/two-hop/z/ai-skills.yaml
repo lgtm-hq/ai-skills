@@ -1,0 +1,33 @@
+---
+apiVersion: ai-skills.dev/v1
+publisher:
+  id: z
+  repo: fixture/z
+packages:
+  - id: tools
+    capabilities:
+      - id: first
+        path: skills/first
+        requires:
+          - y/tools:skill/renamed
+        resources:
+          - x/tools:resource/script
+      - id: second
+        path: skills/second
+        requires:
+          - y/tools:skill/transformed
+        resources:
+          - x/tools:resource/script
+vendors:
+  - id: y
+    repo: fixture/y
+    sha: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+exports:
+  - tools
+policy:
+  deny:
+    origins:
+      - github.com/fixture/x
+  provenance:
+    mode: strict
+    acceptAttestations: false

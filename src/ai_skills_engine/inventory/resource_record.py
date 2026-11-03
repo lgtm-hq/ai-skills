@@ -5,6 +5,7 @@ from pathlib import PurePosixPath
 
 from ai_skills_engine.inventory.payload_file import PayloadFile
 from ai_skills_engine.inventory.resource_id import ResourceId
+from ai_skills_engine.provenance.model import Lineage
 
 
 @dataclass(frozen=True)
@@ -16,3 +17,4 @@ class Resource:
     source_path: PurePosixPath
     payload: tuple[PayloadFile, ...]
     tree_digest: str
+    lineage: tuple[Lineage, ...] = ()

@@ -1,0 +1,81 @@
+[
+  {
+    "id": "y/tools:skill/renamed",
+    "lineage": [
+      {
+        "id": "x/tools:skill/plain",
+        "origin": "github.com/fixture/x",
+        "path": "skills/plain",
+        "publisher": "x",
+        "renamedFrom": null,
+        "rev": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "transforms": [],
+        "treeDigest": "sha256:a93a83476649fafb0200f1767033a56bc812e1135d16855a38abbddc93fad6b3"
+      },
+      {
+        "id": "y/tools:skill/renamed",
+        "origin": "github.com/fixture/y",
+        "path": "skills/renamed",
+        "publisher": "y",
+        "renamedFrom": "y/tools:skill/excel",
+        "rev": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "transforms": [
+          "frontmatter-name"
+        ],
+        "treeDigest": "sha256:38b422e1572cf19a66b18205d5ceeb23a4bdd78d76de6ab37dff571a2deeb90f"
+      }
+    ]
+  },
+  {
+    "id": "y/tools:skill/transformed",
+    "lineage": [
+      {
+        "id": "x/tools:skill/plain",
+        "origin": "github.com/fixture/x",
+        "path": "skills/plain",
+        "publisher": "x",
+        "renamedFrom": null,
+        "rev": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "transforms": [],
+        "treeDigest": "sha256:a93a83476649fafb0200f1767033a56bc812e1135d16855a38abbddc93fad6b3"
+      },
+      {
+        "id": "y/tools:skill/transformed",
+        "origin": "github.com/fixture/y",
+        "path": "skills/transformed",
+        "publisher": "y",
+        "renamedFrom": null,
+        "rev": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "transforms": [
+          "frontmatter-name"
+        ],
+        "treeDigest": "sha256:24a5556cac8a8627e324dd2dae0d893b22b7e9ecd244a89849df1a9647ce1ef7"
+      }
+    ]
+  },
+  {
+    "id": "x/tools:resource/script",
+    "lineage": [
+      {
+        "id": "x/tools:resource/script",
+        "origin": "github.com/fixture/x",
+        "path": "shared",
+        "publisher": "x",
+        "renamedFrom": null,
+        "rev": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "transforms": [],
+        "treeDigest": "sha256:6d3fb7c491dc559a4722a17a3b25bf86293f7f305643d4e793a55996766a09b1"
+      },
+      {
+        "id": "x/tools:resource/script",
+        "origin": "github.com/fixture/y",
+        "path": "_shared",
+        "publisher": "y",
+        "renamedFrom": null,
+        "rev": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "transforms": [],
+        "treeDigest": "sha256:9931bacba90c34d176aab57dc49d4598427d6dacdbcdc2531de6157b81684331"
+      }
+    ]
+  }
+]

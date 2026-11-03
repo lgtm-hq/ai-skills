@@ -16,6 +16,7 @@ from ai_skills_engine.inventory.roles import Dialect
 from ai_skills_engine.inventory.unresolved_edge import UnresolvedEdge
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.identity import Role
+from ai_skills_engine.provenance.model import Lineage
 
 __all__ = [
     "Capability",
@@ -42,6 +43,8 @@ def _encode(value: Any) -> Any:
     """
     if isinstance(value, (PackageId, CapabilityId, ResourceId, PurePath)):
         return str(value)
+    if isinstance(value, Lineage):
+        return json.loads(value.to_json())
     if is_dataclass(value) and not isinstance(value, type):
         return {
             field.name: _encode(getattr(value, field.name)) for field in fields(value)
