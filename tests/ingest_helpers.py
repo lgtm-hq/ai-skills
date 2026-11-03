@@ -1,6 +1,8 @@
 """Synthetic vendor snapshots shared by ingestion boundary tests."""
 
 import hashlib
+import tarfile
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -8,6 +10,83 @@ import yaml
 
 from ai_skills_engine.registry.registry import load_registry
 from ai_skills_engine.registry.vendor import Vendor
+
+
+@pytest.fixture(
+    params=[
+        "nested-file",
+        "explicit-root",
+        "top-file",
+        "top-empty",
+        "mixed-file",
+        "mixed-empty",
+        "top-symlink",
+        "private-top-file",
+    ],
+)
+def root_archive(request: pytest.FixtureRequest) -> tuple[bytes, bool]:
+    """Build real gzip archives with valid roots or misplaced top-level members.
+
+    Args:
+        request: Root layout or invalid member arrangement.
+
+    Returns:
+        Compressed archive bytes and whether extraction should succeed.
+    """
+    kind = request.param
+    accepted = kind in {"nested-file", "explicit-root"}
+    output = BytesIO()
+    # Avoid letting tiny, zero-filled tar padding trip the independent ratio
+    # limit before these fixtures reach root-layout validation.
+    with tarfile.open(fileobj=output, mode="w:gz", compresslevel=0) as archive:
+        if kind == "explicit-root":
+            root = tarfile.TarInfo("root")
+            root.type = tarfile.DIRTYPE
+            root.mode = 0o755
+            archive.addfile(root)
+        if accepted or kind.startswith("mixed-"):
+            member = tarfile.TarInfo("root/asset.txt")
+            member.mode = 0o644
+            data = b"actual fixture payload\n"
+            member.size = len(data)
+            archive.addfile(member, BytesIO(data))
+        if not accepted:
+            name = (
+                "loose-" + "AKIA" + "A" * 16 + ".txt"
+                if kind == "private-top-file"
+                else "loose.txt"
+            )
+            member = tarfile.TarInfo(name)
+            member.mode = 0o644
+            data = b"" if kind.endswith("empty") else b"misplaced payload\n"
+            if kind == "top-symlink":
+                member.type = tarfile.SYMTYPE
+                member.linkname = "root/asset.txt"
+                data = b""
+            member.size = len(data)
+            archive.addfile(member, BytesIO(data))
+    return output.getvalue(), accepted
+
+
+@pytest.fixture(params=[False, True], ids=["absent", "existing"])
+def archive_destination(tmp_path: Path, request: pytest.FixtureRequest) -> Path:
+    """Provide an absent publication parent or a tree with protected bytes/modes.
+
+    Args:
+        tmp_path: Isolated scratch directory.
+        request: Whether the destination already exists.
+
+    Returns:
+        Destination whose original state must survive rejected extraction.
+    """
+    destination = tmp_path / "publication/tree"
+    if request.param:
+        destination.mkdir(parents=True)
+        destination.chmod(0o750)
+        sentinel = destination / "sentinel"
+        sentinel.write_bytes(b"\x00original sentinel\xff\n")
+        sentinel.chmod(0o640)
+    return destination
 
 
 @pytest.fixture

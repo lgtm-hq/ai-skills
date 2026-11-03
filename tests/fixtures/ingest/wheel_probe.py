@@ -29,6 +29,12 @@ def main() -> None:
     module = Path(vendor_plugins.__file__).resolve()
     if not module.is_relative_to(Path(site)):
         raise RuntimeError("wheel import escaped its isolated package root")
+    if operation == "extract":
+        from ai_skills_engine.registry import safe_tree
+
+        # Resolve the host rename runtime before denying execution; libc lookup
+        # may run ldconfig. No archive bytes have been read at this point.
+        safe_tree._libc()
     stdout, stderr = io.StringIO(), io.StringIO()
     status = 0
     with contextlib.ExitStack() as stack:
@@ -52,6 +58,12 @@ def main() -> None:
                     )
                 elif operation == "legacy":
                     status = cli.main(["manifest", "legacy", "--repo-root", author])
+                elif operation == "extract":
+                    vendor_plugins._extract_tarball(
+                        payload=Path(vendor_root).read_bytes(),
+                        dest=Path(author),
+                        vendor_id="synthetic-vendor",
+                    )
                 else:
                     status = cli.main(
                         ["bake", "vendor-plugins", "--check", "--repo-root", author]

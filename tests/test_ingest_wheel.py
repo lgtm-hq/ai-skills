@@ -143,6 +143,49 @@ def test_wheel_bakes_checks_and_rejects_forged_lock(
     )
 
 
+def test_wheel_root_layout_preflight_preserves_rejected_destination(
+    wheel_site: Path,
+    tmp_path: Path,
+    root_archive: tuple[bytes, bool],
+    archive_destination: Path,
+) -> None:
+    """Isolated built-wheel extraction retains roots and rejects loose members."""
+    payload, accepted = root_archive
+    archive_path = tmp_path / "input.tar.gz"
+    archive_path.write_bytes(payload)
+    destination = archive_destination
+    existed = destination.exists()
+    inode = destination.stat().st_ino if existed else None
+    result = probe(
+        site=wheel_site, root=destination, source=archive_path, operation="extract"
+    )
+    assert_that(result["stdout"]).is_empty()
+    if accepted:
+        assert_that(result["status"]).described_as(result).is_zero()
+        assert_that(result["stderr"]).is_empty()
+        assert_that(sorted(path.name for path in destination.iterdir())).is_equal_to(
+            ["asset.txt"]
+        )
+        asset = destination / "asset.txt"
+        assert_that(asset.read_bytes()).is_equal_to(b"actual fixture payload\n")
+        assert_that(asset.stat().st_mode & 0o7777).is_equal_to(0o644)
+        return
+    assert_that(result["status"]).is_equal_to(1)
+    assert_that(result["stderr"]).contains(
+        "synthetic-vendor", "top-level", "directory", "loose"
+    ).does_not_contain("AKIA" + "A" * 16)
+    if existed:
+        sentinel = destination / "sentinel"
+        assert_that(list(destination.iterdir())).is_equal_to([sentinel])
+        assert_that(sentinel.read_bytes()).is_equal_to(b"\x00original sentinel\xff\n")
+        assert_that(sentinel.stat().st_mode & 0o7777).is_equal_to(0o640)
+        assert_that(destination.stat().st_mode & 0o7777).is_equal_to(0o750)
+        assert_that(destination.stat().st_ino).is_equal_to(inode)
+        assert_that(list(destination.parent.iterdir())).is_equal_to([destination])
+    else:
+        assert_that(destination.parent.exists()).is_false()
+
+
 def test_wheel_manifest_policy_reaches_legacy_reader(
     wheel_site: Path, ingest_repo: tuple[Path, Path, Vendor]
 ) -> None:

@@ -207,7 +207,7 @@ def extract_tarball(
                                     "sparse archive member rejected"
                                 )
                             )
-                        rewrite_tarball_member(member=member)
+                        rewrite_tarball_member(member=member, vendor=vendor)
                 # Tar EOF does not imply gzip EOF. Bound padding and trailing
                 # members too, rather than letting a trailing bomb escape checks.
                 while reader.read(CHUNK_BYTES):
@@ -226,7 +226,7 @@ def extract_tarball(
                     tarinfo=_tarinfo_type(vendor=vendor, limits=limits),
                 ) as archive:
                     while (member := archive.next()) is not None:
-                        rewritten = rewrite_tarball_member(member=member)
+                        rewritten = rewrite_tarball_member(member=member, vendor=vendor)
                         if rewritten is not None:
                             if rewritten.isfile():
                                 rewritten.mode = normalized_mode(
@@ -250,18 +250,21 @@ def extract_tarball(
         ) from error
 
 
-def rewrite_tarball_member(*, member: tarfile.TarInfo) -> tarfile.TarInfo | None:
+def rewrite_tarball_member(
+    *, member: tarfile.TarInfo, vendor: str = "unknown"
+) -> tarfile.TarInfo | None:
     """Strip the GitHub root prefix and reject path escapes.
 
     Args:
         member: Archive member as stored by GitHub.
+        vendor: Consumer vendor alias when available.
 
     Returns:
         The member with a dest-relative name, or ``None`` to skip the
         top-level directory itself.
 
     Raises:
-        ValueError: If the member path is absolute or contains ``..``.
+        ValueError: If the member path escapes or lacks a root directory prefix.
     """
     if (
         member.name.startswith("/")
@@ -271,7 +274,14 @@ def rewrite_tarball_member(*, member: tarfile.TarInfo) -> tarfile.TarInfo | None
         raise ValueError(safe_diagnostic(f"path escape rejected: {member.name}"))
     parts = PurePosixPath(member.name).parts
     if len(parts) < 2:
-        return None
+        if len(parts) == 1 and member.isdir():
+            return None
+        raise ValueError(
+            safe_diagnostic(
+                f"vendor {vendor}: top-level archive member must be a root "
+                f"directory: {member.name}"
+            )
+        )
     relative = PurePosixPath(*parts[1:])
     if relative.is_absolute() or any(
         part in {"", ".", ".."} for part in relative.parts

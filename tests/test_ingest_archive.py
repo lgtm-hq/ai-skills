@@ -16,6 +16,46 @@ from assertpy import assert_that
 from ai_skills_engine.bake import vendor_plugins as baker
 from ai_skills_engine.registry.ingest_limits import IngestLimits
 
+pytest_plugins = ["ingest_helpers"]
+
+
+def test_root_layout_preflight_preserves_rejected_destination(
+    root_archive: tuple[bytes, bool], archive_destination: Path
+) -> None:
+    """Actual baker extraction rejects loose members before any publication."""
+    payload, accepted = root_archive
+    destination = archive_destination
+    existed = destination.exists()
+    inode = destination.stat().st_ino if existed else None
+    if accepted:
+        baker._extract_tarball(
+            payload=payload, dest=destination, vendor_id="synthetic-vendor"
+        )
+        assert_that(sorted(path.name for path in destination.iterdir())).is_equal_to(
+            ["asset.txt"]
+        )
+        asset = destination / "asset.txt"
+        assert_that(asset.read_bytes()).is_equal_to(b"actual fixture payload\n")
+        assert_that(asset.stat().st_mode & 0o7777).is_equal_to(0o644)
+        return
+    with pytest.raises(ValueError) as raised:
+        baker._extract_tarball(
+            payload=payload, dest=destination, vendor_id="synthetic-vendor"
+        )
+    assert_that(str(raised.value)).contains(
+        "synthetic-vendor", "top-level", "directory", "loose"
+    ).does_not_contain("AKIA" + "A" * 16)
+    if existed:
+        sentinel = destination / "sentinel"
+        assert_that(list(destination.iterdir())).is_equal_to([sentinel])
+        assert_that(sentinel.read_bytes()).is_equal_to(b"\x00original sentinel\xff\n")
+        assert_that(sentinel.stat().st_mode & 0o7777).is_equal_to(0o640)
+        assert_that(destination.stat().st_mode & 0o7777).is_equal_to(0o750)
+        assert_that(destination.stat().st_ino).is_equal_to(inode)
+        assert_that(list(destination.parent.iterdir())).is_equal_to([destination])
+    else:
+        assert_that(destination.parent.exists()).is_false()
+
 
 def archive_bytes(
     *, mode: int = 0o644, kind: bytes = tarfile.REGTYPE, count: int = 1
