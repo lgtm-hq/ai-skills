@@ -624,6 +624,69 @@ def test_installed_repin_restores_after_actual_bakes(
             assert_that(report["notes"]).is_empty()
 
 
+@pytest.mark.parametrize("state", ["current", "stale", "absent"])
+@pytest.mark.parametrize(
+    ("entry", "mode", "boundary", "blocked", "operation"),
+    [
+        (entry, *case)
+        for entry in ("api", "installed-cli")
+        for case in runpy.run_path(str(ROOT / "tests/test_repin_vendor.py"))[
+            "_PREPUBLICATION_CASES"
+        ]
+    ]
+    + [
+        ("installed-cli", mode, "none", "none", "write")
+        for mode in ("list", "all", "all-unchanged")
+    ],
+)
+def test_installed_repin_prepublication_transaction(
+    installed_command: Path,
+    tmp_path: Path,
+    state: str,
+    entry: str,
+    mode: str,
+    boundary: str,
+    blocked: str,
+    operation: str,
+) -> None:
+    """Bind public API and console-script rollback to actual built wheel bytes."""
+    helpers = runpy.run_path(str(ROOT / "tests/test_repin_vendor.py"))
+    root, trees = tmp_path / "repository", tmp_path / "trees"
+    root.mkdir()
+    helpers["_write_registry"](repo_root=root)
+    helpers["_write_before_tree"](dest=trees / "before")
+    helpers["_write_after_tree"](dest=trees / "after")
+    result = _run(
+        args=[
+            str(_venv_executable(installed_command.parent.parent, "python")),
+            "-I",
+            str(ROOT / "tests/fixtures/manifest/repin-cli.py"),
+            str(installed_command),
+            str(root),
+            str(trees),
+            mode,
+            boundary,
+            blocked,
+            operation,
+            state,
+            entry,
+        ],
+        cwd=tmp_path,
+    )
+    report = json.loads(result.stdout)
+    assert_that(
+        Path(report["module"]).is_relative_to(installed_command.parent.parent)
+    ).is_true()
+    helpers["_assert_prepublication_report"](
+        report=report,
+        state=state,
+        entry=entry,
+        mode=mode,
+        boundary=boundary,
+        blocked=blocked,
+    )
+
+
 @pytest.mark.parametrize(
     ("platform", "scripts", "suffix"),
     [("linux", "bin", ""), ("darwin", "bin", ""), ("win32", "Scripts", ".exe")],

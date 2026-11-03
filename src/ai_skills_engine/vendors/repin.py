@@ -55,16 +55,33 @@ _CLI_FAILURES = (
 ResolveSha = Callable[[Vendor], str]
 
 
-def list_vendor_ids(*, repo_root: Path) -> tuple[str, ...]:
-    """Return registry vendor ids in source order.
+def _selection_vendors(*, repo_root: Path) -> tuple[Vendor, ...]:
+    """Read authoritative declarations without publishing during CLI selection.
 
     Args:
-        repo_root: Repository root containing ``vendors.yaml``.
+        repo_root: Repository containing a manifest or legacy registry.
+
+    Returns:
+        Validated vendors in source order.
+    """
+    if (repo_root / "ai-skills.yaml").is_file():
+        rendered = legacy.render_legacy(repo_root)
+        return _vendors_from_registry_text(
+            text=rendered[repo_root / "vendors.yaml"].decode("utf-8"),
+        )
+    return load_registry(registry_path=repo_root / "vendors.yaml")
+
+
+def list_vendor_ids(*, repo_root: Path) -> tuple[str, ...]:
+    """Return authoritative vendor ids in source order without publication.
+
+    Args:
+        repo_root: Repository root containing a manifest or ``vendors.yaml``.
 
     Returns:
         Vendor ids.
     """
-    vendors = load_registry(registry_path=repo_root / "vendors.yaml")
+    vendors = _selection_vendors(repo_root=repo_root)
     return tuple(vendor.id for vendor in vendors)
 
 
@@ -205,15 +222,14 @@ def _reload_vendor(*, repo_root: Path, vendor_id: str) -> Vendor:
     return vendor
 
 
-def _vendor_from_registry_text(*, text: str, vendor_id: str) -> Vendor | None:
-    """Load one vendor from a ``vendors.yaml`` snapshot without touching disk.
+def _vendors_from_registry_text(*, text: str) -> tuple[Vendor, ...]:
+    """Load registry text through the real reader in private scratch space.
 
     Args:
         text: Registry file contents.
-        vendor_id: Vendor slug.
 
     Returns:
-        Matching vendor record, or None for a newly added vendor.
+        Validated vendors in source order.
 
     Raises:
         TypeError: If the registry fails type validation.
@@ -221,7 +237,20 @@ def _vendor_from_registry_text(*, text: str, vendor_id: str) -> Vendor | None:
     with tempfile.TemporaryDirectory(prefix="vendor-repin-") as tmp:
         path = Path(tmp) / "vendors.yaml"
         path.write_text(text, encoding="utf-8")
-        vendors = load_registry(registry_path=path)
+        return load_registry(registry_path=path)
+
+
+def _vendor_from_registry_text(*, text: str, vendor_id: str) -> Vendor | None:
+    """Find a vendor in a baseline, or return None for a newly added vendor.
+
+    Args:
+        text: Registry file contents.
+        vendor_id: Vendor slug.
+
+    Returns:
+        Matching vendor record, or None for a newly added vendor.
+    """
+    vendors = _vendors_from_registry_text(text=text)
     return next((item for item in vendors if item.id == vendor_id), None)
 
 
@@ -276,6 +305,10 @@ def repin_vendor(
     bake main's pin against branch-only ``renameSkills`` and can raise
     unused-rename errors or omit the real main-to-branch delta.
 
+    Failures restore the exact pre-call files, including stale compatibility
+    output. Publication and upstream resolution belong to the same transaction
+    as baking; rollback never regenerates from the manifest.
+
     Args:
         repo_root: Repository root containing ``vendors.yaml``.
         vendor_id: Vendor slug to re-pin.
@@ -302,36 +335,36 @@ def repin_vendor(
         msg = "baseline_ref and baseline_registry_text are mutually exclusive"
         raise ValueError(msg)
     manifest_path = repo_root / "ai-skills.yaml"
-    if manifest_path.is_file():
-        legacy.write_legacy(repo_root)
-    vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
     registry_path = repo_root / "vendors.yaml"
-    working_text = registry_path.read_text(encoding="utf-8")
-    if baseline_ref is not None:
-        baseline_text = _registry_text_at_ref(
-            repo_root=repo_root,
-            git_ref=baseline_ref,
-        )
-    elif baseline_registry_text is not None:
-        baseline_text = baseline_registry_text
-    else:
-        baseline_text = working_text
-    baseline_vendor = _vendor_from_registry_text(
-        text=baseline_text,
-        vendor_id=vendor_id,
-    )
-    if keep_sha:
-        new_sha = vendor.sha
-    elif resolve_sha is not None:
-        new_sha = resolve_sha(vendor)
-    else:
-        new_sha = resolve_upstream_sha(vendor=vendor)
     originals = snapshot_files(
         (manifest_path, registry_path, repo_root / "bundles.yaml")
     )
     artifact_paths = manage_vendors._generated_artifact_paths(repo_root=repo_root)
     snapshot, directories = manage_vendors._snapshot_artifacts(paths=artifact_paths)
     try:
+        if manifest_path.is_file():
+            legacy.write_legacy(repo_root)
+        vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
+        working_text = registry_path.read_text(encoding="utf-8")
+        if baseline_ref is not None:
+            baseline_text = _registry_text_at_ref(
+                repo_root=repo_root,
+                git_ref=baseline_ref,
+            )
+        elif baseline_registry_text is not None:
+            baseline_text = baseline_registry_text
+        else:
+            baseline_text = working_text
+        baseline_vendor = _vendor_from_registry_text(
+            text=baseline_text,
+            vendor_id=vendor_id,
+        )
+        if keep_sha:
+            new_sha = vendor.sha
+        elif resolve_sha is not None:
+            new_sha = resolve_sha(vendor)
+        else:
+            new_sha = resolve_upstream_sha(vendor=vendor)
         if new_sha == vendor.sha and baseline_text == working_text:
             before = _snapshot_vendor(
                 repo_root=repo_root,
@@ -440,9 +473,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--json requires --id")
     repo_root = resolve_repo_root(override=args.repo_root, parser=parser)
     try:
-        if (repo_root / "ai-skills.yaml").is_file():
-            legacy.write_legacy(repo_root)
-        vendor_ids = list_vendor_ids(repo_root=repo_root)
+        # Selection is read-only, including list and baseline filtering. Each
+        # repin owns publication and rollback, so --all retains earlier successes
+        # if a later vendor fails rather than becoming an all-vendor transaction.
+        vendors = _selection_vendors(repo_root=repo_root)
+        vendor_ids = tuple(vendor.id for vendor in vendors)
         if args.vendor_id is not None and args.vendor_id not in vendor_ids:
             msg = f"Unknown vendor id: {args.vendor_id}"
             raise ValueError(msg)
@@ -457,10 +492,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.all and args.keep_sha and baseline_text is not None:
             selected = tuple(
-                vendor_id
-                for vendor_id in selected
-                if _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
-                != _vendor_from_registry_text(text=baseline_text, vendor_id=vendor_id)
+                vendor.id
+                for vendor in vendors
+                if vendor
+                != _vendor_from_registry_text(text=baseline_text, vendor_id=vendor.id)
             )
         failed = False
         summaries: list[str] = []

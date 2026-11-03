@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import runpy
 import stat
 import subprocess  # nosec B404 - monkeypatch the fixed git baseline reader
+import sys
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
-from typing import Never
+from typing import Any, Never
 
 import pytest
 import yaml
@@ -43,6 +46,229 @@ _PLUGINS_YAML = (
     "        skillsRoot: skills\n"
     '        skills: "*"\n'
 )
+
+_PREPUBLICATION_CASES = [
+    ("new", "bundles.yaml", "none", "write"),
+    ("new", "vendors.yaml", "none", "write"),
+    ("new", "resolve", "none", "write"),
+    ("new", "unknown", "none", "write"),
+    ("new", "baseline", "none", "write"),
+    ("new", "baseline-parse", "none", "write"),
+    ("new", "index", "none", "write"),
+    ("baseline", "sync", "none", "write"),
+    ("new", "resolve", "vendors.yaml", "write"),
+    ("new", "resolve", "bundles.yaml", "write"),
+    ("new", "sync", "ai-skills.yaml", "write"),
+    ("new", "sync", "NOTICE.md", "mode"),
+    ("new", "sync", "npm/ai-skills/NOTICE.md", "unlink"),
+    ("new", "none", "none", "write"),
+    ("noop", "none", "none", "write"),
+    ("keep", "none", "none", "write"),
+    ("baseline", "none", "none", "write"),
+]
+
+
+def _assert_prepublication_report(
+    *,
+    report: dict[str, Any],
+    state: str,
+    entry: str,
+    mode: str,
+    boundary: str,
+    blocked: str,
+) -> None:
+    """Check independent observations shared by source and installed-wheel runs."""
+    if boundary == "none":
+        assert_that(report["status"]).is_zero()
+        assert_that(report["sha"]).is_equal_to(
+            _EXISTING_SHA
+            if mode in {"noop", "keep", "list", "all", "all-unchanged"}
+            else _NEW_SHA
+        )
+        if mode == "list":
+            assert_that(json.loads(report["output"])).is_equal_to(["example-vendor"])
+        if mode in {"list", "all-unchanged"}:
+            assert_that(report["changed"]).is_empty()
+            assert_that(report["changed_artifacts"]).is_empty()
+            assert_that(report["events"]).is_empty()
+        if mode == "baseline":
+            assert_that(report["output"]).contains(_BASELINE_SHA, "delta", "gamma")
+        if mode not in {"list", "all-unchanged"}:
+            assert_that(report["published"]).is_equal_to(
+                [
+                    [
+                        "example-vendor",
+                        "owner/example" if state == "current" else "changed/repository",
+                        None if state == "current" else "release/changed",
+                        report["sha"],
+                    ]
+                ]
+            )
+    else:
+        assert_that(report["status"]).is_equal_to(1)
+        diagnostic = (
+            "Unknown vendor id"
+            if boundary == "unknown"
+            else (
+                "invalid baseline-ref"
+                if boundary == "baseline"
+                else (
+                    "must be a non-empty list"
+                    if boundary == "baseline-parse"
+                    else "primary installed repin failure"
+                )
+            )
+        )
+        assert_that(report["output"]).contains(diagnostic)
+        if entry == "api" and boundary not in {"unknown", "baseline", "baseline-parse"}:
+            assert_that(report["caught_primary"]).is_true()
+        effective_block = blocked
+        if boundary == "resolve" and state != "stale":
+            effective_block = "none"  # Current bytes or original absence need no write.
+        assert_that(report["changed"]).is_equal_to(
+            [effective_block]
+            if effective_block not in {"none", "npm/ai-skills/NOTICE.md"}
+            else []
+        )
+        assert_that(report["changed_artifacts"]).is_equal_to(
+            [effective_block]
+            if effective_block in {"NOTICE.md", "npm/ai-skills/NOTICE.md"}
+            else []
+        )
+        assert_that(report["absent_exists"]).is_equal_to(
+            effective_block == "npm/ai-skills/NOTICE.md"
+        )
+        if effective_block != "none":
+            assert_that(report["output"]).contains("cleanup", effective_block)
+            assert_that("\n".join(report["notes"])).contains(effective_block)
+        else:
+            assert_that(report["notes"]).is_empty()
+    if boundary in {"none", "resolve", "index", "sync"}:
+        assert_that(report["resolved"]).is_equal_to(
+            []
+            if mode in {"keep", "list", "all", "all-unchanged"}
+            else [
+                [
+                    "owner/example" if state == "current" else "changed/repository",
+                    None if state == "current" else "release/changed",
+                    _EXISTING_SHA,
+                ]
+            ]
+        )
+    else:
+        assert_that(report["resolved"]).is_empty()
+
+
+@pytest.mark.parametrize("state", ["current", "stale", "absent"])
+@pytest.mark.parametrize(
+    ("entry", "mode", "boundary", "blocked", "operation"),
+    [
+        (entry, *case)
+        for entry in ("api", "source-cli")
+        for case in _PREPUBLICATION_CASES
+    ]
+    + [
+        ("source-cli", mode, "none", "none", "write")
+        for mode in ("list", "all", "all-unchanged")
+    ],
+)
+def test_repin_transaction_starts_before_publication(
+    repo_root: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
+    entry: str,
+    mode: str,
+    boundary: str,
+    blocked: str,
+    operation: str,
+) -> None:
+    """Real API/CLI failures restore the pre-publication state, including absence."""
+    trees = tmp_path / "trees"
+    _write_before_tree(dest=trees / "before")
+    _write_after_tree(dest=trees / "after")
+    fixture = _REPO_ROOT / "tests/fixtures/manifest/repin-cli.py"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(fixture),
+            "unused",
+            str(repo_root),
+            str(trees),
+            mode,
+            boundary,
+            blocked,
+            operation,
+            state,
+            entry,
+        ],
+    )
+    runpy.run_path(str(fixture), run_name="__main__")
+    report = json.loads(capsys.readouterr().out)
+    _assert_prepublication_report(
+        report=report,
+        state=state,
+        entry=entry,
+        mode=mode,
+        boundary=boundary,
+        blocked=blocked,
+    )
+
+
+def test_all_keeps_successful_vendor_when_later_resolution_fails(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """CLI selection follows a stale manifest while rollback stays per vendor."""
+    migrate(repo_root)
+    manage_vendors.refresh(repo_root=repo_root)
+    manifest = repo_root / "ai-skills.yaml"
+    data = read_document(manifest)
+    second = deepcopy(data["vendors"][0])
+    second["id"] = "second-vendor"
+    second["mapping"]["packages"][0]["id"] = "second-plugin"
+    data["vendors"].append(second)
+    data["exports"].append("second-vendor/second-plugin")
+    data["vendors"][0]["branch"] = "release/changed"
+    manifest.write_text(dump_document(data))
+    paths = [
+        repo_root / name for name in ("ai-skills.yaml", "vendors.yaml", "bundles.yaml")
+    ]
+    artifact_paths = manage_vendors._generated_artifact_paths(repo_root=repo_root)
+    checkpoint = {}
+    artifacts = []
+    calls = []
+
+    def resolve(*, vendor: Vendor) -> str:
+        """Fail only after the first actual repin has committed its outputs."""
+        calls.append(vendor.id)
+        if vendor.id == "second-vendor":
+            checkpoint.update(
+                {path: (path.read_bytes(), path.stat().st_mode) for path in paths}
+            )
+            artifacts.append(manage_vendors._snapshot_artifacts(paths=artifact_paths))
+            raise RuntimeError("second vendor upstream failure")
+        assert_that(vendor.branch).is_equal_to("release/changed")
+        return _NEW_SHA
+
+    monkeypatch.setattr(repin_vendor, "resolve_upstream_sha", resolve)
+    assert_that(
+        repin_vendor.main(["--repo-root", str(repo_root), "--all"])
+    ).is_equal_to(1)
+    assert_that(capsys.readouterr().err).contains("second vendor upstream failure")
+    assert_that(calls).is_equal_to(["example-vendor", "second-vendor"])
+    assert_that(
+        [vendor["sha"] for vendor in read_document(manifest)["vendors"]]
+    ).is_equal_to([_NEW_SHA, _EXISTING_SHA])
+    assert_that(
+        {path: (path.read_bytes(), path.stat().st_mode) for path in paths}
+    ).is_equal_to(checkpoint)
+    assert_that(manage_vendors._snapshot_artifacts(paths=artifact_paths)).is_equal_to(
+        artifacts[0]
+    )
 
 
 @pytest.mark.parametrize("mode", ["keep", "resolve-current", "resolve-new", "rollback"])
@@ -125,7 +351,7 @@ def test_direct_repin_uses_manifest_only_edits(
         assert_that(path.read_bytes()).is_equal_to(manifest_bytes)
         assert_that(
             {name: (repo_root / name).read_bytes() for name in generated}
-        ).is_equal_to(generated)
+        ).is_equal_to(stale)
         assert_that(manage._snapshot_artifacts(paths=artifacts)).is_equal_to(
             artifact_snapshot
         )
