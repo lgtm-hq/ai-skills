@@ -64,9 +64,13 @@ def select(
         scopes=scopes,
         capabilities=candidate_caps,
         migrations=migration_map,
+        identities=known_ids,
     )
     names, skips, reserved, namespace_findings = names_and_skips(
-        capabilities=caps, overrides=overrides, migrations=migration_map
+        capabilities=caps,
+        overrides=overrides,
+        migrations=migration_map,
+        identities=known_ids,
     )
     findings.extend(namespace_findings)
     excluded.update({identity: "overrides.collisions: skip" for identity in skips})

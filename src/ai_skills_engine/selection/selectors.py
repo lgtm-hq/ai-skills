@@ -1,9 +1,8 @@
 """Qualified selector resolution before destination aliases or deduplication."""
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 
-from ai_skills_engine.inventory.edges import matches
-from ai_skills_engine.manifest.identity import parse_id
+from ai_skills_engine.manifest.identity import matches, parse_id
 from ai_skills_engine.manifest.migrations import migrate
 from ai_skills_engine.selection.diagnostic import SelectionDiagnostic
 from ai_skills_engine.selection.scope import SelectionScope
@@ -14,6 +13,7 @@ def resolve_selectors(
     scopes: tuple[SelectionScope, ...],
     capabilities: set[str],
     migrations: Mapping[str, str],
+    identities: Collection[str],
 ) -> tuple[dict[str, str], dict[str, str], list[SelectionDiagnostic]]:
     """Resolve roots and vetoes within their declaration's pinned inventory.
 
@@ -21,6 +21,7 @@ def resolve_selectors(
         scopes: Local-package and vendor selection declarations.
         capabilities: Capability IDs, excluding resources as selection roots.
         migrations: Explicit identity migrations.
+        identities: Complete observed IDs, including resources and rejected IDs.
 
     Returns:
         Root reasons, exclude reasons and actionable selector errors.
@@ -44,7 +45,9 @@ def resolve_selectors(
             for selector in sorted(selectors or ()):
                 try:
                     parse_id(selector, selector=True)
-                    target = migrate(selector=selector, migrations=migrations)
+                    target = migrate(
+                        selector=selector, migrations=migrations, identities=identities
+                    )
                     found = [
                         identity
                         for identity in scope.members

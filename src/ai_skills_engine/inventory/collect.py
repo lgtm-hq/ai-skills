@@ -4,7 +4,6 @@ from pathlib import Path, PurePosixPath
 
 from ai_skills_engine.inventory.capability import Capability
 from ai_skills_engine.inventory.capability_id import CapabilityId
-from ai_skills_engine.inventory.edges import matches
 from ai_skills_engine.inventory.host_attributes import inspect_attributes
 from ai_skills_engine.inventory.package_id import PackageId
 from ai_skills_engine.inventory.payload import payload_files, source_path, tree_digest
@@ -13,6 +12,7 @@ from ai_skills_engine.inventory.resource_id import ResourceId
 from ai_skills_engine.inventory.resource_record import Resource
 from ai_skills_engine.inventory.roles import destination_names, inspect_role
 from ai_skills_engine.manifest.diagnostic import Diagnostic
+from ai_skills_engine.manifest.identity import matches
 from ai_skills_engine.manifest.package import Package
 from ai_skills_engine.manifest.vendor import Vendor
 

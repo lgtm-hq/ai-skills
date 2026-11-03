@@ -1,7 +1,7 @@
 """Global catalog namespace validation, reserving aliases before selection."""
 
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 
 from ai_skills_engine.inventory.capability import Capability
 from ai_skills_engine.manifest.identity import Role, parse_id
@@ -16,6 +16,7 @@ def names_and_skips(
     capabilities: Mapping[str, Capability],
     overrides: Overrides | None,
     migrations: Mapping[str, str],
+    identities: Collection[str],
 ) -> tuple[dict[str, tuple[str, ...]], set[str], set[str], list[SelectionDiagnostic]]:
     """Replay persistent names and skips without changing qualified identity.
 
@@ -23,6 +24,7 @@ def names_and_skips(
         capabilities: Unfiltered catalog.
         overrides: Consumer persisted decisions.
         migrations: Validated consumer and publisher-local identity migrations.
+        identities: Complete observed IDs, including resources and rejected IDs.
 
     Returns:
         Effective names, skipped IDs, reserved alias owners and invalid findings.
@@ -58,7 +60,11 @@ def names_and_skips(
     for override in overrides.collisions if overrides else ():
         try:
             parse_id(override.capability)
-            identity = migrate(selector=override.capability, migrations=migrations)
+            identity = migrate(
+                selector=override.capability,
+                migrations=migrations,
+                identities=identities,
+            )
             parse_id(identity)
         except ValueError as error:
             findings.append(

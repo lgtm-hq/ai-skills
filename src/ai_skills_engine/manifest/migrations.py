@@ -1,14 +1,22 @@
 """Explicit identity migration resolution shared by inventory and selection."""
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
+
+from ai_skills_engine.manifest.identity import matches
 
 
-def migrate(selector: str, migrations: Mapping[str, str]) -> str:
+def migrate(
+    selector: str, migrations: Mapping[str, str], *, identities: Collection[str] = ()
+) -> str:
     """Follow only declared identity migrations, including package migrations.
 
     Args:
         selector: Original qualified selector.
         migrations: Explicit old to new identities.
+        identities: Complete observed capability/resource IDs, including typed
+            rejected payloads. The first matching identity or scope wins over
+            migration metadata, even at an intermediate step. Continue checking
+            the declared chain so cycles still fail with an actionable error.
 
     Returns:
         Current selector, without inferring any relationship from names/hashes.
@@ -17,10 +25,15 @@ def migrate(selector: str, migrations: Mapping[str, str]) -> str:
         ValueError: On a cyclic migration.
     """
     visited: set[str] = set()
+    existing: str | None = None
     # Prefix rewrites preserve the suffix. A growing suffix under a repeated
     # rule can never reach an exact identity; guard it as well as state cycles.
     suffixes: dict[str, set[str]] = {}
     while True:
+        if existing is None and any(
+            matches(selector=selector, identity=identity) for identity in identities
+        ):
+            existing = selector
         source = next(
             (
                 old
@@ -30,7 +43,7 @@ def migrate(selector: str, migrations: Mapping[str, str]) -> str:
             None,
         )
         if source is None:
-            return selector
+            return existing if existing is not None else selector
         suffix = selector[len(source) :]
         if selector in visited or any(
             suffix != previous and suffix.endswith(previous)

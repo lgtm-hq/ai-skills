@@ -10,22 +10,8 @@ from ai_skills_engine.inventory.pending import PendingCapability
 from ai_skills_engine.inventory.resource_id import ResourceId
 from ai_skills_engine.inventory.unresolved_edge import UnresolvedEdge
 from ai_skills_engine.manifest.diagnostic import Diagnostic
+from ai_skills_engine.manifest.identity import matches
 from ai_skills_engine.manifest.migrations import migrate
-
-
-def matches(*, selector: str, identity: str) -> bool:
-    """Match an exact qualified ID, package or validated trailing wildcard.
-
-    Args:
-        selector: Schema-validated manifest selector.
-        identity: Exact capability or resource identity.
-
-    Returns:
-        Whether the declaration names this identity.
-    """
-    if selector.endswith("*"):
-        return identity.startswith(selector[:-1])
-    return identity == selector or identity.startswith((selector + ":", selector + "/"))
 
 
 def resolve_edges(
@@ -50,6 +36,7 @@ def resolve_edges(
     """
     records = tuple(pending)
     ids = tuple(item.capability.id for item in records)
+    identities = tuple(map(str, (*ids, *resource_ids, *rejected)))
     diagnostics: list[Diagnostic] = []
     result: list[Capability] = []
     unresolved: list[UnresolvedEdge] = []
@@ -63,7 +50,9 @@ def resolve_edges(
         """Resolve a declared field while preserving the target ID type."""
         resolved: set[Id] = set()
         for selector in getattr(item.declaration, field):
-            target = migrate(selector=selector, migrations=migrations)
+            target = migrate(
+                selector=selector, migrations=migrations, identities=identities
+            )
             found = {
                 identity
                 for identity in candidates
