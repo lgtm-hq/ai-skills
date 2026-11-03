@@ -90,16 +90,20 @@ def inspect_attributes(
     for key, value in sorted(metadata.items()):
         definition = definitions.get(key)
         if definition is None:
-            if key not in _PORTABLE:
-                diagnostics.append(
-                    Diagnostic(
-                        "inventory.unknown-frontmatter",
-                        location,
-                        f"Unknown frontmatter key: {key}",
-                        warning=True,
-                    )
+            if key in _PORTABLE:
+                continue
+            diagnostics.append(
+                Diagnostic(
+                    "inventory.unknown-frontmatter",
+                    location,
+                    f"Unknown frontmatter key: {key}",
+                    warning=True,
                 )
-            continue
+            )
+            definition = {
+                "semantics": "unknown",
+                "hosts": dict.fromkeys(_HOSTS, "unverified"),
+            }
         try:
             value_json = json.dumps(
                 normalize_yaml_value(value), sort_keys=True, allow_nan=False

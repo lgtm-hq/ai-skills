@@ -260,21 +260,9 @@ def test_installed_migration_and_legacy_match_source(
     }
     for repository in repositories:
         repository.mkdir()
+        shutil.copytree(src=ROOT / "skills", dst=repository / "skills")
         for name, content in originals.items():
             (repository / name).write_bytes(content)
-        # Validation now observes payloads too. Keep every historical assertion
-        # and supply minimal real payloads for the legacy declaration fixture.
-        bundles = read_document(repository / "bundles.yaml")
-        names = [
-            *bundles["ungrouped"],
-            *(name for group in bundles["groups"].values() for name in group["skills"]),
-        ]
-        for name in names:
-            directory = repository / "skills" / name
-            directory.mkdir(parents=True)
-            (directory / "SKILL.md").write_text(
-                f"---\nname: {name}\ndescription: Wheel fixture.\n---\n"
-            )
     for operation, expected in (
         (["migrate"], 0),
         (["validate"], 0),
@@ -311,13 +299,21 @@ def test_installed_migration_and_legacy_match_source(
             )
 
 
+@pytest.mark.parametrize("key", ["disable-model-invocation", "vendor-permission"])
 @pytest.mark.parametrize(
-    "attribute,expected",
+    "attribute,expected,normalized",
     [
-        ("true", 0),
-        ("2026-11-02", 0),
-        ("{1: first, '1': second, nested: [true, text]}", 0),
-        ("!!binary aGVsbG8=", 1),
+        ("true", 0, True),
+        ("2026-11-02", 0, {"$yaml": "date", "value": "2026-11-02"}),
+        (
+            "{1: first, '1': second, nested: [true, text]}",
+            0,
+            {
+                "$yaml": "mapping",
+                "items": [["1", "second"], ["nested", [True, "text"]], [1, "first"]],
+            },
+        ),
+        ("!!binary aGVsbG8=", 1, None),
     ],
     ids=["bool", "date", "mixed-keys", "unsupported"],
 )
@@ -325,15 +321,17 @@ def test_installed_inventory_and_resource_boundary_match_source(
     installed_command: Path,
     inventory_repo: tuple[Path, Path],
     capsys: pytest.CaptureFixture[str],
+    key: str,
     attribute: str,
     expected: int,
+    normalized: object,
 ) -> None:
     """An unrelated consumer gets identical installed/source records and failures."""
     root, vendor = inventory_repo
     skill = root / "skills/start/SKILL.md"
     skill.write_text(
         skill.read_text().replace(
-            "disable-model-invocation: true", "disable-model-invocation: " + attribute
+            "disable-model-invocation: true", f"{key}: {attribute}"
         )
     )
     missing_root = _run(
@@ -360,13 +358,33 @@ def test_installed_inventory_and_resource_boundary_match_source(
         assert_that((first.stdout, first.stderr)).is_equal_to((source.out, source.err))
         if expected:
             assert_that(first.stdout).contains(
-                "inventory.invalid-host-attribute", "disable-model-invocation", "bytes"
+                "inventory.invalid-host-attribute", key, "bytes"
             )
         else:
             assert_that(first.stdout).contains(
                 "inventory.host-specific-frontmatter",
                 "codex=unverified" if command[0] == "manifest" else '"codex"',
             )
+            if command[0] == "inventory":
+                start = next(
+                    item
+                    for item in json.loads(first.stdout)["capabilities"]
+                    if item["id"] == "fixture/tools:skill/stable"
+                )
+                retained = next(
+                    item for item in start["host_attributes"] if item["key"] == key
+                )
+                assert_that(json.loads(retained["value_json"])).is_equal_to(normalized)
+                if key == "vendor-permission":
+                    assert_that(retained["semantics"]).is_equal_to("unknown")
+                    assert_that(dict(retained["hosts"])).is_equal_to(
+                        {
+                            "claude-code": "unverified",
+                            "codex": "unverified",
+                            "cursor": "unverified",
+                        }
+                    )
+                    assert_that(first.stdout).contains("inventory.unknown-frontmatter")
     path = root / "ai-skills.yaml"
     document = read_document(path)
     document["packages"][0]["capabilities"][0]["resources"] = []
@@ -450,6 +468,67 @@ def test_installed_host_table_is_authoritative_without_checkout_fallback(
             )
     finally:
         table.write_bytes(original)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "baseline",
+        "id-key-mismatch",
+        "duplicate-skill",
+        "missing-skill",
+        "unknown-skill",
+    ],
+)
+def test_installed_publication_requires_marketplace_acceptance(
+    installed_command: Path, tmp_path: Path, change: str
+) -> None:
+    """Installed validation stays broad while legacy publication enforces consumers."""
+    shutil.copytree(src=ROOT / "skills", dst=tmp_path / "skills")
+    shutil.copy2(src=ROOT / "pyproject.toml", dst=tmp_path / "pyproject.toml")
+    data = read_document(ROOT / "ai-skills.yaml")
+    if change == "id-key-mismatch":
+        data["packages"][0]["id"] = "git-workflow"
+        data["exports"][data["exports"].index("git-pr")] = "git-workflow"
+    elif change == "duplicate-skill":
+        data["packages"][1]["capabilities"].append(
+            {"id": "branch", "path": "skills/branch"}
+        )
+    elif change == "missing-skill":
+        data["packages"][0]["capabilities"].pop(0)
+    elif change == "unknown-skill":
+        data["packages"][0]["capabilities"].append(
+            {"id": "unknown", "path": "skills/unknown"}
+        )
+        shutil.copytree(src=ROOT / "skills/branch", dst=tmp_path / "skills/unknown")
+    (tmp_path / "ai-skills.yaml").write_text(dump_document(data))
+    before = {
+        name: f"# installed sentinel {name}\n".encode()
+        for name in ("bundles.yaml", "vendors.yaml")
+    }
+    for name, content in before.items():
+        (tmp_path / name).write_bytes(content)
+    args = [str(installed_command), "--repo-root", str(tmp_path)]
+    _run(args=[*args, "manifest", "validate"], cwd=tmp_path)
+    if change == "unknown-skill":
+        # Recheck source loss after a successful real installed inventory check.
+        shutil.rmtree(tmp_path / "skills/unknown")
+    expected = 0 if change == "baseline" else 1
+    for flags in ([], ["--check"]):
+        result = _run(
+            args=[*args, "manifest", "legacy", *flags], cwd=tmp_path, expected=expected
+        )
+        if expected:
+            assert_that(result.stdout).contains("bundles.yaml reader")
+            for name, content in before.items():
+                assert_that((tmp_path / name).read_bytes()).is_equal_to(content)
+    if not expected:
+        _run(args=[*args, "generate", "marketplace"], cwd=tmp_path)
+        _run(args=[*args, "generate", "marketplace", "--check"], cwd=tmp_path)
+        for name in before:
+            assert_that((tmp_path / name).read_bytes()).is_equal_to(
+                (ROOT / name).read_bytes()
+            )
 
 
 @pytest.mark.parametrize(
