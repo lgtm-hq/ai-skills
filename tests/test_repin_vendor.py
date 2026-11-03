@@ -321,6 +321,7 @@ def _write_registry(*, repo_root: Path) -> None:
     Args:
         repo_root: Isolated repository root.
     """
+    _write_skill(directory=repo_root / "skills/branch", name="branch")
     repo_root.joinpath("vendors.yaml").write_text(
         "---\n"
         "vendors:\n"

@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from ai_skills_engine.generate.marketplace import _load_bundles
+from ai_skills_engine.generate.marketplace import _load_bundles, _validate_bundles
 from ai_skills_engine.manifest.edit import dump_document, patch_document
 from ai_skills_engine.manifest.layout import decode_template
 from ai_skills_engine.manifest.load import load_manifest, read_document
@@ -194,7 +194,7 @@ def render_legacy(repo_root: Path) -> dict[Path, bytes]:
         Destination paths and exact generated UTF-8 bytes.
 
     Raises:
-        ValueError: If either rendered document fails its compatibility reader.
+        ValueError: If either rendered document fails its compatibility consumer.
     """
     path = repo_root / "ai-skills.yaml"
     load_manifest(path)
@@ -220,12 +220,20 @@ def render_legacy(repo_root: Path) -> dict[Path, bytes]:
     # Both real readers must see the rendered pair, including their cross-file
     # collision checks. Never validate against stale destination files or write
     # one registry before discovering that the other is incompatible.
+    # Parse scratch bytes, but discover skills from the author's actual tree;
+    # do not synthesize payloads or copy/execute any vendor content.
     with TemporaryDirectory(prefix="ai-skills-legacy-") as directory:
         scratch = Path(directory)
         for destination, content in files.items():
             (scratch / destination.name).write_bytes(content)
         for name, reader in (
-            ("bundles.yaml", lambda: _load_bundles(repo_root=scratch)),
+            (
+                "bundles.yaml",
+                lambda: _validate_bundles(
+                    repo_root=repo_root,
+                    bundles=_load_bundles(repo_root=scratch),
+                ),
+            ),
             (
                 "vendors.yaml",
                 lambda: load_registry(registry_path=scratch / "vendors.yaml"),
@@ -233,7 +241,7 @@ def render_legacy(repo_root: Path) -> dict[Path, bytes]:
         ):
             try:
                 reader()
-            except (TypeError, ValueError) as exc:
+            except (OSError, TypeError, ValueError) as exc:
                 raise ValueError(
                     f"Legacy publication cannot satisfy {name} reader: {exc}"
                 ) from exc

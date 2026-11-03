@@ -22,6 +22,7 @@ from ai_skills_engine.manifest.load import load_manifest, read_document
 from ai_skills_engine.registry.registry import load_registry
 
 pytest_plugins = ("manifest_helpers",)
+pytestmark = pytest.mark.usefixtures("author_skills")
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -170,7 +171,13 @@ def test_legacy_rejects_duplicate_effective_destinations_before_writes(
         duplicate["capabilities"] = [{"id": "distinct", "path": "skills/distinct"}]
         duplicate["x-useful-note"] = {"preserve": True}
         if change == "disjoint":
-            duplicate["x-legacy-group"] = "distinct-group"
+            duplicate["x-legacy-group"] = duplicate["id"]
+            payload = tmp_path / "skills/distinct"
+            payload.mkdir()
+            (payload / "SKILL.md").write_text(
+                "---\nname: distinct\ndescription: Distinct fixture skill.\n---\n"
+                "\nA declared local publication fixture.\n"
+            )
         elif change == "extension-default":
             first["x-legacy-group"] = duplicate["id"]
             duplicate.pop("x-legacy-group")
@@ -201,7 +208,7 @@ def test_legacy_rejects_duplicate_effective_destinations_before_writes(
         groups = read_document(tmp_path / "bundles.yaml")["groups"]
         assert_that(groups).is_length(8 if change == "disjoint" else 7)
         if change == "disjoint":
-            assert_that(groups["distinct-group"]["skills"]).is_equal_to(["distinct"])
+            assert_that(groups["duplicate-copy"]["skills"]).is_equal_to(["distinct"])
         else:
             for name in before:
                 assert_that((tmp_path / name).read_bytes()).is_equal_to(
@@ -367,7 +374,9 @@ def test_actual_legacy_cli_publication_contract(
     (tmp_path / "ai-skills.yaml").write_text(dump_document(data))
     for name in ("bundles.yaml", "vendors.yaml"):
         (tmp_path / name).write_bytes((ROOT / name).read_bytes())
-    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+    before = {
+        path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()
+    }
     args = ["--repo-root", str(tmp_path), "manifest"]
     assert_that(cli.main([*args, "validate"])).is_zero()
     expected = 0 if change in {"baseline", "qualified", "include-all"} else 1
@@ -376,7 +385,11 @@ def test_actual_legacy_cli_publication_contract(
         if expected:
             assert_that(capsys.readouterr().out).contains("Legacy", "cannot represent")
         assert_that(
-            {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+            {
+                path.name: path.read_bytes()
+                for path in tmp_path.iterdir()
+                if path.is_file()
+            }
         ).is_equal_to(before)
 
 
@@ -389,6 +402,7 @@ def test_actual_cli_collection_additions_are_lintable(
     if change == "package":
         package = copy.deepcopy(data["packages"][0])
         package.update(id="new-package", **{"x-legacy-group": "new-package"})
+        package["capabilities"] = [{"id": "new-skill", "path": "skills/new-skill"}]
         data["packages"].append(package)
         data["exports"].append("new-package")
     elif change == "skill":
@@ -403,14 +417,23 @@ def test_actual_cli_collection_additions_are_lintable(
         data["exports"].extend(
             f"new-vendor/{package['id']}" for package in vendor["mapping"]["packages"]
         )
+    if change in {"package", "skill"}:
+        payload = tmp_path / "skills/new-skill"
+        payload.mkdir()
+        (payload / "SKILL.md").write_text(
+            "---\nname: new-skill\ndescription: New fixture skill.\n---\n"
+            "\nA declared local publication fixture.\n"
+        )
     (tmp_path / "ai-skills.yaml").write_text(dump_document(data))
     args = ["--repo-root", str(tmp_path), "manifest"]
     assert_that(cli.main([*args, "legacy"])).is_zero()
-    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+    before = {
+        path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()
+    }
     for name in ("ai-skills.yaml", "bundles.yaml", "vendors.yaml"):
         check_yaml(tmp_path / name)
     assert_that(cli.main([*args, "legacy"])).is_zero()
     assert_that(cli.main([*args, "legacy", "--check"])).is_zero()
     assert_that(
-        {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+        {path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()}
     ).is_equal_to(before)

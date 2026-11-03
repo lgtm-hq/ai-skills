@@ -14,6 +14,12 @@ from assertpy import assert_that
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 
 
+@pytest.fixture
+def author_skills(tmp_path: Path) -> None:
+    """Supply the actual first-party payloads declared by publication fixtures."""
+    shutil.copytree(src=SCRIPTS_DIR.parent / "skills", dst=tmp_path / "skills")
+
+
 @dataclass
 class VendorPinMatch:
     """Merged recursive captures with source spans for pin-update assertions."""

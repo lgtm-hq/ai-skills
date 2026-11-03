@@ -103,6 +103,11 @@ implementation as `scripts/generate_marketplace.py --check`. Commands discover a
 repository by walking up from cwd for `pyproject.toml` and `skills/`, or accept
 `--repo-root PATH`. Relative file operands retain their cwd-relative meaning.
 Tests import and monkeypatch the real package modules, never the script shims.
+The ordinary Python suite needs neither Bun nor npm dependencies. The gateway
+gate runs `scripts/ci/npm/manifest_yaml_boundary_tests.py` explicitly after its
+locked Bun dependency install. That required offline comparison uses Renovate's
+real production YAML parser options (`strict: false`); missing dependencies fail
+the gate rather than skipping it.
 `uv build` produces the typed wheel; runtime dependencies are separate from dev
 tooling. Consumer runtime bundling and install commands are subsequent work under
 ADR 0008.
