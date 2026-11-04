@@ -40,7 +40,7 @@ This catalog declares strict mode.
 Full-pin comparison reads every regular file, including unselected documentation.
 An unrelated relative file alias is validated without following or deleting it:
 it must point directly to an existing regular file inside the same pin, with no
-symlink components. Its canonical target is still compared. Directory, dangling,
+symlink path segments. Its canonical target is still compared. Directory, dangling,
 chained and escaping aliases fail comparison. Capability and resource collection,
 reference validation and artifact copying continue to reject all payload symlinks.
 
