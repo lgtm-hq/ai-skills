@@ -1,4 +1,4 @@
-"""Public commitment, filesystem scalar and activation-pattern regressions."""
+"""Public lock, filesystem scalar and activation-pattern regressions."""
 
 import json
 import posixpath
@@ -23,30 +23,34 @@ from ai_skills_engine.semver_advice import recommend_semver
 pytest_plugins = ["artifact_helpers"]
 
 
-@pytest.mark.parametrize("flag", ["--check", "--check-inputs"])
+@pytest.mark.parametrize(
+    "command",
+    [["lock", "--check"], ["lock", "--check", "--inputs-only"], ["build"]],
+    ids=["check", "inputs-only", "build"],
+)
 @pytest.mark.parametrize(
     "change",
     ["lf", "crlf", "missing", "malformed", "duplicate", "format", "digest", "utf8"],
 )
-def test_public_commitment_byte_equality(
+def test_public_lock_byte_equality(
     artifact_repo: Path,
     capsys: pytest.CaptureFixture[str],
-    flag: str,
+    command: list[str],
     change: str,
 ) -> None:
-    """Both public gates reject noncanonical/malformed bytes without rewriting."""
-    args = ["--repo-root", str(artifact_repo), "build"]
-    assert_that(cli.main([*args, "--write-digests"])).is_zero()
-    path = artifact_repo / "artifact-digests.json"
+    """Every public gate rejects noncanonical/malformed lock bytes without rewriting."""
+    args = ["--repo-root", str(artifact_repo)]
+    assert_that(cli.main([*args, "lock"])).is_zero()
+    path = artifact_repo / "ai-skills.lock"
     canonical = path.read_bytes()
     mutations = {
         "lf": canonical,
         "crlf": canonical.replace(b"\n", b"\r\n"),
         "malformed": b"{",
         "duplicate": canonical.replace(
-            b'"artifactFormat": 1', b'"artifactFormat": 1, "artifactFormat": 1'
+            b'"lockVersion": 1', b'"lockVersion": 1, "lockVersion": 1'
         ),
-        "format": canonical.replace(b'"artifactFormat": 1', b'"artifactFormat": 9'),
+        "format": canonical.replace(b'"lockVersion": 1', b'"lockVersion": 9'),
         "digest": canonical.replace(b"sha256:", b"sha255:", 1),
         "utf8": b"\xff",
     }
@@ -54,13 +58,23 @@ def test_public_commitment_byte_equality(
         path.unlink()
     else:
         path.write_bytes(mutations[change])
-    assert_that(cli.main([*args, flag])).is_equal_to(0 if change == "lf" else 1)
+    capsys.readouterr()
+    assert_that(cli.main([*args, *command])).is_equal_to(0 if change == "lf" else 1)
     if change == "missing":
         assert_that(path.exists()).is_false()
     else:
         assert_that(path.read_bytes()).is_equal_to(mutations[change])
-    if change == "crlf":
-        assert_that(capsys.readouterr().err).contains("rebuilt artifact digests")
+    expected = {
+        "crlf": "is not canonical",
+        "missing": "ai-skills.lock not found",
+        "malformed": "invalid JSON",
+        "duplicate": "duplicate key 'lockVersion'",
+        "format": "unsupported lockVersion 9",
+        "digest": "invalid value at /manifest/digest",
+        "utf8": "not UTF-8",
+    }
+    if change in expected:
+        assert_that(capsys.readouterr().err).contains(expected[change])
 
 
 @pytest.mark.parametrize("owner", ["capability", "projected-resource"])
@@ -125,8 +139,9 @@ def test_public_scalar_opens_copied_resource(
     else:
         package["capabilities"][0]["x-resource-paths"] = declaration
     manifest.write_text(dump_document(document))
-    args = ["--repo-root", str(artifact_repo), "build"]
-    assert_that(cli.main([*args, "--write-digests"])).is_zero()
+    args = ["--repo-root", str(artifact_repo)]
+    assert_that(cli.main([*args, "lock"])).is_zero()
+    assert_that(cli.main([*args, "build"])).is_zero()
     output = artifact_repo / "dist/artifacts"
     cap = next(
         item
@@ -159,8 +174,8 @@ def test_public_scalar_opens_copied_resource(
     ).is_equal_to(target.read_bytes())
     assert_that(cap["portability"]).is_empty()
     assert_that(config.read_text()).is_equal_to(text)
-    assert_that(cli.main([*args, "--check"])).is_zero()
-    assert_that(cli.main([*args, "--check-inputs"])).is_zero()
+    assert_that(cli.main([*args, "lock", "--check"])).is_zero()
+    assert_that(cli.main([*args, "lock", "--check", "--inputs-only"])).is_zero()
 
 
 def test_public_markdown_keeps_url_serialization(artifact_repo: Path) -> None:
@@ -176,7 +191,9 @@ def test_public_markdown_keeps_url_serialization(artifact_repo: Path) -> None:
         "---\nname: start\ndescription: URL fixture.\n---\n"
         f"[Data](<{destination}>)\n"
     )
-    assert_that(cli.main(["--repo-root", str(artifact_repo), "build"])).is_zero()
+    assert_that(
+        cli.main(["--repo-root", str(artifact_repo), "bake", "artifacts"])
+    ).is_zero()
     output = artifact_repo / "dist/artifacts"
     files = tar_files(output / artifact_name("fixture/tools"))
     cap = next(
@@ -217,7 +234,9 @@ def test_public_scalar_safety_diagnostics(artifact_repo: Path, raw: str) -> None
     """Missing, undeclared and unsafe scalar operands never become portable."""
     (artifact_repo / "undeclared.txt").write_text("Outside required closure.\n")
     (artifact_repo / "skills/start/config.json").write_text(json.dumps({"script": raw}))
-    assert_that(cli.main(["--repo-root", str(artifact_repo), "build"])).is_zero()
+    assert_that(
+        cli.main(["--repo-root", str(artifact_repo), "bake", "artifacts"])
+    ).is_zero()
     output = artifact_repo / "dist/artifacts"
     cap = next(
         item
@@ -278,7 +297,9 @@ def test_public_resolved_activation_advice(
         source.write_text(
             original.replace("\n---\n# Start", "\n" + declaration + "---\n# Start")
         )
-        assert_that(cli.main(["--repo-root", str(artifact_repo), "build"])).is_zero()
+        assert_that(
+            cli.main(["--repo-root", str(artifact_repo), "bake", "artifacts"])
+        ).is_zero()
         index = index_at(artifact_repo / "dist/artifacts")
         cap = next(
             item

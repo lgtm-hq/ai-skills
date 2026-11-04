@@ -1,4 +1,4 @@
-"""Public artifact command and reviewed-digest drift boundaries."""
+"""Public artifact commands and resolution-lock drift boundaries."""
 
 import json
 from pathlib import Path
@@ -7,32 +7,43 @@ import pytest
 from assertpy import assert_that
 
 from ai_skills_engine import cli
-from ai_skills_engine.artifacts.drift import check_inputs, read_digests
+from ai_skills_engine.lockfile import read_lock
 
 pytest_plugins = ["artifact_helpers", "ingest_helpers"]
 
 
-def test_public_build_and_drift(
+def test_public_lock_build_and_drift(
     artifact_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Actual commands generate commitments and reject local or reviewed drift."""
-    args = ["--repo-root", str(artifact_repo), "build"]
-    assert_that(cli.main([*args, "--write-digests"])).is_zero()
-    path = artifact_repo / "artifact-digests.json"
+    """Actual commands generate the lock and reject local or reviewed drift."""
+    args = ["--repo-root", str(artifact_repo)]
+    assert_that(cli.main([*args, "lock"])).is_zero()
+    path = artifact_repo / "ai-skills.lock"
     reviewed = path.read_bytes()
-    assert_that(cli.main([*args, "--check"])).is_zero()
-    assert_that(cli.main([*args, "--check-inputs"])).is_zero()
+    assert_that(cli.main([*args, "lock", "--check"])).is_zero()
+    assert_that(cli.main([*args, "lock", "--check", "--inputs-only"])).is_zero()
+    assert_that(cli.main([*args, "build"])).is_zero()
     source = artifact_repo / "shared/data/input.txt"
     source.write_text(source.read_text() + "Changed fixture bytes.\n")
-    assert_that(cli.main([*args, "--check"])).is_equal_to(1)
-    assert_that(cli.main([*args, "--check-inputs"])).is_equal_to(1)
-    assert_that(capsys.readouterr().err).contains("rebuilt artifact digests")
+    capsys.readouterr()
+    for command in (
+        ["lock", "--check"],
+        ["lock", "--check", "--inputs-only"],
+        ["build"],
+    ):
+        assert_that(cli.main([*args, *command])).is_equal_to(1)
+        assert_that(capsys.readouterr().err).contains("local author inputs changed")
     assert_that(path.read_bytes()).is_equal_to(reviewed)
-    assert_that(cli.main([*args, "--write-digests"])).is_zero()
-    data = read_digests(path)
-    data["packages"]["fixture/tools"]["artifactDigest"] = "sha256:" + "0" * 64
-    path.write_text(json.dumps(data))
-    assert_that(cli.main([*args, "--check"])).is_equal_to(1)
+    assert_that(cli.main([*args, "lock"])).is_zero()
+    data = json.loads(path.read_text())
+    data["packages"][0]["artifactDigest"] = "sha256:" + "0" * 64
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    assert_that(cli.main([*args, "lock", "--check"])).is_equal_to(1)
+    assert_that(capsys.readouterr().err).contains("rebuilt ai-skills.lock")
+    assert_that(cli.main([*args, "build"])).is_equal_to(1)
+    assert_that(capsys.readouterr().err).contains(
+        "artifactDigest locked sha256:" + "0" * 64, "nothing was published"
+    )
 
 
 def test_bake_command_alias_and_missing_vendor(
@@ -49,7 +60,9 @@ def test_bake_command_alias_and_missing_vendor(
         + "a" * 40
         + '"\n'
     )
-    assert_that(cli.main(["build", "--repo-root", str(artifact_repo)])).is_equal_to(1)
+    assert_that(
+        cli.main(["bake", "artifacts", "--repo-root", str(artifact_repo)])
+    ).is_equal_to(1)
     assert_that(capsys.readouterr().err).contains("selection.vendor-unavailable")
 
 
@@ -59,46 +72,37 @@ def test_version_bump_requires_regenerating_tar_commitment(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A new installed builder changes tar identity while preserving tree identity."""
-    args = ["--repo-root", str(artifact_repo), "build"]
+    args = ["--repo-root", str(artifact_repo)]
     builder = "1.2.3"
     monkeypatch.setattr("ai_skills_engine.artifact.version", lambda _name: builder)
-    assert_that(cli.main([*args, "--write-digests"])).is_zero()
-    path = artifact_repo / "artifact-digests.json"
-    before = read_digests(path)
+    assert_that(cli.main([*args, "lock"])).is_zero()
+    path = artifact_repo / "ai-skills.lock"
+    before = read_lock(path)
     builder = "1.2.4"
-    assert_that(cli.main([*args, "--check"])).is_equal_to(1)
-    assert_that(capsys.readouterr().err).contains("artifactDigest")
-    assert_that(cli.main([*args, "--write-digests"])).is_zero()
-    after = read_digests(path)
-    assert_that(after["inputsDigest"]).is_equal_to(before["inputsDigest"])
-    assert_that(after["packages"].keys()).is_equal_to(before["packages"].keys())
-    for package, entry in after["packages"].items():
-        assert_that(entry["treeDigest"]).is_equal_to(
-            before["packages"][package]["treeDigest"]
+    for command in (["lock", "--check"], ["build"]):
+        assert_that(cli.main([*args, *command])).is_equal_to(1)
+        assert_that(capsys.readouterr().err).contains(
+            "built by engine 1.2.3", "this engine is 1.2.4"
         )
-        assert_that(entry["artifactDigest"]).is_not_equal_to(
-            before["packages"][package]["artifactDigest"]
-        )
+    assert_that(cli.main([*args, "lock"])).is_zero()
+    after = read_lock(path)
+    assert_that(after.manifest).is_equal_to(before.manifest)
+    assert_that([item.id for item in after.packages]).is_equal_to(
+        [item.id for item in before.packages]
+    )
+    for old, new in zip(before.packages, after.packages, strict=True):
+        assert_that(new.tree_digest).is_equal_to(old.tree_digest)
+        assert_that(new.artifact_digest).is_not_equal_to(old.artifact_digest)
+    assert_that(cli.main([*args, "build"])).is_zero()
     index = json.loads((artifact_repo / "dist/artifacts/index.json").read_text())
     assert_that(index["engineVersion"]).is_equal_to(builder)
-    assert_that(cli.main([*args, "--check"])).is_zero()
-
-
-def test_unknown_digest_format_fails(artifact_repo: Path) -> None:
-    """Unknown formats and duplicate keys cannot become a reviewed commitment."""
-    path = artifact_repo / "artifact-digests.json"
-    path.write_text('{"artifactFormat": 7}')
-    with pytest.raises(ValueError, match="Unsupported"):
-        check_inputs(root=artifact_repo, path=path)
-    path.write_text('{"artifactFormat": 1, "artifactFormat": 1}')
-    with pytest.raises(ValueError, match="duplicate"):
-        read_digests(path)
+    assert_that(cli.main([*args, "lock", "--check"])).is_zero()
 
 
 def test_explicit_pinned_acquisition_uses_real_offline_transport_boundary(
     artifact_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Fetch authorization reuses bounded archive ingestion without real network."""
+    """Lock reuses bounded archive ingestion once; check and build stay offline."""
     import io
     import tarfile
 
@@ -130,33 +134,46 @@ def test_explicit_pinned_acquisition_uses_real_offline_transport_boundary(
             }
         )
     )
-    args = ["build", "--repo-root", str(consumer)]
-    assert_that(cli.main([*args, "--fetch-vendors", "--write-digests"])).is_zero()
+    args = ["--repo-root", str(consumer)]
+    assert_that(cli.main([*args, "lock"])).is_zero()
     assert_that(received).is_equal_to(["/repos/fixture/artifacts/tarball/" + "a" * 40])
-    assert_that(cli.main([*args, "--fetch-vendors", "--check"])).is_zero()
-    assert_that(received).is_length(2)
+    for command in (["lock"], ["lock", "--fetch"], ["lock", "--check"], ["build"]):
+        assert_that(cli.main([*args, *command])).is_zero()
+    assert_that(received).is_length(1)
+    assert_that(read_lock(consumer / "ai-skills.lock").packages).is_not_empty()
 
 
 def test_recursive_acquisition_fails_before_fetch(
-    artifact_repo: Path, tmp_path: Path
+    artifact_repo: Path, tmp_path: Path, isolated_source_cache: Path
 ) -> None:
     """Recursive source declarations never start an unbounded acquisition walk."""
-    from ai_skills_engine.artifacts.acquire import acquire_inputs
+    from ai_skills_engine.commands.source_mode import SourceMode
+    from ai_skills_engine.commands.sources import materialize_sources
     from ai_skills_engine.manifest.edit import dump_document
     from ai_skills_engine.manifest.load import read_document
+    from ai_skills_engine.source_cache import SourceCache
 
     document = read_document(artifact_repo / "ai-skills.yaml")
     document["vendors"] = [
         {"id": "upstream", "repo": "fixture/recursive", "sha": "a" * 40}
     ]
     (artifact_repo / "ai-skills.yaml").write_text(dump_document(document))
+
+    def fetch(**_kwargs: object) -> None:
+        """Fail if the recursion guard lets any acquisition start."""
+        pytest.fail("Recursive inputs must fail before fetching")
+
     with pytest.raises(ValueError, match="Recursive pinned"):
-        acquire_inputs(
+        materialize_sources(
             root=artifact_repo,
-            supplied={"upstream": artifact_repo, "upstream/upstream": artifact_repo},
-            temporary=tmp_path / "acquired",
+            cache=SourceCache(root=isolated_source_cache),
+            scratch=tmp_path / "acquired",
+            mode=SourceMode.RESOLVE,
+            locked={},
+            supplied={"upstream": artifact_repo},
+            fetcher=fetch,
         )
-    assert_that((tmp_path / "acquired").exists()).is_false()
+    assert_that(list(isolated_source_cache.rglob("*.tar"))).is_length(1)
 
 
 def test_compatibility_offline_bake_preserves_pristine_input(

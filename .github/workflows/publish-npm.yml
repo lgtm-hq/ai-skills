@@ -112,8 +112,15 @@ jobs:
       - name: Bake vendor plugins
         run: bash scripts/ci/bake_vendor_plugins_gate.sh
 
-      - name: Rebuild and compare reviewed capability artifacts
-        run: uv run ai-skills-engine build --fetch-vendors --check
+      - name: Fetch locked capability artifact sources
+        run: uv run ai-skills-engine lock --fetch
+
+      - name: Check the resolution lock
+        run: uv run ai-skills-engine lock --check
+
+      - name: Rebuild capability artifacts offline from the lock
+        # Fails closed if any rebuilt artifactDigest differs from ai-skills.lock.
+        run: uv run ai-skills-engine build
 
       - name: Build and verify gateway package
         run: bash scripts/ci/npm/check_ai_skills_package.sh

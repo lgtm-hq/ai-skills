@@ -49,10 +49,13 @@ When the tree is present (after a local bake or the CI/publish gate),
 
 - Vendor-definition and re-pin PRs shrink to authored substance. The pin
   SHA is the supply-chain review point.
-- Rebuilds of a past release depend on GitHub still serving the vendor
-  repo at the pinned SHA. If that object disappears, that release cannot
-  be re-baked from the repo; the published npm tarball remains the
-  immutable artifact.
+- Rebuilds of a past release no longer depend on GitHub still serving the
+  vendor repo at the pinned SHA. A warm source cache, or a mirrored copy of
+  one, rebuilds offline: `ai-skills-engine build` reads only the committed
+  `ai-skills.lock` and digest-verified cached sources (see the resolution
+  lock amendment below). Only a cold cache needs the forge, and fetched bytes
+  must still match the locked `sourceDigest`. The published npm tarball
+  remains the immutable artifact.
 - Retaining vendor content long-term means promoting it to first-party
   `skills/`, not keeping a stale pin so an old bake stays in git.
 - Offline clones cannot inspect baked vendor trees until they bake (or
@@ -67,8 +70,9 @@ Their release identity is the SHA-256 of the uncompressed tar, independent of
 compression choices. The tar digest is external to its index to avoid a
 self-reference.
 
-A generated, committed `artifact-digests.json` records each selected package's
-tree digest and external tar digest. Updating pins, selected payloads, source
+A generated, committed `artifact-digests.json` recorded each selected package's
+tree digest and external tar digest (superseded by `ai-skills.lock`; see the
+resolution lock amendment below). Updating pins, selected payloads, source
 resources or builder inputs requires regenerating this commitment from a valid
 selection. Validation checks local author-input drift offline. Publishing must
 also rebuild with complete pinned inputs and compare the regenerated commitment;
@@ -112,3 +116,37 @@ field to the commitment. Review covers the regenerated identity before release;
 publishing still rebuilds pristine pinned inputs with `build --fetch-vendors
 --check` and fails closed on any difference. Offline `--check-inputs` continues
 to detect local author-input drift without acquiring vendor sources.
+Issue #574 later moved this commitment into `ai-skills.lock` and replaced these
+commands with `lock`, `lock --fetch`, `lock --check` and an offline `build`.
+
+## Amendment: resolution lock and frozen source cache (2026-11-04)
+
+Issue #574 replaces `artifact-digests.json` with the committed, deterministic
+`ai-skills.lock` defined by ADR 0011. The lock records the builder identity, the
+digest of the parsed manifest (independent of YAML key order), the digest of
+local author inputs, each pinned vendor's `sourceDigest` and filters, and each
+package's `artifactDigest`, `treeDigest`, capability closures and index lineage.
+The `sourceDigest` hashes a canonical tar of the extracted tree, so forge
+re-compression never changes it. Machine-local install receipts are a separate
+file and never mix with the lock.
+
+Resolution and building are separate. `ai-skills-engine lock` resolves changed
+manifest entries, fetches missing sources into the content-addressed cache at
+`${AI_SKILLS_CACHE:-${XDG_CACHE_HOME:-~/.cache}/ai-skills}` and never moves an
+existing pin; repinning stays a separate command. `lock --fetch` fills the cache
+for the existing lock only. `lock --check` writes nothing and fails on a stale
+lock or any difference from a cache-only rebuild; `--inputs-only` performs the
+offline checkout drift check without vendor sources. `ai-skills-engine build`
+never resolves or fetches. It refuses a stale or non-canonical lock and any
+missing or corrupted cache entry with a `lock --fetch` hint, and it publishes
+`dist/artifacts/` only when every rebuilt digest equals the lock. Cache reads
+re-verify digests; cache writes use a temporary file, fsync and rename, so
+concurrent CI jobs are safe. The compatibility vendor bake reads pinned trees
+through the same cache.
+
+`scripts/validate.sh` runs `lock --check --inputs-only`. CI's lock gate and
+`publish-npm.yml` run `lock --fetch`, `lock --check` and `build`; publishing
+fails closed if any `artifactDigest` differs. The release version hook
+regenerates the lock for the new builder identity with `ai-skills-engine lock`.
+`ai-skills-engine bake artifacts` remains an explicit-input development writer
+that never reads or writes the lock.

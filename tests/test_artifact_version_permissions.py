@@ -123,8 +123,9 @@ def test_public_project_version_fallback(
     manifest.write_text(dump_document(document))
     if pyproject is not None:
         (artifact_repo / "pyproject.toml").write_text(pyproject)
-    args = ["--repo-root", str(artifact_repo), "build"]
-    assert_that(cli.main([*args, "--write-digests"])).is_zero()
+    args = ["--repo-root", str(artifact_repo)]
+    assert_that(cli.main([*args, "lock"])).is_zero()
+    assert_that(cli.main([*args, "build"])).is_zero()
     expected = (
         "1.2.3"
         if pyproject and 'version="1.2.3"' in pyproject
@@ -132,28 +133,26 @@ def test_public_project_version_fallback(
     )
     index = index_at(artifact_repo / "dist/artifacts")
     assert_that(index["packages"][0]["version"]).is_equal_to(expected)
-    reviewed = (artifact_repo / "artifact-digests.json").read_bytes()
-    for flag in ("--check", "--check-inputs"):
-        assert_that(cli.main([*args, flag])).is_zero()
-    assert_that((artifact_repo / "artifact-digests.json").read_bytes()).is_equal_to(
-        reviewed
-    )
+    reviewed = (artifact_repo / "ai-skills.lock").read_bytes()
+    for command in (["lock", "--check"], ["lock", "--check", "--inputs-only"]):
+        assert_that(cli.main([*args, *command])).is_zero()
+    assert_that((artifact_repo / "ai-skills.lock").read_bytes()).is_equal_to(reviewed)
 
 
 def test_public_malformed_project_fails_closed(
     artifact_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Malformed TOML never falls back or replaces a reviewed artifact commitment."""
-    args = ["--repo-root", str(artifact_repo), "build"]
-    assert_that(cli.main([*args, "--write-digests"])).is_zero()
-    reviewed = (artifact_repo / "artifact-digests.json").read_bytes()
+    """Malformed TOML never falls back or replaces the reviewed resolution lock."""
+    args = ["--repo-root", str(artifact_repo)]
+    assert_that(cli.main([*args, "lock"])).is_zero()
+    reviewed = (artifact_repo / "ai-skills.lock").read_bytes()
     (artifact_repo / "pyproject.toml").write_text('[project\nversion="1.2.3"')
-    for flag in ("--write-digests", "--check"):
-        assert_that(cli.main([*args, flag])).is_equal_to(1)
-    assert_that(capsys.readouterr().err).contains("artifacts:")
-    assert_that((artifact_repo / "artifact-digests.json").read_bytes()).is_equal_to(
-        reviewed
-    )
+    capsys.readouterr()
+    assert_that(cli.main([*args, "lock"])).is_equal_to(1)
+    assert_that(capsys.readouterr().err).contains("lock:", "table declaration")
+    for command in (["lock", "--check"], ["build"]):
+        assert_that(cli.main([*args, *command])).is_equal_to(1)
+    assert_that((artifact_repo / "ai-skills.lock").read_bytes()).is_equal_to(reviewed)
 
 
 @pytest.mark.parametrize("key", ["allowed-tools", "tools", "disallowedTools"])

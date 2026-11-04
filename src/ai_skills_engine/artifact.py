@@ -42,7 +42,14 @@ from ai_skills_engine.selection.load import load_inputs
 from ai_skills_engine.selection.model import SelectionResult
 from ai_skills_engine.selection.state import State
 
-DIGEST_FILENAME = "artifact-digests.json"
+
+def installed_engine_version() -> str:
+    """Identify the installed builder distribution.
+
+    Returns:
+        Version of the installed ``ai-skills`` distribution.
+    """
+    return version("ai-skills")
 
 
 def _selected(selection: SelectionResult) -> set[str]:
@@ -106,7 +113,7 @@ def write_artifacts(
         engine_version: Explicit builder identity for reproducibility fixtures.
 
     Returns:
-        Generated committed-digest document, including external tar identities.
+        Package tree and external tar digests keyed by package ID.
 
     Raises:
         ValueError: For invalid selection, stale observations or malformed output.
@@ -154,7 +161,9 @@ def write_artifacts(
     resource_records: list[dict[str, Any]] = []
     closures: dict[str, set[str]] = {}
     document = read_document(root / "ai-skills.yaml")
-    builder = engine_version if engine_version is not None else version("ai-skills")
+    builder = (
+        engine_version if engine_version is not None else installed_engine_version()
+    )
     if any(path.is_symlink() for path in (destination, *destination.parents)):
         raise ValueError("Symlink rejected in artifact output path")
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -329,7 +338,7 @@ def build(
         destination: Output override, defaulting to dist/artifacts/.
 
     Returns:
-        Complete generated digest document.
+        Package tree and external tar digests keyed by package ID.
     """
     roots = vendor_roots or {}
     inventory, selection = load_inputs(root, vendor_roots=roots)

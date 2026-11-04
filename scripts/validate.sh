@@ -33,8 +33,9 @@ Checks:
       (uv run ai-skills-engine manifest validate --terminology)
   12. Generated legacy registries have no byte drift from ai-skills.yaml
       (uv run ai-skills-engine manifest legacy --check)
-  13. Reviewed capability artifact commitments match local author inputs
-      (uv run ai-skills-engine build --check-inputs; publish also rebuilds)
+  13. ai-skills.lock matches the manifest, local author inputs and builder
+      (uv run ai-skills-engine lock --check --inputs-only; CI and publish also
+      run lock --fetch, lock --check and the offline build)
 EOF
   exit 0
 fi
@@ -52,7 +53,7 @@ fi
 if ! uv run ai-skills-engine manifest legacy --check; then
   errors=$((errors + 1))
 fi
-if ! uv run ai-skills-engine build --check-inputs; then
+if ! uv run ai-skills-engine lock --check --inputs-only; then
   errors=$((errors + 1))
 fi
 

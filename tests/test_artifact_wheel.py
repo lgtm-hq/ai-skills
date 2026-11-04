@@ -16,7 +16,7 @@ pytest_plugins = ["artifact_helpers", "test_ingest_wheel"]
 def test_actual_wheel_public_artifact_commands(
     wheel_site: Path, artifact_repo: Path, tmp_path: Path
 ) -> None:
-    """Wheel entrypoint, schemas and drift commands work with isolated imports."""
+    """Wheel entrypoint, schemas, lock and build commands work with isolated imports."""
     dependencies = Path(yaml.__file__).resolve().parent.parent
     launcher = tmp_path / "ai-skills-engine"
     # Use the entrypoint declared by the actual built wheel, not a source shim.
@@ -41,10 +41,12 @@ def test_actual_wheel_public_artifact_commands(
     }
     args = [str(launcher), "--repo-root", str(artifact_repo)]
     for command in (
-        ["build", "--write-digests"],
-        ["build", "--check"],
-        ["bake", "artifacts", "--check"],
-        ["build", "--check-inputs"],
+        ["lock"],
+        ["lock", "--check"],
+        ["lock", "--fetch"],
+        ["lock", "--check", "--inputs-only"],
+        ["build"],
+        ["bake", "artifacts", "--output", str(tmp_path / "explicit")],
     ):
         result = subprocess.run(
             args=[*args, *command],
@@ -89,7 +91,7 @@ def test_actual_wheel_public_artifact_commands(
     source = artifact_repo / "shared/data/input.txt"
     source.write_text(source.read_text() + "Changed outside checkout.\n")
     failed = subprocess.run(
-        args=[*args, "build", "--check"],
+        args=[*args, "lock", "--check"],
         cwd=tmp_path,
         env=environment,
         capture_output=True,
@@ -98,7 +100,10 @@ def test_actual_wheel_public_artifact_commands(
         timeout=60,
     )  # nosec B603 - explicit local wheel entrypoint, no shell
     assert_that(failed.returncode).is_equal_to(1)
-    assert_that(failed.stderr).contains("rebuilt artifact digests")
+    assert_that(failed.stderr).contains("local author inputs changed")
+    assert_that((tmp_path / "explicit/index.json").read_bytes()).is_equal_to(
+        (artifact_repo / "dist/artifacts/index.json").read_bytes()
+    )
 
 
 def test_actual_wheel_hosted_path_regressions(wheel_site: Path, tmp_path: Path) -> None:
@@ -111,6 +116,9 @@ def test_actual_wheel_hosted_path_regressions(wheel_site: Path, tmp_path: Path) 
         str(tests / "test_artifact_hosted_findings.py"),
         str(tests / "test_artifact_version_permissions.py"),
         str(tests / "test_semver_advice.py"),
+        str(tests / "test_lockfile.py"),
+        str(tests / "test_source_cache.py"),
+        str(tests / "test_lock_build_commands.py"),
         "-q",
         "-n",
         "0",
@@ -121,6 +129,9 @@ def test_actual_wheel_hosted_path_regressions(wheel_site: Path, tmp_path: Path) 
         "--cov=ai_skills_engine.provenance.input_files",
         "--cov=ai_skills_engine.artifacts.snapshot",
         "--cov=ai_skills_engine.semver_advice",
+        "--cov=ai_skills_engine.lockfile",
+        "--cov=ai_skills_engine.source_cache",
+        "--cov=ai_skills_engine.commands",
         "--cov-report=term-missing",
     ]
     command = (
