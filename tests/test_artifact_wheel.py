@@ -107,6 +107,7 @@ def test_actual_wheel_hosted_path_regressions(wheel_site: Path, tmp_path: Path) 
     tests = Path(__file__).parent.resolve()
     version = metadata.Distribution.at(next(wheel_site.glob("*.dist-info"))).version
     arguments = [
+        str(tests / "test_artifact_boundaries.py"),
         str(tests / "test_artifact_hosted_findings.py"),
         str(tests / "test_artifact_version_permissions.py"),
         str(tests / "test_semver_advice.py"),
@@ -114,6 +115,9 @@ def test_actual_wheel_hosted_path_regressions(wheel_site: Path, tmp_path: Path) 
         "-n",
         "0",
         "--cov=ai_skills_engine.artifacts.materialize",
+        "--cov=ai_skills_engine.artifacts.drift",
+        "--cov=ai_skills_engine.artifacts.references",
+        "--cov=ai_skills_engine.inventory.lint",
         "--cov=ai_skills_engine.provenance.input_files",
         "--cov=ai_skills_engine.artifacts.snapshot",
         "--cov=ai_skills_engine.semver_advice",

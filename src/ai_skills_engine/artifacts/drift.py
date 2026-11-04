@@ -105,14 +105,14 @@ def compare_digests(*, expected: dict[str, Any], path: Path) -> bool:
     Returns:
         True only for canonical byte equality.
     """
-    actual = path.read_text() if path.is_file() else ""
-    rendered = canonical_json(expected).decode()
+    actual = path.read_bytes() if path.is_file() else b""
+    rendered = canonical_json(expected)
     if actual == rendered:
         return True
     sys.stderr.writelines(
         difflib.unified_diff(
-            actual.splitlines(keepends=True),
-            rendered.splitlines(keepends=True),
+            actual.decode("utf-8", errors="replace").splitlines(keepends=True),
+            rendered.decode("utf-8").splitlines(keepends=True),
             fromfile=str(path),
             tofile="rebuilt artifact digests",
         )

@@ -8,7 +8,7 @@ from pathlib import Path
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
-from ai_skills_engine.artifacts.references import rewrite_fields
+from ai_skills_engine.artifacts.references import resource_path, rewrite_fields
 from ai_skills_engine.frontmatter import split_frontmatter
 from ai_skills_engine.inventory.capability import Capability
 from ai_skills_engine.inventory.capability_id import CapabilityId
@@ -70,7 +70,7 @@ def _check_scalar_reference(
     Raises:
         ValueError: For undeclared, missing or unsafe destinations.
     """
-    local = _local_markdown_path(raw_target=raw)
+    local = resource_path(raw)
     if local is None:
         return
     target = path.parent / local

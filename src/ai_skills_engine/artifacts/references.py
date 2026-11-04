@@ -22,6 +22,30 @@ _CANDIDATES = re.compile(r"\]\(|\]:")
 _RELATIVE = re.compile(r"""(?<![\w/])(?:\.\.?/)+[^\s<>"'`\[\](){}]+""")
 
 
+def resource_path(raw: str) -> str | None:
+    """Retain literal filesystem spelling in an explicitly declared scalar.
+
+    Percent escapes, query and fragment characters are ordinary filename bytes.
+    URL operands retain the existing remote/unsafe scheme policy.
+
+    Args:
+        raw: Parsed JSON/YAML/frontmatter scalar.
+
+    Returns:
+        Unmodified local operand, or None for empty/remote operands.
+
+    Raises:
+        ValueError: For unsafe schemes, backslashes or NUL bytes.
+    """
+    if "\\" in raw or "\0" in raw:
+        raise ValueError(f"Unsafe resource path: {raw}")
+    if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", raw) or raw.startswith("//"):
+        # Share scheme validation only; filesystem strings never pass its decoder.
+        _local_markdown_path(raw_target=raw)
+        return None
+    return raw or None
+
+
 def validate_artifact_references(*, root: Path) -> None:
     """Validate emitted artifact links to existing files or directories.
 

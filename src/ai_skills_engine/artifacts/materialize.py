@@ -11,6 +11,7 @@ from ai_skills_engine.artifacts.format import Files, digest, files_digest
 from ai_skills_engine.artifacts.references import (
     markdown_body,
     opaque_references,
+    resource_path,
     rewrite_fields,
     rewrite_markdown,
 )
@@ -111,14 +112,15 @@ def _declared_path(
     Returns:
         Rewritten operand or None to preserve the original bytes.
     """
-    local = _local_markdown_path(raw_target=raw)
-    if (
-        local is not None
-        and _destination((original.parent / local).resolve(), coordinates) is None
-    ):
+    local = resource_path(raw)
+    if local is None:
+        return None
+    mapped = _destination((original.parent / local).resolve(), coordinates)
+    if mapped is None:
         reasons.add(f"{relative}: declared path is outside payload/required resources")
         return None
-    return _relocate(raw, original=original, relative=relative, coordinates=coordinates)
+    moved = os.path.relpath(mapped, start=str(PurePosixPath(relative).parent))
+    return moved if moved != raw else None
 
 
 def lineage_json(lineage: tuple[Lineage, ...]) -> list[dict[str, Any]]:

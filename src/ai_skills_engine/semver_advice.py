@@ -30,22 +30,24 @@ def _capabilities(index: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
-def _activation_values(value: Any) -> set[str]:
+def _activation_values(value: Any) -> set[str] | None:
     """Compare activation patterns independently of tool permission syntax.
 
     Args:
         value: JSON scalar or array.
 
     Returns:
-        String elements for literal set comparison; patterns are never executed.
+        Whole patterns for literal comparison, or None for unsupported syntax.
+        Only arrays declare unambiguous list boundaries; scalar patterns are
+        never split on commas or whitespace and no pattern is executed.
     """
+    if value is None:
+        return set()
     if isinstance(value, list):
-        return set(map(str, value))
+        return set(value) if all(isinstance(item, str) for item in value) else None
     if isinstance(value, str):
-        return {
-            part.strip() for part in value.replace(",", " ").split() if part.strip()
-        }
-    return set()
+        return {value} if value else set()
+    return None
 
 
 def _permission_values(value: Any) -> set[str] | None:
@@ -103,10 +105,14 @@ def _widened(*, before: dict[str, Any], after: dict[str, Any]) -> tuple[str, ...
         elif key == "alwaysApply":
             broadens = right is True and left is not True
         elif key in {"paths", "globs"}:
-            broadens = bool(left) and (
-                not right
-                or not _activation_values(right).issubset(_activation_values(left))
-            )
+            left_patterns = _activation_values(left)
+            right_patterns = _activation_values(right)
+            if left_patterns is None or right_patterns is None:
+                broadens = True
+            else:
+                broadens = bool(left) and (
+                    not right_patterns or not right_patterns.issubset(left_patterns)
+                )
         elif key in {"allowed-tools", "tools", "disallowedTools"}:
             left_permissions = _permission_values(left)
             right_permissions = _permission_values(right)
