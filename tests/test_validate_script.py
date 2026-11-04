@@ -11,9 +11,12 @@ import pytest
 from assertpy import assert_that
 from loguru import logger
 
-from ai_skills_engine.artifacts.drift import inputs_digest
-from ai_skills_engine.artifacts.format import canonical_json
+from ai_skills_engine.artifacts.drift import inputs_digest, manifest_digest
+from ai_skills_engine.commands.sources import current_builder
 from ai_skills_engine.generate import marketplace
+from ai_skills_engine.lockfile import write_lock
+from ai_skills_engine.lockmodel.lock import Lock
+from ai_skills_engine.lockmodel.manifest_record import ManifestRecord
 from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.legacy import write_legacy
 from ai_skills_engine.manifest.load import read_document
@@ -117,14 +120,19 @@ def _run_validate(
         (cwd / "ai-skills.yaml").write_text(dump_document(declaration))
         write_legacy(cwd)
         marketplace.main(["--repo-root", str(cwd)])
-        (cwd / "artifact-digests.json").write_bytes(
-            canonical_json(
-                {
-                    "artifactFormat": 1,
-                    "inputsDigest": inputs_digest(cwd),
-                    "packages": {},
-                }
-            )
+        # Offline drift gate: the copied manifest and inputs must match the lock.
+        write_lock(
+            path=cwd / "ai-skills.lock",
+            lock=Lock(
+                builder=current_builder(),
+                manifest=ManifestRecord(
+                    api_version=declaration["apiVersion"],
+                    digest=manifest_digest(cwd),
+                    inputs_digest=inputs_digest(cwd),
+                ),
+                vendors=(),
+                packages=(),
+            ),
         )
     env = dict(os.environ)
     # Use the existing project environment for the copied Python validators.
@@ -184,7 +192,7 @@ def audit_validation_repo(
         '  "run python "*/validate_skills.py" skills" | '
         '"run ai-skills-engine manifest validate --terminology" | '
         '"run ai-skills-engine manifest legacy --check" | '
-        '"run ai-skills-engine build --check-inputs" | '
+        '"run ai-skills-engine lock --check --inputs-only" | '
         '"run python scripts/generate_marketplace.py --check" | '
         '"run python "*/check_suppressions.py | '
         '"run python "*/bake_vendor_indexes.py" --check") ;;\n'

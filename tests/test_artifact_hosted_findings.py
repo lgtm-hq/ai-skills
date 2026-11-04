@@ -84,15 +84,16 @@ def test_directory_references_at_inventory_and_build_boundaries(
     assert_that(files[name][0]).contains(
         b"?view=tree#" if "view=" in reference else b"[link]"
     )
-    args = ["--repo-root", str(tmp_path), "build"]
-    assert_that(cli.main([*args, "--write-digests"])).is_equal_to(
-        int(not selection.valid)
-    )
+    args = ["--repo-root", str(tmp_path)]
+    assert_that(cli.main([*args, "lock"])).is_equal_to(int(not selection.valid))
     if not selection.valid:
+        assert_that(cli.main([*args, "build"])).is_equal_to(1)
         assert_that((tmp_path / "dist/artifacts/index.json").exists()).is_false()
+        assert_that((tmp_path / "ai-skills.lock").exists()).is_false()
         return
+    assert_that(cli.main([*args, "build"])).is_zero()
     before = {p.name: p.read_bytes() for p in (tmp_path / "dist/artifacts").iterdir()}
-    assert_that(cli.main([*args, "--check"])).is_zero()
+    assert_that(cli.main([*args, "lock", "--check"])).is_zero()
     assert_that(
         {p.name: p.read_bytes() for p in (tmp_path / "dist/artifacts").iterdir()}
     ).is_equal_to(before)
@@ -194,10 +195,9 @@ def test_alias_components_at_input_and_pinned_public_build_boundaries(
         [
             "--repo-root",
             str(root),
-            "build",
+            "lock",
             "--vendor-tree",
             f"vendor={vendor}",
-            "--write-digests",
         ]
     )
     assert_that(result).is_equal_to(0 if accepted else 1)

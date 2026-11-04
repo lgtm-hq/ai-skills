@@ -1,22 +1,26 @@
 # Deterministic capability artifacts
 
-The Python build plane owns resolution. `ai-skills-engine build` (also
-`ai-skills-engine bake artifacts`) consumes the same inventory, selection and
-provenance results as `plan`. An invalid selection cannot publish an artifact.
-Nothing in a vendor tree is executed.
+The Python build plane owns resolution. The artifact writer consumes the same
+inventory, selection and provenance results as `plan`. An invalid selection cannot
+publish an artifact. Nothing in a vendor tree is executed.
 
 ```sh
-uv run ai-skills-engine build --vendor-tree vendor=../pinned-vendor
-uv run ai-skills-engine build --vendor-tree vendor=../pinned-vendor --write-digests
-uv run ai-skills-engine build --vendor-tree vendor=../pinned-vendor --check
+uv run ai-skills-engine lock            # resolve changed inputs, fetch missing sources
+uv run ai-skills-engine lock --check    # no writes; fail if the lock is stale
+uv run ai-skills-engine lock --fetch    # populate the cache for the existing lock only
+uv run ai-skills-engine build           # offline: lock + cache -> dist/artifacts/
+uv run ai-skills-engine bake artifacts --vendor-tree vendor=../pinned-vendor
 ```
 
-`--vendor-root` is an equivalent spelling; nested inputs use slash-qualified
-aliases, for example `publisher/upstream=../upstream`. Inputs are declarations of
-locally available pinned snapshots, with the same assurance boundary as inventory
-and plan. `--fetch-vendors` explicitly authorizes the existing bounded pinned
-fetcher. The default command never acquires missing inputs. Neither path runs
-vendor hooks, package installers or scripts.
+`ai-skills-engine build` is the frozen, reproducible build described under
+[Resolution lock and source cache](#resolution-lock-and-source-cache).
+`bake artifacts` is an explicit-input development writer: it builds from the
+manifest and locally supplied snapshots and never reads, writes or fetches for the
+lock. `--vendor-root` is an equivalent spelling of `--vendor-tree`; nested inputs
+use slash-qualified aliases, for example `publisher/upstream=../upstream`.
+Supplied inputs are declarations of locally available pinned snapshots, with the
+same assurance boundary as inventory and plan. No path runs vendor hooks, package
+installers or scripts.
 
 Artifacts are emitted into `dist/artifacts/`, atomically replacing the previous
 complete generation. `--output` selects another destination. The compatibility
@@ -96,13 +100,93 @@ modes; directories use 0755. uid/gid/mtime are zero, owner names empty and exten
 times absent. Sidecars identify the SHA-256 of the **uncompressed** tar. That digest
 never appears in either index; it cannot include itself.
 
-`--write-digests` generates `artifact-digests.json` with per-package tree and tar
-digests plus a fingerprint of the local author inputs. `--check-inputs` checks that
-fingerprint offline in a fresh clone. It does not authenticate missing vendor
-bytes. `--check` rebuilds all packages in private scratch and compares the entire
-reviewed commitment without modifying output. Publish must run this full check;
-a matching local input fingerprint alone cannot authorize release. Unknown digest
-formats and duplicate keys fail closed. No bake payload is committed.
+## Resolution lock and source cache
+
+`ai-skills.lock` is committed JSON with sorted keys, 2-space indentation and a
+trailing newline. It contains no timestamps, absolute paths, usernames or
+hostnames. It records everything needed to rebuild the artifacts byte for byte:
+
+```json
+{
+  "lockVersion": 1,
+  "builder": { "engineVersion": "0.30.9", "artifactFormat": 1 },
+  "manifest": {
+    "apiVersion": "ai-skills.dev/v1",
+    "digest": "sha256:…",
+    "inputsDigest": "sha256:…"
+  },
+  "vendors": [
+    {
+      "id": "anthropics",
+      "repo": "anthropics/skills",
+      "sha": "…",
+      "sourceDigest": "sha256:…",
+      "filters": { "include": [], "exclude": [] }
+    }
+  ],
+  "packages": [
+    {
+      "id": "anthropics/document-skills",
+      "version": "…",
+      "artifactDigest": "sha256:…",
+      "treeDigest": "sha256:…",
+      "capabilities": [{ "id": "…", "closure": ["…"], "lineage": [] }],
+      "resources": [{ "id": "…", "lineage": [] }]
+    }
+  ]
+}
+```
+
+- `manifest.digest` hashes the canonical JSON of the parsed `ai-skills.yaml`, so
+  reordering YAML keys or reformatting does not change the lock.
+  `manifest.inputsDigest` fingerprints the declared local payloads, legal files,
+  `pyproject.toml` and builder sources; it is the offline checkout drift gate.
+- `vendors` lists every pinned import, including nested slash-qualified pins.
+  `sourceDigest` is the SHA-256 of a canonical uncompressed tar of the extracted
+  tree (sorted PAX entries, 0644/0755 file modes, link targets verbatim, no
+  owners or times), never of the forge's compressed archive.
+- `packages` carries each package's external tar digest and tree digest. Each
+  capability's sorted `closure` (capabilities and resources) and its `lineage`
+  chains are copied verbatim from the built index. Standalone resources,
+  including artifact-only `_shared` resources declared in the index
+  `resources[]`, carry their index lineage. Equal bytes never establish lineage.
+
+Reading is strict: an unknown `lockVersion`, an unknown key, a duplicate key or a
+malformed value fails with a specific message and is never read on a best-effort
+basis. `build` and `lock --check` also require the canonical byte encoding.
+
+The source cache lives at
+`${AI_SKILLS_CACHE:-${XDG_CACHE_HOME:-~/.cache}/ai-skills}` (a relative
+`XDG_CACHE_HOME` is ignored). It holds `sources/sha256-<digest>.tar` canonical
+source trees plus `refs/<owner>/<repo>/<revision>`, which maps each pinned
+revision to its digest. Every read re-verifies the digest, and a corrupted entry
+fails with its own message instead of being refetched silently. Writes go to a
+temporary file, are fsynced and then renamed, so concurrent CI jobs can share a
+cache. Acquired trees pass the existing structural ingestion checks before they
+are stored, and cold and warm paths extract the same canonical bytes. The
+compatibility vendor bake and `inventory --fetch-vendors` read pinned trees
+through the same cache.
+
+- `lock` re-resolves only manifest entries whose repository, SHA or filters
+  changed and never moves an existing pin; `repin` moves pins. Unchanged pins
+  must reproduce their locked `sourceDigest`. It fetches missing sources (or
+  seeds the cache from `--vendor-tree ID=PATH` snapshots), rebuilds all packages
+  in private scratch and rewrites the lock only when its bytes change.
+- `lock --fetch` fills the cache for the existing lock only, verifying each
+  fetched tree against its `sourceDigest`.
+- `lock --check` writes nothing. It fails on a builder, manifest or local-input
+  change, then rebuilds from the cache alone and compares the complete lock.
+  `--check --inputs-only` stops after the offline checks and needs no sources;
+  `scripts/validate.sh` runs it.
+- `build` works offline from the lock and cache. It refuses a stale lock and any
+  missing or corrupted cache entry, naming the vendor and the `lock --fetch` fix.
+  It replaces `dist/artifacts/` only when every rebuilt digest equals the lock.
+  Network access during `build` is a bug.
+
+CI's lock gate and `publish-npm.yml` run `lock --fetch`, `lock --check` and
+`build`, so publishing fails closed if any `artifactDigest` differs. The engine
+never reads or writes the v1 gateway install state (`ai-skills-lock.json` or
+`~/.ai-skills/lock.json`); machine-local install receipts are a separate file.
 
 `recommend_semver(before, after)` returns a `SemverAdvice` record with `level` and
 sorted `reasons`. Removals, broken hard dependencies and widened invocation,

@@ -158,6 +158,11 @@ JSON as build output. Settled _why_ lives in
   full trees at a **commit SHA** (Renovate bumps SHAs). Discovery uses baked
   indexes shipped inside the npm package — no GitHub API at install time.
 - **Licenses:** see root [`NOTICE.md`](./NOTICE.md) and `vendors.yaml`.
+- **Resolution lock:** the committed [`ai-skills.lock`](./ai-skills.lock)
+  records vendor source digests and capability artifact digests so
+  `ai-skills-engine build` rebuilds offline from a source cache (see
+  [docs/artifacts.md](./docs/artifacts.md#resolution-lock-and-source-cache)).
+  It is build-plane state, separate from the gateway lockfiles below.
 - **Gateway lockfiles** (schema v2; do not overwrite stock `skills-lock.json`):
   - Global: `~/.ai-skills/lock.json`
   - Project: `./ai-skills-lock.json`
