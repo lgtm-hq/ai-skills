@@ -261,3 +261,143 @@ def pem_acknowledgement(
     ]
     path.write_text(yaml.safe_dump(policy))
     return expected
+
+
+def configure_metadata_reason(*, root: Path, source: Path, kind: str) -> None:
+    """Set a small acknowledgement or overflow one real generated metadata file.
+
+    Args:
+        root: Synthetic author repository.
+        source: Synthetic vendor snapshot.
+        kind: Small baseline, oversized coverage, or lock-only overflow.
+    """
+    target = source / "skills/helper/example.txt"
+    target.write_bytes(b"Synthetic documentation\nAKIA" + b"A" * 16)
+    reason = (
+        "Ordinary acknowledgement "
+        + {
+            "small": "baseline",
+            "coverage": "x" * (5 * 1024 * 1024),
+            "lock": "x" * (5 * 1024 * 1024 - 1800),
+        }[kind]
+    )
+    path = root / "vendors.yaml"
+    document = yaml.safe_load(path.read_text())
+    document["vendors"][0]["ingestAllow"] = [
+        {
+            "path": "skills/helper/example.txt",
+            "rule": "aws-access-key-id",
+            "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+            "reason": reason,
+        }
+    ]
+    path.write_text(yaml.safe_dump(document))
+
+
+@pytest.fixture
+def google_acknowledgement(ingest_repo: tuple[Path, Path, Vendor]) -> str:
+    """Acknowledge a synthetic trailing-hyphen key with the value in its reason.
+
+    Args:
+        ingest_repo: Synthetic author and vendor roots.
+
+    Returns:
+        Synthetic value which must stay out of all public output.
+    """
+    root, source, _ = ingest_repo
+    sample = "AIza" + "A" * 34 + "-"
+    target = source / "skills/helper/example.txt"
+    target.write_text("Synthetic documentation\n" + sample + "\n")
+    path = root / "vendors.yaml"
+    document = yaml.safe_load(path.read_text())
+    document["vendors"][0]["ingestAllow"] = [
+        {
+            "path": "skills/helper/example.txt",
+            "rule": "google-api-key",
+            "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+            "reason": "Synthetic example " + sample,
+        }
+    ]
+    path.write_text(yaml.safe_dump(document))
+    return sample
+
+
+@pytest.fixture(params=["resource", "capability"])
+def rejected_inventory(
+    inventory_repo: tuple[Path, Path],
+    request: pytest.FixtureRequest,
+) -> tuple[Path, Path, str, str]:
+    """Declare valid independent payloads alongside a rejected required payload.
+
+    Args:
+        inventory_repo: Offline consumer/vendor inputs with a network guard.
+        request: Rejected resource or capability.
+
+    Returns:
+        Consumer, vendor, rejected identity and its requirer identity.
+    """
+    from ai_skills_engine.manifest.edit import dump_document
+
+    root, source = inventory_repo
+    (source / "valid.txt").write_text("Safe independent resource\n")
+    (source / "bad.md").write_bytes(b"AKIA" + b"A" * 16 + b"\n")
+    (source / "skills/help/SKILL.md").write_text(
+        "---\nname: helper\ndescription: Safe independent skill.\n---\n"
+    )
+    requiring = source / "skills/requirer"
+    requiring.mkdir()
+    (requiring / "SKILL.md").write_text(
+        "---\nname: requirer\ndescription: Safe requirer.\n---\n"
+    )
+    kind = request.param
+    bad = (
+        "upstream/tools:"
+        + ("resource" if kind == "resource" else "instruction")
+        + "/bad"
+    )
+    requirer = "upstream/tools:skill/requirer"
+    capabilities = [
+        {
+            "id": "good",
+            "path": "skills/help",
+            "resources": ["upstream/tools:resource/valid"],
+        },
+        {
+            "id": "requirer",
+            "path": "skills/requirer",
+            "resources" if kind == "resource" else "requires": [bad],
+        },
+    ]
+    resources = [{"id": "valid", "path": "valid.txt"}]
+    if kind == "resource":
+        resources.append({"id": "bad", "path": "bad.md"})
+    else:
+        capabilities.append({"id": "bad", "path": "bad.md", "role": "instruction"})
+    (source / "ai-skills.yaml").write_text(
+        dump_document(
+            {
+                "apiVersion": "ai-skills.dev/v1",
+                "publisher": {"id": "upstream"},
+                "packages": [
+                    {
+                        "id": "tools",
+                        "capabilities": capabilities,
+                        "resources": resources,
+                    }
+                ],
+            }
+        )
+    )
+    (root / "ai-skills.yaml").write_text(
+        dump_document(
+            {
+                "apiVersion": "ai-skills.dev/v1",
+                "publisher": {"id": "fixture"},
+                "vendors": [
+                    {"id": "vendor", "repo": "upstream/tools", "sha": "a" * 40}
+                ],
+                "exports": ["upstream/tools"],
+            }
+        )
+    )
+    return root, source, bad, requirer

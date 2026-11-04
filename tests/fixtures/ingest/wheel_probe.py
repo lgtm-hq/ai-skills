@@ -6,6 +6,7 @@ import json
 import os
 import subprocess  # nosec B404 - execution methods are patched to fail
 import sys
+import tarfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -29,7 +30,7 @@ def main() -> None:
     module = Path(vendor_plugins.__file__).resolve()
     if not module.is_relative_to(Path(site)):
         raise RuntimeError("wheel import escaped its isolated package root")
-    if operation == "extract":
+    if operation in {"extract", "bake-cli"}:
         from ai_skills_engine.registry import safe_tree
 
         # Resolve the host rename runtime before denying execution; libc lookup
@@ -58,6 +59,20 @@ def main() -> None:
                     )
                 elif operation == "legacy":
                     status = cli.main(["manifest", "legacy", "--repo-root", author])
+                elif operation == "bake-cli":
+                    payload = io.BytesIO()
+                    with tarfile.open(
+                        fileobj=payload, mode="w:gz", compresslevel=0
+                    ) as archive:
+                        archive.add(vendor_root, arcname="root")
+                    with patch.object(
+                        vendor_plugins,
+                        "_http_get_bytes",
+                        return_value=payload.getvalue(),
+                    ):
+                        status = cli.main(
+                            ["bake", "vendor-plugins", "--repo-root", author]
+                        )
                 elif operation == "plan":
                     status = cli.main(
                         [

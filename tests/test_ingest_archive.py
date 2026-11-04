@@ -19,6 +19,98 @@ from ai_skills_engine.registry.ingest_limits import IngestLimits
 pytest_plugins = ["ingest_helpers"]
 
 
+@pytest.mark.parametrize(
+    "name,target",
+    [
+        ("link", "asset"),
+        ("link", "../root/asset"),
+        ("nested/link", "../../root/asset"),
+        ("quoted ' dir/link", "../../root/asset"),
+        ("nested/link", "../asset"),
+        ("link", "../../outside"),
+        ("link", "/root/asset"),
+        ("link", "../other/asset"),
+        ("link", "..\\outside"),
+    ],
+    ids=[
+        "direct",
+        "reenter",
+        "nested-reenter",
+        "quoted",
+        "nested",
+        "outside",
+        "absolute",
+        "sibling-root",
+        "backslash",
+    ],
+)
+def test_symlink_targets_use_original_archive_coordinates(
+    archive_destination: Path,
+    name: str,
+    target: str,
+) -> None:
+    """Translate safe targets and preserve the destination on rejection."""
+    from inventory_helpers import inventory_snapshot
+
+    destination = archive_destination
+    existed = destination.exists()
+    before = inventory_snapshot(destination) if existed else {}
+    inode = destination.stat().st_ino if existed else None
+    output = BytesIO()
+    with tarfile.open(fileobj=output, mode="w:gz", compresslevel=0) as archive:
+        asset = tarfile.TarInfo("root/asset")
+        data = b"ordinary fixture bytes\n"
+        asset.size = len(data)
+        archive.addfile(asset, BytesIO(data))
+        link = tarfile.TarInfo("root/" + name)
+        link.type = tarfile.SYMTYPE
+        link.linkname = target
+        archive.addfile(link)
+    accepted = target in {"asset", "../root/asset", "../../root/asset", "../asset"}
+    if accepted:
+        baker._extract_tarball(
+            payload=output.getvalue(), dest=destination, vendor_id="synthetic"
+        )
+        assert_that((destination / name).is_symlink()).is_true()
+        assert_that((destination / name).read_bytes()).is_equal_to(data)
+        assert_that((destination / name).resolve()).is_equal_to(destination / "asset")
+        assert_that((destination / "asset").stat().st_mode & 0o7777).is_equal_to(0o644)
+    else:
+        with pytest.raises((ValueError, RuntimeError)):
+            baker._extract_tarball(
+                payload=output.getvalue(), dest=destination, vendor_id="synthetic"
+            )
+        if existed:
+            assert_that(inventory_snapshot(destination)).is_equal_to(before)
+            assert_that(destination.stat().st_ino).is_equal_to(inode)
+        else:
+            assert_that(destination.exists()).is_false()
+
+
+def test_archive_symlink_cycle_cannot_publish(archive_destination: Path) -> None:
+    """The data filter still rejects a cycle while staging, preserving old bytes."""
+    from inventory_helpers import inventory_snapshot
+
+    destination = archive_destination
+    existed = destination.exists()
+    before = inventory_snapshot(destination) if existed else {}
+    output = BytesIO()
+    with tarfile.open(fileobj=output, mode="w:gz", compresslevel=0) as archive:
+        for name, target in (("one", "two"), ("two", "one"), ("two/child", "one")):
+            member = tarfile.TarInfo("root/" + name)
+            member.type = tarfile.SYMTYPE
+            member.linkname = target
+            archive.addfile(member)
+    with pytest.raises((ValueError, RuntimeError)):
+        baker._extract_tarball(
+            payload=output.getvalue(), dest=destination, vendor_id="synthetic"
+        )
+    if existed:
+        assert_that(inventory_snapshot(destination)).is_equal_to(before)
+    else:
+        assert_that(destination.exists()).is_false()
+
+
 def test_root_layout_preflight_preserves_rejected_destination(
     root_archive: tuple[bytes, str | None], archive_destination: Path
 ) -> None:

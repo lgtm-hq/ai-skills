@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import posixpath
 import tarfile
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
@@ -307,5 +308,32 @@ def rewrite_tarball_member(
     ):
         msg = f"path escape rejected: {member.name}"
         raise ValueError(msg)
+    if member.issym():
+        # Resolve in the archive's original coordinates, then relocate both
+        # ends. The data filter still checks the actual staged symlink graph.
+        target = PurePosixPath(
+            posixpath.normpath(
+                posixpath.join(
+                    PurePosixPath(member.name).parent.as_posix(),
+                    member.linkname,
+                )
+            )
+        )
+        if (
+            not member.linkname
+            or member.linkname.startswith("/")
+            or "\\" in member.linkname
+            or "\x00" in member.linkname
+            or not target.is_relative_to(PurePosixPath(parts[0]))
+        ):
+            raise ValueError(
+                safe_diagnostic(
+                    f"vendor {vendor}: {member.name}: symlink path escape rejected"
+                )
+            )
+        member.linkname = posixpath.relpath(
+            target.relative_to(parts[0]).as_posix(),
+            start=relative.parent.as_posix(),
+        )
     member.name = relative.as_posix()
     return member

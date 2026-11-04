@@ -22,6 +22,7 @@ from ai_skills_engine.registry.ingest_checks import (
     parse_allow,
     parse_limits,
     read_bounded,
+    safe_diagnostic,
     scan_paths,
 )
 from ai_skills_engine.registry.ingest_limits import IngestLimits
@@ -40,6 +41,7 @@ SYNTHETIC_SHAPES = [
     ("github-token", b"github_pat_" + b"A" * 22),
     *(("slack-token", f"xox{kind}-".encode() + b"A" * 20) for kind in "abprs"),
     ("google-api-key", b"AIza" + b"A" * 35),
+    ("google-api-key", b"AIza" + b"A" * 34 + b"-"),
     ("npm-token", b"npm_" + b"A" * 36),
     ("stripe-live-key", b"sk_live_" + b"A" * 24),
     ("anthropic-api-key", b"sk-ant-" + b"A" * 24),
@@ -111,6 +113,41 @@ def test_near_misses_remain_plain_text(sample: bytes) -> None:
     assert_that(
         inspect_bytes(data=sample, path="sample.txt", vendor="synthetic", allow=())
     ).is_empty()
+
+
+@pytest.mark.parametrize(
+    "last", ["A", "-", "_"], ids=["letter", "hyphen", "underscore"]
+)
+@pytest.mark.parametrize(
+    "suffix", ["", "\n", "\r\n", " \t"], ids=["eof", "lf", "crlf", "space"]
+)
+def test_google_exact_alphabet_boundary(last: str, suffix: str) -> None:
+    """Every allowed final character is detected and redacted at text boundaries."""
+    sample = "AIza" + "A" * 34 + last
+    text = sample + suffix
+    with pytest.raises(ValueError, match="google-api-key"):
+        inspect_bytes(
+            data=text.encode(), path="example.txt", vendor="synthetic", allow=()
+        )
+    assert_that(safe_diagnostic(text)).is_equal_to("[REDACTED]" + suffix)
+
+
+@pytest.mark.parametrize(
+    "continuation", ["A", "_", "-"], ids=["letter", "underscore", "hyphen"]
+)
+@pytest.mark.parametrize("last", ["A", "-"], ids=["letter", "hyphen"])
+def test_google_continuations_are_not_complete_keys(
+    last: str, continuation: str
+) -> None:
+    """An extra alphabet character is a near miss rather than a shorter key."""
+    sample = "AIza" + "A" * 34 + last + continuation
+    for text in (sample, "AIza" + "A" * 33 + last):
+        assert_that(
+            inspect_bytes(
+                data=text.encode(), path="example.txt", vendor="synthetic", allow=()
+            )
+        ).is_empty()
+        assert_that(safe_diagnostic(text)).is_equal_to(text)
 
 
 def test_binary_detection_uses_first_eight_kib_only() -> None:
@@ -420,7 +457,8 @@ def test_many_repeated_shapes_have_one_digest_bound_finding() -> None:
 
 @pytest.mark.parametrize("fetched", [False, True])
 @pytest.mark.parametrize(
-    "finding", ["lfs", "secret", "special-bits", "fileBytes", "pluginBytes"]
+    "finding",
+    ["lfs", "secret", "google-secret", "special-bits", "fileBytes", "pluginBytes"],
 )
 def test_actual_acquisition_rejects_before_replacing_bake(
     ingest_repo: tuple[Path, Path, Vendor],
@@ -453,6 +491,9 @@ def test_actual_acquisition_rejects_before_replacing_bake(
     elif finding == "secret":
         asset.write_bytes(b"Synthetic example\nAKIA" + b"A" * 16)
         expected = "aws-access-key-id"
+    elif finding == "google-secret":
+        asset.write_bytes(b"Synthetic example\nAIza" + b"A" * 34 + b"-")
+        expected = "google-api-key"
     elif finding == "special-bits":
         asset.chmod(0o4644)
         expected = "special mode bits"
@@ -583,3 +624,84 @@ def test_many_pem_headers_preserve_safe_text(complete: bool) -> None:
         "[REDACTED]" * 10_000 + " safe suffix" if complete else "[REDACTED]"
     )
     assert_that(safe_diagnostic(reason)).is_equal_to(expected)
+
+
+@pytest.mark.parametrize("kind", ["small", "coverage", "lock"])
+@pytest.mark.parametrize("existing", [False, True], ids=["absent", "existing"])
+def test_generated_metadata_is_bounded_before_publication(
+    ingest_repo: tuple[Path, Path, Vendor],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+    existing: bool,
+) -> None:
+    """Real aggregate output either passes --check or preserves the destination."""
+    from ingest_helpers import configure_metadata_reason
+    from inventory_helpers import inventory_snapshot, inventory_tarball
+
+    from ai_skills_engine import cli
+
+    root, source, vendor = ingest_repo
+    output = root / "plugins-baked"
+    if existing:
+        baker.bake(repo_root=root, vendor_trees={vendor.id: source})
+        output.chmod(0o750)
+        (output / "COVERAGE.md").chmod(0o640)
+    before = inventory_snapshot(output) if existing else {}
+    inode = output.stat().st_ino if existing else None
+    configure_metadata_reason(root=root, source=source, kind=kind)
+    payload = inventory_tarball(source)
+    monkeypatch.setattr(baker, "_http_get_bytes", lambda **_kwargs: payload)
+    if kind == "small":
+        baker.collect_bake(repo_root=root, vendor_trees={vendor.id: source})
+        baker._check_baked_output(repo_root=root)
+        assert_that(
+            cli.main(["bake", "vendor-plugins", "--check", "--repo-root", str(root)])
+        ).is_zero()
+    else:
+        with pytest.raises(ValueError, match="fileBytes") as raised:
+            baker.collect_bake(repo_root=root, vendor_trees={vendor.id: source})
+        assert_that(str(raised.value)).contains(
+            "COVERAGE.md" if kind == "coverage" else "BAKE.json"
+        )
+    assert_that(
+        cli.main(["bake", "vendor-plugins", "--repo-root", str(root)])
+    ).is_equal_to(0 if kind == "small" else 1)
+    if kind != "small":
+        if existing:
+            assert_that(inventory_snapshot(output)).is_equal_to(before)
+            assert_that(output.stat().st_ino).is_equal_to(inode)
+        else:
+            assert_that(output.exists()).is_false()
+    captured = capsys.readouterr()
+    if kind != "small":
+        assert_that(captured.err).contains("fileBytes")
+
+
+def test_google_acknowledgement_public_privacy(
+    ingest_repo: tuple[Path, Path, Vendor],
+    google_acknowledgement: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Bake, offline check, metadata and both streams keep the synthetic key private."""
+    root, source, vendor = ingest_repo
+    baker.bake(repo_root=root, vendor_trees={vendor.id: source})
+    baker._check_baked_output(repo_root=root)
+    baked = root / "plugins-baked"
+    lock = (baked / "BAKE.json").read_text()
+    report = (baked / "COVERAGE.md").read_text()
+    findings = json.loads(lock)["ingestChecks"]["vendors"][vendor.id][
+        "acknowledgedFindings"
+    ]
+    assert_that(findings).is_length(1)
+    assert_that(findings[0]["reason"]).is_equal_to("Synthetic example [REDACTED]")
+    output = capsys.readouterr()
+    for text in (lock, report, output.out, output.err):
+        assert_that(text).does_not_contain(google_acknowledgement)
+    target = baked / "synthetic-plugin/skills/helper/example.txt"
+    target.write_bytes(target.read_bytes() + b"changed")
+    assert_that(baker.check(repo_root=root)).is_equal_to(1)
+    failed = capsys.readouterr()
+    assert_that(failed.err).contains(
+        "google-api-key", "unacknowledged"
+    ).does_not_contain(google_acknowledgement)

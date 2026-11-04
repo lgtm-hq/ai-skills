@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import shutil
 import subprocess  # nosec B404 - fixed local wheel build and isolated Python
 import sys
+import tarfile
 from pathlib import Path
 from typing import Any
 from zipfile import ZipFile
@@ -326,3 +328,171 @@ def test_wheel_pem_acknowledgement_privacy(
         assert_that(output).does_not_contain(
             "SYNTHETIC_PRIVATE_BODY_CONTROL_572", "-----BEGIN", "-----END"
         )
+
+
+@pytest.mark.parametrize("control", ["clean", "both-excluded", "retained", "required"])
+def test_wheel_plan_recovers_independent_declarations(
+    wheel_site: Path,
+    rejected_inventory: tuple[Path, Path, str, str],
+    capsys: pytest.CaptureFixture[str],
+    control: str,
+) -> None:
+    """Actual wheel selection retains valid declarations and typed failure evidence."""
+    from test_ingest_inventory import configure_selection
+
+    root, source, bad, requirer = rejected_inventory
+    if control == "clean":
+        (source / "bad.md").write_text("Ordinary independent Markdown\n")
+    configure_selection(root=root, bad=bad, requirer=requirer, control=control)
+    expected = int(control not in {"clean", "both-excluded"})
+    assert_that(
+        cli.main(
+            [
+                "plan",
+                "--repo-root",
+                str(root),
+                "--vendor-root",
+                f"vendor={source}",
+                "--json",
+            ]
+        )
+    ).is_equal_to(expected)
+    output = capsys.readouterr()
+    result = probe(site=wheel_site, root=root, source=source, operation="plan")
+    assert_that(result["status"]).is_equal_to(expected)
+    assert_that((result["stdout"], result["stderr"])).is_equal_to(
+        (output.out, output.err)
+    )
+    assert_that(json.dumps(result)).does_not_contain("AKIA" + "A" * 16)
+    document = json.loads(result["stdout"])
+    assert_that([item["id"] for item in document["capabilities"]]).contains(
+        "upstream/tools:skill/good", requirer
+    )
+
+
+@pytest.mark.parametrize("kind", ["small", "coverage", "lock"])
+@pytest.mark.parametrize("existing", [False, True], ids=["absent", "existing"])
+def test_wheel_metadata_publication_contract(
+    wheel_site: Path,
+    ingest_repo: tuple[Path, Path, Vendor],
+    kind: str,
+    existing: bool,
+) -> None:
+    """Real wheel generation rejects oversized metadata before publication."""
+    from ingest_helpers import configure_metadata_reason
+    from inventory_helpers import inventory_snapshot
+
+    root, source, _ = ingest_repo
+    output = root / "plugins-baked"
+    if existing:
+        assert_that(
+            probe(site=wheel_site, root=root, source=source, operation="bake")["status"]
+        ).is_zero()
+        output.chmod(0o750)
+        (output / "COVERAGE.md").chmod(0o640)
+    before = inventory_snapshot(output) if existing else {}
+    configure_metadata_reason(root=root, source=source, kind=kind)
+    result = probe(site=wheel_site, root=root, source=source, operation="bake-cli")
+    assert_that(result["status"]).is_equal_to(0 if kind == "small" else 1)
+    if kind == "small":
+        assert_that(
+            probe(site=wheel_site, root=root, source=source, operation="check")[
+                "status"
+            ]
+        ).is_zero()
+    else:
+        assert_that(result["stderr"]).contains(
+            "fileBytes", "COVERAGE.md" if kind == "coverage" else "BAKE.json"
+        )
+        if existing:
+            assert_that(inventory_snapshot(output)).is_equal_to(before)
+        else:
+            assert_that(output.exists()).is_false()
+
+
+def test_wheel_google_acknowledgement_privacy(
+    wheel_site: Path,
+    ingest_repo: tuple[Path, Path, Vendor],
+    google_acknowledgement: str,
+) -> None:
+    """The installed wheel detects and redacts the same trailing-hyphen shape."""
+    root, source, vendor = ingest_repo
+    result = probe(site=wheel_site, root=root, source=source, operation="bake-cli")
+    assert_that(result["status"]).is_zero()
+    checked = probe(site=wheel_site, root=root, source=source, operation="check")
+    assert_that(checked["status"]).is_zero()
+    baked = root / "plugins-baked"
+    lock = (baked / "BAKE.json").read_text()
+    findings = json.loads(lock)["ingestChecks"]["vendors"][vendor.id][
+        "acknowledgedFindings"
+    ]
+    assert_that(findings).is_length(1)
+    assert_that(findings[0]["reason"]).is_equal_to("Synthetic example [REDACTED]")
+    for text in (
+        json.dumps(result),
+        json.dumps(checked),
+        lock,
+        (baked / "COVERAGE.md").read_text(),
+    ):
+        assert_that(text).does_not_contain(google_acknowledgement)
+    target = baked / "synthetic-plugin/skills/helper/example.txt"
+    target.write_bytes(target.read_bytes() + b"changed")
+    failed = probe(site=wheel_site, root=root, source=source, operation="check")
+    assert_that(failed["status"]).is_equal_to(1)
+    assert_that(failed["stderr"]).contains(
+        "google-api-key", "unacknowledged"
+    ).does_not_contain(google_acknowledgement)
+    # The real bake CLI must also fail without the consumer acknowledgement.
+    policy_path = root / "vendors.yaml"
+    policy = yaml.safe_load(policy_path.read_text())
+    policy["vendors"][0].pop("ingestAllow")
+    policy_path.write_text(yaml.safe_dump(policy))
+    before = {path: path.read_bytes() for path in baked.rglob("*") if path.is_file()}
+    rejected = probe(site=wheel_site, root=root, source=source, operation="bake-cli")
+    assert_that(rejected["status"]).is_equal_to(1)
+    assert_that(rejected["stderr"]).contains("google-api-key").does_not_contain(
+        google_acknowledgement
+    )
+    assert_that({path: path.read_bytes() for path in before}).is_equal_to(before)
+
+
+@pytest.mark.parametrize(
+    "target", ["asset", "../root/asset", "../outside", "/root/asset"]
+)
+def test_wheel_symlink_target_coordinates(
+    wheel_site: Path,
+    archive_destination: Path,
+    tmp_path: Path,
+    target: str,
+) -> None:
+    """Installed extraction translates re-entering links without accepting escapes."""
+    from inventory_helpers import inventory_snapshot
+
+    destination = archive_destination
+    existed = destination.exists()
+    before = inventory_snapshot(destination) if existed else {}
+    payload = io.BytesIO()
+    data = b"ordinary fixture payload\n"
+    with tarfile.open(fileobj=payload, mode="w:gz", compresslevel=0) as archive:
+        asset = tarfile.TarInfo("root/asset")
+        asset.size = len(data)
+        archive.addfile(asset, io.BytesIO(data))
+        link = tarfile.TarInfo("root/link")
+        link.type = tarfile.SYMTYPE
+        link.linkname = target
+        archive.addfile(link)
+    source = tmp_path / "input.tar.gz"
+    source.write_bytes(payload.getvalue())
+    result = probe(
+        site=wheel_site, root=destination, source=source, operation="extract"
+    )
+    accepted = target in {"asset", "../root/asset"}
+    assert_that(result["status"]).is_equal_to(0 if accepted else 1)
+    if accepted:
+        assert_that((destination / "link").is_symlink()).is_true()
+        assert_that((destination / "link").read_bytes()).is_equal_to(data)
+        assert_that((destination / "asset").stat().st_mode & 0o7777).is_equal_to(0o644)
+    elif existed:
+        assert_that(inventory_snapshot(destination)).is_equal_to(before)
+    else:
+        assert_that(destination.exists()).is_false()

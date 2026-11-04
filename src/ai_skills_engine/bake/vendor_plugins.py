@@ -253,6 +253,16 @@ def collect_bake(
             ),
             encoding="utf-8",
         )
+        # Generated aggregates must satisfy the same bounded reads as --check
+        # before printing coverage or replacing any published destination.
+        for relative in (
+            MARKETPLACE_RELATIVE,
+            Path(COVERAGE_FILENAME),
+            Path(BAKE_MANIFEST_FILENAME),
+        ):
+            read_bounded(
+                path=output_root / relative, vendor="bake", limits=DEFAULT_LIMITS
+            )
         print(coverage, end="")
         skill_digests = _skill_digests_from_output(
             output_root=output_root,
@@ -1132,7 +1142,7 @@ def _check_baked_output(*, repo_root: Path) -> None:
         msg = f"Missing generated file: {coverage_path}"
         raise ValueError(msg)
     coverage_text = read_bounded(
-        path=coverage_path, vendor="bake", limits=IngestLimits()
+        path=coverage_path, vendor="bake", limits=DEFAULT_LIMITS
     ).decode("utf-8")
     bake_manifest_path = baked_root / BAKE_MANIFEST_FILENAME
     if not bake_manifest_path.is_file():
@@ -1141,7 +1151,7 @@ def _check_baked_output(*, repo_root: Path) -> None:
     lock = _parse_bake_lock(
         lock=json.loads(
             read_bounded(
-                path=bake_manifest_path, vendor="bake", limits=IngestLimits()
+                path=bake_manifest_path, vendor="bake", limits=DEFAULT_LIMITS
             ).decode("utf-8")
         ),
     )

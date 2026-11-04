@@ -19,6 +19,7 @@ from typing import BinaryIO
 from ai_skills_engine.manifest.codec import field_key
 from ai_skills_engine.registry.ingest_allow import IngestAllow
 from ai_skills_engine.registry.ingest_limits import IngestLimits
+from ai_skills_engine.registry.ingest_scan_budget import IngestScanBudget
 
 RULESET_VERSION = "1"
 # Lengths describe provider shapes, not validity. Test samples are synthetic.
@@ -29,7 +30,7 @@ SECRET_RULES = {
         rb"\b(?:gh[pousr]_[A-Za-z0-9]{36}|" rb"github_pat_[A-Za-z0-9_]{22,255})\b"
     ),
     "slack-token": rb"\bxox[abprs]-[A-Za-z0-9-]{10,255}\b",
-    "google-api-key": rb"\bAIza[A-Za-z0-9_-]{35}\b",
+    "google-api-key": rb"\bAIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])",
     "npm-token": rb"\bnpm_[A-Za-z0-9]{36}\b",
     "stripe-live-key": rb"\bsk_live_[A-Za-z0-9]{24,255}\b",
     "anthropic-api-key": rb"\bsk-ant-[A-Za-z0-9_-]{20,255}\b",
@@ -334,6 +335,7 @@ def scan_paths(
     vendor: str,
     limits: IngestLimits,
     allow: tuple[IngestAllow, ...] = (),
+    budget: IngestScanBudget | None = None,
 ) -> list[dict[str, object]]:
     """Scan selected files, bounding aggregate bytes before file allocations.
 
@@ -342,6 +344,7 @@ def scan_paths(
         vendor: Vendor alias.
         limits: Effective limits.
         allow: Consumer-owned acknowledgements.
+        budget: Shared unique-path accounting across a package's declarations.
 
     Returns:
         Acknowledged findings in traversal order.
@@ -349,21 +352,22 @@ def scan_paths(
     Raises:
         ValueError: At the first size, mode, LFS or content failure.
     """
-    total = 0
+    budget = budget if budget is not None else IngestScanBudget()
     findings: list[dict[str, object]] = []
     allow_by_path: dict[str, list[IngestAllow]] = defaultdict(list)
     for entry in allow:
         allow_by_path[entry.path].append(entry)
-    for count, (path, relative) in enumerate(paths, start=1):
-        if count > limits.archive_members:
+    for path, relative in paths:
+        size = path.stat(follow_symlinks=False).st_size
+        budget.observe(path=path, size=size)
+        if len(budget.sizes) > limits.archive_members:
             fail_limit(
                 vendor=vendor,
                 path=relative,
                 limit="archiveMembers",
                 maximum=limits.archive_members,
             )
-        size = path.stat(follow_symlinks=False).st_size
-        if total + size > limits.plugin_bytes:
+        if budget.total > limits.plugin_bytes:
             fail_limit(
                 vendor=vendor,
                 path=relative,
@@ -371,8 +375,8 @@ def scan_paths(
                 maximum=limits.plugin_bytes,
             )
         data = read_bounded(path=path, vendor=vendor, limits=limits)
-        total += len(data)
-        if total > limits.plugin_bytes:
+        budget.observe(path=path, size=len(data))
+        if budget.total > limits.plugin_bytes:
             fail_limit(
                 vendor=vendor,
                 path=relative,
