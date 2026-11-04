@@ -108,11 +108,15 @@ def test_actual_wheel_hosted_path_regressions(wheel_site: Path, tmp_path: Path) 
     version = metadata.Distribution.at(next(wheel_site.glob("*.dist-info"))).version
     arguments = [
         str(tests / "test_artifact_hosted_findings.py"),
+        str(tests / "test_artifact_version_permissions.py"),
+        str(tests / "test_semver_advice.py"),
         "-q",
         "-n",
         "0",
         "--cov=ai_skills_engine.artifacts.materialize",
         "--cov=ai_skills_engine.provenance.input_files",
+        "--cov=ai_skills_engine.artifacts.snapshot",
+        "--cov=ai_skills_engine.semver_advice",
         "--cov-report=term-missing",
     ]
     command = (

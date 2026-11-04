@@ -115,7 +115,11 @@ def package_version(
                 continue
             project = root / "pyproject.toml"
             if project.is_file():
-                return str(tomllib.loads(project.read_text())["project"]["version"])
+                static_version = (
+                    tomllib.loads(project.read_text()).get("project", {}).get("version")
+                )
+                if static_version is not None:
+                    return str(static_version)
             return str(metadata.get("x-version", "0.0.0-local"))
         doc = (
             read_document(root / "ai-skills.yaml")

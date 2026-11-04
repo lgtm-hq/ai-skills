@@ -1,9 +1,17 @@
 """Advisory semantic-version changes over resolved artifact indexes."""
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
 from ai_skills_engine.semver_advice_result import SemverAdvice
+
+# Only a tool name and an optional single, quoted-string-aware argument group.
+# Unsupported syntax stays uncertain; commands and patterns are never evaluated.
+_TOOL_EXPRESSION = (
+    r"[A-Za-z_][A-Za-z0-9_.*-]*"
+    r"""(?:\((?:[^()'"\\]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')*\))?"""
+)
 
 
 def _capabilities(index: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
@@ -22,8 +30,8 @@ def _capabilities(index: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
-def _values(value: Any) -> set[str]:
-    """Compare declarative tool lists and activation patterns conservatively.
+def _activation_values(value: Any) -> set[str]:
+    """Compare activation patterns independently of tool permission syntax.
 
     Args:
         value: JSON scalar or array.
@@ -38,6 +46,36 @@ def _values(value: Any) -> set[str]:
             part.strip() for part in value.replace(",", " ").split() if part.strip()
         }
     return set()
+
+
+def _permission_values(value: Any) -> set[str] | None:
+    """Retain complete literal permissions, or signal unsupported syntax.
+
+    Args:
+        value: Absent declaration, tool-list string or array of expressions.
+
+    Returns:
+        Complete expressions, preserving their argument bytes; None if uncertain.
+    """
+    if value is None:
+        return set()
+    if isinstance(value, list):
+        if any(
+            not isinstance(item, str)
+            or re.fullmatch(_TOOL_EXPRESSION, item.strip()) is None
+            for item in value
+        ):
+            return None
+        return {item.strip() for item in value}
+    if (
+        not isinstance(value, str)
+        or re.fullmatch(
+            rf"\s*(?:{_TOOL_EXPRESSION}(?:[\s,]+{_TOOL_EXPRESSION})*)?\s*", value
+        )
+        is None
+    ):
+        return None
+    return {match.group() for match in re.finditer(_TOOL_EXPRESSION, value)}
 
 
 def _widened(*, before: dict[str, Any], after: dict[str, Any]) -> tuple[str, ...]:
@@ -64,12 +102,23 @@ def _widened(*, before: dict[str, Any], after: dict[str, Any]) -> tuple[str, ...
             broadens = left is False and right is not False
         elif key == "alwaysApply":
             broadens = right is True and left is not True
-        elif key in {"paths", "globs"} or key in {"allowed-tools", "tools"}:
+        elif key in {"paths", "globs"}:
             broadens = bool(left) and (
-                not right or not _values(right).issubset(_values(left))
+                not right
+                or not _activation_values(right).issubset(_activation_values(left))
             )
-        elif key == "disallowedTools":
-            broadens = not _values(left).issubset(_values(right))
+        elif key in {"allowed-tools", "tools", "disallowedTools"}:
+            left_permissions = _permission_values(left)
+            right_permissions = _permission_values(right)
+            if left_permissions is None or right_permissions is None:
+                broadens = True
+            elif key == "disallowedTools":
+                broadens = not left_permissions.issubset(right_permissions)
+            else:
+                broadens = bool(left) and (
+                    not right_permissions
+                    or not right_permissions.issubset(left_permissions)
+                )
         else:
             broadens = previous.get("semantics", current.get("semantics")) in {
                 "activation",
