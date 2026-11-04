@@ -99,3 +99,41 @@ def test_actual_wheel_public_artifact_commands(
     )  # nosec B603 - explicit local wheel entrypoint, no shell
     assert_that(failed.returncode).is_equal_to(1)
     assert_that(failed.stderr).contains("rebuilt artifact digests")
+
+
+def test_actual_wheel_hosted_path_regressions(wheel_site: Path, tmp_path: Path) -> None:
+    """Run the same public-boundary regressions against actual installed wheel bytes."""
+    dependencies = Path(yaml.__file__).resolve().parent.parent
+    tests = Path(__file__).parent.resolve()
+    version = metadata.Distribution.at(next(wheel_site.glob("*.dist-info"))).version
+    arguments = [
+        str(tests / "test_artifact_hosted_findings.py"),
+        "-q",
+        "-n",
+        "0",
+        "--cov=ai_skills_engine.artifacts.materialize",
+        "--cov=ai_skills_engine.provenance.input_files",
+        "--cov-report=term-missing",
+    ]
+    command = (
+        "import sys\n"
+        f"sys.path[:0] = {[str(wheel_site), str(dependencies), str(tests)]!r}\n"
+        "from importlib.metadata import version\n"
+        "from pathlib import Path\n"
+        "import ai_skills_engine.artifacts.materialize as engine\n"
+        f"assert Path(engine.__file__).is_relative_to(Path({str(wheel_site)!r}))\n"
+        f"assert version('ai-skills') == {version!r}\n"
+        "print(engine.__file__, version('ai-skills'), flush=True)\n"
+        "import pytest\n"
+        f"raise SystemExit(pytest.main({arguments!r}))\n"
+    )
+    result = subprocess.run(
+        args=[sys.executable, "-I", "-c", command],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=180,
+    )  # nosec B603 - fixed isolated interpreter and actual local wheel bytes
+    print(result.stdout)
+    assert_that(result.returncode).described_as(result.stdout + result.stderr).is_zero()

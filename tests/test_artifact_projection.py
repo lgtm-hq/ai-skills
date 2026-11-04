@@ -161,6 +161,7 @@ def test_complete_projection_rewrites_and_preserves_legacy_contract(
     output = root / "dist/artifacts"
     package_index = index_at(output)["packages"][0]
     capability = package_index["capabilities"][0]
+    assert_that(capability["portability"]).is_empty()
     assert_that(capability["resources"]).is_length(4)
     files = tar_files(output / artifact_name(package_index["id"]))
     assert_that(

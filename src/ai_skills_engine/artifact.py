@@ -23,6 +23,7 @@ from ai_skills_engine.artifacts.materialize import (
     materialize,
     resource_files,
 )
+from ai_skills_engine.artifacts.references import validate_artifact_references
 from ai_skills_engine.artifacts.snapshot import (
     publications,
     record_source,
@@ -34,7 +35,6 @@ from ai_skills_engine.inventory.roles import inspect_role
 from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.registry.safe_tree import (
     install_directory,
-    validate_internal_references,
 )
 from ai_skills_engine.selection.closure import closure
 from ai_skills_engine.selection.cycles import strongly_connected
@@ -195,7 +195,7 @@ def write_artifacts(
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(data)
             if not portability:
-                validate_internal_references(root=check_root)
+                validate_artifact_references(root=check_root)
             closure_ids = set(closure(graph=graph, roots=(key,), blocked=set()))
             closures[key] = closure_ids
             legal, licenses = legal_files(

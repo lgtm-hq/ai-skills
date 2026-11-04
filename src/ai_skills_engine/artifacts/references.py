@@ -4,15 +4,43 @@ import json
 import re
 from collections import Counter
 from collections.abc import Callable
+from pathlib import Path
 
 import yaml
 from markdown_it.helpers import parseLinkDestination
 from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
-from ai_skills_engine.registry.safe_tree import _COMMONMARK, iter_markdown_destinations
+from ai_skills_engine.registry.safe_tree import (
+    _COMMONMARK,
+    _local_markdown_path,
+    contained_path,
+    iter_markdown_destinations,
+    walk_files,
+)
 
 _CANDIDATES = re.compile(r"\]\(|\]:")
 _RELATIVE = re.compile(r"""(?<![\w/])(?:\.\.?/)+[^\s<>"'`\[\](){}]+""")
+
+
+def validate_artifact_references(*, root: Path) -> None:
+    """Validate emitted artifact links to existing files or directories.
+
+    Args:
+        root: Isolated capability output tree, including its resource copies.
+
+    Raises:
+        ValueError: For missing, unsafe or escaping local targets.
+    """
+    for path in walk_files(root=root):
+        if path.suffix.lower() not in {".md", ".markdown", ".mdc"}:
+            continue
+        for raw in iter_markdown_destinations(text=path.read_text(encoding="utf-8")):
+            local = _local_markdown_path(raw_target=raw)
+            if local is None:
+                continue
+            target = contained_path(path=path.parent / local, root=root)
+            if not target.is_file() and not target.is_dir():
+                raise ValueError(f"internal reference missing: {raw}")
 
 
 def markdown_body(text: str) -> tuple[str, str]:

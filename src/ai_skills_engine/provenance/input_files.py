@@ -67,13 +67,21 @@ def _validate_alias(*, root: Path, path: Path) -> None:
     if PurePosixPath(target).is_absolute() or "\\" in target:
         raise ValueError(f"symlink rejected: {path}: non-relative alias")
     parts = list(path.relative_to(root).parent.parts)
-    for part in PurePosixPath(target).parts:
+    components = target.split("/")
+    for index, part in enumerate(components):
         if part == "..":
             if not parts:
                 raise ValueError(f"symlink rejected: {path}: alias escapes pin")
             parts.pop()
-        elif part != ".":
+        elif part not in {".", ""}:
             parts.append(part)
+            component = source_path(
+                root=root, relative=PurePosixPath(*parts).as_posix()
+            )
+            if index < len(components) - 1 and not component.is_dir():
+                raise ValueError(
+                    f"symlink rejected: {path}: non-directory alias component"
+                )
     resolved = source_path(root=root, relative=PurePosixPath(*parts).as_posix())
     if not resolved.is_file():
         raise ValueError(f"symlink rejected: {path}: alias target is not a file")

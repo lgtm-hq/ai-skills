@@ -40,20 +40,28 @@ def _destination(target: Path, coordinates: Mapping[Path, str]) -> str | None:
         return coordinates[target]
     if not target.is_dir():
         return None
-    candidates = {
-        str(
-            PurePosixPath(destination).parents[
-                len(source.relative_to(target).parts) - 1
-            ]
-        )
-        for source, destination in coordinates.items()
-        if source.is_relative_to(target)
-    }
+    candidates = set()
+    for source, destination in coordinates.items():
+        if not source.is_relative_to(target):
+            continue
+        suffix = source.relative_to(target)
+        output = PurePosixPath(destination)
+        depth = len(suffix.parts) - 1
+        if depth >= len(output.parents):
+            return None
+        candidate = output.parents[depth]
+        if candidate / suffix != output:
+            return None
+        candidates.add(str(candidate))
     return next(iter(candidates)) if len(candidates) == 1 else None
 
 
 def _relocate(
-    raw: str, *, original: Path, relative: str, coordinates: Mapping[Path, str]
+    raw: str,
+    *,
+    original: Path,
+    relative: str,
+    coordinates: Mapping[Path, str],
 ) -> str | None:
     """Relocate one operand using declared, observed source coordinates.
 
@@ -259,6 +267,9 @@ def materialize(
     if any(file not in files for file, _pointer in declarations):
         raise ValueError(f"Declared resource path file is absent: {capability.id}")
     reasons: set[str] = set()
+    directories = {
+        str(parent) for path in files for parent in PurePosixPath(path).parents
+    }
     for original, relative in sorted(coordinates.items(), key=lambda pair: pair[1]):
         data, mode = files[relative]
         if b"\0" in data[:8192]:
@@ -279,6 +290,20 @@ def materialize(
         markdown = Path(relative).suffix.lower() in _MARKDOWN
         pointers = tuple(pointer for file, pointer in declarations if file == relative)
         try:
+            if markdown:
+                for raw in iter_markdown_destinations(text=markdown_body(text)[1]):
+                    local = _local_markdown_path(raw_target=raw)
+                    if (
+                        local is not None
+                        and _destination(
+                            (original.parent / local).resolve(), coordinates
+                        )
+                        is None
+                    ):
+                        reasons.add(
+                            f"{relative}: unresolved capability-local "
+                            "Markdown reference"
+                        )
             if pointers:
                 text = rewrite_fields(
                     text=text,
@@ -313,7 +338,7 @@ def materialize(
                     target = os.path.normpath(
                         str(PurePosixPath(relative).parent / local)
                     )
-                    if target not in files:
+                    if target not in files and target not in directories:
                         reasons.add(
                             f"{relative}: unresolved capability-local "
                             "Markdown reference"
