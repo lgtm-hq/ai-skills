@@ -120,6 +120,9 @@ def _widened(*, before: dict[str, Any], after: dict[str, Any]) -> tuple[str, ...
                 broadens = True
             elif key == "disallowedTools":
                 broadens = not left_permissions.issubset(right_permissions)
+            elif left is not None and not left_permissions:
+                # An explicit empty allowlist grants nothing; absence grants all.
+                broadens = right is None or bool(right_permissions)
             else:
                 broadens = bool(left) and (
                     not right_permissions

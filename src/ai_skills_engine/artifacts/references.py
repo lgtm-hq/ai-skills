@@ -158,6 +158,35 @@ def _pointer(*, node: Node, pointer: str) -> ScalarNode:
     return current
 
 
+def _quoted(value: str) -> str:
+    """Serialize a double-quoted scalar that JSON and YAML both reparse exactly.
+
+    Supplementary characters stay literal: YAML decodes JSON surrogate-pair
+    escapes as two lone surrogates. Nonprintable BMP characters, including NEL
+    and the Unicode line/paragraph separators, use escapes valid in both.
+
+    Args:
+        value: Replacement scalar value.
+
+    Returns:
+        Quoted scalar spelling.
+
+    Raises:
+        ValueError: If either parser would not return the exact value.
+    """
+    quoted = "".join(
+        (
+            f"\\u{ord(character):04x}"
+            if ord(character) <= 0xFFFF and not character.isprintable()
+            else character
+        )
+        for character in json.dumps(value, ensure_ascii=False)
+    )
+    if yaml.safe_load(quoted) != value or json.loads(quoted) != value:
+        raise ValueError("Resource path field cannot be serialized exactly")
+    return quoted
+
+
 def rewrite_fields(
     *,
     text: str,
@@ -209,7 +238,7 @@ def rewrite_fields(
                 (
                     node.start_mark.index + offset,
                     node.end_mark.index + offset,
-                    json.dumps(new, ensure_ascii=True),
+                    _quoted(new),
                 )
             )
     for start, end, value in sorted(edits, reverse=True):

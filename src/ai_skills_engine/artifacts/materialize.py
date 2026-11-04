@@ -192,6 +192,32 @@ def _observe(
         coordinates[path] = relative
 
 
+def _authenticate_copied(
+    *, resource: Resource, source: Path, files: Files, coordinates: dict[Path, str]
+) -> None:
+    """Check a contained resource's own payload against the bytes already copied.
+
+    Args:
+        resource: Selected resource observation.
+        source: Its physical root inside the capability source.
+        files: Output byte/mode accumulator.
+        coordinates: Source-file to output-file map.
+
+    Raises:
+        ValueError: If any payload item's bytes or canonical mode differ.
+    """
+    base = source if source.is_dir() else source.parent
+    for item in resource.payload:
+        relative = coordinates.get(base / item.path)
+        copied = None if relative is None else files[relative]
+        if (
+            copied is None
+            or copied[1] != item.mode
+            or digest(copied[0])[7:] != item.sha256
+        ):
+            raise ValueError(f"Source changed during artifact build: {resource.id}")
+
+
 def resource_files(*, resource: Resource, source: Path) -> Files:
     """Retain standalone resources, including packages containing only resources.
 
@@ -247,6 +273,12 @@ def materialize(
     for resource, original in resources:
         if original == source or (source.is_dir() and original.is_relative_to(source)):
             destination = original.relative_to(base).as_posix()
+            _authenticate_copied(
+                resource=resource,
+                source=original,
+                files=files,
+                coordinates=coordinates,
+            )
         else:
             destination = (
                 f"_shared/{resource.id.package.publisher}/{resource.source_path}"

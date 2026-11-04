@@ -92,6 +92,12 @@ def test_advisory_diff_rules(
         ("alwaysApply", "activation", False, True, "major"),
         ("permissionMode", "permission", "default", "bypassPermissions", "major"),
         ("model", "model-selection", "small", "large", "patch"),
+        ("tools", "permission", [], ["Read"], "major"),
+        ("allowed-tools", "permission", [], ["Read"], "major"),
+        ("allowed-tools", "permission", "", "Read", "major"),
+        ("tools", "permission", [], None, "major"),
+        ("tools", "permission", None, ["Read"], "patch"),
+        ("allowed-tools", "permission", None, "Read", "patch"),
     ],
 )
 def test_activation_and_permission_changes(
@@ -103,9 +109,10 @@ def test_activation_and_permission_changes(
     level: str,
 ) -> None:
     """Widening declarations are major; literal narrowing stays advisory patch."""
-    before_index["packages"][0]["capabilities"][0]["hostAttributes"] = [
-        {"key": key, "semantics": semantics, "value": old}
-    ]
+    # None means the declaration is absent, unlike an explicit empty allowlist.
+    before_index["packages"][0]["capabilities"][0]["hostAttributes"] = (
+        [] if old is None else [{"key": key, "semantics": semantics, "value": old}]
+    )
     after = deepcopy(before_index)
     after["packages"][0]["capabilities"][0]["hostAttributes"] = (
         [] if new is None else [{"key": key, "semantics": semantics, "value": new}]

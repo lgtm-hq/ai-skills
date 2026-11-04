@@ -13,8 +13,11 @@ from assertpy import assert_that
 
 from ai_skills_engine import cli
 from ai_skills_engine.artifact import artifact_name
+from ai_skills_engine.artifacts.materialize import materialize
+from ai_skills_engine.artifacts.references import rewrite_fields
 from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.load import read_document
+from ai_skills_engine.selection.load import load_inputs
 from ai_skills_engine.semver_advice import recommend_semver
 
 pytest_plugins = ["artifact_helpers"]
@@ -70,8 +73,9 @@ def test_public_commitment_byte_equality(
         "input%20data.txt",
         "input#data.txt",
         "input?data.txt",
+        "input\U0001f600.txt",
     ],
-    ids=["ordinary", "space", "percent", "hash", "question"],
+    ids=["ordinary", "space", "percent", "hash", "question", "emoji"],
 )
 def test_public_scalar_opens_copied_resource(
     artifact_repo: Path, tmp_path: Path, owner: str, kind: str, filename: str
@@ -98,7 +102,11 @@ def test_public_scalar_opens_copied_resource(
     raw = ("data/" if resource_owned else "../../shared/data/") + filename
     config = base / filename_config
     fields = {"script": raw}
-    text = json.dumps(fields) if kind == "json" else yaml.safe_dump(fields)
+    text = (
+        json.dumps(fields, ensure_ascii=False)
+        if kind == "json"
+        else yaml.safe_dump(fields)
+    )
     if kind == "frontmatter":
         text = "---\n" + text + "---\n# Configuration\n"
     config.write_text(text)
@@ -132,6 +140,9 @@ def test_public_scalar_opens_copied_resource(
     parsed = yaml.safe_load(
         emitted.split("---")[1] if kind == "frontmatter" else emitted
     )
+    if kind == "json":
+        assert_that(json.loads(emitted)["script"]).is_equal_to(parsed["script"])
+    assert_that(parsed["script"]).ends_with("/" + filename)
     member = posixpath.normpath(
         prefix + posixpath.dirname(relative) + "/" + parsed["script"]
     )
@@ -286,3 +297,84 @@ def test_public_resolved_activation_advice(
     assert_that(result.level).is_equal_to(level)
     if level == "major":
         assert_that("\n".join(result.reasons)).contains("Widened " + key)
+
+
+@pytest.mark.parametrize("kind", ["json", "yaml", "frontmatter"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "a\U0001f600.md",
+        "a\x85b.md",
+        "a\u2028b.md",
+        "a\u2029b.md",
+        "a\x7fb.md",
+        "a\x9bb.md",
+        "a\tb.md",
+    ],
+    ids=["emoji", "nel", "line-separator", "paragraph-separator", "del", "c1", "tab"],
+)
+def test_rewritten_scalar_reparses_exactly(kind: str, value: str) -> None:
+    """Replacement scalars reparse as the exact string in YAML and JSON."""
+    document = '{"script": "old.md"}' if kind == "json" else "script: old.md\n"
+    if kind == "frontmatter":
+        document = "---\n" + document + "---\n# Body\n"
+    edited = rewrite_fields(
+        text=document,
+        pointers=("/script",),
+        markdown=kind == "frontmatter",
+        replace=lambda _raw: value,
+    )
+    source = edited.split("---")[1] if kind == "frontmatter" else edited
+    assert_that(yaml.safe_load(source)["script"]).is_equal_to(value)
+    if kind == "json":
+        assert_that(json.loads(edited)["script"]).is_equal_to(value)
+    assert_that(
+        [character for character in edited if character in "\x85\x9b\u2028\u2029\x7f"]
+    ).is_empty()
+
+
+@pytest.mark.parametrize("change", ["unchanged", "bytes", "mode"])
+def test_contained_resource_payload_is_authenticated(
+    artifact_repo: Path, change: str
+) -> None:
+    """A contained resource's own payload record must match the copied bytes."""
+    data = artifact_repo / "skills/start/data"
+    data.mkdir()
+    local = data / "local.txt"
+    local.write_text("Inventoried bytes.\n")
+    manifest = artifact_repo / "ai-skills.yaml"
+    document = read_document(manifest)
+    package = document["packages"][0]
+    package["resources"].append({"id": "local", "path": "skills/start/data"})
+    package["capabilities"][0]["resources"].append("fixture/tools:resource/local")
+    manifest.write_text(dump_document(document))
+    earlier, _selection = load_inputs(artifact_repo, vendor_roots=None)
+    if change == "bytes":
+        local.write_text("Changed after the resource was inventoried.\n")
+    elif change == "mode":
+        local.chmod(0o755)
+    current, _selection = load_inputs(artifact_repo, vendor_roots=None)
+    capability = next(
+        item for item in current.capabilities if str(item.id).endswith("/start")
+    )
+    resources = {str(item.id): item for item in earlier.resources}
+    required = (
+        (resources["fixture/tools:resource/local"], data),
+        (resources["fixture/tools:resource/shared"], artifact_repo / "shared"),
+    )
+    if change != "unchanged":
+        with pytest.raises(ValueError, match="Source changed during artifact build"):
+            materialize(
+                capability=capability,
+                source=artifact_repo / "skills/start",
+                resources=required,
+            )
+        return
+    files, records, _portability = materialize(
+        capability=capability, source=artifact_repo / "skills/start", resources=required
+    )
+    assert_that([item["path"] for item in records]).contains(
+        "data", "_shared/fixture/shared"
+    )
+    assert_that(files["data/local.txt"][0]).is_equal_to(local.read_bytes())
+    assert_that(files).contains_key("_shared/fixture/shared/data/input.txt")
