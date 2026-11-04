@@ -1,0 +1,10 @@
+{
+  "artifactFormat": 1,
+  "inputsDigest": "sha256:1262dd36dfaf65eb9673521076620e99cee4e8748a2d0f6455cb9c29d47270a7",
+  "packages": {
+    "fixture/tools": {
+      "artifactDigest": "sha256:f80ed0ba4b5211fe7a194f471c64d6321dc1a7f29720cd81062d0610bafc5b94",
+      "treeDigest": "sha256:939e897e509ceaaa13ff8c9dd8edb22189d02487f69051a54907b3580178cc37"
+    }
+  }
+}

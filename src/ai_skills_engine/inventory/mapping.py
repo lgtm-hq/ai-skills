@@ -119,6 +119,7 @@ def _mapped_package(
                 requires=declaration.requires if declaration else (),
                 related=declaration.related if declaration else (),
                 resources=declaration.resources if declaration else (),
+                extensions=declaration.extensions if declaration else {},
             )
         )
     unused = (set(package.capabilities) - names) | (
@@ -132,5 +133,8 @@ def _mapped_package(
         for path in package.extra_files or ()
     )
     return Package(
-        id=package.id, capabilities=tuple(declarations), resources=resources
+        id=package.id,
+        capabilities=tuple(declarations),
+        resources=resources,
+        artifact_resources=package.artifact_resources,
     ), dict(package.rename_skills or {})

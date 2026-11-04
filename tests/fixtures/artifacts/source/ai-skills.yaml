@@ -1,0 +1,27 @@
+---
+apiVersion: ai-skills.dev/v1
+publisher:
+  id: fixture
+  repo: fixture/artifacts
+x-version: 1.2.3
+packages:
+  - id: tools
+    include: ['fixture/tools:skill/start']
+    capabilities:
+      - id: start
+        path: skills/start
+        requires: ['fixture/tools:skill/peer']
+        resources: ['fixture/tools:resource/shared']
+        x-resource-paths:
+          config.json: ['/script']
+      - id: peer
+        path: skills/peer
+        requires: ['fixture/tools:skill/start']
+        resources: ['fixture/tools:resource/shared']
+    resources:
+      - id: shared
+        path: shared
+exports: [tools]
+policy:
+  provenance:
+    mode: strict

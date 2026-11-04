@@ -11,6 +11,8 @@ import pytest
 from assertpy import assert_that
 from loguru import logger
 
+from ai_skills_engine.artifacts.drift import inputs_digest
+from ai_skills_engine.artifacts.format import canonical_json
 from ai_skills_engine.generate import marketplace
 from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.legacy import write_legacy
@@ -115,6 +117,15 @@ def _run_validate(
         (cwd / "ai-skills.yaml").write_text(dump_document(declaration))
         write_legacy(cwd)
         marketplace.main(["--repo-root", str(cwd)])
+        (cwd / "artifact-digests.json").write_bytes(
+            canonical_json(
+                {
+                    "artifactFormat": 1,
+                    "inputsDigest": inputs_digest(cwd),
+                    "packages": {},
+                }
+            )
+        )
     env = dict(os.environ)
     # Use the existing project environment for the copied Python validators.
     # Never sync packages or contact the network from these unit tests.
@@ -173,6 +184,7 @@ def audit_validation_repo(
         '  "run python "*/validate_skills.py" skills" | '
         '"run ai-skills-engine manifest validate --terminology" | '
         '"run ai-skills-engine manifest legacy --check" | '
+        '"run ai-skills-engine build --check-inputs" | '
         '"run python scripts/generate_marketplace.py --check" | '
         '"run python "*/check_suppressions.py | '
         '"run python "*/bake_vendor_indexes.py" --check") ;;\n'

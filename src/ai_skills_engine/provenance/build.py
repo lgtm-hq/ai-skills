@@ -117,6 +117,7 @@ def build_inventory(
     rejected = set(inventory.rejected)
     unresolved = set(inventory.unresolved_edges)
     recursive_sources: set[str] = set()
+    source_scoped: set[str] = set()
     for vendor in manifest.vendors:
         vendor_root = roots.get(vendor.id)
         if vendor_root is None:
@@ -192,6 +193,7 @@ def build_inventory(
                         findings=findings,
                         strict=strict,
                     )
+                    source_scoped.add(key)
             for key, resource in tuple(resources.items()):
                 if resource.id.package.publisher == vendor.id:
                     resources[key] = bind_local(
@@ -204,6 +206,7 @@ def build_inventory(
                         findings=findings,
                         strict=strict,
                     )
+                    source_scoped.add(key)
             continue
         child = _load_inventory(
             root=vendor_root,
@@ -229,7 +232,7 @@ def build_inventory(
             findings=findings,
             selection_candidates=selection_candidates,
         )
-        merge_imports(
+        merged_resources = merge_imports(
             table=resources,
             records=child.resources,
             publisher=publisher,
@@ -238,6 +241,7 @@ def build_inventory(
             findings=findings,
             selection_candidates=selection_candidates,
         )
+        source_scoped.update(merged_sources | merged_resources)
         # The recursive pass sees the publisher's pins and validated identity
         # migrations. Replace provisional direct evidence once per source;
         # subsequent compatible inputs contribute additional edge evidence.
@@ -351,6 +355,7 @@ def build_inventory(
             roots=roots,
             context=context,
             resources=result.resources,
+            source_scoped=frozenset(source_scoped - own),
         ),
     ]
     return replace(

@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-skills.dev/schemas/artifact-index.v1.schema.json",
+  "title": "Resolved deterministic capability artifact v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifactFormat",
+    "engineVersion",
+    "apiVersion",
+    "rootPackage",
+    "packages",
+    "legalFiles"
+  ],
+  "properties": {
+    "artifactFormat": {
+      "const": 1
+    },
+    "engineVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "apiVersion": {
+      "const": "ai-skills.dev/v1"
+    },
+    "rootPackage": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*$"
+        }
+      ]
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "version", "treeDigest", "capabilities", "resources"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "treeDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/capability"
+            }
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/resource"
+            }
+          }
+        }
+      }
+    },
+    "legalFiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "digest"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^(?!/)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000]+$"
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "package",
+        "role",
+        "dialect",
+        "path",
+        "treeDigest",
+        "sourceTreeDigest",
+        "requires",
+        "related",
+        "closure",
+        "resources",
+        "lineage",
+        "license",
+        "notices",
+        "portability",
+        "names",
+        "aliases",
+        "hostAttributes",
+        "executionSurface"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*:(skill|instruction|specialist|workflow|lifecycle|integration)/[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "package": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "role": {
+          "enum": [
+            "skill",
+            "instruction",
+            "specialist",
+            "workflow",
+            "lifecycle",
+            "integration"
+          ]
+        },
+        "dialect": {
+          "enum": [
+            "agent-skills",
+            "claude-code-agent",
+            "markdown-instruction",
+            "cursor-rule",
+            "claude-code-command",
+            "claude-code-hooks",
+            "mcp"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000]+$"
+        },
+        "treeDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "sourceTreeDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*:(skill|instruction|specialist|workflow|lifecycle|integration)/[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "uniqueItems": true
+        },
+        "related": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*:(skill|instruction|specialist|workflow|lifecycle|integration)/[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "uniqueItems": true
+        },
+        "closure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capabilities", "resources", "units"],
+          "properties": {
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*:(skill|instruction|specialist|workflow|lifecycle|integration)/[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "uniqueItems": true
+            },
+            "resources": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*:resource/[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "uniqueItems": true
+            },
+            "units": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*:(skill|instruction|specialist|workflow|lifecycle|integration)/[a-z0-9]+(?:-[a-z0-9]+)*$"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "uniqueItems": true
+            }
+          }
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource"
+          }
+        },
+        "lineage": {
+          "type": "array",
+          "items": {
+            "$ref": "https://ai-skills.dev/schema/lineage.v1.schema.json"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1
+        },
+        "notices": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?!/)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000]+$"
+          },
+          "uniqueItems": true
+        },
+        "portability": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mode", "state", "reason"],
+            "properties": {
+              "mode": {
+                "enum": ["user-explode", "repo-materialize"]
+              },
+              "state": {
+                "const": "source-unportable"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hostAttributes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "value", "semantics", "hosts"],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "value": {},
+              "semantics": {
+                "type": "string"
+              },
+              "hosts": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "executionSurface": {
+          "type": "object"
+        }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "treeDigest", "sourceTreeDigest", "lineage"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*:resource/[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000]+$"
+        },
+        "treeDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "sourceTreeDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "lineage": {
+          "type": "array",
+          "items": {
+            "$ref": "https://ai-skills.dev/schema/lineage.v1.schema.json"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

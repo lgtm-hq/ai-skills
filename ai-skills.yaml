@@ -230,6 +230,192 @@ vendors:
           description: Caveman compressed-communication skills.
           skillsRoot: skills
           skills: '*'
+          artifactResources:
+            version: 1
+            resources:
+              - id: readme-install-md
+                path: INSTALL.md
+              - id: readme-license
+                path: LICENSE
+              - id: readme-licensing-md
+                path: LICENSING.md
+              - id: readme-readme-md
+                path: README.md
+              - id: readme-security-md
+                path: SECURITY.md
+              - id: readme-agents-profiles
+                path: agents/profiles
+              - id: readme-benchmarks
+                path: benchmarks
+              - id: readme-bin-install-js
+                path: bin/install.js
+              - id: readme-browse-benchmark-md
+                path: browse/BENCHMARK.md
+              - id: readme-browse-testdata-order-dashboard-html
+                path: browse/testdata/order_dashboard.html
+              - id: readme-docs-honest-numbers-md
+                path: docs/HONEST-NUMBERS.md
+              - id: readme-docs-wrap-benchmark-md
+                path: docs/WRAP-BENCHMARK.md
+              - id: readme-docs-assets-star-history-png
+                path: docs/assets/star-history.png
+              - id: readme-docs-technical-product-model-md
+                path: docs/technical/product-model.md
+              - id: readme-evals-readme-md
+                path: evals/README.md
+              - id: readme-integrations-recipes
+                path: integrations/recipes
+              - id: readme-packages-cli-src-index-ts
+                path: packages/cli/src/index.ts
+              - id: readme-packages-cli-tests-telemetry-runtime-mjs
+                path: packages/cli/tests/telemetry.runtime.mjs
+              - id: readme-skills-caveman-compress
+                path: skills/caveman-compress
+              - id: readme-skills-caveman-skill-md
+                path: skills/caveman/SKILL.md
+              - id: readme-src-rules-caveman-activate-md
+                path: src/rules/caveman-activate.md
+              - id: cavecrew-builder
+                path: agents/cavecrew-builder.md
+              - id: cavecrew-investigator
+                path: agents/cavecrew-investigator.md
+              - id: cavecrew-reviewer
+                path: agents/cavecrew-reviewer.md
+            bindings:
+              skill/cavecrew:
+                - readme-install-md
+                - readme-license
+                - readme-licensing-md
+                - readme-readme-md
+                - readme-security-md
+                - readme-agents-profiles
+                - readme-benchmarks
+                - readme-bin-install-js
+                - readme-browse-benchmark-md
+                - readme-browse-testdata-order-dashboard-html
+                - readme-docs-honest-numbers-md
+                - readme-docs-wrap-benchmark-md
+                - readme-docs-assets-star-history-png
+                - readme-docs-technical-product-model-md
+                - readme-evals-readme-md
+                - readme-integrations-recipes
+                - readme-packages-cli-src-index-ts
+                - readme-packages-cli-tests-telemetry-runtime-mjs
+                - readme-skills-caveman-compress
+                - readme-skills-caveman-skill-md
+                - readme-src-rules-caveman-activate-md
+                - cavecrew-builder
+                - cavecrew-investigator
+                - cavecrew-reviewer
+              skill/caveman:
+                - readme-install-md
+                - readme-license
+                - readme-licensing-md
+                - readme-readme-md
+                - readme-security-md
+                - readme-agents-profiles
+                - readme-benchmarks
+                - readme-bin-install-js
+                - readme-browse-benchmark-md
+                - readme-browse-testdata-order-dashboard-html
+                - readme-docs-honest-numbers-md
+                - readme-docs-wrap-benchmark-md
+                - readme-docs-assets-star-history-png
+                - readme-docs-technical-product-model-md
+                - readme-evals-readme-md
+                - readme-integrations-recipes
+                - readme-packages-cli-src-index-ts
+                - readme-packages-cli-tests-telemetry-runtime-mjs
+                - readme-skills-caveman-compress
+                - readme-src-rules-caveman-activate-md
+              skill/caveman-commit:
+                - readme-install-md
+                - readme-license
+                - readme-licensing-md
+                - readme-readme-md
+                - readme-security-md
+                - readme-agents-profiles
+                - readme-benchmarks
+                - readme-bin-install-js
+                - readme-browse-benchmark-md
+                - readme-browse-testdata-order-dashboard-html
+                - readme-docs-honest-numbers-md
+                - readme-docs-wrap-benchmark-md
+                - readme-docs-assets-star-history-png
+                - readme-docs-technical-product-model-md
+                - readme-evals-readme-md
+                - readme-integrations-recipes
+                - readme-packages-cli-src-index-ts
+                - readme-packages-cli-tests-telemetry-runtime-mjs
+                - readme-skills-caveman-compress
+                - readme-skills-caveman-skill-md
+                - readme-src-rules-caveman-activate-md
+              skill/caveman-help:
+                - readme-install-md
+                - readme-license
+                - readme-licensing-md
+                - readme-readme-md
+                - readme-security-md
+                - readme-agents-profiles
+                - readme-benchmarks
+                - readme-bin-install-js
+                - readme-browse-benchmark-md
+                - readme-browse-testdata-order-dashboard-html
+                - readme-docs-honest-numbers-md
+                - readme-docs-wrap-benchmark-md
+                - readme-docs-assets-star-history-png
+                - readme-docs-technical-product-model-md
+                - readme-evals-readme-md
+                - readme-integrations-recipes
+                - readme-packages-cli-src-index-ts
+                - readme-packages-cli-tests-telemetry-runtime-mjs
+                - readme-skills-caveman-compress
+                - readme-skills-caveman-skill-md
+                - readme-src-rules-caveman-activate-md
+              skill/caveman-review:
+                - readme-install-md
+                - readme-license
+                - readme-licensing-md
+                - readme-readme-md
+                - readme-security-md
+                - readme-agents-profiles
+                - readme-benchmarks
+                - readme-bin-install-js
+                - readme-browse-benchmark-md
+                - readme-browse-testdata-order-dashboard-html
+                - readme-docs-honest-numbers-md
+                - readme-docs-wrap-benchmark-md
+                - readme-docs-assets-star-history-png
+                - readme-docs-technical-product-model-md
+                - readme-evals-readme-md
+                - readme-integrations-recipes
+                - readme-packages-cli-src-index-ts
+                - readme-packages-cli-tests-telemetry-runtime-mjs
+                - readme-skills-caveman-compress
+                - readme-skills-caveman-skill-md
+                - readme-src-rules-caveman-activate-md
+              skill/caveman-stats:
+                - readme-install-md
+                - readme-license
+                - readme-licensing-md
+                - readme-readme-md
+                - readme-security-md
+                - readme-agents-profiles
+                - readme-benchmarks
+                - readme-bin-install-js
+                - readme-browse-benchmark-md
+                - readme-browse-testdata-order-dashboard-html
+                - readme-docs-honest-numbers-md
+                - readme-docs-wrap-benchmark-md
+                - readme-docs-assets-star-history-png
+                - readme-docs-technical-product-model-md
+                - readme-evals-readme-md
+                - readme-integrations-recipes
+                - readme-packages-cli-src-index-ts
+                - readme-packages-cli-tests-telemetry-runtime-mjs
+                - readme-skills-caveman-compress
+                - readme-skills-caveman-skill-md
+                - readme-src-rules-caveman-activate-md
   - id: davidondrej
     repo: davidondrej/skills
     sha: 7201ee3854ada65e1863f68690800aa483e6d085
@@ -249,6 +435,14 @@ vendors:
           renameSkills:
             teach: teach-davidondrej
             handoff: handoff-davidondrej
+          artifactResources:
+            version: 1
+            resources:
+              - id: deepapi
+                path: skills/research-and-web/deepapi
+            bindings:
+              skill/deep-scrape:
+                - deepapi
 exports:
   - git-pr
   - review

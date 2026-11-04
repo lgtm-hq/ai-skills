@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from ai_skills_engine.manifest.artifact_resources import ArtifactResources
 from ai_skills_engine.manifest.capability import Capability
 from ai_skills_engine.manifest.record import Record
 from ai_skills_engine.manifest.resource_record import Resource
@@ -16,5 +17,6 @@ class Package(Record):
     description: str | None = None
     capabilities: tuple[Capability, ...] = ()
     resources: tuple[Resource, ...] = ()
+    artifact_resources: ArtifactResources | None = None
     include: tuple[str, ...] | None = None
     exclude: tuple[str, ...] | None = None

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ai_skills_engine.inventory.capability import Capability
 from ai_skills_engine.inventory.load import load_inventory
+from ai_skills_engine.inventory.model import Inventory
 from ai_skills_engine.inventory.resource_record import Resource
 from ai_skills_engine.manifest.identity import parse_id
 from ai_skills_engine.manifest.load import load_consumer, read_document
@@ -16,9 +17,11 @@ from ai_skills_engine.selection.rules import select
 from ai_skills_engine.selection.scope import SelectionScope
 
 
-def load_selection(
-    root: Path, *, vendor_roots: Mapping[str, Path] | None = None
-) -> SelectionResult:
+def load_inputs(
+    root: Path,
+    *,
+    vendor_roots: Mapping[str, Path] | None = None,
+) -> tuple[Inventory, SelectionResult]:
     """Plan complete offline inputs without acquiring or executing vendor content.
 
     Args:
@@ -26,7 +29,7 @@ def load_selection(
         vendor_roots: Explicit vendor snapshots keyed by consumer alias.
 
     Returns:
-        Pure selection result including the inventory's original diagnostics.
+        Complete candidates and selection from the same observation lifetime.
     """
     roots = vendor_roots or {}
     consumer, imported, _ = load_consumer(root / "ai-skills.yaml", vendor_roots=roots)
@@ -133,7 +136,7 @@ def load_selection(
         for vendor in consumer.vendors
         if vendor.id not in roots and vendor.include != ()
     )
-    return replace(
+    return inventory, replace(
         result,
         diagnostics=tuple(
             sorted(
@@ -142,3 +145,18 @@ def load_selection(
             )
         ),
     )
+
+
+def load_selection(
+    root: Path, *, vendor_roots: Mapping[str, Path] | None = None
+) -> SelectionResult:
+    """Plan offline inputs through the shared inventory/selection boundary.
+
+    Args:
+        root: Consumer repository.
+        vendor_roots: Explicit vendor snapshots keyed by consumer alias.
+
+    Returns:
+        Selection retaining the inventory's original diagnostics.
+    """
+    return load_inputs(root, vendor_roots=vendor_roots)[1]

@@ -117,6 +117,10 @@ def _check_publication(data: dict[str, Any]) -> None:
 def legacy_documents(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Project manifest declarations to the old consumer-facing shape.
 
+    Versioned artifactResources are explicitly ignored: legacy output does not
+    deliver those dependencies. Ordinary resources/requires still fail below;
+    extraFiles retain their original legacy copy semantics.
+
     Args:
         data: Validated manifest with optional formatting extensions.
 

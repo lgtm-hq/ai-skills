@@ -32,3 +32,4 @@ class Capability:
     host_attributes: tuple[HostAttribute, ...] = ()
     destination_names: tuple[str, ...] = ()
     lineage: tuple[Lineage, ...] = ()
+    resource_paths: tuple[tuple[str, str], ...] = ()

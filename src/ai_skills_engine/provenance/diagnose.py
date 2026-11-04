@@ -1,14 +1,14 @@
 """Byte-equality diagnostics scoped exclusively to declared pinned inputs."""
 
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from ai_skills_engine.inventory.capability import Capability
-from ai_skills_engine.inventory.payload import payload_files
 from ai_skills_engine.inventory.resource_record import Resource
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.vendor import Vendor
 from ai_skills_engine.provenance.context import Context, origin_locator
+from ai_skills_engine.provenance.input_files import input_files
 from ai_skills_engine.provenance.origins import denied_origin
 
 
@@ -19,6 +19,7 @@ def diagnose(
     roots: Mapping[str, Path],
     context: Context,
     resources: tuple[Resource, ...] = (),
+    source_scoped: frozenset[str] = frozenset(),
 ) -> tuple[Diagnostic, ...]:
     """Compare shipped payload files with full import trees, without assigning origin.
 
@@ -28,6 +29,8 @@ def diagnose(
         roots: Available snapshots of those imports.
         context: Final consumer policy and current publication identity.
         resources: Resolved required resource ancestry.
+        source_scoped: Re-exports validated at their actual source publisher by
+            the recursive builder, never inferred from a claimed chain or bytes.
 
     Returns:
         Missing-lineage and attestation-conflict evidence, never invented ancestry.
@@ -39,7 +42,15 @@ def diagnose(
     for vendor in vendors:
         if vendor.id in roots:
             try:
-                files = payload_files(roots[vendor.id])
+                protected = tuple(
+                    PurePosixPath(hop.path)
+                    for record in (*records, *resources)
+                    for chain in record.lineage
+                    for hop in chain.lineage
+                    if (hop.origin, hop.rev)
+                    == (origin_locator(vendor.repo), vendor.sha)
+                )
+                files = input_files(root=roots[vendor.id], protected=protected)
             except (OSError, ValueError) as error:
                 findings.append(
                     Diagnostic(
@@ -106,6 +117,10 @@ def diagnose(
                         "with known lineage or consumer deny",
                     )
                 )
+        if identity in source_scoped:
+            # Its actual source's declared inputs were checked before re-export.
+            # Keep the catalog's attestation-conflict checks above for every copy.
+            continue
         for file in record.payload:
             corresponding = {(hop.origin, hop.rev) for hop in hops}
             missing = imports.get(file.sha256, set()) - corresponding

@@ -159,6 +159,9 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "artifactResources": {
+          "$ref": "#/$defs/artifactResources"
         }
       },
       "required": ["id"],
@@ -269,6 +272,9 @@
             }
           },
           "additionalProperties": false
+        },
+        "artifactResources": {
+          "$ref": "#/$defs/artifactResources"
         }
       },
       "required": ["id", "skillsRoot", "skills"],
@@ -631,6 +637,43 @@
       },
       "required": ["reason"],
       "minProperties": 2,
+      "additionalProperties": false
+    },
+    "artifactResources": {
+      "description": "Version 1 artifact-only resource projection. Legacy registries and plugins-baked explicitly ignore it and do not deliver these dependencies. Each role/name binding must enumerate the complete transitive resource ID closure; structural references must resolve within that closure or the capability. Ordinary dependency-loss rejection is unchanged.",
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "resources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/resource"
+          }
+        },
+        "bindings": {
+          "type": "object",
+          "minProperties": 1,
+          "patternProperties": {
+            "^(?:skill|instruction|specialist|workflow|lifecycle|integration)/[a-z0-9]+(?:-[a-z0-9]+)*$": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["version", "resources", "bindings"],
+      "patternProperties": {
+        "^x-": {}
+      },
       "additionalProperties": false
     }
   }
