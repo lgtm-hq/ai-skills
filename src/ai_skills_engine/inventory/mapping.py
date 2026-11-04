@@ -119,6 +119,7 @@ def _mapped_package(
                 requires=declaration.requires if declaration else (),
                 related=declaration.related if declaration else (),
                 resources=declaration.resources if declaration else (),
+                extensions=declaration.extensions if declaration else {},
             )
         )
     unused = (set(package.capabilities) - names) | (

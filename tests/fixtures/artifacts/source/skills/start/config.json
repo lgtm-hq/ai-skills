@@ -1,0 +1,4 @@
+{
+  "script": "../../shared/scripts/run.py",
+  "prose": "../../shared/scripts/run.py stays unchanged"
+}

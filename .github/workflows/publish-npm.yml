@@ -112,6 +112,9 @@ jobs:
       - name: Bake vendor plugins
         run: bash scripts/ci/bake_vendor_plugins_gate.sh
 
+      - name: Rebuild and compare reviewed capability artifacts
+        run: uv run ai-skills-engine build --fetch-vendors --check
+
       - name: Build and verify gateway package
         run: bash scripts/ci/npm/check_ai_skills_package.sh
 

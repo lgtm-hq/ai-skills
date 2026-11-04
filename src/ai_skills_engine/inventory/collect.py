@@ -9,6 +9,7 @@ from ai_skills_engine.inventory.package_id import PackageId
 from ai_skills_engine.inventory.payload import payload_files, source_path, tree_digest
 from ai_skills_engine.inventory.pending import PendingCapability
 from ai_skills_engine.inventory.resource_id import ResourceId
+from ai_skills_engine.inventory.resource_paths import declared_paths
 from ai_skills_engine.inventory.resource_record import Resource
 from ai_skills_engine.inventory.roles import destination_names, inspect_role
 from ai_skills_engine.manifest.diagnostic import Diagnostic
@@ -126,6 +127,7 @@ def collect_package(
                     source_path=PurePosixPath(resource_declaration.path),
                     payload=payload,
                     tree_digest=tree_digest(payload),
+                    resource_paths=declared_paths(resource_declaration.extensions),
                 )
             )
             resource_paths[resource_identity] = source
@@ -175,6 +177,7 @@ def collect_package(
                 source_path=PurePosixPath(declaration.path),
                 payload=payload,
                 tree_digest=tree_digest(payload),
+                resource_paths=declared_paths(declaration.extensions),
                 aliases=(
                     (aliases[upstream],)
                     if declaration.role == Role.SKILL and upstream in aliases

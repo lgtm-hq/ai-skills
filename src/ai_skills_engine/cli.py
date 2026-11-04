@@ -6,6 +6,7 @@ import argparse
 from collections.abc import Callable
 
 from ai_skills_engine import package_sync, validate_skills
+from ai_skills_engine.artifacts import cli as artifact_cli
 from ai_skills_engine.bake import vendor_indexes, vendor_plugins
 from ai_skills_engine.generate import agents_md, marketplace, readme, skills_manifest
 from ai_skills_engine.inventory import cli as inventory_cli
@@ -33,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
         "package-sync": package_sync.main,
         "inventory": inventory_cli.main,
         "plan": selection_cli.main,
+        "build": artifact_cli.main,
     }
     for name, handler in routes.items():
         commands.add_parser(name, add_help=False).set_defaults(handler=handler)
@@ -49,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
             "skills-manifest": skills_manifest.main,
         },
         "bake": {
+            "artifacts": artifact_cli.main,
             "vendor-indexes": vendor_indexes.main,
             "vendor-plugins": vendor_plugins.main,
         },

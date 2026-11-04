@@ -1,0 +1,251 @@
+{
+  "apiVersion": "ai-skills.dev/v1",
+  "artifactFormat": 1,
+  "engineVersion": "0.0.0-fixture",
+  "legalFiles": [
+    {
+      "digest": "sha256:2d61bca4d789d7b6cb9454213e34a2446108c6aec675920e679cccfed5c7d7f2",
+      "path": "LICENSES/github.com%2Ffixture%2Fartifacts.txt"
+    },
+    {
+      "digest": "sha256:abc62ba1ebc630f93b6a82e28fdd67a8d8cff9948ba601e7f487f5affca6bebf",
+      "path": "NOTICE.md"
+    }
+  ],
+  "packages": [
+    {
+      "capabilities": [
+        {
+          "aliases": [],
+          "closure": {
+            "capabilities": [
+              "fixture/tools:skill/peer",
+              "fixture/tools:skill/start"
+            ],
+            "resources": [
+              "fixture/tools:resource/shared"
+            ],
+            "units": [
+              [
+                "fixture/tools:skill/peer",
+                "fixture/tools:skill/start"
+              ]
+            ]
+          },
+          "dialect": "agent-skills",
+          "executionSurface": {},
+          "hostAttributes": [],
+          "id": "fixture/tools:skill/peer",
+          "license": "NOASSERTION",
+          "lineage": [
+            {
+              "attestations": [],
+              "id": "fixture/tools:skill/peer",
+              "lineage": [
+                {
+                  "id": "fixture/tools:skill/peer",
+                  "origin": "github.com/fixture/artifacts",
+                  "path": "skills/peer",
+                  "publisher": "fixture",
+                  "renamedFrom": null,
+                  "rev": null,
+                  "transforms": [],
+                  "treeDigest": "sha256:be1d6816071090ee8cc62e46dfb1ced6a9777fd4f1bf72dfaa6d2036c9575175"
+                }
+              ]
+            }
+          ],
+          "names": [
+            "peer"
+          ],
+          "notices": [
+            "LICENSES/github.com%2Ffixture%2Fartifacts.txt",
+            "NOTICE.md"
+          ],
+          "package": "fixture/tools",
+          "path": "packages/fixture/tools/skill/peer",
+          "portability": [],
+          "related": [],
+          "requires": [
+            "fixture/tools:skill/start"
+          ],
+          "resources": [
+            {
+              "id": "fixture/tools:resource/shared",
+              "lineage": [
+                {
+                  "attestations": [],
+                  "id": "fixture/tools:resource/shared",
+                  "lineage": [
+                    {
+                      "id": "fixture/tools:resource/shared",
+                      "origin": "github.com/fixture/artifacts",
+                      "path": "shared",
+                      "publisher": "fixture",
+                      "renamedFrom": null,
+                      "rev": null,
+                      "transforms": [],
+                      "treeDigest": "sha256:d370dc756dd282dfa962a563af51924d20b7def1bf3453061371757ffa705611"
+                    }
+                  ]
+                }
+              ],
+              "path": "_shared/fixture/shared",
+              "sourceTreeDigest": "sha256:d370dc756dd282dfa962a563af51924d20b7def1bf3453061371757ffa705611",
+              "treeDigest": "sha256:d370dc756dd282dfa962a563af51924d20b7def1bf3453061371757ffa705611"
+            }
+          ],
+          "role": "skill",
+          "sourceTreeDigest": "sha256:be1d6816071090ee8cc62e46dfb1ced6a9777fd4f1bf72dfaa6d2036c9575175",
+          "treeDigest": "sha256:0f710de4d88be9e4c4f33300573dd69a5124f2a1a23e04edfad4199f161f5a11"
+        },
+        {
+          "aliases": [],
+          "closure": {
+            "capabilities": [
+              "fixture/tools:skill/peer",
+              "fixture/tools:skill/start"
+            ],
+            "resources": [
+              "fixture/tools:resource/shared"
+            ],
+            "units": [
+              [
+                "fixture/tools:skill/peer",
+                "fixture/tools:skill/start"
+              ]
+            ]
+          },
+          "dialect": "agent-skills",
+          "executionSurface": {},
+          "hostAttributes": [
+            {
+              "hosts": {
+                "claude-code": "preserve",
+                "codex": "unverified",
+                "cursor": "unverified"
+              },
+              "key": "disable-model-invocation",
+              "semantics": "invocation-restriction",
+              "value": true
+            }
+          ],
+          "id": "fixture/tools:skill/start",
+          "license": "NOASSERTION",
+          "lineage": [
+            {
+              "attestations": [],
+              "id": "fixture/tools:skill/start",
+              "lineage": [
+                {
+                  "id": "fixture/tools:skill/start",
+                  "origin": "github.com/fixture/artifacts",
+                  "path": "skills/start",
+                  "publisher": "fixture",
+                  "renamedFrom": null,
+                  "rev": null,
+                  "transforms": [],
+                  "treeDigest": "sha256:03b44c7bd75d6c3df3e8b14d4d5295561793b4957e23ad7481ffe8da728b727a"
+                }
+              ]
+            }
+          ],
+          "names": [
+            "start"
+          ],
+          "notices": [
+            "LICENSES/github.com%2Ffixture%2Fartifacts.txt",
+            "NOTICE.md"
+          ],
+          "package": "fixture/tools",
+          "path": "packages/fixture/tools/skill/start",
+          "portability": [
+            {
+              "mode": "user-explode",
+              "reason": "SKILL.md: reference outside structurally understood fields",
+              "state": "source-unportable"
+            },
+            {
+              "mode": "user-explode",
+              "reason": "config.json: reference outside structurally understood fields",
+              "state": "source-unportable"
+            },
+            {
+              "mode": "repo-materialize",
+              "reason": "SKILL.md: reference outside structurally understood fields",
+              "state": "source-unportable"
+            },
+            {
+              "mode": "repo-materialize",
+              "reason": "config.json: reference outside structurally understood fields",
+              "state": "source-unportable"
+            }
+          ],
+          "related": [],
+          "requires": [
+            "fixture/tools:skill/peer"
+          ],
+          "resources": [
+            {
+              "id": "fixture/tools:resource/shared",
+              "lineage": [
+                {
+                  "attestations": [],
+                  "id": "fixture/tools:resource/shared",
+                  "lineage": [
+                    {
+                      "id": "fixture/tools:resource/shared",
+                      "origin": "github.com/fixture/artifacts",
+                      "path": "shared",
+                      "publisher": "fixture",
+                      "renamedFrom": null,
+                      "rev": null,
+                      "transforms": [],
+                      "treeDigest": "sha256:d370dc756dd282dfa962a563af51924d20b7def1bf3453061371757ffa705611"
+                    }
+                  ]
+                }
+              ],
+              "path": "_shared/fixture/shared",
+              "sourceTreeDigest": "sha256:d370dc756dd282dfa962a563af51924d20b7def1bf3453061371757ffa705611",
+              "treeDigest": "sha256:d370dc756dd282dfa962a563af51924d20b7def1bf3453061371757ffa705611"
+            }
+          ],
+          "role": "skill",
+          "sourceTreeDigest": "sha256:03b44c7bd75d6c3df3e8b14d4d5295561793b4957e23ad7481ffe8da728b727a",
+          "treeDigest": "sha256:78abe941dc86164b2ed49c607f35bef2b748511cf280038e97c512f896053d1f"
+        }
+      ],
+      "id": "fixture/tools",
+      "resources": [
+        {
+          "id": "fixture/tools:resource/shared",
+          "lineage": [
+            {
+              "attestations": [],
+              "id": "fixture/tools:resource/shared",
+              "lineage": [
+                {
+                  "id": "fixture/tools:resource/shared",
+                  "origin": "github.com/fixture/artifacts",
+                  "path": "shared",
+                  "publisher": "fixture",
+                  "renamedFrom": null,
+                  "rev": null,
+                  "transforms": [],
+                  "treeDigest": "sha256:d370dc756dd282dfa962a563af51924d20b7def1bf3453061371757ffa705611"
+                }
+              ]
+            }
+          ],
+          "path": "packages/fixture/tools/resource/shared",
+          "sourceTreeDigest": "sha256:d370dc756dd282dfa962a563af51924d20b7def1bf3453061371757ffa705611",
+          "treeDigest": "sha256:d370dc756dd282dfa962a563af51924d20b7def1bf3453061371757ffa705611"
+        }
+      ],
+      "treeDigest": "sha256:939e897e509ceaaa13ff8c9dd8edb22189d02487f69051a54907b3580178cc37",
+      "version": "1.2.3"
+    }
+  ],
+  "rootPackage": null
+}

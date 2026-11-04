@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import sys
 import tarfile
 from collections.abc import Mapping
@@ -1512,6 +1513,13 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--vendor-tree",
+        action="append",
+        default=[],
+        metavar="ID=PATH",
+        help="Explicit offline snapshots for the compatibility bake",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="Validate local plugins-baked/ without GitHub access",
@@ -1527,11 +1535,45 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         return check(repo_root=repo_root)
     try:
-        bake(repo_root=repo_root)
+        from ai_skills_engine.inventory.cli import vendor_roots
+
+        trees = vendor_roots(args.vendor_tree)
+        if trees:
+            _bake_offline_inputs(repo_root=repo_root, trees=trees)
+        else:
+            bake(repo_root=repo_root)
     except _CLI_FAILURES as error:
         print(safe_diagnostic(str(error)), file=sys.stderr)
         return 1
     return 0
+
+
+def _bake_offline_inputs(*, repo_root: Path, trees: dict[str, Path]) -> None:
+    """Keep explicit snapshots pristine while applying legacy bake curation.
+
+    Args:
+        repo_root: Compatibility registry root.
+        trees: Explicit read-only vendor snapshots.
+
+    Raises:
+        ValueError: For unknown aliases or unsafe inputs.
+    """
+    vendors = {
+        vendor.id: vendor
+        for vendor in load_registry(registry_path=repo_root / "vendors.yaml")
+    }
+    if unknown := trees.keys() - vendors.keys():
+        raise ValueError(f"Unknown --vendor-tree aliases: {sorted(unknown)}")
+    with TemporaryDirectory(prefix="ai-skills-offline-") as temporary:
+        copies = {}
+        for alias, source in trees.items():
+            validate_input_tree(
+                root=source, vendor=alias, limits=vendors[alias].ingest_limits
+            )
+            destination = Path(temporary) / alias
+            shutil.copytree(src=source, dst=destination, symlinks=True)
+            copies[alias] = destination
+        bake(repo_root=repo_root, vendor_trees=copies)
 
 
 if __name__ == "__main__":

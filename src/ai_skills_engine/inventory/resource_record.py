@@ -18,3 +18,4 @@ class Resource:
     payload: tuple[PayloadFile, ...]
     tree_digest: str
     lineage: tuple[Lineage, ...] = ()
+    resource_paths: tuple[tuple[str, str], ...] = ()

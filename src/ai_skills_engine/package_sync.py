@@ -122,9 +122,16 @@ def rendered_files(version: str, *, repo_root: Path | None = None) -> dict[Path,
         for schema in sorted((project_root / directory).glob("*.schema.json")):
             content = schema.read_text(encoding="utf-8")
             files[data_root / "schema" / schema.name] = content
-            files[project_root / "src" / "ai_skills_engine" / module / schema.name] = (
-                content
+            resource_module = (
+                "data" if schema.name.startswith("artifact-index.") else module
             )
+            files[
+                project_root
+                / "src"
+                / "ai_skills_engine"
+                / resource_module
+                / schema.name
+            ] = content
     files[package_root / "NOTICE.md"] = files[package_root / "NOTICE.md"].replace(
         "`vendors.yaml`",
         "`data/vendors.yaml`",

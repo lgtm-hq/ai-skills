@@ -1089,11 +1089,14 @@ def _validate_index_skills(
     return sorted(normalized, key=lambda skill: skill["path"])
 
 
-def render_notice(*, vendors: tuple[Vendor, ...]) -> str:
+def render_notice(
+    *, vendors: tuple[Vendor, ...], origins: frozenset[str] | None = None
+) -> str:
     """Render the root NOTICE file from registry metadata.
 
     Args:
         vendors: Validated registry records.
+        origins: Optional actual shipped origin locators for artifact notices.
 
     Returns:
         Markdown NOTICE text with a trailing newline.
@@ -1110,6 +1113,8 @@ def render_notice(*, vendors: tuple[Vendor, ...]) -> str:
         "",
     ]
     for vendor in vendors:
+        if origins is not None and "github.com/" + vendor.repo not in origins:
+            continue
         lines.extend(
             [
                 f"- [{vendor.repo}]({vendor.homepage}) — `{vendor.license}`",

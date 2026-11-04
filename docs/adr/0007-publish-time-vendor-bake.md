@@ -57,3 +57,25 @@ When the tree is present (after a local bake or the CI/publish gate),
   `skills/`, not keeping a stale pin so an old bake stays in git.
 - Offline clones cannot inspect baked vendor trees until they bake (or
   unpack a published package).
+
+## Amendment: reviewed capability artifact digests
+
+The capability build defined by ADR 0011 additionally emits canonical,
+uncompressed package tarballs and schema-validated indexes under
+`dist/artifacts/`. These payloads remain uncommitted, as does `plugins-baked/`.
+Their release identity is the SHA-256 of the uncompressed tar, independent of
+compression choices. The tar digest is external to its index to avoid a
+self-reference.
+
+A generated, committed `artifact-digests.json` records each selected package's
+tree digest and external tar digest. Updating pins, selected payloads, source
+resources or builder inputs requires regenerating this commitment from a valid
+selection. Validation checks local author-input drift offline. Publishing must
+also rebuild with complete pinned inputs and compare the regenerated commitment;
+missing inputs, strict provenance failures and any mismatch fail closed. An
+absent commitment cannot authorize publishing. Issue #574 incorporates this
+commitment into `ai-skills.lock`.
+
+The compatibility marketplace bake retains its existing bytes and safety rules.
+[The artifact contract](../artifacts.md) documents the separate build command,
+resource layout and downstream golden fixtures.
