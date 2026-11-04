@@ -1,0 +1,31 @@
+---
+apiVersion: ai-skills.dev/v1
+publisher:
+  id: y
+  repo: fixture/y
+packages:
+  - id: tools
+    capabilities:
+      - id: renamed
+        path: skills/renamed
+        resources:
+          - x/tools:resource/script
+      - id: transformed
+        path: skills/transformed
+        resources:
+          - x/tools:resource/script
+vendors:
+  - id: x
+    repo: fixture/x
+    sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+exports:
+  - tools
+  - x/tools
+policy:
+  provenance:
+    mode: warn
+    acceptAttestations: true
+overrides:
+  migrations:
+    - from: y/tools:skill/excel
+      to: y/tools:skill/renamed

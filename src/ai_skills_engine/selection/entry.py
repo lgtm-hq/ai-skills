@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from ai_skills_engine.provenance.model import Lineage
 from ai_skills_engine.selection.state import State
 
 
@@ -14,3 +15,4 @@ class SelectionEntry:
     reason: str
     chain: tuple[str, ...] = ()
     names: tuple[str, ...] = ()
+    lineage: tuple[Lineage, ...] = ()

@@ -76,13 +76,23 @@ def select(
     findings.extend(namespace_findings)
     excluded.update({identity: "overrides.collisions: skip" for identity in skips})
     subjects = {
-        key: DenySubject(id=key, origin=item.origin) for key, item in resources.items()
+        key: DenySubject(
+            id=key,
+            origin=item.origin,
+            lineage=tuple(
+                hop.origin for chain in item.lineage for hop in chain.lineage
+            ),
+        )
+        for key, item in resources.items()
     }
     subjects.update(
         {
             key: DenySubject(
                 id=key,
                 origin=item.origin,
+                lineage=tuple(
+                    hop.origin for chain in item.lineage for hop in chain.lineage
+                ),
                 resources=tuple(
                     subjects[str(target)]
                     for target in item.resources
@@ -130,6 +140,24 @@ def select(
         graph=graph, roots=set(roots) - set(blocked), blocked=set(blocked)
     )
     kept = set(parents) - set(blocked)
+    for key in sorted(kept & set(denies)):
+        match = denies[key]
+        if len(match.chain) > 1:
+            findings.append(
+                SelectionDiagnostic(
+                    code="selection.required-denied",
+                    location=key,
+                    message=(
+                        f"{key} requires denied resource {match.chain[-1]} "
+                        f"(origin {match.origin})"
+                    ),
+                    chain=(
+                        *dependency_chain(parents=parents, target=key),
+                        *match.chain[1:],
+                    ),
+                    fix=f"Exclude {key} or remove its denied resource dependency.",
+                )
+            )
     components: dict[str, tuple[str, ...]] = {}
     for component in strongly_connected(requires):
         if len(component) > 1:
@@ -295,6 +323,11 @@ def select(
             reason=reason,
             chain=chain or ((key,) if key in roots else ()),
             names=names.get(key, ()),
+            lineage=(
+                caps[key].lineage
+                if key in caps
+                else resources[key].lineage if key in resources else ()
+            ),
         )
 
     return SelectionResult(

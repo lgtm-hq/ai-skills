@@ -18,6 +18,15 @@ def explain(result: SelectionResult) -> str:
     ]
     for role, name, owners in result.namespace:
         lines.append(f"namespace {role}/{name}: {', '.join(owners)}")
+    for entry in (*result.capabilities, *result.resources):
+        for chain in entry.lineage:
+            lines.append(
+                f"lineage {entry.id}: "
+                + " -> ".join(
+                    f"{hop.origin}@{hop.rev or 'local'} [{hop.id}]"
+                    for hop in chain.lineage
+                )
+            )
     for item in result.diagnostics:
         severity = "warning" if item.warning else "error"
         lines.append(f"{severity}[{item.code}]: {item.message}")

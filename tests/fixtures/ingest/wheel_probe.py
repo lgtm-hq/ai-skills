@@ -73,10 +73,10 @@ def main() -> None:
                         status = cli.main(
                             ["bake", "vendor-plugins", "--repo-root", author]
                         )
-                elif operation == "plan":
+                elif operation in {"inventory", "plan"}:
                     status = cli.main(
                         [
-                            "plan",
+                            operation,
                             "--repo-root",
                             author,
                             "--vendor-root",

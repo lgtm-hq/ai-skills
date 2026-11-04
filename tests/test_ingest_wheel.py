@@ -330,6 +330,61 @@ def test_wheel_pem_acknowledgement_privacy(
         )
 
 
+@pytest.mark.parametrize("failure", ["secret", "lfs"])
+def test_wheel_inventory_preserves_rejected_dependency_evidence(
+    wheel_site: Path,
+    rejected_inventory: tuple[Path, Path, str, str],
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+) -> None:
+    """Recursive lineage retains rejected targets and their real unresolved edges."""
+    from inventory_helpers import inventory_snapshot
+
+    root, source, bad, requirer = rejected_inventory
+    if failure == "lfs":
+        (source / "bad.md").write_bytes(
+            b"version https://git-lfs.github.com/spec/v1\noid sha256:"
+            + b"a" * 64
+            + b"\nsize 123\n"
+        )
+    before = inventory_snapshot(root, source)
+    assert_that(
+        cli.main(
+            [
+                "inventory",
+                "--repo-root",
+                str(root),
+                "--vendor-root",
+                f"vendor={source}",
+                "--json",
+            ]
+        )
+    ).is_equal_to(1)
+    output = capsys.readouterr()
+    result = probe(site=wheel_site, root=root, source=source, operation="inventory")
+    assert_that(result["status"]).is_equal_to(1)
+    assert_that((result["stdout"], result["stderr"])).is_equal_to(
+        (output.out, output.err)
+    )
+    document = json.loads(result["stdout"])
+    assert_that(document["rejected"]).is_equal_to([bad])
+    assert_that(document["unresolved_edges"]).contains(
+        {
+            "source": requirer,
+            "field": "resources" if ":resource/" in bad else "requires",
+            "target": bad,
+        }
+    )
+    assert_that([item["id"] for item in document["resources"]]).contains(
+        "upstream/tools:resource/valid"
+    )
+    assert_that([item["id"] for item in document["capabilities"]]).contains(
+        "upstream/tools:skill/good", requirer
+    )
+    assert_that(json.dumps(result)).does_not_contain("AKIA" + "A" * 16)
+    assert_that(inventory_snapshot(root, source)).is_equal_to(before)
+
+
 @pytest.mark.parametrize("control", ["clean", "both-excluded", "retained", "required"])
 def test_wheel_plan_recovers_independent_declarations(
     wheel_site: Path,

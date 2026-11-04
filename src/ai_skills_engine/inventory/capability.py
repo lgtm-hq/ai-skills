@@ -10,6 +10,7 @@ from ai_skills_engine.inventory.payload_file import PayloadFile
 from ai_skills_engine.inventory.resource_id import ResourceId
 from ai_skills_engine.inventory.roles import Dialect
 from ai_skills_engine.manifest.identity import Role
+from ai_skills_engine.provenance.model import Lineage
 
 
 @dataclass(frozen=True)
@@ -30,3 +31,4 @@ class Capability:
     aliases: tuple[str, ...] = ()
     host_attributes: tuple[HostAttribute, ...] = ()
     destination_names: tuple[str, ...] = ()
+    lineage: tuple[Lineage, ...] = ()

@@ -176,22 +176,27 @@ let content = input.text;
 const extracted = await extractPackageFile(managerName, content, 'ai-skills.yaml', config);
 const deps = extracted?.deps ?? [];
 const documents = parseAllDocuments(content, { prettyErrors: true, uniqueKeys: true, strict: false });
+const claimedDigestStarts = new Set<number>();
 const matches = deps.map((dep) => {
   const groups = Object.fromEntries(['depName', 'currentDigest', 'currentValue'].map((key) => [key, dep[key]]));
   const spans: Record<string, [number, number]> = {};
   // CST ranges only support assertions; production extraction/update use upstream code.
-  for (const doc of documents) {
+  documentLoop: for (const doc of documents) {
     const vendors = doc.get('vendors', true);
     if (!isRecord(vendors) || !Array.isArray(vendors.items)) continue;
     for (const vendor of vendors.items as unknown[]) {
-      if (!isYamlMap(vendor) || vendor.get('repo') !== dep.depName || vendor.get('sha') !== dep.currentDigest) continue;
+      if (!isYamlMap(vendor) || vendor.get('repo') !== dep.depName || vendor.get('sha') !== dep.currentDigest || vendor.get('branch') !== dep.currentValue) continue;
       const scalar = vendor.get('sha', true);
       if (!isRecord(scalar) || !Array.isArray(scalar.range) || typeof dep.currentDigest !== 'string') continue;
       const [start, end]: unknown[] = scalar.range;
-      if (typeof start !== 'number' || typeof end !== 'number') continue;
+      if (typeof start !== 'number' || typeof end !== 'number' || claimedDigestStarts.has(start)) continue;
       const raw = content.slice(start, end);
       const offset = raw.indexOf(dep.currentDigest);
-      if (offset >= 0) spans.currentDigest = [start + offset, start + offset + dep.currentDigest.length];
+      if (offset >= 0) {
+        spans.currentDigest = [start + offset, start + offset + dep.currentDigest.length];
+        claimedDigestStarts.add(start);
+        break documentLoop;
+      }
     }
   }
   return { groups, spans };

@@ -22,6 +22,8 @@ from ai_skills_engine.manifest.load import load_consumer, read_document
 from ai_skills_engine.manifest.package import Package
 from ai_skills_engine.manifest.validate import validate_document
 from ai_skills_engine.manifest.vendor import Vendor
+from ai_skills_engine.provenance.authorship import Authorship
+from ai_skills_engine.provenance.context import Context, origin_locator
 from ai_skills_engine.registry.ingest_checks import (
     parse_allow,
     parse_limits,
@@ -60,16 +62,77 @@ def load_inventory(
             unsafe fetched trees (including unrelated documentation symlinks).
         RuntimeError: On a failed explicitly requested pinned fetch.
     """
+    return _load_inventory(
+        root=root,
+        vendor_roots=vendor_roots or {},
+        fetch_vendors=fetch_vendors,
+        selection_candidates=selection_candidates,
+        identity_migrations=identity_migrations or {},
+        context=None,
+        ingest_vendor=None,
+    )
+
+
+def _load_inventory(
+    *,
+    root: Path,
+    vendor_roots: Mapping[str, Path],
+    fetch_vendors: bool,
+    selection_candidates: bool,
+    identity_migrations: Mapping[str, str],
+    context: Context | None,
+    ingest_vendor: Vendor | None,
+) -> Inventory:
+    """Load one explicit publication within the recursive provenance boundary.
+
+    Args:
+        root: Publisher snapshot.
+        vendor_roots: Slash-qualified pinned offline inputs.
+        fetch_vendors: Explicit acquisition authorization.
+        selection_candidates: Whether selection owns direct filtering.
+        identity_migrations: Validated publisher identity migrations.
+        context: Publication identity and final consumer policy.
+        ingest_vendor: Consumer ingestion policy for this imported publisher.
+
+    Returns:
+        Complete observed inventory and provenance evidence.
+
+    Raises:
+        ValueError: For unsafe declarations or unknown offline aliases.
+    """
+    from ai_skills_engine.provenance.build import build_inventory
+    from ai_skills_engine.provenance.publisher import metadata
+
     root = root.resolve()
     source_path(root=root, relative="ai-skills.yaml")
     document = read_document(root / "ai-skills.yaml")
+    if context is not None:
+        owned_migrations, _ = metadata(
+            document=document, publisher=document["publisher"]["id"]
+        )
+        identity_migrations = {
+            **owned_migrations,
+            **identity_migrations,
+            **dict(context.migrations),
+        }
+        document = {
+            key: value
+            for key, value in document.items()
+            if key not in {"policy", "overrides"} and not key.startswith("x-")
+        }
     structural = [item for item in validate_document(document) if item.code == "schema"]
     if structural:
         raise ValueError(str(structural))
     roots = {key: value.absolute() for key, value in (vendor_roots or {}).items()}
     aliases = {item["id"] for item in document.get("vendors", [])}
-    if set(roots) - aliases:
-        raise ValueError(f"Unknown vendor-root aliases: {sorted(set(roots) - aliases)}")
+    unknown = {
+        key
+        for key in roots
+        if key.split("/", 1)[0] not in aliases
+        or ("/" in key and key.split("/", 1)[0] not in roots)
+    }
+    if unknown:
+        raise ValueError(f"Unknown vendor-root aliases: {sorted(unknown)}")
     with TemporaryDirectory(prefix="ai-skills-inventory-") as temporary:
         if fetch_vendors:
             for item in document.get("vendors", []):
@@ -109,12 +172,58 @@ def load_inventory(
                         else IngestLimits()
                     ),
                 )
-        return _collect(
+        inventory = _collect(
             root=root,
             roots=roots,
             supplied=set(vendor_roots or {}),
             selection_candidates=selection_candidates,
             identity_migrations=identity_migrations or {},
+            ignore_authority=context is not None,
+            ingest_vendor=ingest_vendor,
+        )
+        manifest, _, _ = load_consumer(
+            root / "ai-skills.yaml",
+            vendor_roots=roots,
+            ignore_authority=context is not None,
+        )
+        publication = context or Context(
+            origin=origin_locator(manifest.publisher.repo or manifest.publisher.id),
+            rev=None,
+            policy=manifest.policy,
+            attestations=(
+                tuple(
+                    Authorship(
+                        capability=item.capability, path=item.path, reason=item.reason
+                    )
+                    for item in manifest.overrides.attestations
+                )
+                if manifest.overrides
+                else ()
+            ),
+            migrations=tuple(
+                sorted(
+                    {
+                        **identity_migrations,
+                        **(
+                            {
+                                item.from_: item.to
+                                for item in manifest.overrides.migrations
+                            }
+                            if manifest.overrides
+                            else {}
+                        ),
+                    }.items()
+                )
+            ),
+        )
+        return build_inventory(
+            inventory=inventory,
+            root=root,
+            roots=roots,
+            manifest=manifest,
+            context=publication,
+            fetch_vendors=fetch_vendors,
+            selection_candidates=selection_candidates,
         )
 
 
@@ -125,6 +234,8 @@ def _collect(
     supplied: set[str],
     selection_candidates: bool,
     identity_migrations: Mapping[str, str],
+    ignore_authority: bool,
+    ingest_vendor: Vendor | None,
 ) -> Inventory:
     """Collect local declarations and imports inside the input lifetime.
 
@@ -134,6 +245,8 @@ def _collect(
         supplied: Unverified caller-provided snapshot aliases.
         selection_candidates: Defer all import filters to the selection layer.
         identity_migrations: Publisher-local identity moves for direct edges.
+        ignore_authority: Strip publisher authority for recursive vendor inputs.
+        ingest_vendor: Consumer ingestion policy for local imported declarations.
 
     Returns:
         Complete inventory observations.
@@ -143,7 +256,7 @@ def _collect(
         if (snapshot_root / "ai-skills.yaml").exists():
             source_path(root=snapshot_root, relative="ai-skills.yaml")
     consumer, imports, findings = load_consumer(
-        root / "ai-skills.yaml", vendor_roots=roots
+        root / "ai-skills.yaml", vendor_roots=roots, ignore_authority=ignore_authority
     )
     diagnostics = list(findings)
     pending: list[PendingCapability] = []
@@ -162,7 +275,11 @@ def _collect(
             consumer.publisher.repo or consumer.publisher.id,
             package,
             {},
-            None,
+            (
+                replace(ingest_vendor, include=None, exclude=None)
+                if ingest_vendor is not None
+                else None
+            ),
         )
         for package in consumer.packages
     ]
@@ -222,11 +339,7 @@ def _collect(
             root=source_root,
             package=package,
             package_id=package_id,
-            origin=(
-                "github.com/" + origin
-                if origin.count("/") == 1 and ":" not in origin
-                else origin
-            ),
+            origin=origin_locator(origin),
             aliases=aliases,
             vendor=(
                 replace(import_vendor, include=None, exclude=None)

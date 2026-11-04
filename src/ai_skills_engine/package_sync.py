@@ -118,12 +118,13 @@ def rendered_files(version: str, *, repo_root: Path | None = None) -> dict[Path,
         destination: source.read_text(encoding="utf-8")
         for source, destination in source_data.items()
     }
-    for schema in sorted((project_root / "schemas").glob("*.schema.json")):
-        content = schema.read_text(encoding="utf-8")
-        files[data_root / "schema" / schema.name] = content
-        files[project_root / "src" / "ai_skills_engine" / "manifest" / schema.name] = (
-            content
-        )
+    for directory, module in (("schemas", "manifest"), ("schema", "provenance")):
+        for schema in sorted((project_root / directory).glob("*.schema.json")):
+            content = schema.read_text(encoding="utf-8")
+            files[data_root / "schema" / schema.name] = content
+            files[project_root / "src" / "ai_skills_engine" / module / schema.name] = (
+                content
+            )
     files[package_root / "NOTICE.md"] = files[package_root / "NOTICE.md"].replace(
         "`vendors.yaml`",
         "`data/vendors.yaml`",

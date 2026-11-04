@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class DenySubject:
-    """Immediate origin today; authenticated ancestor origins may be added later."""
+    """Observed origin, declared ancestor origins and required resource subjects."""
 
     id: str
     origin: str

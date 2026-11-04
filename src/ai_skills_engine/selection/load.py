@@ -4,9 +4,12 @@ from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
+from ai_skills_engine.inventory.capability import Capability
 from ai_skills_engine.inventory.load import load_inventory
+from ai_skills_engine.inventory.resource_record import Resource
 from ai_skills_engine.manifest.identity import parse_id
 from ai_skills_engine.manifest.load import load_consumer, read_document
+from ai_skills_engine.provenance.context import origin_locator
 from ai_skills_engine.selection.diagnostic import SelectionDiagnostic
 from ai_skills_engine.selection.model import SelectionResult
 from ai_skills_engine.selection.rules import select
@@ -85,7 +88,25 @@ def load_selection(
         publisher = (
             imported[vendor.id].publisher.id if vendor.id in imported else vendor.id
         )
-        members = tuple(key for key in identities if key.startswith(publisher + "/"))
+        records: tuple[Capability | Resource, ...] = (
+            *inventory.capabilities,
+            *inventory.resources,
+        )
+        exported = {
+            str(item.id)
+            for item in records
+            if item.id.package.publisher != consumer.publisher.id
+            and any(
+                (hop.origin, hop.rev) == (origin_locator(vendor.repo), vendor.sha)
+                for chain in item.lineage
+                for hop in chain.lineage
+            )
+        }
+        members = tuple(
+            key
+            for key in identities
+            if key.startswith(publisher + "/") or key in exported
+        )
         scopes.append(
             SelectionScope(
                 location=f"vendor:{vendor.id}",

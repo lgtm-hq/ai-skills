@@ -3,6 +3,7 @@
 import json
 from dataclasses import asdict, dataclass
 
+from ai_skills_engine.provenance.model import json_value
 from ai_skills_engine.selection.diagnostic import SelectionDiagnostic
 from ai_skills_engine.selection.entry import SelectionEntry
 
@@ -32,4 +33,7 @@ class SelectionResult:
         Returns:
             Machine-readable explain output.
         """
-        return json.dumps(asdict(self), indent=2, sort_keys=True) + "\n"
+        data = asdict(self)
+        for entry in (*data["capabilities"], *data["resources"]):
+            entry["lineage"] = json_value(entry["lineage"])
+        return json.dumps(data, indent=2, sort_keys=True) + "\n"
