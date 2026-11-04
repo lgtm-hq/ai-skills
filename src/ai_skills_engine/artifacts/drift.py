@@ -29,7 +29,11 @@ def inputs_digest(root: Path) -> str:
     manifest = read_document(root / "ai-skills.yaml")
     files = {"ai-skills.yaml": digest((root / "ai-skills.yaml").read_bytes())}
     for package in manifest.get("packages", []):
-        for record in (*package.get("capabilities", []), *package.get("resources", [])):
+        for record in (
+            *package.get("capabilities", []),
+            *package.get("resources", []),
+            *package.get("artifactResources", {}).get("resources", []),
+        ):
             source = source_path(root=root, relative=record["path"])
             base = source if source.is_dir() else source.parent
             for item in payload_files(source):

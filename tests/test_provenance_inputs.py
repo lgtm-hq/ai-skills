@@ -1,11 +1,13 @@
 """Production inventory and artifact boundaries distinguish aliases from payloads."""
 
+import json
 from pathlib import Path
 
 import pytest
 from assertpy import assert_that
 
 from ai_skills_engine import cli
+from ai_skills_engine.inventory.payload import payload_files, tree_digest
 from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.selection.load import load_inputs
@@ -131,8 +133,9 @@ def test_unselected_alias_target_still_triggers_strict_missing_lineage(
 
 @pytest.mark.parametrize("data", [b"", b"\n", b"Shared bytes.\n"])
 @pytest.mark.parametrize("exports", [[], ["a/tools"], ["a/tools", "b/tools"]])
-def test_only_published_siblings_enter_the_publishers_equality_check(
-    tmp_path: Path, data: bytes, exports: list[str]
+@pytest.mark.parametrize("control", ["reexport", "local", "unbound", "forged"])
+def test_verified_reexports_use_their_source_publishers_input_scope(
+    tmp_path: Path, data: bytes, exports: list[str], control: str
 ) -> None:
     """Strict re-export checks preserve source identity without inventing history."""
     root = tmp_path / "catalog"
@@ -169,16 +172,62 @@ def test_only_published_siblings_enter_the_publishers_equality_check(
         "exports": exports,
         "policy": {"provenance": {"mode": "strict"}},
     }
+    if control in {"local", "unbound"}:
+        payload = root / "skills/copy"
+        payload.mkdir(parents=True)
+        (payload / "SKILL.md").write_text(
+            "---\nname: local-copy\ndescription: Local.\n---\nCatalog wrapper.\n"
+        )
+        (payload / "__init__.py").write_bytes(data)
+        document["packages"] = [
+            {"id": "local", "capabilities": [{"id": "copy", "path": "skills/copy"}]}
+        ]
+    if control in {"unbound", "forged"}:
+        publisher = "catalog" if control == "unbound" else "a"
+        source = root if control == "unbound" else roots["a"]
+        identity = (
+            "catalog/local:skill/copy"
+            if control == "unbound"
+            else "a/tools:skill/helper"
+        )
+        relative = "skills/copy" if control == "unbound" else "skills/helper"
+        (source / "ai-skills.lineage.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "id": identity,
+                        "lineage": [
+                            {
+                                "origin": "github.com/fixture/forged",
+                                "publisher": publisher,
+                                "rev": "a" * 40,
+                                "id": identity,
+                                "path": relative,
+                                "treeDigest": "sha256:"
+                                + tree_digest(payload_files(source / relative)),
+                            }
+                        ],
+                    }
+                ]
+            )
+        )
     (root / "ai-skills.yaml").write_text(dump_document(document))
     inventory, selection = load_inputs(root, vendor_roots=roots)
     findings = [item for item in inventory.diagnostics if not item.warning]
-    assert_that(findings).is_length(len(exports))
-    assert_that(selection.valid).is_equal_to(not exports)
-    for finding in findings:
-        assert_that(finding.code).is_equal_to("provenance.missing-lineage")
-        assert_that(finding.message).contains(
+    codes = [item.code for item in findings]
+    assert_that(selection.valid).is_equal_to(control == "reexport")
+    if control == "reexport":
+        assert_that(findings).is_empty()
+    if control in {"local", "unbound"}:
+        missing = [
+            item for item in findings if item.code == "provenance.missing-lineage"
+        ]
+        assert_that(missing).is_length(1)
+        assert_that(missing[0].message).contains(
             "__init__.py", "byte equality, not authorship"
         )
+    if control in {"unbound", "forged"}:
+        assert_that(codes).contains("provenance.unverifiable-lineage")
     for record in inventory.capabilities:
         assert_that(
             {hop.origin for chain in record.lineage for hop in chain.lineage}
@@ -190,3 +239,35 @@ def test_only_published_siblings_enter_the_publishers_equality_check(
                 else set()
             )
         )
+
+
+@pytest.mark.parametrize("control", ["deny", "attestation"])
+def test_source_scoped_reexports_retain_denies_and_attestation_conflicts(
+    inventory_repo: tuple[Path, Path], control: str
+) -> None:
+    """Verified source scope cannot clear consumer vetoes or conflicting claims."""
+    root, vendor = inventory_repo
+    path = root / "ai-skills.yaml"
+    document = read_document(path)
+    document["policy"] = {"provenance": {"mode": "strict", "acceptAttestations": True}}
+    if control == "deny":
+        document["policy"]["deny"] = {"origins": ["github.com/upstream/tools"]}
+    else:
+        document["overrides"] = {
+            "attestations": [
+                {
+                    "capability": "vendor/tools:skill/helper",
+                    "path": "SKILL.md",
+                    "independentlyAuthored": True,
+                    "reason": "Conflicting control claim.",
+                }
+            ]
+        }
+    path.write_text(dump_document(document))
+    _, selection = load_inputs(root, vendor_roots={"vendor": vendor})
+    assert_that(selection.valid).is_false()
+    assert_that([item.code for item in selection.diagnostics]).contains(
+        "selection.required-denied"
+        if control == "deny"
+        else "provenance.attestation-conflicts-lineage"
+    )

@@ -79,3 +79,14 @@ commitment into `ai-skills.lock`.
 The compatibility marketplace bake retains its existing bytes and safety rules.
 [The artifact contract](../artifacts.md) documents the separate build command,
 resource layout and downstream golden fixtures.
+
+### Amendment: artifact-only dependency projection (2026-11-04)
+
+[Owner decision A](https://github.com/lgtm-hq/ai-skills/issues/573#issuecomment-6627648836)
+adds the versioned `artifactResources` declaration described in ADR 0011. Its
+complete, explicitly enumerated resource closure is delivered only by capability
+artifacts. The compatibility writer ignores that declaration by contract;
+legacy `plugins-baked/` and generated registries retain their bytes and semantics
+and do not deliver these dependencies. Ordinary dependency-loss rejection remains
+unchanged. Real pinned catalog builds, offline input checks and public rebuild
+checks must pass before accepting the generated root digest commitment.

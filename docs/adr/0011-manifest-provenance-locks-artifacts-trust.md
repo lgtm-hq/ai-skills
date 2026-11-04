@@ -111,6 +111,36 @@ externally.
 | `rollback`                    | Recover the last generation under ADR 0010.                                                      |
 | Frozen restore                | Restore locked inputs and selection; fail rather than repin or resolve missing inputs.           |
 
+## Amendment: source scope and artifact-only resources (2026-11-04)
+
+[Owner decision A](https://github.com/lgtm-hq/ai-skills/issues/573#issuecomment-6627648836)
+supersedes the earlier re-export comparison scope. An authenticated, verified
+re-export is compared with the declared inputs of its actual source publisher.
+Recursive source validation performs that comparison before publication. Locally
+authored and unbound catalog copies still compare against every declared catalog
+input, including unselected files. Equal bytes never establish sibling ancestry.
+Origin denies, index authentication and attestation-conflict checks remain in
+force; this amendment adds no size, filename, vendor or policy exceptions.
+
+Manifest v1 packages and mapped packages may declare `artifactResources` with
+`version: 1`, a `resources` list of explicit `{id, path}` records, and `bindings`
+mapping local `role/name` identities to resource ID lists. Each binding enumerates
+the complete transitive resource closure for that capability; the engine never
+discovers or silently adds dependencies. Directory declarations include their
+entire safe tree. Every structural local reference in each projected resource
+(CommonMark destinations and declared `x-resource-paths` scalar fields) must
+resolve to that capability or a resource in its declared closure. Missing,
+undeclared and unsafe targets fail the build, including references several hops
+away. Cycles are permitted only when their complete closure is declared.
+
+Projection feeds the normal inventory, selection, ingestion, lineage, deny and
+legal-notice gates, and materializes resources under `<capability>/_shared/`.
+The compatibility writer explicitly ignores `artifactResources`. Legacy
+registries and `plugins-baked/` retain their bytes and semantics and **do not
+deliver these dependencies**. Ordinary `resources`, `extraFiles` and `requires`
+retain their existing legacy representability checks. This is a separate
+publication contract, not permission to discard ordinary dependencies.
+
 ## Consequences
 
 - Publication and consumption share a reproducible contract without inheriting

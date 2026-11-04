@@ -8,6 +8,7 @@ from ai_skills_engine.inventory.host_attributes import inspect_attributes
 from ai_skills_engine.inventory.package_id import PackageId
 from ai_skills_engine.inventory.payload import payload_files, source_path, tree_digest
 from ai_skills_engine.inventory.pending import PendingCapability
+from ai_skills_engine.inventory.projection import project_package
 from ai_skills_engine.inventory.resource_id import ResourceId
 from ai_skills_engine.inventory.resource_paths import declared_paths
 from ai_skills_engine.inventory.resource_record import Resource
@@ -76,6 +77,13 @@ def collect_package(
         diagnostics: Findings accumulator.
         rejected: Typed identities of declarations whose payload was rejected.
     """
+    try:
+        package = project_package(package=package, package_id=package_id)
+    except ValueError as error:
+        diagnostics.append(
+            Diagnostic("inventory.invalid-projection", str(package_id), str(error))
+        )
+        return
     budget = IngestScanBudget()
 
     def scan_declaration(source: Path) -> None:

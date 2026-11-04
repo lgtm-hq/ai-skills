@@ -2,15 +2,18 @@
 
 import re
 from collections.abc import Mapping
+from functools import partial
 from pathlib import Path
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
+from ai_skills_engine.artifacts.references import rewrite_fields
 from ai_skills_engine.frontmatter import split_frontmatter
 from ai_skills_engine.inventory.capability import Capability
 from ai_skills_engine.inventory.capability_id import CapabilityId
 from ai_skills_engine.inventory.resource_id import ResourceId
+from ai_skills_engine.inventory.resource_record import Resource
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.registry.safe_tree import (
     _local_markdown_path,
@@ -53,11 +56,39 @@ def _allowed(*, target: Path, source: Path, resources: tuple[Path, ...]) -> bool
     )
 
 
+def _check_scalar_reference(
+    raw: str, *, path: Path, source: Path, resources: tuple[Path, ...]
+) -> None:
+    """Validate a projected scalar destination without changing source bytes.
+
+    Args:
+        raw: Parsed structural path operand.
+        path: File containing the scalar.
+        source: Capability boundary.
+        resources: Complete declared resource closure.
+
+    Raises:
+        ValueError: For undeclared, missing or unsafe destinations.
+    """
+    local = _local_markdown_path(raw_target=raw)
+    if local is None:
+        return
+    target = path.parent / local
+    if not target.exists() or not _allowed(
+        target=target.resolve(), source=source, resources=resources
+    ):
+        raise ValueError("Structural field is outside closure")
+    if any(item.is_symlink() for item in (target, *target.parents)):
+        raise ValueError("Symlink in structural field")
+
+
 def lint_inventory(
     *,
     capabilities: tuple[Capability, ...],
     sources: Mapping[CapabilityId, Path],
     resource_paths: Mapping[ResourceId, Path],
+    resource_records: tuple[Resource, ...] = (),
+    projected: frozenset[ResourceId] = frozenset(),
 ) -> tuple[Diagnostic, ...]:
     """Report actual Markdown destinations and undeclared prose mentions.
 
@@ -65,6 +96,8 @@ def lint_inventory(
         capabilities: Edge-resolved immutable records.
         sources: Physical inputs used only while collecting observations.
         resource_paths: Physical resource roots by declared identity.
+        resource_records: Observed resources with structural scalar declarations.
+        projected: Artifact-only resources requiring a complete closure.
 
     Returns:
         Error/warning observations with no implicit dependency graph changes.
@@ -74,6 +107,36 @@ def lint_inventory(
         source = sources[capability.id]
         base = source if source.is_dir() else source.parent
         resources = tuple(resource_paths[identity] for identity in capability.resources)
+        for record in resource_records:
+            if record.id not in projected or record.id not in capability.resources:
+                continue
+            original = resource_paths[record.id]
+            resource_base = original if original.is_dir() else original.parent
+            for file, pointer in record.resource_paths:
+                path = resource_base / file
+                try:
+                    if file not in {str(item.path) for item in record.payload}:
+                        raise ValueError("Declared structural field file is absent")
+
+                    rewrite_fields(
+                        text=path.read_text(encoding="utf-8"),
+                        pointers=(pointer,),
+                        markdown=path.suffix.lower() in {".md", ".markdown", ".mdc"},
+                        replace=partial(
+                            _check_scalar_reference,
+                            path=path,
+                            source=source,
+                            resources=resources,
+                        ),
+                    )
+                except (OSError, UnicodeError, ValueError, TypeError) as error:
+                    diagnostics.append(
+                        Diagnostic(
+                            "inventory.incomplete-projection",
+                            str(capability.id),
+                            f"{record.id}/{file} {pointer}: {error}",
+                        )
+                    )
         markdown_files = [
             (str(item.path), base / item.path)
             for item in capability.payload

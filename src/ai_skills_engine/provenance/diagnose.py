@@ -19,6 +19,7 @@ def diagnose(
     roots: Mapping[str, Path],
     context: Context,
     resources: tuple[Resource, ...] = (),
+    source_scoped: frozenset[str] = frozenset(),
 ) -> tuple[Diagnostic, ...]:
     """Compare shipped payload files with full import trees, without assigning origin.
 
@@ -28,6 +29,8 @@ def diagnose(
         roots: Available snapshots of those imports.
         context: Final consumer policy and current publication identity.
         resources: Resolved required resource ancestry.
+        source_scoped: Re-exports validated at their actual source publisher by
+            the recursive builder, never inferred from a claimed chain or bytes.
 
     Returns:
         Missing-lineage and attestation-conflict evidence, never invented ancestry.
@@ -114,6 +117,10 @@ def diagnose(
                         "with known lineage or consumer deny",
                     )
                 )
+        if identity in source_scoped:
+            # Its actual source's declared inputs were checked before re-export.
+            # Keep the catalog's attestation-conflict checks above for every copy.
+            continue
         for file in record.payload:
             corresponding = {(hop.origin, hop.rev) for hop in hops}
             missing = imports.get(file.sha256, set()) - corresponding

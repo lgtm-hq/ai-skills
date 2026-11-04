@@ -1,0 +1,78 @@
+{
+  "artifactFormat": 1,
+  "inputsDigest": "sha256:9e0425138b264813c9c7b7b2a798ce8229021bfeeb65a67f597c90dfc2ff3388",
+  "packages": {
+    "anthropics-claude-code/claude-code-frontend-design": {
+      "artifactDigest": "sha256:fd5d3717eef8ff610e387bbda5777547f946f673f8520af7cdde12fd78dce91b",
+      "treeDigest": "sha256:88a3d1dfb61a015df1c97711fa2869f3fbc501e940bf818e51c290754a506a8d"
+    },
+    "anthropics-claude-code/claude-opus-4-5-migration": {
+      "artifactDigest": "sha256:92ce6c72eded79c26d41471d5eebfc98a0dffeb0ac55f7de81c093bcd5bd3890",
+      "treeDigest": "sha256:70ca5ec927190d4643906c239ecf39f3ac9528d0cc9883ab5a5874cebb831517"
+    },
+    "anthropics-claude-code/hookify": {
+      "artifactDigest": "sha256:8f25c3e6852b97700c2bbae03b1db1c505de827c8b0ac8cccb9039fad3bdf603",
+      "treeDigest": "sha256:1c663ae3379d571c3a3c3736f43c1237d56e8e6ca73a625cd7b7b0f655eedb55"
+    },
+    "anthropics-claude-code/plugin-dev": {
+      "artifactDigest": "sha256:b4caf3bcbe71e6a811d28bc720e4c567ec82bf2b3e1a7df0ab97395f7106b013",
+      "treeDigest": "sha256:1a19005b3d2d1dc53fdec3d0bc7d7a7de91341b0861a8c0cfd0d0069999752f2"
+    },
+    "anthropics/claude-api": {
+      "artifactDigest": "sha256:e42caf10dc1808323f1dafd7e4f0fb2791c21c3e5a5d8fef0dbdd3d88d479754",
+      "treeDigest": "sha256:686ed921d9b8f1ebe334d44acf99990aed446c5d29f02a56e5680543cf616b52"
+    },
+    "anthropics/document-skills": {
+      "artifactDigest": "sha256:f38acc8e490c9ce563403bba2c675cde4aac49faabb09ce3f2cb86efe7ba889e",
+      "treeDigest": "sha256:b9b033ee301645d0f63ddc9e02cb579b1cea7acdd04dd8bdba76f16b282b244f"
+    },
+    "anthropics/example-skills": {
+      "artifactDigest": "sha256:6e015dc156239c62fc226176adb942fb1760c38ff7f9ebec13aa00dfa94a5c2b",
+      "treeDigest": "sha256:2680f99435f8e7cd19c2391bbdd5c29eda648ed63c92bf5fd244c6c56edb8bce"
+    },
+    "caveman/caveman": {
+      "artifactDigest": "sha256:24fd073a860595c930f9c757a6a0752dd165bd05bcf88f668665528b3638f02f",
+      "treeDigest": "sha256:79235537bb374e18b46795c22a1996565cdfe2df51f4fdf5670c6a5b3e9fa795"
+    },
+    "davidondrej/davidondrej-skills": {
+      "artifactDigest": "sha256:57e05aac1bea776f05d99cf4402f22e36aef13133318bc81fa2265b2d73da354",
+      "treeDigest": "sha256:8e88f582266beee6825c1beeb56118eae64865f48c3f6321d8503f7c6f1611e1"
+    },
+    "lgtm-hq/analysis": {
+      "artifactDigest": "sha256:7f3fa4bbcf42128d39db32984115e1ac5bf84d506bf2d335bbc5b70fc3be8540",
+      "treeDigest": "sha256:4c2e26a067e3f2339f850bd6b0c249c0f71e09c99d9ebb5df563dcfba21907b4"
+    },
+    "lgtm-hq/git-pr": {
+      "artifactDigest": "sha256:cb515aa68d69fba2e246ab6ca4b323d61a27a96e6184d6db26d8bdd9fcf542f4",
+      "treeDigest": "sha256:d7f01c19c89e7a69b914795752d865ec7341d63ac6afaad636d491db47982bdb"
+    },
+    "lgtm-hq/other": {
+      "artifactDigest": "sha256:17d707c01569f4a29c1a361e575ada2fd209efc0ed60cbda5885baeb8e2dc4df",
+      "treeDigest": "sha256:3afdba2a8200f30b25a5bc9c27cf5c66e9563b8ecc93105b3df5223055aaf42a"
+    },
+    "lgtm-hq/raycast": {
+      "artifactDigest": "sha256:5ba6636d3bd9f53d1b65aa0a43f2e52c2dcae7a5e387e61c562b96783c090efb",
+      "treeDigest": "sha256:31b9a1657b16a56a9139c52c53db30ed29c5c3d636cf5d48e34126a60f5719de"
+    },
+    "lgtm-hq/review": {
+      "artifactDigest": "sha256:da48aaf7be3bc04db46b8df9ecd8e6c3ce046a76ff6772871e6c32ea08be535f",
+      "treeDigest": "sha256:eff3d57e78ce6d0bbc8659b7bcb4efd7f543d5167f9d236d99bd5f7c362b002c"
+    },
+    "lgtm-hq/standards": {
+      "artifactDigest": "sha256:c7439117c37d74af6f9abcdd8f778975131c81c6a364898c91b44dc1a540df3d",
+      "treeDigest": "sha256:13ee9d995656465ee5009082d986561d79836dfc6df3e00186a28405f12d3bba"
+    },
+    "lgtm-hq/subagents": {
+      "artifactDigest": "sha256:b866894e1e85fa9e92cec7e9feb043a78f4815c54d0faf7ba5602a5910dd31de",
+      "treeDigest": "sha256:f681fa95a92069d943f0d861491c168742f7c40faca5718981e744eaa4246fc1"
+    },
+    "lgtm-hq/testing": {
+      "artifactDigest": "sha256:e4528ae4a0ed9cbb7286305c6a7af63ab49a7251f02b7bb77f42d8e13be6fb9f",
+      "treeDigest": "sha256:e09c1f237cd80a45779539a46127f49da5b434c909d5e3cda96c2f7c18012621"
+    },
+    "mattpocock/mattpocock-skills": {
+      "artifactDigest": "sha256:9ceb2deae0b5c241889b9593d22f6e195587a5716387a0b75f02b997045d8cd4",
+      "treeDigest": "sha256:04ad5f5ad9f0ec24084d69a8541312995fd0b727f4c442c93763827af4f357e4"
+    }
+  }
+}

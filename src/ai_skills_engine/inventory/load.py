@@ -372,6 +372,16 @@ def _collect(
             capabilities=capabilities,
             sources={item.capability.id: item.source for item in pending},
             resource_paths=resource_paths,
+            resource_records=tuple(resources),
+            projected=frozenset(
+                ResourceId(
+                    package=PackageId(publisher=publisher, name=package.id),
+                    name=resource.id,
+                )
+                for _, publisher, _, package, _, _ in packages
+                if package.artifact_resources
+                for resource in package.artifact_resources.resources
+            ),
         )
     )
     return Inventory(

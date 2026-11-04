@@ -59,3 +59,30 @@ A transformation that changes every file also evades the byte-equality tripwire
 when the publisher conceals that ancestry.
 The lineage declaration also cannot establish license ownership or originality;
 license and notice obligations still apply through imports and re-exports.
+
+## Amendment: owner decision A (2026-11-04)
+
+[The owner decision](https://github.com/lgtm-hq/ai-skills/issues/573#issuecomment-6627648836)
+clarifies the publisher scope above: an authenticated, verified re-export uses
+its actual source publisher's declared inputs, checked recursively at that
+source. The catalog's other pins are siblings, and byte equality supplies no
+ancestry between them. Local and unbound catalog copies retain the strict
+comparison against **all** declared catalog inputs, regardless of file size or
+import filters. Authentication failures, origin denies and conflicting
+independent-authorship claims still fail.
+
+The versioned `artifactResources` declaration on packages and mapped packages
+lists resources and binds each local `role/name` to its complete transitive
+resource ID list. Version 1 requires `version: 1`, `resources: [{id, path}]` and
+`bindings: {role/name: [resource-id, ...]}`. Directories include all their files.
+Structural references from every projected resource must resolve within the
+capability or its declared resources; incomplete closure fails publication.
+These resources pass the same ingestion, lineage, consumer veto and shipped
+origin notice checks as ordinary resources. They are copied into the artifact's
+capability-local `_shared/` tree and structurally understood references relocate.
+
+The legacy compatibility writer deliberately ignores this field. Unchanged
+legacy registries and `plugins-baked/` **do not deliver these dependencies**.
+Ordinary resource/dependency declarations retain their existing rejection when
+legacy cannot represent them. See the dated amendment in
+[ADR 0011](adr/0011-manifest-provenance-locks-artifacts-trust.md).
