@@ -6,12 +6,82 @@ from pathlib import Path
 import pytest
 from assertpy import assert_that
 from inventory_helpers import snapshot
-from provenance_helpers import change_policy, missing_copy, unbound_copy
+from provenance_export_helpers import diamond_exports, materialized_exports
+from provenance_helpers import (
+    change_policy,
+    missing_copy,
+    omit_shared_links,
+    unbound_copy,
+)
 from test_manifest_wheel import _run, _venv_executable
 
 from ai_skills_engine import cli
 
 pytest_plugins = ["test_manifest_wheel"]
+
+
+@pytest.mark.parametrize(
+    "control",
+    [
+        "capability-conflict",
+        "resource-conflict",
+        "capability-compatible",
+        "resource-compatible",
+        "diamond-a",
+        "diamond-b",
+        "diamond-missing",
+    ],
+)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_installed_export_evidence_matches_source(
+    installed_command: Path,
+    provenance_repo: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    control: str,
+    reverse: bool,
+) -> None:
+    """Actual wheel and source agree on conflicts, edge unions and resource vetoes."""
+    if control.startswith("diamond"):
+        root = tmp_path / "diamond"
+        roots = diamond_exports(
+            root=root, reverse=reverse, missing=control == "diamond-missing"
+        )
+        if control != "diamond-missing":
+            change_policy(root=root / "z", deny=("github.com/fixture/" + control[-1],))
+    else:
+        root = provenance_repo
+        kind, compatibility = control.split("-")
+        if kind == "resource":
+            omit_shared_links(root)
+        materialized_exports(
+            root=root, kind=kind, changed=compatibility == "conflict", reverse=reverse
+        )
+        change_policy(root=root / "z")
+        roots = {"y": root / "y", "y/x": root / "x"}
+    operands = ["--repo-root", str(root / "z")]
+    for alias, path in roots.items():
+        operands.extend(["--vendor-root", f"{alias}={path}"])
+    before = snapshot(root)
+    expected = 0 if control.endswith("compatible") else 1
+    for command in (["plan", "--json"], ["plan"]):
+        installed = _run(
+            args=[str(installed_command), *command, *operands],
+            cwd=tmp_path,
+            expected=expected,
+        )
+        assert_that(cli.main([*command, *operands])).is_equal_to(expected)
+        source = capsys.readouterr()
+        assert_that((installed.stdout, installed.stderr)).is_equal_to(
+            (source.out, source.err)
+        )
+        if "conflict" in control:
+            assert_that(installed.stdout).contains("provenance.unverifiable-lineage")
+        elif control == "diamond-missing":
+            assert_that(installed.stdout).contains("missing-a", "missing-b")
+        elif control.startswith("diamond"):
+            assert_that(installed.stdout).contains("selection.required-denied")
+    assert_that(snapshot(root)).is_equal_to(before)
 
 
 @pytest.mark.parametrize(

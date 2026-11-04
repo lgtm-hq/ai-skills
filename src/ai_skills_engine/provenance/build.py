@@ -4,7 +4,9 @@ from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
+from ai_skills_engine.inventory.capability import Capability
 from ai_skills_engine.inventory.model import Inventory
+from ai_skills_engine.inventory.resource_record import Resource
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.manifest.model import Manifest
@@ -66,14 +68,18 @@ def build_inventory(
         document=document, publisher=manifest.publisher.id
     )
     statements = (*statements, *context.attestations)
+    records: tuple[Capability | Resource, ...] = (
+        *inventory.capabilities,
+        *inventory.resources,
+    )
     own = {
         str(item.id)
-        for item in (*inventory.capabilities, *inventory.resources)
+        for item in records
         if item.id.package.publisher == manifest.publisher.id
     }
-    identities = tuple(
-        str(item.id) for item in (*inventory.capabilities, *inventory.resources)
-    ) + tuple(map(str, inventory.rejected))
+    identities = tuple(str(item.id) for item in records) + tuple(
+        map(str, inventory.rejected)
+    )
     caps = {
         str(item.id): (
             bind_local(
@@ -110,6 +116,7 @@ def build_inventory(
     }
     rejected = set(inventory.rejected)
     unresolved = set(inventory.unresolved_edges)
+    recursive_sources: set[str] = set()
     for vendor in manifest.vendors:
         vendor_root = roots.get(vendor.id)
         if vendor_root is None:
@@ -172,19 +179,31 @@ def build_inventory(
                         warning=not strict,
                     )
                 )
-            for table in (caps, resources):
-                for key, item in tuple(table.items()):
-                    if item.id.package.publisher == vendor.id:
-                        table[key] = bind_local(
-                            record=item,
-                            context=imported_context,
-                            declared=imported_chains,
-                            identities=identities,
-                            migrations=mapped_migrations,
-                            statements=(*mapped_statements, *context.attestations),
-                            findings=findings,
-                            strict=strict,
-                        )
+
+            for key, record in tuple(caps.items()):
+                if record.id.package.publisher == vendor.id:
+                    caps[key] = bind_local(
+                        record=record,
+                        context=imported_context,
+                        declared=imported_chains,
+                        identities=identities,
+                        migrations=mapped_migrations,
+                        statements=(*mapped_statements, *context.attestations),
+                        findings=findings,
+                        strict=strict,
+                    )
+            for key, resource in tuple(resources.items()):
+                if resource.id.package.publisher == vendor.id:
+                    resources[key] = bind_local(
+                        record=resource,
+                        context=imported_context,
+                        declared=imported_chains,
+                        identities=identities,
+                        migrations=mapped_migrations,
+                        statements=(*mapped_statements, *context.attestations),
+                        findings=findings,
+                        strict=strict,
+                    )
             continue
         child = _load_inventory(
             root=vendor_root,
@@ -219,13 +238,15 @@ def build_inventory(
             selection_candidates=selection_candidates,
         )
         # The recursive pass sees the publisher's pins and validated identity
-        # migrations. Replace provisional direct-edge/link findings, retaining
-        # all structural, payload, acquisition and provenance failures.
+        # migrations. Replace provisional direct evidence once per source;
+        # subsequent compatible inputs contribute additional edge evidence.
+        replaced_sources = merged_sources - recursive_sources
+        recursive_sources.update(merged_sources)
         findings = [
             item
             for item in findings
             if not (
-                item.location in merged_sources
+                item.location in replaced_sources
                 and item.code
                 in {
                     "inventory.unknown-requires",
@@ -243,7 +264,7 @@ def build_inventory(
             if item.package.publisher == publisher or str(item.package) in exports
         )
         unresolved = {
-            edge for edge in unresolved if str(edge.source) not in merged_sources
+            edge for edge in unresolved if str(edge.source) not in replaced_sources
         } | {
             edge
             for edge in child.unresolved_edges
@@ -276,9 +297,13 @@ def build_inventory(
         vendors=manifest.vendors,
     )
     observed = {*caps, *resources}
+    published_records: tuple[Capability | Resource, ...] = (
+        *caps.values(),
+        *resources.values(),
+    )
     consumed = {
         hop.renamed_from
-        for item in (*caps.values(), *resources.values())
+        for item in published_records
         for chain in item.lineage
         for hop in chain.lineage
     }
@@ -308,9 +333,13 @@ def build_inventory(
         )
     )
     result = recheck_resources(inventory=result, root=root, own=own, context=context)
+    resolved_records: tuple[Capability | Resource, ...] = (
+        *result.capabilities,
+        *result.resources,
+    )
     shipped = tuple(
         item
-        for item in (*result.capabilities, *result.resources)
+        for item in resolved_records
         if str(item.id) in own or str(item.id.package) in exports
     )
     findings = [

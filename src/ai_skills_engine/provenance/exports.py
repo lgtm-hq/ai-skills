@@ -88,12 +88,25 @@ def merge_imports[Record: (Capability, Resource)](
                 )
             )
             continue
-        table[key] = replace(
+        previous = table.get(key)
+        combined = replace(
             item,
-            lineage=union_lineage(
-                table[key].lineage if key in table else (), item.lineage
-            ),
+            lineage=union_lineage(previous.lineage if previous else (), item.lineage),
         )
+        if isinstance(combined, Capability) and isinstance(previous, Capability):
+            combined = replace(
+                combined,
+                requires=tuple(
+                    sorted(set(previous.requires) | set(combined.requires), key=str)
+                ),
+                related=tuple(
+                    sorted(set(previous.related) | set(combined.related), key=str)
+                ),
+                resources=tuple(
+                    sorted(set(previous.resources) | set(combined.resources), key=str)
+                ),
+            )
+        table[key] = combined
         merged.add(key)
     return merged
 
@@ -141,8 +154,10 @@ def publish_exports[Record: (Capability, Resource)](
             continue
         claimed = tuple(chain for chain in declared if chain.id == key)
         valid: list[Lineage] = []
+        materialized = item
+        invalid = False
         chain: Lineage
-        for chain in claimed:
+        for chain in sorted(claimed, key=lambda value: value.lineage[-1].path):
             last = chain.lineage[-1]
             try:
                 payload = payload_files(source_path(root=root, relative=last.path))
@@ -151,14 +166,18 @@ def publish_exports[Record: (Capability, Resource)](
                     or "sha256:" + tree_digest(payload) != last.tree_digest
                 ):
                     raise ValueError("Materialized export publisher/digest mismatch")
-                item = replace(
-                    item,
-                    source_path=PurePosixPath(last.path),
-                    payload=payload,
-                    tree_digest=tree_digest(payload),
-                )
+                if valid and payload != materialized.payload:
+                    raise ValueError("Materialized export payloads conflict")
+                if not valid:
+                    materialized = replace(
+                        item,
+                        source_path=PurePosixPath(last.path),
+                        payload=payload,
+                        tree_digest=tree_digest(payload),
+                    )
                 valid.append(chain)
             except (OSError, ValueError) as error:
+                invalid = True
                 findings.append(
                     Diagnostic(
                         "provenance.unverifiable-lineage",
@@ -167,6 +186,9 @@ def publish_exports[Record: (Capability, Resource)](
                         warning=not strict,
                     )
                 )
+        if invalid:
+            continue
+        item = materialized
         current = replace(hop_for(record=item, context=context), publisher=publisher)
         # Known imported ancestry survives even if a supplied index omits it.
         inherited: list[Lineage] = []
