@@ -1,14 +1,14 @@
 """Byte-equality diagnostics scoped exclusively to declared pinned inputs."""
 
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from ai_skills_engine.inventory.capability import Capability
-from ai_skills_engine.inventory.payload import payload_files
 from ai_skills_engine.inventory.resource_record import Resource
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.vendor import Vendor
 from ai_skills_engine.provenance.context import Context, origin_locator
+from ai_skills_engine.provenance.input_files import input_files
 from ai_skills_engine.provenance.origins import denied_origin
 
 
@@ -39,7 +39,15 @@ def diagnose(
     for vendor in vendors:
         if vendor.id in roots:
             try:
-                files = payload_files(roots[vendor.id])
+                protected = tuple(
+                    PurePosixPath(hop.path)
+                    for record in (*records, *resources)
+                    for chain in record.lineage
+                    for hop in chain.lineage
+                    if (hop.origin, hop.rev)
+                    == (origin_locator(vendor.repo), vendor.sha)
+                )
+                files = input_files(root=roots[vendor.id], protected=protected)
             except (OSError, ValueError) as error:
                 findings.append(
                     Diagnostic(

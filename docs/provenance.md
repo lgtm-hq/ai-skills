@@ -37,6 +37,13 @@ not invent ancestry. `policy.provenance.mode: warn` reports warnings; `strict`
 reports errors, including `provenance.unverifiable-lineage` for unbound indexes.
 This catalog declares strict mode.
 
+Full-pin comparison reads every regular file, including unselected documentation.
+An unrelated relative file alias is validated without following or deleting it:
+it must point directly to an existing regular file inside the same pin, with no
+symlink components. Its canonical target is still compared. Directory, dangling,
+chained and escaping aliases fail comparison. Capability and resource collection,
+reference validation and artifact copying continue to reject all payload symlinks.
+
 An independently authored claim uses
 `overrides.attestations: [{capability, path, independentlyAuthored: true, reason}]`.
 The path names a file relative to that capability's payload. Claims travel with
