@@ -1,0 +1,9 @@
+{
+  "name": "crew",
+  "version": "2.0.0",
+  "description": "Delegated review specialist.",
+  "author": {
+    "name": "fixture-org"
+  },
+  "skills": "./skills/"
+}

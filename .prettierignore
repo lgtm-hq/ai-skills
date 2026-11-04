@@ -13,6 +13,7 @@ npm/ai-skills/data/plugins-baked
 # (validate.sh runs each generator with --check).
 .claude-plugin/marketplace.json
 .cursor-plugin/marketplace.json
+.agents/plugins/marketplace.json
 vendors.yaml
 vendor-indexes/
 NOTICE.md

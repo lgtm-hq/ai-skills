@@ -1,0 +1,10 @@
+{
+  "name": "extras",
+  "version": "2.0.0",
+  "description": "Optional extra skills.",
+  "author": {
+    "name": "fixture-org"
+  },
+  "displayName": "Extras",
+  "skills": "./skills/"
+}

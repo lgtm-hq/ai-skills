@@ -7,6 +7,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ai_skills_engine.envelopes import (
+    ALL_HOSTS,
+    PackageEnvelope,
+    plugin_envelopes,
+    write_files,
+)
 from ai_skills_engine.registry.vendor import Vendor
 from ai_skills_engine.registry.vendor_plugin import VendorPlugin
 
@@ -37,16 +43,69 @@ def plugin_description(*, plugin: VendorPlugin, vendor: Vendor) -> str:
     Returns:
         Description including the bake provenance suffix.
     """
-    return f"{plugin.description} [baked from vendor '{vendor.id}']"
+    return baked_description(description=plugin.description, vendor_id=vendor.id)
 
 
-def plugin_manifest_files(
+def baked_description(*, description: str, vendor_id: str) -> str:
+    """Append the bake provenance suffix to a vendor package description.
+
+    Args:
+        description: Declared package description.
+        vendor_id: Vendor that owns the package.
+
+    Returns:
+        Description stamped onto per-plugin host manifests.
+    """
+    return f"{description} [baked from vendor '{vendor_id}']"
+
+
+def vendor_envelope(*, plugin: VendorPlugin, vendor: Vendor) -> PackageEnvelope:
+    """Return the envelope presentation for one baked vendor plugin.
+
+    Args:
+        plugin: Registry plugin slice.
+        vendor: Vendor that owns the slice.
+
+    Returns:
+        Presentation consumed by the shared envelope generator.
+    """
+    return PackageEnvelope(
+        package=f"{vendor.id}/{plugin.id}",
+        plugin=plugin.id,
+        display_name=plugin.id,
+        description=plugin.description,
+        plugin_description=plugin_description(plugin=plugin, vendor=vendor),
+        author=vendor.repo.split("/", maxsplit=1)[0],
+        license=vendor.license,
+    )
+
+
+def _baked_roles(
+    *, plugin: VendorPlugin, vendor: Vendor
+) -> tuple[tuple[str, str], ...]:
+    """Return the roles a baked plugin tree delivers.
+
+    Args:
+        plugin: Registry plugin slice.
+        vendor: Vendor that owns the slice.
+
+    Returns:
+        ``(capability ID, role)`` pairs; skills always ship a ``skills/`` tree.
+    """
+    package = f"{vendor.id}/{plugin.id}"
+    return (
+        (f"{package}:skill/skills", "skill"),
+        *((f"{package}:specialist/{agent}", "specialist") for agent in plugin.agents),
+    )
+
+
+def plugin_manifest_bytes(
     *,
     plugin: VendorPlugin,
     vendor: Vendor,
     version: str,
-) -> dict[str, str]:
-    """Return relative path → JSON text for the four host manifests.
+) -> dict[str, bytes]:
+    """Return relative path → bytes for the generated host envelopes.
 
     Args:
         plugin: Registry plugin slice.
@@ -54,28 +113,14 @@ def plugin_manifest_files(
         version: Pin-derived plugin version.
 
     Returns:
-        POSIX relative paths mapped to pretty JSON.
+        POSIX relative paths mapped to exact envelope bytes.
     """
-    author = {"name": vendor.repo.split("/", maxsplit=1)[0]}
-    base = {
-        "name": plugin.id,
-        "version": version,
-        "description": plugin_description(plugin=plugin, vendor=vendor),
-        "author": author,
-    }
-    return {
-        "plugin.json": render_json(payload={**base, "skills": "./skills/"}),
-        ".claude-plugin/plugin.json": render_json(payload=base),
-        ".codex-plugin/plugin.json": render_json(payload=base),
-        ".cursor-plugin/plugin.json": render_json(
-            payload={
-                **base,
-                "displayName": plugin.id,
-                "license": vendor.license,
-                "skills": "./skills/",
-            },
-        ),
-    }
+    return plugin_envelopes(
+        package=vendor_envelope(plugin=plugin, vendor=vendor),
+        version=version,
+        roles=_baked_roles(plugin=plugin, vendor=vendor),
+        hosts=ALL_HOSTS,
+    )
 
 
 def write_plugin_manifests(
@@ -88,7 +133,7 @@ def write_plugin_manifests(
     """Write the four host-adapter manifests for one baked plugin.
 
     Claude, Cursor, Codex, and root Agent Plugins manifests are generated
-    adapters (ADR-0002). Hosts ignore foreign manifest dirs.
+    adapters (ADR-0002) produced by the shared envelope generator.
 
     Args:
         destination: Baked plugin directory.
@@ -96,14 +141,10 @@ def write_plugin_manifests(
         vendor: Vendor that owns the slice.
         version: Pin-derived plugin version.
     """
-    for relative, text in plugin_manifest_files(
-        plugin=plugin,
-        vendor=vendor,
-        version=version,
-    ).items():
-        path = destination / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+    write_files(
+        destination=destination,
+        files=plugin_manifest_bytes(plugin=plugin, vendor=vendor, version=version),
+    )
 
 
 def render_marketplace(*, plugins: list[dict[str, str]]) -> str:

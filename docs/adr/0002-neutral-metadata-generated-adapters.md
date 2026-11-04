@@ -48,4 +48,41 @@ top-level on Claude marketplace JSON; under `metadata` on Cursor (root
 - Release restamp (`scripts/update-readme-version.sh`) rewrites every
   generated adapter that carries a version, not only README pins.
 
+## Amendment: the artifact index is the envelope input (2026-11-04)
+
+Issue #575 replaces `bundles.yaml` as the generator input. Every host envelope
+(root `plugin.json`, `.claude-plugin`, `.cursor-plugin` and `.codex-plugin`
+plugin manifests, and the Claude, Cursor and Codex marketplaces) comes from
+`ai_skills_engine.envelopes`. Its inputs are the artifact `index.json` from
+[ADR 0011](./0011-manifest-provenance-locks-artifacts-trust.md) and a set of
+kept capabilities. The index is the only capability input: roles, versions, tree
+digests, `_shared` resources and closures. The publishing manifest supplies
+presentation only: exports and their order, display names, descriptions, authors
+and declared licenses. The field rules are data in
+`schemas/envelope-rules.v1.json`, and goldens live in `tests/fixtures/envelopes/`.
+This lets the install plane regenerate filtered envelopes byte for byte.
+
+- `uv run ai-skills-engine generate` writes the committed repo-root marketplaces,
+  and `--check` is their drift gate. `scripts/generate_marketplace.py` remains
+  a compatibility shim. The publisher's index is built offline. Vendor
+  envelopes use a complete `ai-skills-engine build` index through `--index`
+  and `--output`.
+- Repo-root entries may reference in-repo slices only while each sliced tree's
+  digest equals the capability `treeDigest` in the artifact. They also cannot
+  carry artifact-only resources. Otherwise generation fails and names the
+  package that needs a built envelope.
+- Skills and specialists project through the `skills/` and `agents/`
+  directories. Any other role fails generation and names the capability until
+  a host projection exists.
+- Excluding a capability removes it from every envelope and marketplace entry.
+  An emptied package disappears. A kept capability whose closure needs an
+  excluded one fails.
+- The Codex adapter is `.agents/plugins/marketplace.json` (no `$generated`
+  field, since the evidence shows no open root). Its plugin manifest keeps the
+  minimal `name`, `version`, `description` and `author` payload. The #563
+  probe did not isolate any other Codex field. The rules record these cells as
+  `unverified`; Cursor-style repo-root entries cannot narrow the shared root.
+- Vendor bake per-plugin envelopes and their `--check` delegate to the same
+  generator. `plugins-baked/` bytes are unchanged.
+
 [lab-decisions]: https://github.com/lgtm-hq/plugin-engine-lab/blob/main/DECISIONS.md

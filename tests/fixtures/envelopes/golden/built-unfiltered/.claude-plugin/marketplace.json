@@ -1,0 +1,27 @@
+{
+  "name": "ai-skills",
+  "owner": {
+    "name": "fixture"
+  },
+  "$generated": "do not edit — regenerate via ai-skills-engine generate",
+  "plugins": [
+    {
+      "name": "core",
+      "description": "Everyday workflow skills.",
+      "version": "2.0.0",
+      "source": "./plugins/core"
+    },
+    {
+      "name": "extras",
+      "description": "Optional extra skills.",
+      "version": "2.0.0",
+      "source": "./plugins/extras"
+    },
+    {
+      "name": "crew",
+      "description": "Delegated review specialist.",
+      "version": "2.0.0",
+      "source": "./plugins/crew"
+    }
+  ]
+}

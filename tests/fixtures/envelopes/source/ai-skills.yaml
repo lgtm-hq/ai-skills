@@ -1,0 +1,36 @@
+---
+apiVersion: ai-skills.dev/v1
+publisher:
+  id: fixture
+  repo: fixture-org/envelopes
+x-version: 2.0.0
+packages:
+  - id: core
+    name: Core Workflow
+    description: Everyday workflow skills.
+    capabilities:
+      - id: alpha
+        path: skills/alpha
+      - id: beta
+        path: skills/beta
+  - id: extras
+    name: Extras
+    description: Optional extra skills.
+    capabilities:
+      - id: gamma
+        path: skills/gamma
+  - id: crew
+    name: Review Crew
+    description: Delegated review specialist.
+    capabilities:
+      - id: reviewer
+        path: agents/reviewer.md
+        role: specialist
+  - id: other
+    capabilities:
+      - id: delta
+        path: skills/delta
+exports: [core, extras, crew]
+policy:
+  provenance:
+    mode: strict

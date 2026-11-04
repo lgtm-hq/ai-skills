@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Callable
 
 from ai_skills_engine import package_sync, validate_skills
@@ -13,6 +14,32 @@ from ai_skills_engine.inventory import cli as inventory_cli
 from ai_skills_engine.manifest import cli as manifest_cli
 from ai_skills_engine.selection import cli as selection_cli
 from ai_skills_engine.vendors import manage, repin
+
+
+def _envelope_arguments(tokens: list[str]) -> list[str] | None:
+    """Route bare ``generate`` and ``generate --option`` to envelope generation.
+
+    Named targets such as ``generate readme`` keep their existing routes.
+
+    Args:
+        tokens: Command-line arguments without the program name.
+
+    Returns:
+        Envelope command arguments, or None for every other command.
+    """
+    position, prefix = 0, []
+    while position < len(tokens) and tokens[position].startswith("--repo-root"):
+        width = 1 if "=" in tokens[position] else 2
+        prefix.extend(tokens[position : position + width])
+        position += width
+    if position >= len(tokens) or tokens[position] != "generate":
+        return None
+    rest = tokens[position + 1 :]
+    if rest and (not rest[0].startswith("--") or rest[0] == "--help"):
+        return None
+    if prefix and "=" in prefix[0]:
+        prefix = ["--repo-root", prefix[0].split("=", 1)[1]]
+    return [*rest, *prefix]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -60,7 +87,10 @@ def main(argv: list[str] | None = None) -> int:
         subcommands = group.add_subparsers(dest="target", required=True)
         for target, handler in targets.items():
             subcommands.add_parser(target, add_help=False).set_defaults(handler=handler)
-    args, remaining = parser.parse_known_args(argv)
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    if (envelope_args := _envelope_arguments(tokens)) is not None:
+        return marketplace.main(envelope_args)
+    args, remaining = parser.parse_known_args(tokens)
     if args.repo_root is not None:
         remaining.extend(["--repo-root", args.repo_root])
     selected: Callable[[list[str] | None], int] = args.handler

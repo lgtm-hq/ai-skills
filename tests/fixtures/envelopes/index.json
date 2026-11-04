@@ -1,0 +1,315 @@
+{
+  "apiVersion": "ai-skills.dev/v1",
+  "artifactFormat": 1,
+  "engineVersion": "0.0.0-fixture",
+  "legalFiles": [
+    {
+      "digest": "sha256:9d2aea96d03d46f85714c7838ca16ffdb1897869577f88b9cc72f25e6fc4ca00",
+      "path": "LICENSES/github.com%2Ffixture-org%2Fenvelopes.txt"
+    },
+    {
+      "digest": "sha256:87f3f7c292e699bc22208faa383e43fbcf35a09d60b3e0887b18960761ff364f",
+      "path": "NOTICE.md"
+    }
+  ],
+  "packages": [
+    {
+      "capabilities": [
+        {
+          "aliases": [],
+          "closure": {
+            "capabilities": [
+              "fixture/core:skill/alpha"
+            ],
+            "resources": [],
+            "units": [
+              [
+                "fixture/core:skill/alpha"
+              ]
+            ]
+          },
+          "dialect": "agent-skills",
+          "executionSurface": {},
+          "hostAttributes": [],
+          "id": "fixture/core:skill/alpha",
+          "license": "NOASSERTION",
+          "lineage": [
+            {
+              "attestations": [],
+              "id": "fixture/core:skill/alpha",
+              "lineage": [
+                {
+                  "id": "fixture/core:skill/alpha",
+                  "origin": "github.com/fixture-org/envelopes",
+                  "path": "skills/alpha",
+                  "publisher": "fixture",
+                  "renamedFrom": null,
+                  "rev": null,
+                  "transforms": [],
+                  "treeDigest": "sha256:edf164451be8f9df11d1a98f33b30c2688ca80041b3e5c1171593bdf13a69888"
+                }
+              ]
+            }
+          ],
+          "names": [
+            "alpha"
+          ],
+          "notices": [
+            "LICENSES/github.com%2Ffixture-org%2Fenvelopes.txt",
+            "NOTICE.md"
+          ],
+          "package": "fixture/core",
+          "path": "packages/fixture/core/skill/alpha",
+          "portability": [],
+          "related": [],
+          "requires": [],
+          "resources": [],
+          "role": "skill",
+          "sourceTreeDigest": "sha256:edf164451be8f9df11d1a98f33b30c2688ca80041b3e5c1171593bdf13a69888",
+          "treeDigest": "sha256:edf164451be8f9df11d1a98f33b30c2688ca80041b3e5c1171593bdf13a69888"
+        },
+        {
+          "aliases": [],
+          "closure": {
+            "capabilities": [
+              "fixture/core:skill/beta"
+            ],
+            "resources": [],
+            "units": [
+              [
+                "fixture/core:skill/beta"
+              ]
+            ]
+          },
+          "dialect": "agent-skills",
+          "executionSurface": {},
+          "hostAttributes": [],
+          "id": "fixture/core:skill/beta",
+          "license": "NOASSERTION",
+          "lineage": [
+            {
+              "attestations": [],
+              "id": "fixture/core:skill/beta",
+              "lineage": [
+                {
+                  "id": "fixture/core:skill/beta",
+                  "origin": "github.com/fixture-org/envelopes",
+                  "path": "skills/beta",
+                  "publisher": "fixture",
+                  "renamedFrom": null,
+                  "rev": null,
+                  "transforms": [],
+                  "treeDigest": "sha256:da74a5f3e42d027b355d40da91b4c4a7c4bc000538766f0a24a36d65e033881f"
+                }
+              ]
+            }
+          ],
+          "names": [
+            "beta"
+          ],
+          "notices": [
+            "LICENSES/github.com%2Ffixture-org%2Fenvelopes.txt",
+            "NOTICE.md"
+          ],
+          "package": "fixture/core",
+          "path": "packages/fixture/core/skill/beta",
+          "portability": [],
+          "related": [],
+          "requires": [],
+          "resources": [],
+          "role": "skill",
+          "sourceTreeDigest": "sha256:da74a5f3e42d027b355d40da91b4c4a7c4bc000538766f0a24a36d65e033881f",
+          "treeDigest": "sha256:da74a5f3e42d027b355d40da91b4c4a7c4bc000538766f0a24a36d65e033881f"
+        }
+      ],
+      "id": "fixture/core",
+      "resources": [],
+      "treeDigest": "sha256:7cea7b27e41ca2e6a79877ec056fdec3155121b06da12df33e610fc7d7b32c4b",
+      "version": "2.0.0"
+    },
+    {
+      "capabilities": [
+        {
+          "aliases": [],
+          "closure": {
+            "capabilities": [
+              "fixture/crew:specialist/reviewer"
+            ],
+            "resources": [],
+            "units": [
+              [
+                "fixture/crew:specialist/reviewer"
+              ]
+            ]
+          },
+          "dialect": "claude-code-agent",
+          "executionSurface": {},
+          "hostAttributes": [],
+          "id": "fixture/crew:specialist/reviewer",
+          "license": "NOASSERTION",
+          "lineage": [
+            {
+              "attestations": [],
+              "id": "fixture/crew:specialist/reviewer",
+              "lineage": [
+                {
+                  "id": "fixture/crew:specialist/reviewer",
+                  "origin": "github.com/fixture-org/envelopes",
+                  "path": "agents/reviewer.md",
+                  "publisher": "fixture",
+                  "renamedFrom": null,
+                  "rev": null,
+                  "transforms": [],
+                  "treeDigest": "sha256:30b45b1bfc4cc77791ff1d4387ef802d0405f44edd2bed0fff3457de3d590166"
+                }
+              ]
+            }
+          ],
+          "names": [
+            "reviewer"
+          ],
+          "notices": [
+            "LICENSES/github.com%2Ffixture-org%2Fenvelopes.txt",
+            "NOTICE.md"
+          ],
+          "package": "fixture/crew",
+          "path": "packages/fixture/crew/specialist/reviewer",
+          "portability": [],
+          "related": [],
+          "requires": [],
+          "resources": [],
+          "role": "specialist",
+          "sourceTreeDigest": "sha256:30b45b1bfc4cc77791ff1d4387ef802d0405f44edd2bed0fff3457de3d590166",
+          "treeDigest": "sha256:30b45b1bfc4cc77791ff1d4387ef802d0405f44edd2bed0fff3457de3d590166"
+        }
+      ],
+      "id": "fixture/crew",
+      "resources": [],
+      "treeDigest": "sha256:d7b879cdb61d12e7f089b726c800492801d9562137b6c5be6fb33d49bd4712cd",
+      "version": "2.0.0"
+    },
+    {
+      "capabilities": [
+        {
+          "aliases": [],
+          "closure": {
+            "capabilities": [
+              "fixture/extras:skill/gamma"
+            ],
+            "resources": [],
+            "units": [
+              [
+                "fixture/extras:skill/gamma"
+              ]
+            ]
+          },
+          "dialect": "agent-skills",
+          "executionSurface": {},
+          "hostAttributes": [],
+          "id": "fixture/extras:skill/gamma",
+          "license": "NOASSERTION",
+          "lineage": [
+            {
+              "attestations": [],
+              "id": "fixture/extras:skill/gamma",
+              "lineage": [
+                {
+                  "id": "fixture/extras:skill/gamma",
+                  "origin": "github.com/fixture-org/envelopes",
+                  "path": "skills/gamma",
+                  "publisher": "fixture",
+                  "renamedFrom": null,
+                  "rev": null,
+                  "transforms": [],
+                  "treeDigest": "sha256:8d53e87276e6214438afd3bbd49377b002a0435584aa1987bc322188d5174554"
+                }
+              ]
+            }
+          ],
+          "names": [
+            "gamma"
+          ],
+          "notices": [
+            "LICENSES/github.com%2Ffixture-org%2Fenvelopes.txt",
+            "NOTICE.md"
+          ],
+          "package": "fixture/extras",
+          "path": "packages/fixture/extras/skill/gamma",
+          "portability": [],
+          "related": [],
+          "requires": [],
+          "resources": [],
+          "role": "skill",
+          "sourceTreeDigest": "sha256:8d53e87276e6214438afd3bbd49377b002a0435584aa1987bc322188d5174554",
+          "treeDigest": "sha256:8d53e87276e6214438afd3bbd49377b002a0435584aa1987bc322188d5174554"
+        }
+      ],
+      "id": "fixture/extras",
+      "resources": [],
+      "treeDigest": "sha256:064d6973182d275a0582f2e199ff4155a2a38f7ff4914b12f8639f77cf730a37",
+      "version": "2.0.0"
+    },
+    {
+      "capabilities": [
+        {
+          "aliases": [],
+          "closure": {
+            "capabilities": [
+              "fixture/other:skill/delta"
+            ],
+            "resources": [],
+            "units": [
+              [
+                "fixture/other:skill/delta"
+              ]
+            ]
+          },
+          "dialect": "agent-skills",
+          "executionSurface": {},
+          "hostAttributes": [],
+          "id": "fixture/other:skill/delta",
+          "license": "NOASSERTION",
+          "lineage": [
+            {
+              "attestations": [],
+              "id": "fixture/other:skill/delta",
+              "lineage": [
+                {
+                  "id": "fixture/other:skill/delta",
+                  "origin": "github.com/fixture-org/envelopes",
+                  "path": "skills/delta",
+                  "publisher": "fixture",
+                  "renamedFrom": null,
+                  "rev": null,
+                  "transforms": [],
+                  "treeDigest": "sha256:06eaa1f8abbb8038036878027dd8656ae9045734fce46353403b5a29330c648e"
+                }
+              ]
+            }
+          ],
+          "names": [
+            "delta"
+          ],
+          "notices": [
+            "LICENSES/github.com%2Ffixture-org%2Fenvelopes.txt",
+            "NOTICE.md"
+          ],
+          "package": "fixture/other",
+          "path": "packages/fixture/other/skill/delta",
+          "portability": [],
+          "related": [],
+          "requires": [],
+          "resources": [],
+          "role": "skill",
+          "sourceTreeDigest": "sha256:06eaa1f8abbb8038036878027dd8656ae9045734fce46353403b5a29330c648e",
+          "treeDigest": "sha256:06eaa1f8abbb8038036878027dd8656ae9045734fce46353403b5a29330c648e"
+        }
+      ],
+      "id": "fixture/other",
+      "resources": [],
+      "treeDigest": "sha256:2b47cc1201b90e6edc51c30b79e77ea92064ce014de13c165de5999d4b848e1d",
+      "version": "2.0.0"
+    }
+  ],
+  "rootPackage": null
+}

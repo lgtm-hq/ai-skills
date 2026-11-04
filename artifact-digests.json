@@ -1,6 +1,6 @@
 {
   "artifactFormat": 1,
-  "inputsDigest": "sha256:d03fcaa7d8ec53e5c0eafbe3d62b228de62b02ec8c231dd970b6e71c3f8e6cd4",
+  "inputsDigest": "sha256:affcfce04eff5cf4c608d814ef0804bdaf483cf795ae341cf1c61e62838094b1",
   "packages": {
     "anthropics-claude-code/claude-code-frontend-design": {
       "artifactDigest": "sha256:5876d28e1e177e5723f813a7235757a6c9e98cafaf56d25b3a8c7819288d70cc",
