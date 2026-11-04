@@ -69,7 +69,9 @@ def publisher_index(root: Path) -> dict[str, Any]:
         ),
     )
     with TemporaryDirectory(prefix="ai-skills-envelopes-") as temporary:
-        destination = Path(temporary) / "artifacts"
+        # The artifact writer refuses symlinked output ancestors; the system
+        # temporary directory may sit behind one (macOS /var, a linked TMPDIR).
+        destination = Path(temporary).resolve() / "artifacts"
         write_artifacts(
             inventory=inventory,
             selection=local,

@@ -140,12 +140,14 @@ Skills listed under `ungrouped` in `bundles.yaml` are not marketplace plugins. S
 
 ## Harness-agnostic by construction
 
-Canonical metadata is **`bundles.yaml`** (first-party plugins) and
-**`vendors.yaml`** (SHA-pinned third-party catalogs). Host manifests under
+The publishing manifest **`ai-skills.yaml`** (packages, exports and vendor
+mappings) is the canonical input for host adapters. Host manifests under
 `.claude-plugin/`, `.cursor-plugin/` and `.agents/plugins/` (Codex) are
 generated adapters, built from the artifact index; do not edit them.
-Contributors edit the YAML, then run `uv run ai-skills-engine generate`. CI
-fails if an adapter is stale or missing.
+Contributors edit `ai-skills.yaml`, then run `uv run ai-skills-engine generate`.
+CI fails if an adapter is stale or missing. The repo-root Codex adapter lists no
+first-party plugin, because Codex would install the whole repository from a
+`./` entry. Codex native delivery comes from built plugin trees (#384).
 
 The catalog is harness-agnostic by construction: one authoring tree, per-host
 JSON as build output. Settled _why_ lives in

@@ -50,7 +50,7 @@ GAMMA = "fixture/extras:skill/gamma"
 GOLDEN_ARGUMENTS = {
     "built-unfiltered": [],
     "built-filtered": ["--exclude", GAMMA],
-    "slice-unfiltered": ["--layout", "slice", "--exclude", CREW],
+    "slice-baseline": ["--layout", "slice", "--exclude", CREW],
     "slice-filtered": ["--layout", "slice", "--exclude", CREW, "--exclude", BETA],
 }
 
@@ -458,6 +458,152 @@ def test_host_selection_limits_outputs() -> None:
             assert_that(data).described_as(path).is_equal_to(built[path])
 
 
+def _slice_marketplace() -> Marketplace:
+    """Return the fixture's repo-root slice marketplace identity.
+
+    Returns:
+        Slice-layout marketplace.
+    """
+    return Marketplace(
+        name="ai-skills",
+        owner="fixture",
+        description="d",
+        version="2.0.0",
+        notice="n",
+        layout=Layout.SLICE,
+    )
+
+
+def _slice_packages() -> list[PackageEnvelope]:
+    """Return the fixture's slice-representable first-party packages.
+
+    Returns:
+        Exported skill packages with in-repo slices.
+    """
+    return [
+        package
+        for package in catalog_packages(
+            root=FIXTURE / "source", include_vendors=False, slices=True
+        )
+        if package.package != "fixture/crew"
+    ]
+
+
+def test_codex_slice_layout_never_delivers_the_repository_root() -> None:
+    """Codex copies the whole tree at ``source.path``, so no ``./`` entry exists.
+
+    Claude narrows the shared root with ``skills`` and Cursor's entries are
+    grandfathered byte for byte; Codex has no slicing projection, so its
+    repo-root marketplace lists only packages with a verified built tree.
+    """
+    files = generate(
+        _index(),
+        None,
+        ALL_HOSTS,
+        marketplace=_slice_marketplace(),
+        packages=_slice_packages(),
+    )
+    codex = json.loads(files[".agents/plugins/marketplace.json"])
+    assert_that(codex).is_equal_to({"name": "ai-skills", "plugins": []})
+    claude = json.loads(files[".claude-plugin/marketplace.json"])
+    assert_that([plugin["name"] for plugin in claude["plugins"]]).is_equal_to(
+        ["core", "extras"]
+    )
+    only_codex = generate(
+        _index(),
+        None,
+        {Host.CODEX},
+        marketplace=_slice_marketplace(),
+        packages=_slice_packages(),
+    )
+    assert_that(only_codex).is_equal_to(
+        {".agents/plugins/marketplace.json": files[".agents/plugins/marketplace.json"]}
+    )
+    for name in ("slice-baseline", "slice-filtered"):
+        golden = _tree(GOLDEN / name)[".agents/plugins/marketplace.json"]
+        assert_that(json.loads(golden)["plugins"]).described_as(name).is_empty()
+    rule = envelopes.rules()["hosts"]["codex"]["marketplace"]["entries"]
+    assert_that(rule["slice"]).is_none()
+
+
+def test_codex_slice_still_requires_matching_slices() -> None:
+    """Omitting Codex entries never skips the slice/artifact digest proof."""
+    packages = _slice_packages()
+    core = packages[0]
+    slices = dict(core.slices or {})
+    alpha = "fixture/core:skill/alpha"
+    assert_that(slices).contains_key(alpha)
+    slices[alpha] = replace(slices[alpha], tree_digest="sha256:" + "0" * 64)
+    stale = replace(core, slices=slices)
+    with pytest.raises(EnvelopeError, match=f"{alpha}: in-repo slice skills/alpha"):
+        generate(
+            _index(),
+            None,
+            {Host.CODEX},
+            marketplace=_slice_marketplace(),
+            packages=[stale, *packages[1:]],
+        )
+
+
+def test_codex_built_entries_point_at_verified_plugin_trees() -> None:
+    """A compliant Codex entry references its own built plugin directory."""
+    codex = json.loads(_built(keep=None)[".agents/plugins/marketplace.json"])
+    assert_that(
+        [(plugin["name"], plugin["source"]) for plugin in codex["plugins"]]
+    ).is_equal_to(
+        [
+            (name, {"source": "local", "path": f"./plugins/{name}"})
+            for name in ("core", "extras", "crew")
+        ]
+    )
+
+
+def test_cli_notes_codex_slices_and_missing_vendor_index(
+    envelope_repo: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Slice previews and index-less built output say what they leave out."""
+    root = ["--repo-root", str(envelope_repo), "generate"]
+    capsys.readouterr()
+    slices = [*root, "--layout", "slice", "--exclude", CREW]
+    assert_that(cli.main([*slices, "--output", str(tmp_path / "s")])).is_zero()
+    assert_that(capsys.readouterr().err).contains(
+        "codex", "no repo-root slice projection", "--layout built", "#384"
+    )
+    claude_only = [*slices, "--host", "claude", "--output", str(tmp_path / "c")]
+    assert_that(cli.main(claude_only)).is_zero()
+    assert_that(capsys.readouterr().err).is_empty()
+    assert_that(cli.main([*root, "--output", str(tmp_path / "b")])).is_zero()
+    assert_that(capsys.readouterr().err).is_empty()
+    document = read_document(envelope_repo / "ai-skills.yaml")
+    document["vendors"] = [
+        {
+            "id": "acme",
+            "repo": "acme-org/skills",
+            "sha": "1" * 40,
+            "license": "Apache-2.0",
+            "homepage": "https://github.com/acme-org/skills",
+            "mapping": {
+                "skillRoots": ["skills"],
+                "packages": [
+                    {
+                        "id": "tools",
+                        "description": "Acme tools.",
+                        "skillsRoot": "skills",
+                        "skills": "*",
+                    }
+                ],
+            },
+        }
+    ]
+    document["exports"] = [*document["exports"], "acme/tools"]
+    (envelope_repo / "ai-skills.yaml").write_text(dump_document(document))
+    assert_that(cli.main([*root, "--output", str(tmp_path / "v")])).is_zero()
+    assert_that(capsys.readouterr().err).contains(
+        "omits 1 exported vendor package", "acme/tools", "--index"
+    )
+    assert_that(_tree(tmp_path / "v")).does_not_contain_key("plugins/tools/plugin.json")
+
+
 def test_codex_rules_keep_the_minimal_unverified_payload() -> None:
     """Codex fields follow the M5 evidence; unproven fields are not invented."""
     rules = envelopes.rules()
@@ -585,7 +731,7 @@ def test_vendor_bake_delegates_to_the_envelope_generator(tmp_path: Path) -> None
 
 
 def test_envelope_writes_reject_symlinks(tmp_path: Path) -> None:
-    """Neither direct writes nor built output follow a symlinked path."""
+    """Neither direct writes nor built output replace a symlinked destination."""
     target = tmp_path / "target"
     target.mkdir()
     (tmp_path / "link").symlink_to(target)
@@ -599,7 +745,7 @@ def test_envelope_writes_reject_symlinks(tmp_path: Path) -> None:
         "--index",
         str(INDEX),
         "--output",
-        str(tmp_path / "link" / "out"),
+        str(tmp_path / "link"),
     ]
     assert_that(cli.main(arguments)).is_equal_to(1)
     assert_that(list(target.iterdir())).is_empty()

@@ -12,8 +12,14 @@ Inputs for `tests/test_envelopes.py` and the TypeScript install plane (#578).
 
 - `built-unfiltered`: no extra arguments.
 - `built-filtered`: `--exclude fixture/extras:skill/gamma`.
-- `slice-unfiltered`: `--layout slice --exclude fixture/crew:specialist/reviewer`.
+- `slice-baseline`: `--layout slice --exclude fixture/crew:specialist/reviewer`.
+  This is the smallest slice exclusion, not an unfiltered tree, because slices
+  cannot carry the `crew` specialist.
 - `slice-filtered`: the slice arguments plus `--exclude fixture/core:skill/beta`.
+
+The slice Codex marketplaces list no package. Codex copies the whole tree at
+`source.path`, so a `./` entry would deliver the repository. Codex entries exist
+only in the built layout.
 
 Regenerate a directory only through the generator, for example:
 

@@ -105,7 +105,7 @@ def test_actual_wheel_generates_and_checks_envelopes(
     assert_that(_tree(root / ".agents")).is_equal_to(
         {
             "plugins/marketplace.json": (
-                FIXTURE / "golden/slice-unfiltered/.agents/plugins/marketplace.json"
+                FIXTURE / "golden/slice-baseline/.agents/plugins/marketplace.json"
             ).read_bytes()
         }
     )

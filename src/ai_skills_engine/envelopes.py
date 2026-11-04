@@ -21,6 +21,7 @@ from functools import cache
 
 # nosemgrep: python37-compatibility-importlib2 - runtime requires Python >=3.13
 from importlib import resources
+from itertools import takewhile
 from pathlib import Path
 from typing import Any
 
@@ -286,6 +287,22 @@ def plugin_envelopes(
     return files
 
 
+def without_slice_projection(hosts: Iterable[Host]) -> tuple[Host, ...]:
+    """Return hosts whose repo-root slice marketplace lists no package.
+
+    Args:
+        hosts: Requested hosts.
+
+    Returns:
+        Hosts with a null slice entry rule, in declaration order.
+    """
+    return tuple(
+        host
+        for host in _host_order(hosts)
+        if rules()["hosts"][host]["marketplace"]["entries"][Layout.SLICE] is None
+    )
+
+
 def _source(*, host: Host, marketplace: Marketplace, plugin: str) -> Any:
     """Return a marketplace entry's payload location.
 
@@ -365,8 +382,15 @@ def _marketplace(
     Raises:
         EnvelopeError: For a field outside the rule vocabulary.
     """
+    spec = rules()["hosts"][host]["marketplace"]
+    # A null entry rule means the host has no projection for this layout. Codex
+    # copies the whole tree at source.path and cannot narrow a shared "./"
+    # root, so its repo-root marketplace lists no package rather than
+    # delivering the repository; native Codex delivery uses built trees.
+    if spec["entries"][marketplace.layout] is None:
+        plugins = ()
     payload: dict[str, Any] = {}
-    for field in rules()["hosts"][host]["marketplace"]["fields"]:
+    for field in spec["fields"]:
         match field:
             case "name":
                 payload[field] = marketplace.name
@@ -461,8 +485,10 @@ def generate(
     """Generate every envelope for the kept capabilities of published packages.
 
     A package whose capabilities are all excluded disappears from every
-    envelope and marketplace. Slice-layout output contains marketplaces only;
-    built-layout output also contains each plugin directory's envelopes.
+    envelope and marketplace. Slice-layout output contains marketplaces only,
+    and a host whose rules have no slice entry projection (Codex) lists no
+    package there; built-layout output also contains each plugin directory's
+    envelopes.
 
     Args:
         index: Schema-valid artifact index.
@@ -535,16 +561,25 @@ def generate(
 def write_files(*, destination: Path, files: Mapping[str, bytes]) -> None:
     """Write generated envelopes below a destination directory.
 
+    Symlinks are rejected for the destination and every component this writer
+    creates or writes below it. The caller's own ancestors of ``destination``
+    are not inspected: a symlinked temporary directory (macOS ``/var``) or
+    checkout parent is the caller's choice, not a path the writer follows.
+
     Args:
         destination: Directory receiving the relative paths.
         files: Relative POSIX path to exact bytes.
 
     Raises:
-        EnvelopeError: If a target or its parent is a symlink.
+        EnvelopeError: If a relative path escapes the destination, or the
+            destination, a leaf or an intermediate below it is a symlink.
     """
     for relative, data in files.items():
         path = destination / relative
-        if any(item.is_symlink() for item in (path, *path.parents)):
+        if destination not in path.parents or ".." in Path(relative).parts:
+            raise EnvelopeError(f"Envelope path escapes its destination: {relative}")
+        below = (path, *takewhile(lambda item: item != destination, path.parents))
+        if any(item.is_symlink() for item in (destination, *below)):
             raise EnvelopeError(f"Symlink rejected in envelope path: {path}")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)

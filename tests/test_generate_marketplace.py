@@ -534,7 +534,7 @@ def test_repo_plugin_ids_are_kebab_case_and_match_slicing(
 def test_repo_cursor_and_codex_marketplaces_mirror_claude_plugin_ids(
     repo_files: dict[str, bytes],
 ) -> None:
-    """Cursor and Codex adapter plugin names match the Claude marketplace."""
+    """Cursor mirrors Claude; Codex never delivers the repository root."""
 
     claude = json.loads(repo_files[".claude-plugin/marketplace.json"])
     cursor = json.loads(repo_files[".cursor-plugin/marketplace.json"])
@@ -544,30 +544,14 @@ def test_repo_cursor_and_codex_marketplaces_mirror_claude_plugin_ids(
     assert_that([plugin["name"] for plugin in cursor["plugins"]]).is_equal_to(
         claude_names,
     )
-    assert_that([plugin["name"] for plugin in codex["plugins"]]).is_equal_to(
-        claude_names,
-    )
     assert_that(claude["name"]).is_equal_to("ai-skills")
     assert_that(claude["owner"]).is_equal_to({"name": "lgtm-hq"})
     assert_that(cursor["name"]).is_equal_to("ai-skills")
     assert_that(cursor["owner"]["name"]).is_equal_to("lgtm-hq")
     assert_that(cursor["metadata"]["$generated"]).is_equal_to(mod.GENERATED_NOTICE)
-    assert_that(codex).is_equal_to(
-        {
-            "name": "ai-skills",
-            "plugins": [
-                {
-                    "name": name,
-                    "source": {"source": "local", "path": "./"},
-                    "policy": {
-                        "installation": "AVAILABLE",
-                        "authentication": "ON_INSTALL",
-                    },
-                }
-                for name in claude_names
-            ],
-        },
-    )
+    # Codex copies the whole tree at source.path and has no slicing field, so
+    # first-party Codex delivery comes from the built layout (#384), never "./".
+    assert_that(codex).is_equal_to({"name": "ai-skills", "plugins": []})
 
 
 def test_marketplace_drift_message_detects_missing_codex_adapter(

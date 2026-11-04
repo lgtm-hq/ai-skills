@@ -125,4 +125,9 @@ with `plugins/<name>/` envelopes and Claude, Cursor and Codex marketplaces, for
 every exported package. `--exclude CAPABILITY_ID` and `--host` filter that tree.
 The rules are `schemas/envelope-rules.v1.json`; `tests/fixtures/envelopes/`
 holds its goldens. The tree contains envelopes only: the install plane places
-each kept capability's payload under `skills/` or `agents/` beside them.
+each kept capability's payload under `skills/` or `agents/` beside them. Codex
+has no repo-root slice projection: Codex copies the whole tree at `source.path`,
+so its repo-root marketplace lists no package. Codex native delivery uses these
+built `plugins/<name>/` trees (#384). Without `--index`, built output covers only
+the publisher's own packages and prints a note naming any exported vendor
+packages it omits.

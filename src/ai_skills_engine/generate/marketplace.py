@@ -47,6 +47,7 @@ from ai_skills_engine.envelopes import (
     Marketplace,
     generate,
     rules,
+    without_slice_projection,
     write_files,
 )
 from ai_skills_engine.generate.envelope_catalog import (
@@ -544,9 +545,11 @@ def _write_output(*, destination: Path, files: Mapping[str, bytes]) -> None:
         files: Relative path to exact bytes.
 
     Raises:
-        EnvelopeError: If the output path contains a symlink.
+        EnvelopeError: If the output directory itself is a symlink.
     """
-    if any(path.is_symlink() for path in (destination, *destination.parents)):
+    # Only the replaced directory is guarded; its existing ancestors belong to
+    # the caller and may legitimately be symlinks (macOS /var, a linked TMPDIR).
+    if destination.is_symlink():
         raise EnvelopeError(f"Symlink rejected in envelope output path: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix=".envelopes-", dir=destination.parent) as temporary:
@@ -574,6 +577,7 @@ def _output(
         EnvelopeError: If an excluded capability is not in the index.
     """
     layout = Layout(args.layout)
+    hosts = frozenset(map(Host, args.host)) if args.host else ALL_HOSTS
     include_vendors = index is not None and layout is Layout.BUILT
     if index is None:
         index = publisher_index(repo_root)
@@ -589,18 +593,61 @@ def _output(
                 f"Excluded capability is not in the artifact: {unknown[0]}"
             )
         keep = frozenset(capabilities - set(args.exclude))
+    packages = catalog_packages(
+        root=repo_root,
+        include_vendors=include_vendors,
+        slices=layout is Layout.SLICE,
+    )
     files = generate(
         index,
         keep,
-        {Host(host) for host in args.host} if args.host else ALL_HOSTS,
+        hosts,
         marketplace=_marketplace(repo_root=repo_root, layout=layout),
-        packages=catalog_packages(
-            root=repo_root,
-            include_vendors=include_vendors,
-            slices=layout is Layout.SLICE,
-        ),
+        packages=packages,
     )
     _write_output(destination=args.output, files=files)
+    _note_omissions(repo_root=repo_root, layout=layout, hosts=hosts, index=index)
+
+
+def _note_omissions(
+    *,
+    repo_root: Path,
+    layout: Layout,
+    hosts: frozenset[Host],
+    index: Mapping[str, Any],
+) -> None:
+    """Tell the author which packages an ``--output`` tree leaves out.
+
+    Args:
+        repo_root: Repository root path.
+        layout: Output layout.
+        hosts: Requested hosts.
+        index: Index the output was generated from.
+    """
+    if layout is Layout.SLICE:
+        for host in without_slice_projection(hosts):
+            print(
+                f"generate: note: {host} has no repo-root slice projection (it "
+                "copies the whole tree at source.path), so its slice marketplace "
+                "lists no package; use --layout built for native delivery (#384)",
+                file=sys.stderr,
+            )
+        return
+    indexed = {package["id"] for package in index["packages"]}
+    omitted = [
+        package.package
+        for package in catalog_packages(
+            root=repo_root, include_vendors=True, slices=False
+        )
+        if package.package not in indexed
+    ]
+    if omitted:
+        print(
+            f"generate: note: built output omits {len(omitted)} exported vendor "
+            f"package(s) ({', '.join(omitted)}); pass a complete "
+            "`ai-skills-engine build` index with --index to include them",
+            file=sys.stderr,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -660,7 +707,9 @@ def main(argv: list[str] | None = None) -> int:
     ):
         parser.error("--exclude, --host and --layout require --output")
 
-    repo_root = resolve_repo_root(override=args.repo_root, parser=parser)
+    # A symlinked checkout path is resolved once; envelope writers then guard
+    # only what they create below it.
+    repo_root = resolve_repo_root(override=args.repo_root, parser=parser).resolve()
     try:
         index = None if args.index is None else load_index(args.index)
         if args.output is not None:

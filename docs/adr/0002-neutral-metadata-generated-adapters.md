@@ -81,7 +81,20 @@ This lets the install plane regenerate filtered envelopes byte for byte.
   field, since the evidence shows no open root). Its plugin manifest keeps the
   minimal `name`, `version`, `description` and `author` payload. The #563
   probe did not isolate any other Codex field. The rules record these cells as
-  `unverified`; Cursor-style repo-root entries cannot narrow the shared root.
+  `unverified`.
+- No committed Codex marketplace entry may deliver a tree other than that
+  package's kept artifact tree. Codex copies the whole tree at `source.path`
+  (`docs/parity/README.md`) and has no evidenced slicing field, so a `./` entry
+  would install the entire repository, including unexported skills. The rules
+  therefore set Codex `entries.slice` to `null`: the repo-root slice layout
+  emits no Codex entry, and the committed `.agents/plugins/marketplace.json`
+  lists no first-party package. It stays generated and drift-checked.
+  `generate --layout slice --output` prints a note saying so. A Codex entry may
+  point only at a plugin directory whose delivered tree is the package's kept
+  artifact tree, as the built layout's `./plugins/<name>` entries do. So
+  first-party Codex native delivery comes from the built layout (#384). The
+  Cursor `./` entries keep today's bytes, as #575 requires; that is not a
+  precedent for new hosts.
 - Vendor bake per-plugin envelopes and their `--check` delegate to the same
   generator. `plugins-baked/` bytes are unchanged.
 
