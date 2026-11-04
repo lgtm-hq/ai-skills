@@ -16,6 +16,9 @@ from urllib.parse import unquote, urlsplit
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
+from ai_skills_engine.registry.ingest_budget import IngestBudget
+from ai_skills_engine.registry.ingest_checks import normalized_mode
+
 _AT_FDCWD = -100
 _RENAME_EXCHANGE = 2
 _RENAME_SWAP = 0x00000002
@@ -147,13 +150,22 @@ def contained_path(*, path: Path, root: Path) -> Path:
     return resolved_path
 
 
-def copy_tree(*, source: Path, destination: Path, source_root: Path) -> None:
+def copy_tree(
+    *,
+    source: Path,
+    destination: Path,
+    source_root: Path,
+    budget: IngestBudget | None = None,
+    skip_root_readme: bool = False,
+) -> None:
     """Copy ``source`` into ``destination`` without following symlinks.
 
     Args:
         source: Directory to copy.
         destination: New directory that will hold the copy.
         source_root: Vendor tree that ``source`` must stay inside.
+        budget: Optional selected-plugin ingestion accounting.
+        skip_root_readme: Omit the skill-root navigation README before copying.
 
     Raises:
         ValueError: If ``source`` escapes ``source_root``, is a symlink, or
@@ -164,17 +176,27 @@ def copy_tree(*, source: Path, destination: Path, source_root: Path) -> None:
     if destination.exists(follow_symlinks=False) or destination.is_symlink():
         msg = f"destination already exists: {destination}"
         raise FileExistsError(msg)
+    if budget is not None:
+        normalized_mode(
+            mode=source.stat().st_mode, vendor=budget.vendor, path=str(source)
+        )
     destination.mkdir(parents=True)
     for dir_path in walk_directories(root=source):
+        if budget is not None:
+            normalized_mode(
+                mode=dir_path.stat().st_mode, vendor=budget.vendor, path=str(dir_path)
+            )
         target = destination / dir_path.relative_to(source)
         contained_path(path=target, root=destination)
         target.mkdir(parents=True, exist_ok=True)
     for file_path in walk_files(root=source):
         relative = file_path.relative_to(source)
+        if skip_root_readme and relative.as_posix() == "README.md":
+            continue
         target = destination / relative
         contained_path(path=target.parent, root=destination)
         target.parent.mkdir(parents=True, exist_ok=True)
-        _copy_file_nofollow(source=file_path, destination=target)
+        _copy_file_nofollow(source=file_path, destination=target, budget=budget)
 
 
 def validate_tree(*, root: Path) -> None:
@@ -670,12 +692,15 @@ def _replace_tree_contents(*, source: Path, destination: Path) -> None:
             _remove_path(path=dest_child)
 
 
-def _copy_file_nofollow(*, source: Path, destination: Path) -> None:
+def _copy_file_nofollow(
+    *, source: Path, destination: Path, budget: IngestBudget | None = None
+) -> None:
     """Copy a regular file without following a destination symlink.
 
     Args:
         source: Regular file to copy.
         destination: Intended new file path.
+        budget: Optional ingestion policy; transaction copies retain exact modes.
 
     Raises:
         ValueError: If ``source`` is not a regular file.
@@ -690,6 +715,10 @@ def _copy_file_nofollow(*, source: Path, destination: Path) -> None:
         if not stat.S_ISREG(info.st_mode):
             msg = f"unsupported file type rejected: {source}"
             raise ValueError(msg)
+        mode = stat.S_IMODE(info.st_mode)
+        if budget is not None:
+            budget.reserve(size=info.st_size, path=str(source))
+            mode = normalized_mode(mode=mode, vendor=budget.vendor, path=str(source))
         dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
         if hasattr(os, "O_NOFOLLOW"):
             dir_flags |= os.O_NOFOLLOW
@@ -700,7 +729,8 @@ def _copy_file_nofollow(*, source: Path, destination: Path) -> None:
                 source_fd=src_fd,
                 dir_fd=parent_fd,
                 name=destination.name,
-                mode=stat.S_IMODE(info.st_mode),
+                mode=mode,
+                **({"maximum": info.st_size} if budget is not None else {}),
             )
         finally:
             os.close(parent_fd)
@@ -714,6 +744,7 @@ def _create_exclusive_copy_at(
     dir_fd: int,
     name: str,
     mode: int,
+    maximum: int | None = None,
 ) -> None:
     """Create ``name`` in ``dir_fd`` without following a planted symlink.
 
@@ -725,6 +756,7 @@ def _create_exclusive_copy_at(
         dir_fd: Open directory file descriptor for the destination parent.
         name: Child name to create.
         mode: POSIX permission bits for the new file.
+        maximum: Optional cap against a growing ingestion source.
 
     Raises:
         OSError: If exclusive create or the copy fails.
@@ -735,10 +767,21 @@ def _create_exclusive_copy_at(
     dst_fd = os.open(name, flags, mode, dir_fd=dir_fd)
     try:
         os.lseek(source_fd, 0, os.SEEK_SET)
+        copied = 0
         while True:
-            chunk = os.read(source_fd, 1024 * 1024)
+            chunk = os.read(
+                source_fd,
+                (
+                    min(1024 * 1024, maximum - copied + 1)
+                    if maximum is not None
+                    else 1024 * 1024
+                ),
+            )
             if not chunk:
                 break
+            copied += len(chunk)
+            if maximum is not None and copied > maximum:
+                raise ValueError("ingestion source grew during bounded copy")
             _write_all(fd=dst_fd, data=chunk)
         os.fchmod(dst_fd, mode)
     finally:

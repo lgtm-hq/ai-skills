@@ -1,6 +1,7 @@
 """Load a deterministic inventory from explicit local or pinned vendor inputs."""
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -21,6 +22,12 @@ from ai_skills_engine.manifest.load import load_consumer, read_document
 from ai_skills_engine.manifest.package import Package
 from ai_skills_engine.manifest.validate import validate_document
 from ai_skills_engine.manifest.vendor import Vendor
+from ai_skills_engine.registry.ingest_checks import (
+    parse_allow,
+    parse_limits,
+    validate_input_tree,
+)
+from ai_skills_engine.registry.ingest_limits import IngestLimits
 from ai_skills_engine.registry.vendor import Vendor as RegistryVendor
 
 
@@ -76,6 +83,14 @@ def load_inventory(
                         ),
                         license=item.get("license", ""),
                         homepage=item.get("homepage", ""),
+                        ingest_allow=parse_allow(
+                            item.get("ingestAllow", []), label=item["id"]
+                        ),
+                        ingest_limits=(
+                            parse_limits(item["ingestLimits"], label=item["id"])
+                            if "ingestLimits" in item
+                            else IngestLimits()
+                        ),
                     )
                     roots[vendor.id] = _materialize_vendor_tree(
                         vendor=vendor,
@@ -83,6 +98,17 @@ def load_inventory(
                         temporary_root=Path(temporary),
                         prune_content_free_symlinks=False,
                     )
+        for item in document.get("vendors", []):
+            if item["id"] in roots:
+                validate_input_tree(
+                    root=roots[item["id"]],
+                    vendor=item["id"],
+                    limits=(
+                        parse_limits(item["ingestLimits"], label=item["id"])
+                        if "ingestLimits" in item
+                        else IngestLimits()
+                    ),
+                )
         return _collect(
             root=root,
             roots=roots,
@@ -202,7 +228,11 @@ def _collect(
                 else origin
             ),
             aliases=aliases,
-            vendor=None if selection_candidates else import_vendor,
+            vendor=(
+                replace(import_vendor, include=None, exclude=None)
+                if selection_candidates and import_vendor is not None
+                else import_vendor
+            ),
             pending=pending,
             resources=resources,
             resource_paths=resource_paths,

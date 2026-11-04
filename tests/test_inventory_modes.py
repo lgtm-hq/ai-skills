@@ -28,18 +28,18 @@ pytest_plugins = ["inventory_helpers"]
         (0o674, 0o644),
         (0o645, 0o644),
         (0o675, 0o644),
-        (0o1764, 0o755),
+        (0o1764, None),
         (0o700, 0o755),
         (0o751, 0o755),
         (0o775, 0o755),
-        (0o4755, 0o755),
+        (0o4755, None),
     ],
 )
 def test_real_tarball_acquisition_preserves_canonical_modes(
     inventory_repo: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,
     mode: int,
-    canonical: int,
+    canonical: int | None,
 ) -> None:
     """Only owner execution is Git identity; tar's data filter agrees with it."""
     from inventory_helpers import inventory_snapshot, inventory_tarball
@@ -68,6 +68,13 @@ def test_real_tarball_acquisition_preserves_canonical_modes(
         return archive
 
     monkeypatch.setattr(vendor_plugins, "_http_get_bytes", download)
+    if canonical is None:
+        # #572 rejects special bits before the old data-filter normalization.
+        for kwargs in ({"vendor_roots": {"vendor": vendor}}, {"fetch_vendors": True}):
+            with pytest.raises(ValueError, match="special mode bits"):
+                load_inventory(root, **kwargs)
+        assert_that(inventory_snapshot(root, vendor)).is_equal_to(before)
+        return
     offline = load_inventory(root, vendor_roots={"vendor": vendor})
     fetched = load_inventory(root, fetch_vendors=True)
     assert_that(requests).is_length(1)

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 from ai_skills_engine.manifest.mapping import VendorMapping
 from ai_skills_engine.manifest.record import Record
+from ai_skills_engine.registry.ingest_allow import IngestAllow
+from ai_skills_engine.registry.ingest_limits import IngestLimits
 
 
 @dataclass(frozen=True)
@@ -20,3 +22,5 @@ class Vendor(Record):
     mapping: VendorMapping | None = None
     include: tuple[str, ...] | None = None
     exclude: tuple[str, ...] | None = None
+    ingest_allow: tuple[IngestAllow, ...] = ()
+    ingest_limits: IngestLimits | None = None

@@ -6,12 +6,17 @@ from collections.abc import Mapping
 # nosemgrep: python37-compatibility-importlib2 - pyproject.toml requires Python >=3.13
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from jsonschema import Draft202012Validator
 
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.identity import parse_id
+from ai_skills_engine.registry.ingest_checks import (
+    parse_allow,
+    parse_limits,
+    safe_diagnostic,
+)
 
 
 def validate_inventory(
@@ -72,13 +77,25 @@ def validate_document(
         Diagnostic(
             "schema",
             "/" + "/".join(str(part) for part in error.absolute_path),
-            error.message,
+            safe_diagnostic(error.message),
         )
         for error in Draft202012Validator(schema).iter_errors(data)
     ]
     if findings:
         return findings
-    return _semantic(data=data, imported_packages=imported_packages or {})
+    data = cast(dict[str, Any], data)
+    for index, vendor in enumerate(data.get("vendors", [])):
+        try:
+            parse_allow(vendor.get("ingestAllow", []), label=f"vendor {vendor['id']}")
+            if "ingestLimits" in vendor:
+                parse_limits(vendor["ingestLimits"], label=f"vendor {vendor['id']}")
+        except ValueError as error:
+            findings.append(Diagnostic("schema", f"/vendors/{index}", str(error)))
+    try:
+        parse_allow(data.get("overrides", {}).get("ingestAllow", []), label="overrides")
+    except ValueError as error:
+        findings.append(Diagnostic("schema", "/overrides/ingestAllow", str(error)))
+    return findings + _semantic(data=data, imported_packages=imported_packages or {})
 
 
 def _semantic(

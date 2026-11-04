@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import io
 import json
 import os
 import sys
@@ -24,8 +23,21 @@ from urllib.parse import urlparse
 
 from ai_skills_engine.frontmatter import read_frontmatter_name
 from ai_skills_engine.paths import resolve_repo_root
+from ai_skills_engine.registry.ingest_archive import (
+    extract_tarball,
+    rewrite_tarball_member,
+)
+from ai_skills_engine.registry.ingest_checks import (
+    fail_limit,
+    read_bounded,
+    read_stream,
+    safe_diagnostic,
+    validate_input_tree,
+)
+from ai_skills_engine.registry.ingest_limits import DEFAULT_LIMITS, IngestLimits
 from ai_skills_engine.registry.plugin_bake import bake_vendor_plugins
 from ai_skills_engine.registry.plugin_bake_result import PluginBakeResult
+from ai_skills_engine.registry.plugin_ingest import ingest_record
 from ai_skills_engine.registry.plugin_manifest import (
     GENERATED_NOTICE,
     bake_lock_vendors,
@@ -75,6 +87,7 @@ _LOCK_KEYS = (
     "$generated",
     "coverageSha256",
     "coverageInputs",
+    "ingestChecks",
     "vendors",
     "files",
 )
@@ -205,6 +218,7 @@ def collect_bake(
         explode_name_count = len(
             {name for result in results for name in result.explode_names},
         )
+        ingest_checks = ingest_record(vendors=vendors, baked_root=output_root)
         coverage = render_coverage_report(
             vendors=vendors,
             skipped_by_vendor=skipped_by_vendor,
@@ -213,6 +227,7 @@ def collect_bake(
             collisions=skill_collisions,
             agent_collisions=agent_collisions,
             explode_name_count=explode_name_count,
+            ingest_checks=ingest_checks,
         )
         marketplace = render_marketplace(
             plugins=_marketplace_entries(vendors=vendors),
@@ -225,6 +240,7 @@ def collect_bake(
             render_bake_manifest(
                 vendors=vendors,
                 coverage=coverage,
+                ingest_checks=ingest_checks,
                 files=_baked_file_digests(baked_root=output_root),
                 coverage_inputs=_coverage_inputs(
                     skipped_by_vendor=skipped_by_vendor,
@@ -237,6 +253,16 @@ def collect_bake(
             ),
             encoding="utf-8",
         )
+        # Generated aggregates must satisfy the same bounded reads as --check
+        # before printing coverage or replacing any published destination.
+        for relative in (
+            MARKETPLACE_RELATIVE,
+            Path(COVERAGE_FILENAME),
+            Path(BAKE_MANIFEST_FILENAME),
+        ):
+            read_bounded(
+                path=output_root / relative, vendor="bake", limits=DEFAULT_LIMITS
+            )
         print(coverage, end="")
         skill_digests = _skill_digests_from_output(
             output_root=output_root,
@@ -330,10 +356,11 @@ def check(*, repo_root: Path) -> int:
             msg = f"Missing generated directory: {baked_root}"
             raise ValueError(msg)
         if not baked_root.is_dir():
+            load_registry(registry_path=repo_root / "vendors.yaml")
             return 0
         _check_baked_output(repo_root=repo_root)
     except _CLI_FAILURES as error:
-        print(error, file=sys.stderr)
+        print(safe_diagnostic(str(error)), file=sys.stderr)
         return 1
     return 0
 
@@ -429,6 +456,7 @@ def _materialize_vendor_tree(
     if dest is None:
         dest = temporary_root / f"vendor-{vendor.id}"
         _fetch_vendor_tree(vendor=vendor, dest=dest)
+    validate_input_tree(root=dest, vendor=vendor.id, limits=vendor.ingest_limits)
     if prune_content_free_symlinks:
         _drop_content_free_symlinks(vendor=vendor, root=dest)
     validate_tree(root=dest)
@@ -469,8 +497,10 @@ def _drop_content_free_symlinks(*, vendor: Vendor, root: Path) -> None:
             if name in dirnames:
                 dirnames.remove(name)
             print(
-                f"bake: {vendor.id}: dropped non-skill symlink "
-                f"{relative} -> {os.readlink(path=candidate)}",
+                safe_diagnostic(
+                    f"bake: {vendor.id}: dropped non-skill symlink "
+                    f"{relative} -> {os.readlink(path=candidate)}"
+                ),
             )
             candidate.unlink()
 
@@ -536,8 +566,12 @@ def _fetch_vendor_tree(*, vendor: Vendor, dest: Path) -> None:
             "Accept": "application/vnd.github+json",
             "User-Agent": _USER_AGENT,
         },
+        vendor_id=vendor.id,
+        limits=vendor.ingest_limits,
     )
-    _extract_tarball(payload=payload, dest=dest)
+    _extract_tarball(
+        payload=payload, dest=dest, vendor_id=vendor.id, limits=vendor.ingest_limits
+    )
 
 
 def _require_allowed_fetch_host(*, host: str) -> str:
@@ -594,6 +628,8 @@ def _http_get_bytes(
     path: str,
     headers: dict[str, str],
     redirects: int = _MAX_REDIRECTS,
+    vendor_id: str = "unknown",
+    limits: IngestLimits = DEFAULT_LIMITS,
 ) -> bytes:
     """GET ``path`` on ``host`` and follow a bounded number of redirects.
 
@@ -602,6 +638,8 @@ def _http_get_bytes(
         path: Request path including query string.
         headers: HTTP headers.
         redirects: Remaining redirects allowed.
+        vendor_id: Consumer vendor alias.
+        limits: Effective download policy.
 
     Returns:
         Response body.
@@ -618,7 +656,34 @@ def _http_get_bytes(
         response = connection.getresponse()
         status = response.status
         location = response.getheader("Location")
-        body = response.read()
+        body = b""
+        if status == 200:
+            length = response.getheader("Content-Length")
+            if length is not None:
+                try:
+                    declared = int(length)
+                except ValueError as error:
+                    raise RuntimeError(
+                        f"vendor {vendor_id}: {path}: invalid Content-Length"
+                    ) from error
+                if declared < 0:
+                    raise RuntimeError(
+                        f"vendor {vendor_id}: {path}: invalid Content-Length"
+                    )
+                if declared > limits.download_bytes:
+                    fail_limit(
+                        vendor=vendor_id,
+                        path=path,
+                        limit="downloadBytes",
+                        maximum=limits.download_bytes,
+                    )
+            body = read_stream(
+                stream=response,
+                vendor=vendor_id,
+                path=path,
+                maximum=limits.download_bytes,
+                limit="downloadBytes",
+            )
     except (HTTPException, OSError) as error:
         msg = f"Could not fetch {host}{path}: {error}"
         raise RuntimeError(msg) from error
@@ -637,6 +702,8 @@ def _http_get_bytes(
             path=next_path,
             headers=headers,
             redirects=redirects - 1,
+            vendor_id=vendor_id,
+            limits=limits,
         )
     if status != 200:
         msg = f"GitHub returned HTTP {status} for {host}{path}"
@@ -644,55 +711,34 @@ def _http_get_bytes(
     return body
 
 
-def _extract_tarball(*, payload: bytes, dest: Path) -> None:
-    """Extract a GitHub tarball, stripping the top-level directory.
+def _extract_tarball(
+    *,
+    payload: bytes,
+    dest: Path,
+    vendor_id: str = "unknown",
+    limits: IngestLimits = DEFAULT_LIMITS,
+) -> None:
+    """Extract a bounded GitHub archive without publishing a rejected tree.
 
     Args:
-        payload: Gzip-compressed tar bytes.
-        dest: Directory that receives the stripped tree.
-
-    Raises:
-        ValueError: If a member would escape ``dest``.
-        RuntimeError: If the archive cannot be read.
+        payload: Gzip-compressed archive bytes.
+        dest: Destination for stripped vendor files.
+        vendor_id: Consumer vendor alias.
+        limits: Effective archive policy.
     """
-    dest.mkdir(parents=True, exist_ok=True)
-    try:
-        with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
-            members: list[tarfile.TarInfo] = []
-            for member in archive.getmembers():
-                rewritten = _rewrite_tarball_member(member=member)
-                if rewritten is not None:
-                    members.append(rewritten)
-            archive.extractall(path=dest, members=members, filter="data")
-    except (OSError, tarfile.TarError) as error:
-        msg = f"Could not extract vendor tarball: {error}"
-        raise RuntimeError(msg) from error
+    extract_tarball(payload=payload, dest=dest, vendor=vendor_id, limits=limits)
 
 
 def _rewrite_tarball_member(*, member: tarfile.TarInfo) -> tarfile.TarInfo | None:
-    """Strip the GitHub root prefix and reject path escapes.
+    """Keep the historical shim for the bounded archive implementation.
 
     Args:
-        member: Archive member as stored by GitHub.
+        member: Original tar header.
 
     Returns:
-        The member with a dest-relative name, or ``None`` to skip the
-        top-level directory itself.
-
-    Raises:
-        ValueError: If the member path is absolute or contains ``..``.
+        Validated stripped header, or None for the archive root.
     """
-    parts = PurePosixPath(member.name).parts
-    if len(parts) < 2:
-        return None
-    relative = PurePosixPath(*parts[1:])
-    if relative.is_absolute() or any(
-        part in {"", ".", ".."} for part in relative.parts
-    ):
-        msg = f"path escape rejected: {member.name}"
-        raise ValueError(msg)
-    member.name = relative.as_posix()
-    return member
+    return rewrite_tarball_member(member=member)
 
 
 def _marketplace_entries(
@@ -740,7 +786,8 @@ def _baked_file_digests(*, baked_root: Path) -> dict[str, str]:
         relative = file_path.relative_to(baked_root).as_posix()
         if relative == BAKE_MANIFEST_FILENAME:
             continue
-        digests[relative] = hashlib.sha256(file_path.read_bytes()).hexdigest()
+        with file_path.open("rb") as stream:
+            digests[relative] = hashlib.file_digest(stream, "sha256").hexdigest()
     return dict(sorted(digests.items()))
 
 
@@ -768,7 +815,8 @@ def _coverage_inputs(
     """
     return {
         "skippedByVendor": {
-            vendor_id: list(paths) for vendor_id, paths in skipped_by_vendor.items()
+            vendor_id: [safe_diagnostic(path) for path in paths]
+            for vendor_id, paths in skipped_by_vendor.items()
         },
         "ingestedCounts": dict(ingested_counts),
         "fetchedVendors": sorted(fetched),
@@ -943,6 +991,7 @@ def _assert_coverage_matches_tree(
         collisions=tuple(collisions),
         agent_collisions=tuple(agent_collision_lines),
         explode_name_count=explode_name_count,
+        ingest_checks=ingest_record(vendors=vendors, baked_root=baked_root),
     )
     if coverage_text != expected_coverage:
         msg = f"Generated file is stale: {coverage_path}"
@@ -1049,25 +1098,6 @@ def _check_baked_output(*, repo_root: Path) -> None:
         msg = f"Missing generated directory: {baked_root}"
         raise ValueError(msg)
     _reject_leftover_backup(destination=baked_root)
-    validate_tree(root=baked_root)
-    coverage_path = baked_root / COVERAGE_FILENAME
-    if not coverage_path.is_file():
-        msg = f"Missing generated file: {coverage_path}"
-        raise ValueError(msg)
-    coverage_text = coverage_path.read_text(encoding="utf-8")
-    bake_manifest_path = baked_root / BAKE_MANIFEST_FILENAME
-    if not bake_manifest_path.is_file():
-        msg = f"Missing generated file: {bake_manifest_path}"
-        raise ValueError(msg)
-    lock = _parse_bake_lock(
-        lock=json.loads(bake_manifest_path.read_text(encoding="utf-8")),
-    )
-    if lock["vendors"] != bake_lock_vendors(vendors=vendors):
-        msg = f"Generated file is stale: {bake_manifest_path}"
-        raise ValueError(msg)
-    if lock["files"] != _baked_file_digests(baked_root=baked_root):
-        msg = f"Generated file is stale: {bake_manifest_path}"
-        raise ValueError(msg)
     expected_ids = [plugin.id for vendor in vendors for plugin in vendor.plugins]
     allowed_root = {
         BAKE_MANIFEST_FILENAME,
@@ -1075,25 +1105,64 @@ def _check_baked_output(*, repo_root: Path) -> None:
         ".claude-plugin",
         *expected_ids,
     }
-    unexpected_root = sorted(
-        path.name for path in baked_root.iterdir() if path.name not in allowed_root
-    )
-    if unexpected_root:
-        msg = f"unexpected path in plugins-baked: {unexpected_root[0]!r}"
-        raise ValueError(msg)
+    for path in baked_root.iterdir():
+        if path.is_symlink():
+            raise ValueError(safe_diagnostic(f"symlink rejected: {path}"))
+        expected_directory = path.name in {*expected_ids, ".claude-plugin"}
+        if (
+            path.name in allowed_root
+            and (path.is_dir() if expected_directory else path.is_file()) is False
+        ):
+            raise ValueError(safe_diagnostic(f"unsupported generated path: {path}"))
+        if path.name not in allowed_root:
+            raise ValueError(
+                safe_diagnostic(f"unexpected path in plugins-baked: {path.name!r}")
+            )
     marketplace_dir = baked_root / ".claude-plugin"
     if marketplace_dir.is_dir():
-        extra_marketplace = sorted(
-            path.name
-            for path in marketplace_dir.iterdir()
-            if path.name != "marketplace.json"
-        )
-        if extra_marketplace:
-            msg = (
-                "unexpected path in plugins-baked/.claude-plugin: "
-                f"{extra_marketplace[0]!r}"
-            )
-            raise ValueError(msg)
+        for path in marketplace_dir.iterdir():
+            if path.is_symlink() or not path.is_file():
+                raise ValueError(safe_diagnostic(f"unsafe marketplace file: {path}"))
+            if path.name != "marketplace.json":
+                raise ValueError(
+                    safe_diagnostic(
+                        "unexpected path in plugins-baked/.claude-plugin: "
+                        f"{path.name!r}"
+                    )
+                )
+    # Bound and scan actual payloads before hashing or parsing any generated
+    # metadata. BAKE.json cannot supply limits, acknowledgements or findings.
+    actual_ingest = ingest_record(vendors=vendors, baked_root=baked_root)
+    validate_tree(root=baked_root)
+    marketplace_file = baked_root / MARKETPLACE_RELATIVE
+    if marketplace_file.is_file():
+        read_bounded(path=marketplace_file, vendor="bake", limits=DEFAULT_LIMITS)
+    coverage_path = baked_root / COVERAGE_FILENAME
+    if not coverage_path.is_file():
+        msg = f"Missing generated file: {coverage_path}"
+        raise ValueError(msg)
+    coverage_text = read_bounded(
+        path=coverage_path, vendor="bake", limits=DEFAULT_LIMITS
+    ).decode("utf-8")
+    bake_manifest_path = baked_root / BAKE_MANIFEST_FILENAME
+    if not bake_manifest_path.is_file():
+        msg = f"Missing generated file: {bake_manifest_path}"
+        raise ValueError(msg)
+    lock = _parse_bake_lock(
+        lock=json.loads(
+            read_bounded(
+                path=bake_manifest_path, vendor="bake", limits=DEFAULT_LIMITS
+            ).decode("utf-8")
+        ),
+    )
+    if lock["ingestChecks"] != actual_ingest:
+        raise ValueError("BAKE.json ingestChecks is stale")
+    if lock["vendors"] != bake_lock_vendors(vendors=vendors):
+        msg = f"Generated file is stale: {bake_manifest_path}"
+        raise ValueError(msg)
+    if lock["files"] != _baked_file_digests(baked_root=baked_root):
+        msg = f"Generated file is stale: {bake_manifest_path}"
+        raise ValueError(msg)
     actual_ids = sorted(
         path.name
         for path in baked_root.iterdir()
@@ -1460,7 +1529,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         bake(repo_root=repo_root)
     except _CLI_FAILURES as error:
-        print(error, file=sys.stderr)
+        print(safe_diagnostic(str(error)), file=sys.stderr)
         return 1
     return 0
 

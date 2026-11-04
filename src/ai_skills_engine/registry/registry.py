@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 
 import yaml
 
+from ai_skills_engine.registry.ingest_checks import parse_allow, parse_limits
+from ai_skills_engine.registry.ingest_limits import IngestLimits
 from ai_skills_engine.registry.vendor import Vendor
 from ai_skills_engine.registry.vendor_plugin import (
     PLUGIN_ROOT_RESERVED_NAMES,
@@ -22,7 +24,9 @@ _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _VENDOR_REQUIRED_FIELDS = frozenset(
     {"id", "repo", "sha", "skillRoots", "license", "homepage"},
 )
-_VENDOR_OPTIONAL_FIELDS = frozenset({"branch", "displayRef", "plugins"})
+_VENDOR_OPTIONAL_FIELDS = frozenset(
+    {"branch", "displayRef", "plugins", "ingestAllow", "ingestLimits"}
+)
 _VENDOR_FIELDS = _VENDOR_REQUIRED_FIELDS | _VENDOR_OPTIONAL_FIELDS
 _PLUGIN_REQUIRED_FIELDS = frozenset(
     {"id", "description", "skillsRoot", "skills"},
@@ -270,6 +274,14 @@ def _parse_vendor(*, raw_vendor: object, position: int) -> Vendor:
         display_ref=display_ref,
         plugins=plugins,
         branch=branch,
+        ingest_allow=parse_allow(
+            raw_vendor.get("ingestAllow", []), label=f"vendor {vendor_id}"
+        ),
+        ingest_limits=(
+            parse_limits(raw_vendor["ingestLimits"], label=f"vendor {vendor_id}")
+            if "ingestLimits" in raw_vendor
+            else IngestLimits()
+        ),
     )
 
 

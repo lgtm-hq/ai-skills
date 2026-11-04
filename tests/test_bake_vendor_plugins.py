@@ -2763,7 +2763,7 @@ def test_install_directory_retries_partial_writes(
             return real_write(fd, buffer[:8])
         return real_write(fd, buffer)
 
-    monkeypatch.setattr(safe_tree.os, "write", _partial_write)
+    monkeypatch.setattr(os, "write", _partial_write)
     install_directory(source=source, destination=dest)
     assert_that((dest / "payload.txt").read_text(encoding="utf-8")).is_equal_to(
         payload,
@@ -2788,7 +2788,7 @@ def test_write_all_rejects_zero_length_write(
         del fd, data
         return 0
 
-    monkeypatch.setattr(safe_tree.os, "write", _zero_write)
+    monkeypatch.setattr(os, "write", _zero_write)
     with pytest.raises(OSError, match="short write"):
         safe_tree._write_all(fd=1, data=b"hello")
 
@@ -3040,7 +3040,7 @@ class _FakeHttpResponse:
         location: str | None = None,
     ) -> None:
         self.status = status
-        self._body = body
+        self._body = BytesIO(body)
         self._location = location
 
     def getheader(self, name: str) -> str | None:
@@ -3056,13 +3056,16 @@ class _FakeHttpResponse:
             return self._location
         return None
 
-    def read(self) -> bytes:
+    def read(self, amount: int = -1) -> bytes:
         """Return the scripted body.
+
+        Args:
+            amount: Maximum requested bytes.
 
         Returns:
             Response bytes.
         """
-        return self._body
+        return self._body.read(amount)
 
 
 def _stub_https_script(

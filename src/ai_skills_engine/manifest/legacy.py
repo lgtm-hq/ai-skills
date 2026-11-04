@@ -188,7 +188,17 @@ def legacy_documents(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
             key: value
             for key, value in vendor.items()
             if key
-            in {"id", "repo", "sha", "branch", "displayRef", "license", "homepage"}
+            in {
+                "id",
+                "repo",
+                "sha",
+                "branch",
+                "displayRef",
+                "license",
+                "homepage",
+                "ingestAllow",
+                "ingestLimits",
+            }
         }
         raw["skillRoots"] = mapping["skillRoots"]
         if "packages" in mapping:
