@@ -131,6 +131,7 @@ def render_bake_manifest(
     coverage: str,
     files: dict[str, str],
     coverage_inputs: dict[str, object],
+    ingest_checks: dict[str, object],
 ) -> str:
     """Render the bake lock that ``--check`` compares to ``vendors.yaml``.
 
@@ -146,6 +147,7 @@ def render_bake_manifest(
         coverage: Coverage report text whose digest is stored.
         files: POSIX relative path → SHA-256 hex digest.
         coverage_inputs: Renderer inputs recorded at bake time.
+        ingest_checks: Fresh content scan observations and effective limits.
 
     Returns:
         Pretty JSON text with a trailing newline.
@@ -157,6 +159,7 @@ def render_bake_manifest(
                 coverage.encode(encoding="utf-8"),
             ).hexdigest(),
             "coverageInputs": coverage_inputs,
+            "ingestChecks": ingest_checks,
             "vendors": bake_lock_vendors(vendors=vendors),
             "files": files,
         },

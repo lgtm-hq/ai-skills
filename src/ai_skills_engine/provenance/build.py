@@ -212,6 +212,7 @@ def build_inventory(
             selection_candidates=True,
             identity_migrations={},
             context=imported_context,
+            ingest_vendor=vendor,
         )
         child_doc = read_document(vendor_root / "ai-skills.yaml")
         publisher = child_doc["publisher"]["id"]

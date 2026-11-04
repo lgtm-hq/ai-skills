@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
+from tempfile import TemporaryDirectory
 
 from ai_skills_engine.frontmatter import (
     frontmatter_error,
     read_frontmatter_name,
     rewrite_frontmatter_name,
 )
+from ai_skills_engine.registry.ingest_budget import IngestBudget
+from ai_skills_engine.registry.ingest_checks import (
+    read_bounded,
+    safe_diagnostic,
+    validate_input_tree,
+)
 from ai_skills_engine.registry.plugin_bake_result import PluginBakeResult
+from ai_skills_engine.registry.plugin_ingest import scan_plugin
 from ai_skills_engine.registry.plugin_manifest import write_plugin_manifests
 from ai_skills_engine.registry.plugin_version import plugin_version
 from ai_skills_engine.registry.registry import GLOB_METACHARS
@@ -17,6 +25,7 @@ from ai_skills_engine.registry.safe_tree import (
     _copy_file_nofollow,
     contained_path,
     copy_tree,
+    install_directory,
     iter_directory_entries,
     validate_internal_references,
     validate_tree,
@@ -50,15 +59,28 @@ def bake_vendor_plugins(
             one plugin.
     """
     contained_path(path=vendor_root, root=vendor_root)
-    return tuple(
-        _bake_plugin(
-            vendor=vendor,
-            plugin=plugin,
-            vendor_root=vendor_root,
-            output_root=output_root,
+    validate_input_tree(root=vendor_root, vendor=vendor.id, limits=vendor.ingest_limits)
+    # Public callers receive no partial plugin on any ingestion rejection.
+    for plugin in vendor.plugins:
+        if (output_root / plugin.id).exists(follow_symlinks=False):
+            raise FileExistsError(f"plugin output already exists: {plugin.id}")
+    with TemporaryDirectory(prefix="ai-skills-slice-") as temporary:
+        staged = Path(temporary)
+        results = tuple(
+            _bake_plugin(
+                vendor=vendor,
+                plugin=plugin,
+                vendor_root=vendor_root,
+                output_root=staged,
+            )
+            for plugin in vendor.plugins
         )
-        for plugin in vendor.plugins
-    )
+        output_root.mkdir(parents=True, exist_ok=True)
+        for plugin in vendor.plugins:
+            install_directory(
+                source=staged / plugin.id, destination=output_root / plugin.id
+            )
+        return results
 
 
 def discover_skill_relpaths(*, skills_root: Path) -> tuple[str, ...]:
@@ -161,6 +183,7 @@ def _bake_plugin(
         ValueError: On missing content, dest collisions, or unsafe paths.
         FileExistsError: If the plugin output directory already exists.
     """
+    budget = IngestBudget(vendor=vendor.id, limits=vendor.ingest_limits)
     destination = output_root / plugin.id
     if destination.exists(follow_symlinks=False) or destination.is_symlink():
         msg = f"plugin output already exists: {plugin.id}"
@@ -196,6 +219,7 @@ def _bake_plugin(
                 explode_names=explode_names,
                 renamed=renamed,
                 allow_skip=plugin.skills == "*",
+                budget=budget,
             )
 
     for extra in plugin.extra_skills:
@@ -208,6 +232,7 @@ def _bake_plugin(
             explode_names=explode_names,
             renamed=renamed,
             allow_skip=False,
+            budget=budget,
         )
 
     applied = {old for old, _new in renamed}
@@ -221,12 +246,14 @@ def _bake_plugin(
         plugin=plugin,
         vendor_root=vendor_root,
         destination=destination,
+        budget=budget,
     )
     agent_stems = _copy_agents(
         vendor=vendor,
         plugin=plugin,
         vendor_root=vendor_root,
         destination=destination,
+        budget=budget,
     )
     if not ingested and not agent_stems:
         msg = f"plugin {plugin.id} ingested no skills or agents"
@@ -238,8 +265,19 @@ def _bake_plugin(
         vendor=vendor,
         version=version,
     )
+    for generated in (
+        destination / "plugin.json",
+        *(
+            destination / name / "plugin.json"
+            for name in (".claude-plugin", ".codex-plugin", ".cursor-plugin")
+        ),
+    ):
+        generated.chmod(0o644)
     validate_tree(root=destination)
+    # Scan before interpreting links too: malformed content cannot leak a value.
+    scan_plugin(root=destination, vendor=vendor, plugin=plugin)
     validate_internal_references(root=destination)
+    scan_plugin(root=destination, vendor=vendor, plugin=plugin)
     return PluginBakeResult(
         plugin_id=plugin.id,
         version=version,
@@ -260,6 +298,7 @@ def _ingest_skill(
     explode_names: list[str],
     renamed: list[tuple[str, str]],
     allow_skip: bool,
+    budget: IngestBudget,
 ) -> None:
     """Copy one skill directory and apply a registry rename if declared.
 
@@ -278,6 +317,7 @@ def _ingest_skill(
         allow_skip: When ``True`` (wildcard discovery), a skill whose
             ``SKILL.md`` frontmatter is unusable is reported and skipped
             instead of failing the whole vendor bake.
+        budget: Per-plugin bounded copy policy.
 
     Raises:
         ValueError: If ``SKILL.md`` is missing or the dest name collides.
@@ -292,13 +332,19 @@ def _ingest_skill(
     if not source.is_dir() or not skill_markdown.is_file():
         msg = f"vendor skill missing SKILL.md: {source}"
         raise ValueError(msg)
+    markdown_bytes = read_bounded(
+        path=skill_markdown, vendor=budget.vendor, limits=budget.limits
+    )
     if allow_skip:
         reason = frontmatter_error(
-            text=skill_markdown.read_text(encoding="utf-8"),
+            text=markdown_bytes.decode("utf-8"),
         )
         if reason is not None:
             print(
-                f"bake: skipped {source.relative_to(vendor_root).as_posix()}: {reason}",
+                safe_diagnostic(
+                    f"bake: skipped {source.relative_to(vendor_root).as_posix()}: "
+                    f"{reason}"
+                ),
             )
             return
     original_name = source.name
@@ -311,6 +357,8 @@ def _ingest_skill(
         source=source,
         destination=skill_destination,
         source_root=vendor_root,
+        budget=budget,
+        skip_root_readme=True,
     )
     dest_markdown = skill_destination / "SKILL.md"
     _drop_repo_layout_readmes(skill_destination=skill_destination)
@@ -365,6 +413,7 @@ def _copy_agents(
     plugin: VendorPlugin,
     vendor_root: Path,
     destination: Path,
+    budget: IngestBudget,
 ) -> tuple[str, ...]:
     """Copy declared agent markdown files into the baked plugin.
 
@@ -376,6 +425,7 @@ def _copy_agents(
         plugin: Slice listing agent stems.
         vendor_root: Unpacked vendor tree.
         destination: Baked plugin directory.
+        budget: Per-plugin bounded copy policy.
 
     Returns:
         Ingested agent stems in registry order.
@@ -400,7 +450,7 @@ def _copy_agents(
             raise ValueError(msg)
         contained_path(path=source, root=vendor_root)
         target = agents_destination / f"{stem}.md"
-        _copy_file_nofollow(source=source, destination=target)
+        _copy_file_nofollow(source=source, destination=target, budget=budget)
     return tuple(plugin.agents)
 
 
@@ -410,6 +460,7 @@ def _copy_extra_files(
     plugin: VendorPlugin,
     vendor_root: Path,
     destination: Path,
+    budget: IngestBudget,
 ) -> None:
     """Copy declared extra files onto the baked plugin root.
 
@@ -418,6 +469,7 @@ def _copy_extra_files(
         plugin: Slice listing extra files.
         vendor_root: Unpacked vendor tree.
         destination: Baked plugin directory.
+        budget: Per-plugin bounded copy policy.
 
     Raises:
         ValueError: If a declared extra file is missing, a symlink, or a
@@ -437,4 +489,5 @@ def _copy_extra_files(
         _copy_file_nofollow(
             source=source,
             destination=destination / source.name,
+            budget=budget,
         )

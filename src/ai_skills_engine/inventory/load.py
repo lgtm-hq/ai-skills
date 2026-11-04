@@ -1,6 +1,7 @@
 """Load a deterministic inventory from explicit local or pinned vendor inputs."""
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -23,6 +24,12 @@ from ai_skills_engine.manifest.validate import validate_document
 from ai_skills_engine.manifest.vendor import Vendor
 from ai_skills_engine.provenance.authorship import Authorship
 from ai_skills_engine.provenance.context import Context, origin_locator
+from ai_skills_engine.registry.ingest_checks import (
+    parse_allow,
+    parse_limits,
+    validate_input_tree,
+)
+from ai_skills_engine.registry.ingest_limits import IngestLimits
 from ai_skills_engine.registry.vendor import Vendor as RegistryVendor
 
 
@@ -62,6 +69,7 @@ def load_inventory(
         selection_candidates=selection_candidates,
         identity_migrations=identity_migrations or {},
         context=None,
+        ingest_vendor=None,
     )
 
 
@@ -73,6 +81,7 @@ def _load_inventory(
     selection_candidates: bool,
     identity_migrations: Mapping[str, str],
     context: Context | None,
+    ingest_vendor: Vendor | None,
 ) -> Inventory:
     """Load one explicit publication within the recursive provenance boundary.
 
@@ -83,6 +92,7 @@ def _load_inventory(
         selection_candidates: Whether selection owns direct filtering.
         identity_migrations: Validated publisher identity migrations.
         context: Publication identity and final consumer policy.
+        ingest_vendor: Consumer ingestion policy for this imported publisher.
 
     Returns:
         Complete observed inventory and provenance evidence.
@@ -136,6 +146,14 @@ def _load_inventory(
                         ),
                         license=item.get("license", ""),
                         homepage=item.get("homepage", ""),
+                        ingest_allow=parse_allow(
+                            item.get("ingestAllow", []), label=item["id"]
+                        ),
+                        ingest_limits=(
+                            parse_limits(item["ingestLimits"], label=item["id"])
+                            if "ingestLimits" in item
+                            else IngestLimits()
+                        ),
                     )
                     roots[vendor.id] = _materialize_vendor_tree(
                         vendor=vendor,
@@ -143,6 +161,17 @@ def _load_inventory(
                         temporary_root=Path(temporary),
                         prune_content_free_symlinks=False,
                     )
+        for item in document.get("vendors", []):
+            if item["id"] in roots:
+                validate_input_tree(
+                    root=roots[item["id"]],
+                    vendor=item["id"],
+                    limits=(
+                        parse_limits(item["ingestLimits"], label=item["id"])
+                        if "ingestLimits" in item
+                        else IngestLimits()
+                    ),
+                )
         inventory = _collect(
             root=root,
             roots=roots,
@@ -150,6 +179,7 @@ def _load_inventory(
             selection_candidates=selection_candidates,
             identity_migrations=identity_migrations or {},
             ignore_authority=context is not None,
+            ingest_vendor=ingest_vendor,
         )
         manifest, _, _ = load_consumer(
             root / "ai-skills.yaml",
@@ -205,6 +235,7 @@ def _collect(
     selection_candidates: bool,
     identity_migrations: Mapping[str, str],
     ignore_authority: bool,
+    ingest_vendor: Vendor | None,
 ) -> Inventory:
     """Collect local declarations and imports inside the input lifetime.
 
@@ -215,6 +246,7 @@ def _collect(
         selection_candidates: Defer all import filters to the selection layer.
         identity_migrations: Publisher-local identity moves for direct edges.
         ignore_authority: Strip publisher authority for recursive vendor inputs.
+        ingest_vendor: Consumer ingestion policy for local imported declarations.
 
     Returns:
         Complete inventory observations.
@@ -243,7 +275,11 @@ def _collect(
             consumer.publisher.repo or consumer.publisher.id,
             package,
             {},
-            None,
+            (
+                replace(ingest_vendor, include=None, exclude=None)
+                if ingest_vendor is not None
+                else None
+            ),
         )
         for package in consumer.packages
     ]
@@ -305,7 +341,11 @@ def _collect(
             package_id=package_id,
             origin=origin_locator(origin),
             aliases=aliases,
-            vendor=None if selection_candidates else import_vendor,
+            vendor=(
+                replace(import_vendor, include=None, exclude=None)
+                if selection_candidates and import_vendor is not None
+                else import_vendor
+            ),
             pending=pending,
             resources=resources,
             resource_paths=resource_paths,

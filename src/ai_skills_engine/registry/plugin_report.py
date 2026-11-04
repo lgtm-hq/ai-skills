@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 
+from ai_skills_engine.registry.ingest_checks import safe_diagnostic
 from ai_skills_engine.registry.plugin_bake_result import PluginBakeResult
 from ai_skills_engine.registry.vendor import Vendor
 
@@ -19,6 +21,7 @@ def render_coverage_report(
     collisions: tuple[str, ...],
     agent_collisions: tuple[str, ...],
     explode_name_count: int,
+    ingest_checks: dict[str, object] | None = None,
 ) -> str:
     """Render the committed coverage / collision report.
 
@@ -30,6 +33,7 @@ def render_coverage_report(
         collisions: Skill explode-name collision lines.
         agent_collisions: Agent-stem collision lines.
         explode_name_count: Unique baked skill names when clean.
+        ingest_checks: Fresh content scan and effective consumer policy.
 
     Returns:
         Markdown text with a trailing newline.
@@ -65,6 +69,17 @@ def render_coverage_report(
         )
         for path in skipped:
             lines.append(f"  - SKIPPED `{path}`")
+    lines.extend(["", "## Ingest checks", ""])
+    lines.extend(
+        [
+            "Tripwire checks do not establish vendor trust.",
+            "",
+            "```json",
+            json.dumps(ingest_checks or {}, indent=2, ensure_ascii=False),
+            "```",
+            "",
+        ]
+    )
     lines.extend(["", "## Collision report", ""])
     if collisions or agent_collisions:
         lines.append(
@@ -77,7 +92,7 @@ def render_coverage_report(
             f"Global namespace clean ({explode_name_count} unique skill names).",
         )
     lines.append("")
-    return "\n".join(lines)
+    return safe_diagnostic("\n".join(lines))
 
 
 def collect_skill_collisions(
