@@ -19,8 +19,8 @@ jobs:
       # Allow feat → minor; clamp major without an explicit break.
       max-bump: minor
       ecosystems: python
-      # Keeps README install examples pinned to the release being cut.
-      version-update-script: scripts/update-readme-version.sh
+      # Restamp examples/marketplaces and rebuild digests with the bumped engine.
+      version-update-script: scripts/ci/update_release_version.sh
       # The operator merges one release PR per completed epic milestone,
       # after normal review and CI gates pass.
       auto-merge: false

@@ -18,6 +18,9 @@ _ROOT = Path(__file__).resolve().parents[1]
 _PINS = Path("scripts/tool-versions.sh")
 _CHECK = "scripts/ci/check-tool-installers.sh"
 _BOOTSTRAPS = ["scripts/install-validate-deps.sh", ".cursor/install.sh"]
+_RELEASE_HOOK = yaml.safe_load(
+    (_ROOT / ".github/workflows/release-version-pr.yml").read_text(encoding="utf-8")
+)["jobs"]["version-pr"]["with"]["version-update-script"]
 
 
 def _write_executable(*, path: Path, text: str) -> None:
@@ -70,7 +73,10 @@ def installer_repo(
     for name in [
         str(_PINS),
         "scripts/lib/fetch-verified.sh",
+        "scripts/lib/ensure-uv.sh",
         "scripts/install-ripgrep.sh",
+        "scripts/update-readme-version.sh",
+        _RELEASE_HOOK,
         _CHECK,
         *_BOOTSTRAPS,
     ]:
@@ -121,6 +127,8 @@ def installer_repo(
         "rm",
         "cp",
         "mkdir",
+        "sed",
+        "grep",
     ]:
         binary = shutil.which(command, path="/usr/bin:/bin")
         if binary is None:
@@ -250,6 +258,58 @@ def test_bootstrap_reuses_installed_tools(
     assert_that(result.returncode).described_as(result.stderr).is_zero()
     assert_that((installer_repo / "downloads").exists()).is_false()
     assert_that((installer_repo / "events").read_text()).contains("uv sync --frozen")
+
+
+@pytest.mark.parametrize("failure", ["none", "sync", "build"])
+def test_release_hook_records_bumped_builder_commitment(
+    installer_repo: Path,
+    installer_env: dict[str, str],
+    failure: str,
+) -> None:
+    """The actual workflow hook restamps, syncs then builds; failures stop it."""
+    (installer_repo / "README.md").write_text(
+        "bunx skills add lgtm-hq/ai-skills@v1.2.3 -g\n",
+        encoding="utf-8",
+    )
+    marketplace = installer_repo / ".claude-plugin/marketplace.json"
+    marketplace.parent.mkdir()
+    marketplace.write_text('{"version": "1.2.3"}\n', encoding="utf-8")
+    installer_env["NEXT_VERSION"] = "1.2.4"
+    installer_env["FAIL_PHASE"] = failure
+    _write_executable(
+        path=installer_repo / "payloads/uv",
+        text=(
+            "#!/bin/sh\n"
+            'printf "uv %s\\n" "$*" >> "$EVENT_LOG"\n'
+            'if [ "$1" = "$FAIL_PHASE" ]; then exit 42; fi\n'
+            'if [ "$1" = run ] && [ "$FAIL_PHASE" = build ]; then exit 43; fi\n'
+        ),
+    )
+    result = _run(
+        repo=installer_repo,
+        env=installer_env,
+        args=[str(installer_repo / _RELEASE_HOOK)],
+    )
+    assert_that(result.returncode).described_as(result.stderr).is_equal_to(
+        {"none": 0, "sync": 42, "build": 43}[failure]
+    )
+    assert_that((installer_repo / "README.md").read_text()).contains("@v1.2.4")
+    assert_that(marketplace.read_text()).contains('"version": "1.2.4"')
+    events = (installer_repo / "events").read_text().splitlines()
+    assert_that(events[0]).starts_with("install uv")
+    assert_that(events[1]).is_equal_to("uv sync --locked")
+    if failure == "sync":
+        assert_that(events).is_length(2)
+    else:
+        assert_that(events[2:]).is_equal_to(
+            [
+                (
+                    "uv run --locked ai-skills-engine build "
+                    "--fetch-vendors --write-digests"
+                )
+            ]
+        )
+    assert_that(list((installer_repo / "temp").iterdir())).is_empty()
 
 
 def test_cursor_replaces_off_pin_tools(

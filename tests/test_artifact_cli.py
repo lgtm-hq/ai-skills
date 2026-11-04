@@ -53,6 +53,37 @@ def test_bake_command_alias_and_missing_vendor(
     assert_that(capsys.readouterr().err).contains("selection.vendor-unavailable")
 
 
+def test_version_bump_requires_regenerating_tar_commitment(
+    artifact_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A new installed builder changes tar identity while preserving tree identity."""
+    args = ["--repo-root", str(artifact_repo), "build"]
+    builder = "1.2.3"
+    monkeypatch.setattr("ai_skills_engine.artifact.version", lambda _name: builder)
+    assert_that(cli.main([*args, "--write-digests"])).is_zero()
+    path = artifact_repo / "artifact-digests.json"
+    before = read_digests(path)
+    builder = "1.2.4"
+    assert_that(cli.main([*args, "--check"])).is_equal_to(1)
+    assert_that(capsys.readouterr().err).contains("artifactDigest")
+    assert_that(cli.main([*args, "--write-digests"])).is_zero()
+    after = read_digests(path)
+    assert_that(after["inputsDigest"]).is_equal_to(before["inputsDigest"])
+    assert_that(after["packages"].keys()).is_equal_to(before["packages"].keys())
+    for package, entry in after["packages"].items():
+        assert_that(entry["treeDigest"]).is_equal_to(
+            before["packages"][package]["treeDigest"]
+        )
+        assert_that(entry["artifactDigest"]).is_not_equal_to(
+            before["packages"][package]["artifactDigest"]
+        )
+    index = json.loads((artifact_repo / "dist/artifacts/index.json").read_text())
+    assert_that(index["engineVersion"]).is_equal_to(builder)
+    assert_that(cli.main([*args, "--check"])).is_zero()
+
+
 def test_unknown_digest_format_fails(artifact_repo: Path) -> None:
     """Unknown formats and duplicate keys cannot become a reviewed commitment."""
     path = artifact_repo / "artifact-digests.json"

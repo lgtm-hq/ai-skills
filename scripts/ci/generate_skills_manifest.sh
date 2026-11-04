@@ -12,17 +12,8 @@ if [[ ! -d "$repo_root/src/ai_skills_engine" ]]; then
   exec python3 scripts/generate_skills_manifest.py "$@"
 fi
 
-# shellcheck source=scripts/tool-versions.sh
-source "$tooling_root/scripts/tool-versions.sh"
-# shellcheck source=scripts/lib/fetch-verified.sh
-source "$tooling_root/scripts/lib/fetch-verified.sh"
-
-if ! command -v uv >/dev/null 2>&1; then
-  manifest_tmp=$(mktemp -d)
-  trap 'rm -rf "$manifest_tmp"' EXIT
-  fetch_verified "$UV_INSTALLER_URL" "$UV_INSTALLER_SHA256" "$manifest_tmp/uv-install.sh"
-  sh "$manifest_tmp/uv-install.sh"
-  export PATH="${HOME}/.local/bin:${PATH}"
-fi
+# shellcheck source=scripts/lib/ensure-uv.sh
+source "$tooling_root/scripts/lib/ensure-uv.sh"
+ensure_uv
 
 uv run --locked --no-dev python scripts/generate_skills_manifest.py "$@"

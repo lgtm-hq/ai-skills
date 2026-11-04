@@ -90,3 +90,25 @@ legacy `plugins-baked/` and generated registries retain their bytes and semantic
 and do not deliver these dependencies. Ordinary dependency-loss rejection remains
 unchanged. Real pinned catalog builds, offline input checks and public rebuild
 checks must pass before accepting the generated root digest commitment.
+
+### Amendment: release builder version commitment (2026-11-04)
+
+Every tar index records the installed engine's `engineVersion`, so a project
+version bump changes every external `artifactDigest` even when package tree
+digests stay equal. The release version PR must contain the regenerated
+`artifact-digests.json` for that new builder identity.
+
+The release workflow's `scripts/ci/update_release_version.sh` hook runs after
+the Python ecosystem updater changes `pyproject.toml` and `uv.lock`. It preserves
+the README and marketplace restamps, installs the bumped project with
+`uv sync --locked`, and runs the public
+`ai-skills-engine build --fetch-vendors --write-digests` command. The reusable
+workflow captures the hook's tracked-file changes into the same version PR;
+installation, acquisition or build failure stops PR preparation. The shared uv
+bootstrap uses the repository's existing version and installer checksum pins.
+
+This chooses regeneration in the version PR instead of adding a second version
+field to the commitment. Review covers the regenerated identity before release;
+publishing still rebuilds pristine pinned inputs with `build --fetch-vendors
+--check` and fails closed on any difference. Offline `--check-inputs` continues
+to detect local author-input drift without acquiring vendor sources.

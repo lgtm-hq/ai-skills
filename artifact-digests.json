@@ -3,75 +3,75 @@
   "inputsDigest": "sha256:9e0425138b264813c9c7b7b2a798ce8229021bfeeb65a67f597c90dfc2ff3388",
   "packages": {
     "anthropics-claude-code/claude-code-frontend-design": {
-      "artifactDigest": "sha256:fd5d3717eef8ff610e387bbda5777547f946f673f8520af7cdde12fd78dce91b",
+      "artifactDigest": "sha256:5876d28e1e177e5723f813a7235757a6c9e98cafaf56d25b3a8c7819288d70cc",
       "treeDigest": "sha256:88a3d1dfb61a015df1c97711fa2869f3fbc501e940bf818e51c290754a506a8d"
     },
     "anthropics-claude-code/claude-opus-4-5-migration": {
-      "artifactDigest": "sha256:92ce6c72eded79c26d41471d5eebfc98a0dffeb0ac55f7de81c093bcd5bd3890",
+      "artifactDigest": "sha256:82c84071fae230cce8f2f4f39270c33e4f98fe7e570a666e3bb0b65cd8f380e0",
       "treeDigest": "sha256:70ca5ec927190d4643906c239ecf39f3ac9528d0cc9883ab5a5874cebb831517"
     },
     "anthropics-claude-code/hookify": {
-      "artifactDigest": "sha256:8f25c3e6852b97700c2bbae03b1db1c505de827c8b0ac8cccb9039fad3bdf603",
+      "artifactDigest": "sha256:9d1cba7bc208b8d85a3fcd1481aff3beb43530f975286e16a80ee6f15e477bb6",
       "treeDigest": "sha256:1c663ae3379d571c3a3c3736f43c1237d56e8e6ca73a625cd7b7b0f655eedb55"
     },
     "anthropics-claude-code/plugin-dev": {
-      "artifactDigest": "sha256:b4caf3bcbe71e6a811d28bc720e4c567ec82bf2b3e1a7df0ab97395f7106b013",
+      "artifactDigest": "sha256:f1c4660a1bdff6f4257315ccc1537363d24846f7dd61d0316ff076727deaba9c",
       "treeDigest": "sha256:1a19005b3d2d1dc53fdec3d0bc7d7a7de91341b0861a8c0cfd0d0069999752f2"
     },
     "anthropics/claude-api": {
-      "artifactDigest": "sha256:e42caf10dc1808323f1dafd7e4f0fb2791c21c3e5a5d8fef0dbdd3d88d479754",
+      "artifactDigest": "sha256:001e894c6740f1e3b7f9aabcb49ec1f21311a0273560e122328b761aaef6808f",
       "treeDigest": "sha256:686ed921d9b8f1ebe334d44acf99990aed446c5d29f02a56e5680543cf616b52"
     },
     "anthropics/document-skills": {
-      "artifactDigest": "sha256:f38acc8e490c9ce563403bba2c675cde4aac49faabb09ce3f2cb86efe7ba889e",
+      "artifactDigest": "sha256:a146564fc65d15c0c81e13d0acb58cc7ed5016b2660da15b49c67ccbd75936ad",
       "treeDigest": "sha256:b9b033ee301645d0f63ddc9e02cb579b1cea7acdd04dd8bdba76f16b282b244f"
     },
     "anthropics/example-skills": {
-      "artifactDigest": "sha256:6e015dc156239c62fc226176adb942fb1760c38ff7f9ebec13aa00dfa94a5c2b",
+      "artifactDigest": "sha256:99f1eddf02f974df8a4be48ff999b0d624491bff94bf013e371c7c824a7ee9ec",
       "treeDigest": "sha256:2680f99435f8e7cd19c2391bbdd5c29eda648ed63c92bf5fd244c6c56edb8bce"
     },
     "caveman/caveman": {
-      "artifactDigest": "sha256:24fd073a860595c930f9c757a6a0752dd165bd05bcf88f668665528b3638f02f",
+      "artifactDigest": "sha256:1284976c38e079b19361f70a130c4daff904b5822d916c10444ccce388ba2831",
       "treeDigest": "sha256:79235537bb374e18b46795c22a1996565cdfe2df51f4fdf5670c6a5b3e9fa795"
     },
     "davidondrej/davidondrej-skills": {
-      "artifactDigest": "sha256:57e05aac1bea776f05d99cf4402f22e36aef13133318bc81fa2265b2d73da354",
+      "artifactDigest": "sha256:81531e8f9aeebcca49fc67c6ab520c5c335063d16af0404b3cb2038ab14b3c0e",
       "treeDigest": "sha256:8e88f582266beee6825c1beeb56118eae64865f48c3f6321d8503f7c6f1611e1"
     },
     "lgtm-hq/analysis": {
-      "artifactDigest": "sha256:7f3fa4bbcf42128d39db32984115e1ac5bf84d506bf2d335bbc5b70fc3be8540",
+      "artifactDigest": "sha256:bd0a17262f5f7977df74878857b65a0dc0f4bd45e0101e554bdc5de12ae3f834",
       "treeDigest": "sha256:4c2e26a067e3f2339f850bd6b0c249c0f71e09c99d9ebb5df563dcfba21907b4"
     },
     "lgtm-hq/git-pr": {
-      "artifactDigest": "sha256:cb515aa68d69fba2e246ab6ca4b323d61a27a96e6184d6db26d8bdd9fcf542f4",
+      "artifactDigest": "sha256:73f699da0a8272e0d528106ab6e41570b4029b4ee14ed6bcd7bcd5cedee01963",
       "treeDigest": "sha256:d7f01c19c89e7a69b914795752d865ec7341d63ac6afaad636d491db47982bdb"
     },
     "lgtm-hq/other": {
-      "artifactDigest": "sha256:17d707c01569f4a29c1a361e575ada2fd209efc0ed60cbda5885baeb8e2dc4df",
+      "artifactDigest": "sha256:23b63547e70db6bb96fc664eafcfda8dfbcc788dc5a2ab35e16bd1a27ab17bc9",
       "treeDigest": "sha256:3afdba2a8200f30b25a5bc9c27cf5c66e9563b8ecc93105b3df5223055aaf42a"
     },
     "lgtm-hq/raycast": {
-      "artifactDigest": "sha256:5ba6636d3bd9f53d1b65aa0a43f2e52c2dcae7a5e387e61c562b96783c090efb",
+      "artifactDigest": "sha256:1844e17b7c17f595291f7ee4a3c1a47fba2fc2ce5ead402d1d779282c9069145",
       "treeDigest": "sha256:31b9a1657b16a56a9139c52c53db30ed29c5c3d636cf5d48e34126a60f5719de"
     },
     "lgtm-hq/review": {
-      "artifactDigest": "sha256:da48aaf7be3bc04db46b8df9ecd8e6c3ce046a76ff6772871e6c32ea08be535f",
+      "artifactDigest": "sha256:3d7c38fcd0f2fc07a0c4db3de8899447fdf00a4c721f198f66113708ac4b4e53",
       "treeDigest": "sha256:eff3d57e78ce6d0bbc8659b7bcb4efd7f543d5167f9d236d99bd5f7c362b002c"
     },
     "lgtm-hq/standards": {
-      "artifactDigest": "sha256:c7439117c37d74af6f9abcdd8f778975131c81c6a364898c91b44dc1a540df3d",
+      "artifactDigest": "sha256:dd88aebd727d58dae4f85bfd12bdd72efa141b15697495e7bd230dcedd116d15",
       "treeDigest": "sha256:13ee9d995656465ee5009082d986561d79836dfc6df3e00186a28405f12d3bba"
     },
     "lgtm-hq/subagents": {
-      "artifactDigest": "sha256:b866894e1e85fa9e92cec7e9feb043a78f4815c54d0faf7ba5602a5910dd31de",
+      "artifactDigest": "sha256:db1a204ffb20bff03df7f1bd84a456f4a1510e5d3f0c930b137e3b382fe1e75a",
       "treeDigest": "sha256:f681fa95a92069d943f0d861491c168742f7c40faca5718981e744eaa4246fc1"
     },
     "lgtm-hq/testing": {
-      "artifactDigest": "sha256:e4528ae4a0ed9cbb7286305c6a7af63ab49a7251f02b7bb77f42d8e13be6fb9f",
+      "artifactDigest": "sha256:211543f2b4a34cdc60f9ad80d31660a59496b48cfa25f4dae23c6b9e6afa64fa",
       "treeDigest": "sha256:e09c1f237cd80a45779539a46127f49da5b434c909d5e3cda96c2f7c18012621"
     },
     "mattpocock/mattpocock-skills": {
-      "artifactDigest": "sha256:9ceb2deae0b5c241889b9593d22f6e195587a5716387a0b75f02b997045d8cd4",
+      "artifactDigest": "sha256:8bd881a7b32132629c427a42e98efc41b2d022cc47053b9a99ebf48ffbee0f87",
       "treeDigest": "sha256:04ad5f5ad9f0ec24084d69a8541312995fd0b727f4c442c93763827af4f357e4"
     }
   }
