@@ -14,8 +14,9 @@ and needs no local lgtm-ci checkout).
 rest of the repo (the current caller contract landed after the shared
 quality/release SHA). ``reusable-scorecards.yml`` was held on an older
 SHA for lgtm-hq/lgtm-ci#1173 (fixed in v0.77.6) and is still tolerated
-on its own SHA until that exception is removed. Repo-wide uniqueness
-excludes those names. Pins *inside* each of them must still be a single SHA.
+on its own SHA until that exception is removed. ``reusable-all-checks-gate.yml``
+adopts the released supersession repair independently for #645. Repo-wide
+uniqueness excludes those names. Pins *inside* each must still be a single SHA.
 
 Output: three sections — the pinned ref, adopted workflows, and
 available-but-unadopted workflows — plus summary counts.
@@ -36,11 +37,12 @@ from pathlib import Path
 LGTM_CI_REPO = "lgtm-hq/lgtm-ci"
 AI_REVIEW_WORKFLOW = "reusable-ai-review.yml"
 SCORECARDS_WORKFLOW = "reusable-scorecards.yml"
+ALL_CHECKS_GATE_WORKFLOW = "reusable-all-checks-gate.yml"
 # Workflows allowed to pin a different SHA than the shared one.
 # TODO(#534): scorecards.yml is back on the shared SHA (lgtm-ci#1173 is
 # fixed); drop SCORECARDS_WORKFLOW and its tests.
 INDEPENDENT_PIN_WORKFLOWS = frozenset(
-    {AI_REVIEW_WORKFLOW, SCORECARDS_WORKFLOW},
+    {AI_REVIEW_WORKFLOW, SCORECARDS_WORKFLOW, ALL_CHECKS_GATE_WORKFLOW},
 )
 
 _USES_RE = re.compile(

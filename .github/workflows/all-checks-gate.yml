@@ -21,12 +21,14 @@ concurrency:
 jobs:
   gate:
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-all-checks-gate.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-all-checks-gate.yml@fff562d6558f7513f50dd128ea2461aab6855a03 # v0.83.13
     with:
       # Includes the mandatory CI / Gateway TypeScript and parity job on every
       # PR and merge_group. The reusable gates all check names; never ignore it.
       allow-empty: false
       egress-policy: block
+      # Preserve the previous reusable's runner instead of adopting its new default.
+      runner-image: ubuntu-24.04
     permissions:
       actions: read
       checks: read

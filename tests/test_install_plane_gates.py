@@ -19,6 +19,40 @@ from ci.install_plane_release_gate import latest_result, required_head
 HEAD = "a" * 40
 
 
+def test_aggregate_gate_uses_released_source_without_candidate_override() -> None:
+    """Keep one aggregate caller bound to the released supersession repair."""
+    workflows = Path(__file__).resolve().parents[1] / ".github/workflows"
+    reusable = "lgtm-hq/lgtm-ci/.github/workflows/reusable-all-checks-gate.yml@"
+    callers = [
+        (path.name, job_id)
+        for path in (*workflows.glob("*.yml"), *workflows.glob("*.yaml"))
+        for job_id, job in yaml.safe_load(path.read_text())["jobs"].items()
+        if job.get("uses", "").startswith(reusable)
+    ]
+    assert_that(callers).contains_only(("all-checks-gate.yml", "gate"))
+    workflow = yaml.safe_load((workflows / "all-checks-gate.yml").read_text())
+    assert_that(workflow["jobs"]).contains_only("gate")
+    job = workflow["jobs"]["gate"]
+    # Fixed external acceptance contract: v0.83.13 contains the reviewed helper.
+    assert_that(job["uses"]).is_equal_to(
+        f"{reusable}fff562d6558f7513f50dd128ea2461aab6855a03"
+    )
+    # No source/head/ignore overrides: the reusable selects its own workflow SHA.
+    assert_that(job["with"]).is_equal_to(
+        {
+            "allow-empty": False,
+            "egress-policy": "block",
+            "runner-image": "ubuntu-24.04",
+        }
+    )
+    assert_that(job["permissions"]).is_equal_to(
+        {"actions": "read", "checks": "read", "contents": "read", "statuses": "read"}
+    )
+    assert_that(workflow["permissions"]).is_empty()
+    assert_that(workflow["on"]).contains_only("pull_request", "merge_group")
+    assert_that(job).does_not_contain_key("needs", "if")
+
+
 @pytest.fixture
 def release_workflow() -> dict[str, Any]:
     """Read the actual required-check workflow, including its code source."""

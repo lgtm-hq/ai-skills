@@ -451,11 +451,12 @@ def test_main_accepts_all_checks_gate_on_shared_pin(
     assert_that(out).contains("Adopted (2):")
 
 
-def test_main_rejects_all_checks_gate_off_shared_pin(
+def test_main_accepts_released_all_checks_gate_off_shared_pin(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """main() reports a gate caller at another SHA as mixed pins."""
+    """The aggregate repair can advance without upgrading unrelated callers."""
     _write_workflow(
         workflows_dir=tmp_path,
         name="ci.yml",
@@ -469,12 +470,41 @@ def test_main_rejects_all_checks_gate_off_shared_pin(
         called="reusable-all-checks-gate.yml",
         sha=SHA_B,
     )
+    monkeypatch.setattr(
+        audit.subprocess,
+        "run",
+        _fake_gh_by_ref(
+            names_by_ref={
+                SHA_A: ["reusable-quality.yml"],
+                SHA_B: ["reusable-all-checks-gate.yml"],
+            },
+        ),
+    )
     code = audit.main(argv=["--workflows-dir", str(tmp_path)])
-    err = capsys.readouterr().err
+    out = capsys.readouterr().out
+    assert_that(code).is_equal_to(0)
+    assert_that(out).contains(f"lgtm-ci pinned ref: {SHA_A}")
+    assert_that(out).contains(f"reusable-all-checks-gate.yml pinned ref: {SHA_B}")
+    assert_that(out).contains("Adopted (2):")
+
+
+def test_main_rejects_multiple_aggregate_pins(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Independent aggregate adoption still requires one source revision."""
+    for name, sha in (("all-checks-gate.yml", SHA_A), ("second-gate.yml", SHA_B)):
+        _write_workflow(
+            workflows_dir=tmp_path,
+            name=name,
+            called="reusable-all-checks-gate.yml",
+            sha=sha,
+        )
+    code = audit.main(argv=["--workflows-dir", str(tmp_path)])
     assert_that(code).is_equal_to(2)
-    assert_that(err).contains("mixed lgtm-ci pins found")
-    assert_that(err).contains(SHA_A)
-    assert_that(err).contains(SHA_B)
+    assert_that(capsys.readouterr().err).contains(
+        "mixed lgtm-ci pins inside reusable-all-checks-gate.yml"
+    )
 
 
 def test_main_reports_only_independent_callers_at_two_shas(
