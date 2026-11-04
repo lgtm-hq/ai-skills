@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 from assertpy import assert_that
-from provenance_export_helpers import diamond_exports, materialized_exports
+from provenance_export_helpers import (
+    diamond_exports,
+    materialized_exports,
+    nested_route_exports,
+    route_exports,
+)
 from provenance_helpers import change_policy, vendor_roots
 
 from ai_skills_engine import cli
@@ -13,10 +18,181 @@ from ai_skills_engine.inventory.capability import Capability
 from ai_skills_engine.inventory.load import load_inventory
 from ai_skills_engine.inventory.resource_record import Resource
 from ai_skills_engine.manifest.diagnostic import Diagnostic
+from ai_skills_engine.manifest.vendor import Vendor
 from ai_skills_engine.provenance.context import Context
 from ai_skills_engine.provenance.exports import publish_exports
 from ai_skills_engine.provenance.ingest import ingest
 from ai_skills_engine.selection.load import load_selection
+
+
+@pytest.mark.parametrize("kind", ["capability", "resource"])
+@pytest.mark.parametrize("field", ["include", "exclude"])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("blocked", [0, 1, 2], ids=["allowed", "mixed", "blocked"])
+def test_publication_permissions_follow_matching_supplying_routes(
+    tmp_path: Path, kind: str, field: str, reverse: bool, blocked: int
+) -> None:
+    """One permitted terminal route authorizes publication with all ancestry intact."""
+    roots = route_exports(root=tmp_path, reverse=reverse)
+    inventory = load_inventory(tmp_path / "z", vendor_roots=roots)
+    identity = "x/tools:" + (
+        "skill/plain" if kind == "capability" else "resource/shared"
+    )
+    records: tuple[Capability | Resource, ...] = (
+        *inventory.capabilities,
+        *inventory.resources,
+    )
+    original = next(item for item in records if str(item.id) == identity)
+    vendors = tuple(
+        Vendor(
+            id=name,
+            repo=f"fixture/{name}",
+            sha=rev * 40,
+            include=(
+                ("x/tools:skill/dep-*",)
+                if field == "include" and i < blocked
+                else (identity,)
+            ),
+            exclude=(identity,) if field == "exclude" and i < blocked else None,
+        )
+        for i, (name, rev) in enumerate((("y", "c"), ("w", "d")))
+    )
+    if reverse:
+        vendors = tuple(reversed(vendors))
+    if isinstance(original, Capability):
+        _check_route_publication(
+            original=original, root=tmp_path, vendors=vendors, published=blocked < 2
+        )
+    else:
+        _check_route_publication(
+            original=original, root=tmp_path, vendors=vendors, published=blocked < 2
+        )
+
+
+@pytest.mark.parametrize("kind", ["capability", "resource"])
+@pytest.mark.parametrize("route", ["missing", "unrelated", "ancestor", "wrong-rev"])
+def test_publication_requires_a_known_terminal_route(
+    tmp_path: Path, kind: str, route: str
+) -> None:
+    """Unknown routes and nonterminal matches cannot authorize publication."""
+    roots = route_exports(root=tmp_path, reverse=False)
+    inventory = load_inventory(tmp_path / "z", vendor_roots=roots)
+    identity = "x/tools:" + (
+        "skill/plain" if kind == "capability" else "resource/shared"
+    )
+    records: tuple[Capability | Resource, ...] = (
+        *inventory.capabilities,
+        *inventory.resources,
+    )
+    original = next(item for item in records if str(item.id) == identity)
+    if route == "missing":
+        original = replace(original, lineage=())
+    candidate = Vendor(
+        id="candidate",
+        repo="fixture/x" if route == "ancestor" else "fixture/unrelated",
+        sha="a" * 40,
+    )
+    if route == "wrong-rev":
+        candidate = replace(candidate, repo="fixture/w", sha="f" * 40)
+    if isinstance(original, Capability):
+        _check_route_publication(
+            original=original, root=tmp_path, vendors=(candidate,), published=False
+        )
+    else:
+        _check_route_publication(
+            original=original, root=tmp_path, vendors=(candidate,), published=False
+        )
+
+
+def _check_route_publication[Record: (Capability, Resource)](
+    *, original: Record, root: Path, vendors: tuple[Vendor, ...], published: bool
+) -> None:
+    """Check route authorization while preserving each concrete record type.
+
+    Args:
+        original: Inventory-derived record carrying both supplying routes.
+        root: Offline publication snapshots.
+        vendors: Current publisher's declared import boundaries.
+        published: Whether a terminal route permits this identity.
+    """
+    identity = str(original.id)
+    table = {identity: original}
+    findings: list[Diagnostic] = []
+    publish_exports(
+        table=table,
+        root=root / "z",
+        publisher="z",
+        exports={"x/tools"},
+        context=Context(origin="github.com/fixture/z", rev="e" * 40, policy=None),
+        declared=(),
+        findings=findings,
+        strict=True,
+        vendors=vendors,
+    )
+    assert_that(findings).is_empty()
+    result = table[identity]
+    if published:
+        assert_that(
+            {chain.lineage[-1].publisher for chain in result.lineage}
+        ).is_equal_to({"z"})
+        assert_that({chain.lineage[:-1] for chain in result.lineage}).is_equal_to(
+            {chain.lineage for chain in original.lineage}
+        )
+    else:
+        assert_that(result).is_equal_to(original)
+
+
+@pytest.mark.parametrize("field", ["include", "exclude"])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("blocked", [0, 1, 2], ids=["allowed", "mixed", "blocked"])
+def test_nested_route_authorization_reaches_inventory_and_consumer_denies(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    field: str,
+    reverse: bool,
+    blocked: int,
+) -> None:
+    """Real nested exports publish both identities and retain excluded-route vetoes."""
+    roots = nested_route_exports(
+        root=tmp_path, reverse=reverse, field=field, blocked=blocked
+    )
+    root = tmp_path / "consumer"
+    inventory = load_inventory(root, vendor_roots=roots)
+    identities = {"x/tools:skill/plain", "x/tools:resource/shared"}
+    resolved: tuple[Capability | Resource, ...] = (
+        *inventory.capabilities,
+        *inventory.resources,
+    )
+    records = {str(item.id): item for item in resolved}
+    if blocked == 2:
+        assert_that(set(records).intersection(identities)).is_empty()
+    else:
+        assert_that(set(records)).contains(*identities)
+        for identity in identities:
+            assert_that(
+                {chain.lineage[-1].publisher for chain in records[identity].lineage}
+            ).is_equal_to({"z"})
+            assert_that(
+                {chain.lineage[-2].publisher for chain in records[identity].lineage}
+            ).is_equal_to({"y", "w"})
+        assert_that(load_selection(root, vendor_roots=roots).valid).is_true()
+        change_policy(root=root, deny=("github.com/fixture/y",))
+        selection = load_selection(root, vendor_roots=roots)
+        assert_that(selection.valid).is_true()
+        states = {
+            item.id: item.state
+            for item in (*selection.capabilities, *selection.resources)
+        }
+        for identity in identities:
+            assert_that(states[identity]).is_equal_to("denied")
+    operands = ["--repo-root", str(root)]
+    for alias, path in roots.items():
+        operands.extend(["--vendor-root", f"{alias}={path}"])
+    for command in (["inventory", "--json"], ["plan", "--json"], ["plan"]):
+        assert_that(cli.main([*command, *operands])).is_zero()
+        output = capsys.readouterr().out
+        if command[0] == "plan" and blocked < 2:
+            assert_that(output).contains("github.com/fixture/y", *identities)
 
 
 @pytest.mark.parametrize("kind", ["capability", "resource"])

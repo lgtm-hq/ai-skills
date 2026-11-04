@@ -142,8 +142,9 @@ def publish_exports[Record: (Capability, Resource)](
             or str(item.id.package) not in exports
         ):
             continue
-        if any(
-            not import_allowed(identity=key, vendor=vendor)
+        # One permitted supplying route authorizes publication, retaining all ancestry.
+        if vendors and not any(
+            import_allowed(identity=key, vendor=vendor)
             and any(
                 (chain.lineage[-1].origin, chain.lineage[-1].rev)
                 == (origin_locator(vendor.repo), vendor.sha)

@@ -7,6 +7,7 @@ from pathlib import Path
 from ai_skills_engine.inventory.load import load_inventory
 from ai_skills_engine.inventory.payload import payload_files, tree_digest
 from ai_skills_engine.manifest.edit import dump_document
+from ai_skills_engine.manifest.load import read_document
 
 
 def materialized_exports(*, root: Path, kind: str, changed: bool, reverse: bool) -> str:
@@ -140,3 +141,72 @@ def diamond_exports(
         "w/x": root / "xb",
         "w/x/b": root / "b",
     }
+
+
+def route_exports(*, root: Path, reverse: bool) -> dict[str, Path]:
+    """Supply the same capability and resource through both diamond routes.
+
+    Args:
+        root: Empty fixture directory.
+        reverse: Whether Z imports W before Y.
+
+    Returns:
+        Offline roots for the repeated identities' supplying routes.
+    """
+    roots = diamond_exports(root=root, reverse=reverse)
+    for name in ("xa", "xb"):
+        pin = root / name
+        (pin / "shared.txt").write_text("Shared repeated resource.\n")
+        path = pin / "ai-skills.yaml"
+        document = read_document(path)
+        package = document["packages"][0]
+        package["resources"] = [{"id": "shared", "path": "shared.txt"}]
+        package["capabilities"][0]["resources"].append("x/tools:resource/shared")
+        path.write_text(dump_document(document))
+    return roots
+
+
+def nested_route_exports(
+    *, root: Path, reverse: bool, field: str, blocked: int
+) -> dict[str, Path]:
+    """Re-export a filtered diamond to a further offline consumer.
+
+    Args:
+        root: Empty fixture directory.
+        reverse: Whether Z imports W before Y.
+        field: Import filter used to block the repeated identities.
+        blocked: Number of supplying routes blocked (zero, one or both).
+
+    Returns:
+        Offline roots for the consumer importing Z.
+    """
+    roots = route_exports(root=root, reverse=reverse)
+    path = root / "z/ai-skills.yaml"
+    document = read_document(path)
+    for vendor in document["vendors"]:
+        if blocked == 2 or (blocked == 1 and vendor["id"] == "y"):
+            vendor[field] = (
+                ["x/tools:skill/plain", "x/tools:resource/shared"]
+                if field == "exclude"
+                else [
+                    "x/tools:skill/dep-*",
+                    "x/tools:skill/related-*",
+                    "a/tools",
+                    "b/tools",
+                ]
+            )
+    document["exports"] = ["x/tools", "a/tools", "b/tools"]
+    path.write_text(dump_document(document))
+    consumer = root / "consumer"
+    consumer.mkdir()
+    (consumer / "ai-skills.yaml").write_text(
+        dump_document(
+            {
+                "apiVersion": "ai-skills.dev/v1",
+                "publisher": {"id": "consumer", "repo": "fixture/consumer"},
+                "vendors": [{"id": "z", "repo": "fixture/z", "sha": "e" * 40}],
+                "policy": {"provenance": {"mode": "strict"}},
+            }
+        )
+    )
+    return {"z": root / "z", **{"z/" + key: path for key, path in roots.items()}}

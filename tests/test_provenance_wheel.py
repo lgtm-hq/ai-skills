@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 from assertpy import assert_that
 from inventory_helpers import snapshot
-from provenance_export_helpers import diamond_exports, materialized_exports
+from provenance_export_helpers import (
+    diamond_exports,
+    materialized_exports,
+    nested_route_exports,
+)
 from provenance_helpers import (
     change_policy,
     missing_copy,
@@ -18,6 +22,66 @@ from test_manifest_wheel import _run, _venv_executable
 from ai_skills_engine import cli
 
 pytest_plugins = ["test_manifest_wheel"]
+
+
+@pytest.mark.parametrize("field", ["include", "exclude"])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("blocked", [0, 1, 2], ids=["allowed", "mixed", "blocked"])
+def test_installed_route_authorization_matches_source(
+    installed_command: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    field: str,
+    reverse: bool,
+    blocked: int,
+) -> None:
+    """The actual wheel publishes via a permitted route without laundering ancestry."""
+    roots = nested_route_exports(
+        root=tmp_path, reverse=reverse, field=field, blocked=blocked
+    )
+    root = tmp_path / "consumer"
+    operands = ["--repo-root", str(root)]
+    for alias, path in roots.items():
+        operands.extend(["--vendor-root", f"{alias}={path}"])
+    identities = {"x/tools:skill/plain", "x/tools:resource/shared"}
+    for deny in ((), ("github.com/fixture/y",)) if blocked < 2 else ((),):
+        change_policy(root=root, deny=deny)
+        before = snapshot(tmp_path)
+        for command in (["inventory", "--json"], ["plan", "--json"], ["plan"]):
+            expected = 0
+            installed = _run(
+                args=[str(installed_command), *command, *operands],
+                cwd=tmp_path.parent,
+                expected=expected,
+            )
+            assert_that(cli.main([*command, *operands])).is_equal_to(expected)
+            source = capsys.readouterr()
+            assert_that((installed.stdout, installed.stderr)).is_equal_to(
+                (source.out, source.err)
+            )
+            if "--json" in command:
+                data = json.loads(installed.stdout)
+                records = {
+                    item["id"]: item
+                    for item in (*data["capabilities"], *data["resources"])
+                }
+                if blocked == 2:
+                    assert_that(set(records).intersection(identities)).is_empty()
+                else:
+                    assert_that(set(records)).contains(*identities)
+                    for identity in identities:
+                        chains = records[identity]["lineage"]
+                        assert_that(
+                            {chain["lineage"][-1]["publisher"] for chain in chains}
+                        ).is_equal_to({"z"})
+                        assert_that(
+                            {chain["lineage"][-2]["publisher"] for chain in chains}
+                        ).is_equal_to({"y", "w"})
+                        if command[0] == "plan" and deny:
+                            assert_that(records[identity]["state"]).is_equal_to(
+                                "denied"
+                            )
+        assert_that(snapshot(tmp_path)).is_equal_to(before)
 
 
 @pytest.mark.parametrize(
