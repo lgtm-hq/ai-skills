@@ -43,6 +43,7 @@ name: ai-skills
 
 'on':
   pull_request:
+  merge_group:
   push:
     branches: [main]
 

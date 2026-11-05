@@ -179,10 +179,13 @@ def _upstream_entry(
             + "; ".join(f"{item.location}: {item.message}" for item in structural)
         )
     for key in sorted(authority):
-        print(
-            f"add: ignored upstream {key}: vendor policy, trust grants and "
-            "overrides are never applied to this consumer"
+        reason = (
+            "opaque upstream extension; not imported"
+            if key.startswith("x-")
+            else "vendor policy, trust grants and overrides are never applied "
+            "to this consumer"
         )
+        print(f"add: ignored upstream {key}: {reason}")
     exported = _qualified_exports(upstream)
     if not exported:
         raise ValueError("the upstream ai-skills.yaml exports nothing to import")
@@ -412,17 +415,19 @@ def main(argv: list[str] | None = None) -> int:
                 "edited ai-skills.yaml is invalid: "
                 + "; ".join(f"{item.location}: {item.message}" for item in structural)
             )
-        if legacy:
-            from ai_skills_engine.manifest.legacy import write_legacy
-
-            write_legacy(root)
         if not lockable:
+            # An unaccepted scaffold must not reach the legacy registry a local
+            # bake consumes; legacy files regenerate only once it is accepted.
             print(
                 f"add: wrote a mapping scaffold to {path.name}; not locked. "
                 + ACCEPT_HINT[0].upper()
                 + ACCEPT_HINT[1:]
             )
             return 1
+        if legacy:
+            from ai_skills_engine.manifest.legacy import write_legacy
+
+            write_legacy(root)
         if _lock(root) != 0:
             raise RuntimeError("lock failed; ai-skills.yaml was restored")
     except FAILURES as error:

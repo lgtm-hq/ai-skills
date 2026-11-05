@@ -34,7 +34,9 @@ def test_reusable_workflow_inputs_permissions_and_pins() -> None:
     """``workflow_call`` inputs, read-only token, harden-runner and SHA pins."""
     workflow = _load(WORKFLOW)
     inputs = workflow["on"]["workflow_call"]["inputs"]
-    assert_that(inputs).contains_only("engine-ref", "manifest-path", "strict")
+    assert_that(inputs).contains_only(
+        "engine-ref", "manifest-path", "strict", "terminology"
+    )
     assert_that(inputs["engine-ref"]).contains_entry(
         {"required": True}, {"type": "string"}
     )
@@ -42,6 +44,10 @@ def test_reusable_workflow_inputs_permissions_and_pins() -> None:
         {"type": "string"}, {"default": "ai-skills.yaml"}
     )
     assert_that(inputs["strict"]).contains_entry({"type": "boolean"}, {"default": True})
+    # The docs glossary lint is this catalog's vocabulary: opt-in, off by default.
+    assert_that(inputs["terminology"]).contains_entry(
+        {"required": False}, {"type": "boolean"}, {"default": False}
+    )
     assert_that(workflow["permissions"]).is_equal_to({"contents": "read"})
     job = workflow["jobs"]["validate"]
     assert_that(job["permissions"]).is_equal_to({"contents": "read"})
@@ -62,8 +68,14 @@ def test_reusable_workflow_inputs_permissions_and_pins() -> None:
         'bash "$ENGINE_DIR/scripts/ci/ai_skills_validate.sh"'
     )
     assert_that(run["env"]).contains_key(
-        "ENGINE_REF", "MANIFEST_PATH", "STRICT", "ENGINE_DIR", "CALLER_DIR"
+        "ENGINE_REF",
+        "MANIFEST_PATH",
+        "STRICT",
+        "TERMINOLOGY",
+        "ENGINE_DIR",
+        "CALLER_DIR",
     )
+    assert_that(run["env"]["TERMINOLOGY"]).is_equal_to("${{ inputs.terminology }}")
     text = WORKFLOW.read_text(encoding="utf-8")
     for line in text.splitlines():
         if "uses:" in line and "@" in line:
@@ -71,7 +83,7 @@ def test_reusable_workflow_inputs_permissions_and_pins() -> None:
 
 
 def test_ci_calls_reusable_workflow_for_catalog_and_fixture_vendor() -> None:
-    """This catalog validates strictly, and a fixture vendor calls the workflow."""
+    """This catalog validates strictly with its glossary; a fixture vendor does not."""
     jobs = _load(ROOT / ".github/workflows/ci.yml")["jobs"]
     callers = {
         name: job
@@ -84,9 +96,11 @@ def test_ci_calls_reusable_workflow_for_catalog_and_fixture_vendor() -> None:
             "engine-ref": "${{ github.sha }}",
             "manifest-path": "ai-skills.yaml",
             "strict": True,
+            "terminology": True,
         }
     )
     fixture = callers["fixture-vendor-validate"]["with"]
+    assert_that(fixture).does_not_contain_key("terminology")
     assert_that(fixture["manifest-path"]).is_equal_to(
         "tests/fixtures/vendors/manifest/ai-skills.yaml"
     )
@@ -123,6 +137,7 @@ def stubs(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         "CALLER_DIR": str(caller),
         "MANIFEST_PATH": "vendor/ai-skills.yaml",
         "STRICT": "true",
+        "TERMINOLOGY": "false",
     }
     return log, environment
 
@@ -158,6 +173,12 @@ def test_script_runs_pinned_engine_validate(stubs: tuple[Path, dict[str, str]]) 
         [f"{prefix} validate --repo-root {root} --strict"]
     )
     log.unlink()
+    result = _script(environment | {"TERMINOLOGY": "true"})
+    assert_that(result.returncode).described_as(result.stderr).is_zero()
+    assert_that(log.read_text().splitlines()).is_equal_to(
+        [f"{prefix} validate --repo-root {root} --strict --terminology"]
+    )
+    log.unlink()
     (Path(root) / "ai-skills.lock").write_text("{}\n")
     result = _script(environment | {"STRICT": "false"})
     assert_that(result.returncode).described_as(result.stderr).is_zero()
@@ -175,6 +196,9 @@ def test_script_runs_pinned_engine_validate(stubs: tuple[Path, dict[str, str]]) 
         ({"ENGINE_REF": "main"}, "engine-ref must be a full 40-hex commit SHA"),
         ({"ENGINE_REF": SHA.upper()}, "engine-ref must be a full 40-hex commit SHA"),
         ({"STRICT": "yes"}, "strict must be true or false"),
+        ({"TERMINOLOGY": "yes"}, "terminology must be true or false"),
+        ({"TERMINOLOGY": "True"}, "terminology must be true or false"),
+        ({"TERMINOLOGY": ""}, "terminology must be true or false"),
         ({"MANIFEST_PATH": "/etc/ai-skills.yaml"}, "manifest-path must be a relative"),
         ({"MANIFEST_PATH": "vendor/other.yaml"}, "manifest-path must be a relative"),
         ({"MANIFEST_PATH": "../vendor/ai-skills.yaml"}, "must not contain . or .."),

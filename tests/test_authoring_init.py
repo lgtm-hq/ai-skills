@@ -121,6 +121,10 @@ def test_caller_pins_reusable_workflow_and_engine_by_full_sha(repo: Path) -> Non
     assert_that(job["with"]).is_equal_to(
         {"engine-ref": SHA, "manifest-path": "ai-skills.yaml", "strict": True}
     )
+    assert_that(job["with"]).does_not_contain_key("terminology")
+    assert_that(caller["on"]).is_equal_to(
+        {"pull_request": None, "merge_group": None, "push": {"branches": ["main"]}}
+    )
     assert_that(caller["permissions"]).is_equal_to({"contents": "read"})
     callee = yaml.safe_load((ROOT / init.REUSABLE_WORKFLOW).read_text())
     inputs = callee["on"]["workflow_call"]["inputs"]

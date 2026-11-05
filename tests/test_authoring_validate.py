@@ -119,6 +119,56 @@ def test_schema_and_terminology_failures_block_later_stages(vendor: Path) -> Non
     assert_that(missing).is_equal_to(1)
 
 
+def test_vendor_glossary_is_never_held_to_this_catalog_by_default(
+    vendor: Path,
+) -> None:
+    """A vendor's own docs glossary passes; ``--terminology`` opts into ours."""
+    (vendor / "docs").mkdir()
+    (vendor / "docs/glossary.md").write_text(
+        "# Glossary\n\n## widget\n\nA vendor-specific term.\n"
+    )
+    (vendor / "docs/usage.md").write_text("# Usage\n\nInstall the bundle first.\n")
+    status, report = validate_json(vendor, "--strict")
+    assert_that(status).described_as(json.dumps(report, indent=1)).is_zero()
+    assert_that(stage(report, "schema")["status"]).is_equal_to("passed")
+    status, report = validate_json(vendor, "--strict", "--terminology")
+    assert_that(status).is_equal_to(1)
+    assert_that(stage(report, "schema")["status"]).is_equal_to("failed")
+    assert_that(set(codes(report, "schema"))).is_equal_to(
+        {"glossary-term-missing", "terminology"}
+    )
+    assert_that(
+        [item["location"] for item in stage(report, "schema")["diagnostics"]]
+    ).contains("docs/glossary.md", "docs/usage.md")
+    assert_that({item["status"] for item in report["stages"][1:]}).is_equal_to(
+        {"skipped"}
+    )
+    # Manifest descriptions are linted for everyone, with or without the flag.
+    _edit(
+        vendor,
+        lambda document: document["packages"][0].update(
+            {"description": "A component of fixture skills."}
+        ),
+    )
+    status, report = validate_json(vendor)
+    assert_that(status).is_equal_to(1)
+    assert_that(codes(report, "schema")).is_equal_to(["terminology"])
+
+
+def test_this_catalog_passes_the_opt_in_docs_glossary_stage() -> None:
+    """ai-skills itself, which CI validates with ``terminology``, passes stage 1."""
+    from ai_skills_engine.commands import validate
+    from ai_skills_engine.commands.validate_report import Report
+
+    root = Path(__file__).resolve().parents[1]
+    report = Report(strict=True)
+    loaded = validate._schema(  # pylint: disable=protected-access
+        root=root, report=report, roots={}, terminology=True
+    )
+    assert_that(loaded).is_not_none()
+    assert_that(report.stages["schema"].findings).is_empty()
+
+
 def test_inventory_selection_and_collision_failures(vendor: Path) -> None:
     """Inventory payload errors, unmatched selectors and name collisions fail."""
     (vendor / "skills/beta/SKILL.md").write_text("no frontmatter\n")

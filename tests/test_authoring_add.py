@@ -173,6 +173,55 @@ def test_manifestless_vendor_requires_accepted_consumer_mapping(
     assert_that(_add(consumer, "fixture-org/manifestless")[0]).is_zero()
 
 
+def test_unaccepted_scaffold_never_reaches_the_legacy_registry(
+    consumer: Path, forge: Forge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A legacy-format consumer keeps its registry bytes until acceptance."""
+    del forge
+    from ai_skills_engine.manifest import legacy
+
+    document = read_document(consumer / "ai-skills.yaml")
+    document["x-legacy-format"] = {}
+    (consumer / "ai-skills.yaml").write_text(dump_document(document))
+    registry = {
+        name: f"# {name} before add\n".encode() for name in ("vendors", "bundles")
+    }
+    for name, content in registry.items():
+        (consumer / f"{name}.yaml").write_bytes(content)
+    regenerated: list[Path] = []
+
+    def write_legacy(root: Path, **_options: object) -> int:
+        regenerated.append(root)
+        (root / "vendors.yaml").write_text("# regenerated\n")
+        return 0
+
+    monkeypatch.setattr(legacy, "write_legacy", write_legacy)
+    status, output, _ = _add(consumer, "fixture-org/manifestless")
+    assert_that(status).is_equal_to(1)
+    assert_that(output).contains("not locked")
+    assert_that(_vendor(consumer, "manifestless")[SCAFFOLD_MARKER]).is_true()
+    assert_that(regenerated).is_empty()
+    for name, content in registry.items():
+        assert_that((consumer / f"{name}.yaml").read_bytes()).is_equal_to(content)
+
+
+def test_upstream_extensions_are_not_reported_as_vendor_authority(
+    consumer: Path, forge: Forge
+) -> None:
+    """Upstream ``x-*`` keys are opaque extensions, not policy or overrides."""
+    upstream = forge.trees["fixture-org/manifest"] / "ai-skills.yaml"
+    document = read_document(upstream)
+    document["x-notes"] = {"maintainer": "fixture"}
+    upstream.write_text(dump_document(document))
+    status, output, error = _add(consumer, "fixture-org/manifest")
+    assert_that(status).described_as(error).is_zero()
+    assert_that(output).contains(
+        "add: ignored upstream x-notes: opaque upstream extension; not imported",
+        "add: ignored upstream policy: vendor policy, trust grants and overrides",
+    )
+    assert_that(output).does_not_contain("x-notes: vendor policy")
+
+
 def test_reexports_publish_only_exports_with_publisher_lineage(
     consumer: Path, forge: Forge
 ) -> None:

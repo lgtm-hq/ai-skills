@@ -1,6 +1,7 @@
 """``ai-skills-engine validate``: the complete offline check for any repository.
 
-Stages run in order: schema and terminology lint, inventory (including host
+Stages run in order: schema and manifest terminology lint (``--terminology``
+also holds ``docs/**/*.md`` to this catalog's glossary), inventory (including host
 frontmatter), selection closure and selectors, provenance (``--strict`` fails
 missing lineage), ingest checks on the repository's own content, the ADR 0006
 internal link check, the collision report, export checks, ``lock --check`` and
@@ -67,14 +68,19 @@ def _finding(item: Diagnostic, *, strict: bool = False) -> Finding:
 
 
 def _schema(
-    *, root: Path, report: Report, roots: Mapping[str, Path]
+    *, root: Path, report: Report, roots: Mapping[str, Path], terminology: bool
 ) -> tuple[dict[str, Any], list[Finding]] | None:
     """Run stage 1 and collect export diagnostics for stage 8.
+
+    Manifest descriptions are always linted. The docs glossary lint holds
+    ``docs/**/*.md`` to this catalog's canonical vocabulary, so it runs only
+    when the caller opts in; a vendor's own ``docs/glossary.md`` is not ours.
 
     Args:
         root: Repository root.
         report: Report receiving findings.
         roots: Available vendor trees.
+        terminology: Also lint docs against ``docs/glossary.md``.
 
     Returns:
         Parsed manifest and dangling exports, or None when nothing else can run.
@@ -105,12 +111,10 @@ def _schema(
             dangling.append(_finding(item))
         else:
             stage.add(_finding(item))
-    terminology = (
-        lint_terminology(root, document)
-        if (root / "docs" / "glossary.md").is_file()
-        else lint_descriptions(document)
+    vocabulary = (
+        lint_terminology(root, document) if terminology else lint_descriptions(document)
     )
-    for item in terminology:
+    for item in vocabulary:
         stage.add(_finding(item))
     for alias in unaccepted_mappings(document):
         stage.add(
@@ -274,7 +278,11 @@ def _gates(*, root: Path, report: Report) -> None:
 
 
 def run(
-    *, root: Path, strict: bool, supplied: Mapping[str, Path] | None = None
+    *,
+    root: Path,
+    strict: bool,
+    supplied: Mapping[str, Path] | None = None,
+    terminology: bool = False,
 ) -> Report:
     """Run every stage in order without writing to the repository.
 
@@ -282,6 +290,7 @@ def run(
         root: Repository containing ``ai-skills.yaml``.
         strict: Fail missing lineage.
         supplied: Explicit offline vendor trees; otherwise the source cache.
+        terminology: Also lint ``docs/**/*.md`` against ``docs/glossary.md``.
 
     Returns:
         Complete report.
@@ -313,7 +322,7 @@ def run(
                 roots, availability = {}, []
         for item in availability:
             report.stages["inventory"].add(item)
-        loaded = _schema(root=root, report=report, roots=roots)
+        loaded = _schema(root=root, report=report, roots=roots, terminology=terminology)
         if loaded is None:
             return report
         document, dangling = loaded
@@ -342,6 +351,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--repo-root", type=Path, help="Default: current directory")
     parser.add_argument("--strict", action="store_true", help="Fail on missing lineage")
+    parser.add_argument(
+        "--terminology",
+        action="store_true",
+        help="Also lint docs/**/*.md against this catalog's docs/glossary.md",
+    )
     parser.add_argument("--format", choices=("text", "json"), default="text")
     parser.add_argument(
         "--vendor-root",
@@ -358,7 +372,12 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(error))
     # Shared loaders may print acquisition notes; keep stdout machine-readable.
     with redirect_stdout(sys.stderr):
-        report = run(root=root, strict=args.strict, supplied=supplied)
+        report = run(
+            root=root,
+            strict=args.strict,
+            supplied=supplied,
+            terminology=args.terminology,
+        )
     print(report.to_json() if args.format == "json" else report.to_text(), end="")
     return 0 if report.ok else 1
 

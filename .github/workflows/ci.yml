@@ -258,10 +258,11 @@ jobs:
         security.ubuntu.com:443
 
   ai-skills-validate:
-    name: ai-skills validate --strict
+    name: ai-skills validate --strict --terminology
     needs: quality
     # This catalog runs the same reusable workflow vendors call, pinned to the
     # commit under test; the script fills the cache with lock --fetch first.
+    # Only this catalog opts into its own docs glossary lint.
     permissions:
       contents: read
     uses: ./.github/workflows/ai-skills-validate.yml
@@ -269,6 +270,7 @@ jobs:
       engine-ref: ${{ github.sha }}
       manifest-path: ai-skills.yaml
       strict: true
+      terminology: true
 
   fixture-vendor-validate:
     name: Fixture vendor calls reusable validate

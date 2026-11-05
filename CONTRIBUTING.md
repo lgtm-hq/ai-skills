@@ -361,7 +361,7 @@ of these commands executes vendor content.
 uv run ai-skills-engine init [--dry-run] [--engine-ref SHA]
 
 # Run every check offline; exits non-zero on any failure
-uv run ai-skills-engine validate [--strict] [--format json]
+uv run ai-skills-engine validate [--strict] [--terminology] [--format json]
 
 # Import a pinned vendor, then lock it
 uv run ai-skills-engine add owner/repo[@ref] [--include ID]... [--exclude ID]...
@@ -373,16 +373,20 @@ uv run ai-skills-engine add owner/repo[@ref] [--include ID]... [--exclude ID]...
   pins the reusable `.github/workflows/ai-skills-validate.yml` and the engine to one
   full 40-hex commit SHA: `--engine-ref`, or this engine's release tag resolved
   from GitHub.
-- **`validate`** runs, in order: schema and terminology lint, inventory (including
-  host-specific frontmatter), selection closure and selectors, provenance, the
-  ADR 0006 ingest checks on the repository's own content, the internal link check,
-  the collision report, export checks, `lock --check` and `generate --check`.
-  `--strict` fails missing lineage. A stage without inputs (no `ai-skills.lock`, no
+- **`validate`** runs, in order: schema and manifest terminology lint, inventory
+  (including host-specific frontmatter), selection closure and selectors,
+  provenance, the ADR 0006 ingest checks on the repository's own content, the
+  internal link check, the collision report, export checks, `lock --check` and
+  `generate --check`. `--strict` fails missing lineage. `--terminology` also lints
+  `docs/**/*.md` against this catalog's canonical `docs/glossary.md` vocabulary;
+  it is opt-in (like `manifest validate --terminology`), so a vendor's own
+  glossary is never held to ours. A stage without inputs (no `ai-skills.lock`, no
   committed host marketplaces) is reported as skipped. Vendor inputs come from
   `--vendor-root ID=PATH` or the source cache (`ai-skills-engine lock --fetch`).
   A vendor manifest's `policy:`, trust grants and `overrides:` are reported as
   ignored and never applied. This catalog's CI and a fixture vendor
-  (`tests/fixtures/vendors/manifest`) call the reusable workflow with `strict`.
+  (`tests/fixtures/vendors/manifest`) call the reusable workflow with `strict`;
+  only this catalog also sets its `terminology` input.
 - **`add`** resolves `ref` (default branch when omitted) to a SHA, fetches the pin
   into the source cache and runs the ingest checks. A vendor with an
   `ai-skills.yaml` gets a pinned `vendors:` entry whose `include` imports the
@@ -708,8 +712,8 @@ Pull requests and pushes to `main` run **lintro** (via the published **py-lintro
 container image), the pytest suite, skill-structure validation,
 `bash scripts/validate.sh`, the vendor plugin bake
 (`scripts/ci/bake_vendor_plugins_gate.sh`), and two callers of the reusable
-`ai-skills-validate.yml` workflow: this catalog with `strict` and the fixture vendor
-in `tests/fixtures/vendors/manifest`.
+`ai-skills-validate.yml` workflow: this catalog with `strict` and `terminology`, and
+the fixture vendor in `tests/fixtures/vendors/manifest` with `strict`.
 
 **Validate Lintro Version** compares `pyproject.toml`'s exact `lintro==`
 pin to the version inside the pinned `ghcr.io/lgtm-hq/py-lintro` digest on

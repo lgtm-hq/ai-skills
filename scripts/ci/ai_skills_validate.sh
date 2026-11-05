@@ -7,6 +7,7 @@
 #   CALLER_DIR     caller repository checkout
 #   MANIFEST_PATH  caller-relative path whose file name is ai-skills.yaml
 #   STRICT         true or false
+#   TERMINOLOGY    true or false: also lint docs/ against docs/glossary.md
 #
 # Every input is validated and the script fails closed. When the caller commits
 # ai-skills.lock, `lock --fetch` fills the source cache with exactly the locked,
@@ -23,6 +24,8 @@ fail() {
   fail "engine-ref must be a full 40-hex commit SHA"
 [[ "${STRICT:-}" == "true" || "${STRICT:-}" == "false" ]] ||
   fail "strict must be true or false"
+[[ "${TERMINOLOGY:-}" == "true" || "${TERMINOLOGY:-}" == "false" ]] ||
+  fail "terminology must be true or false"
 manifest="${MANIFEST_PATH:-}"
 [[ "$manifest" =~ ^([A-Za-z0-9_.-]+/)*ai-skills\.yaml$ ]] ||
   fail "manifest-path must be a relative path to an ai-skills.yaml file"
@@ -47,5 +50,8 @@ fi
 arguments=(validate --repo-root "$root")
 if [[ "$STRICT" == "true" ]]; then
   arguments+=(--strict)
+fi
+if [[ "$TERMINOLOGY" == "true" ]]; then
+  arguments+=(--terminology)
 fi
 "${engine[@]}" "${arguments[@]}"

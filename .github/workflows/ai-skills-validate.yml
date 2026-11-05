@@ -21,6 +21,13 @@ name: ai-skills validate
         required: false
         type: boolean
         default: true
+      terminology:
+        description: >-
+          Also lint docs/**/*.md against this catalog's docs/glossary.md
+          vocabulary (validate --terminology). Only ai-skills itself sets it.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -83,6 +90,7 @@ jobs:
           ENGINE_REF: ${{ inputs.engine-ref }}
           MANIFEST_PATH: ${{ inputs.manifest-path }}
           STRICT: ${{ inputs.strict }}
+          TERMINOLOGY: ${{ inputs.terminology }}
           ENGINE_DIR: ${{ github.workspace }}/ai-skills-engine
           CALLER_DIR: ${{ github.workspace }}/caller
         run: bash "$ENGINE_DIR/scripts/ci/ai_skills_validate.sh"
