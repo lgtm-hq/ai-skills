@@ -9,6 +9,8 @@ import io
 import json
 import tarfile
 from functools import cache
+
+# nosemgrep: python37-compatibility-importlib2 - runtime requires Python >=3.13
 from importlib import resources
 from pathlib import Path
 from typing import Any

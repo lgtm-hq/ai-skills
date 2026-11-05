@@ -3,6 +3,8 @@
 import hashlib
 import io
 import json
+import os
+import sys
 import tarfile
 from pathlib import Path
 from typing import Any
@@ -11,6 +13,7 @@ import pytest
 from assertpy import assert_that
 from install_helpers import profile_path, run
 
+from ai_skills_engine.install import verify
 from ai_skills_engine.install.profile import Profile, write_profile
 from ai_skills_engine.install.selectors import SelectorKind, make_selector
 
@@ -171,6 +174,96 @@ def test_pin_priority(
     status, _, err = run(capsys, "install", "--artifacts", str(golden), *flags)
     assert_that(status).is_equal_to(1)
     assert_that(err).contains(f"digest mismatch: {winner} pin")
+
+
+@pytest.mark.parametrize("source", ["profile", "lock", "digest"])
+def test_sidecar_is_not_read_when_a_higher_pin_exists(
+    golden: Path,
+    consumer: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+) -> None:
+    """A higher-priority pin wins without ever opening the (corrupt) sidecar."""
+    (golden / (TAR + ".sha256")).write_bytes(b"\xff\xfe not a sidecar")
+    reads: list[str] = []
+    original = verify._sidecar
+
+    def spy(directory: Path, package: str) -> str | None:
+        """Record any sidecar read before delegating.
+
+        Args:
+            directory: Artifact directory.
+            package: Package ID.
+
+        Returns:
+            The real reader's result.
+        """
+        reads.append(package)
+        return original(directory, package)
+
+    monkeypatch.setattr(verify, "_sidecar", spy)
+    flags: list[str] = []
+    if source == "profile":
+        write_profile(
+            profile_path(consumer), Profile(artifacts={"fixture/tools": GOLDEN_DIGEST})
+        )
+    elif source == "lock":
+        lock = {
+            "lockVersion": 1,
+            "packages": [{"id": "fixture/tools", "artifactDigest": GOLDEN_DIGEST}],
+        }
+        (Path.cwd() / "ai-skills.lock").write_text(json.dumps(lock))
+    else:
+        flags = ["--digest", GOLDEN_DIGEST]
+    status, report, err = run(
+        capsys, "install", "--artifacts", str(golden), "--dry-run", *flags
+    )
+    assert_that(status).described_as(err).is_zero()
+    assert_that(report["packages"][0]["pin"] if report else None).is_equal_to(source)
+    assert_that(reads).is_empty()
+
+
+def _unreadable_sidecar(path: Path, kind: str) -> None:
+    """Make an existing sidecar undecodable or unreadable.
+
+    Args:
+        path: Sidecar path.
+        kind: ``utf8`` for invalid bytes, ``permission`` for mode 000.
+    """
+    if kind == "utf8":
+        path.write_bytes(b"\xff" * 64 + b"  " + TAR.encode() + b"\n")
+    else:
+        path.chmod(0o000)
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "utf8",
+        pytest.param(
+            "permission",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32" or os.geteuid() == 0,
+                reason="needs POSIX file permissions enforced for a non-root user",
+            ),
+        ),
+    ],
+)
+def test_unreadable_sidecar_is_reported_cleanly(
+    golden: Path, consumer: Path, capsys: pytest.CaptureFixture[str], kind: str
+) -> None:
+    """Undecodable or unreadable sidecars are install errors, not tracebacks."""
+    sidecar = golden / (TAR + ".sha256")
+    _unreadable_sidecar(sidecar, kind)
+    try:
+        status, _, err = run(capsys, "install", "--artifacts", str(golden))
+    finally:
+        sidecar.chmod(0o644)
+    assert_that(status).is_equal_to(1)
+    assert_that(err).contains(f"{sidecar}: unreadable digest sidecar")
+    assert_that(err).does_not_contain("Traceback")
+    assert_that(profile_path(consumer).exists()).is_false()
 
 
 def test_each_pin_source_verifies(

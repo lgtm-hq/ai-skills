@@ -153,11 +153,16 @@ def run(command: Command, argv: list[str] | None) -> int:
         request = _request(command, args)
         result = plan(request)
         written = result.changed and not (args.dry_run or args.frozen)
-        if written:
-            write_profile(request.profile_path, result.profile)
     except InstallError as error:
         print(f"{command}: {safe_diagnostic(str(error))}", file=sys.stderr)
         return 1
+    if written:
+        try:
+            write_profile(request.profile_path, result.profile)
+        except OSError as error:
+            message = f"cannot write profile {request.profile_path}: {error}"
+            print(f"{command}: {safe_diagnostic(message)}", file=sys.stderr)
+            return 1
     if args.json:
         report = _report(command, result, written=written, path=request.profile_path)
         print(json.dumps(report, indent=2, sort_keys=True))

@@ -146,13 +146,18 @@ def _sidecar(directory: Path, package: str) -> str | None:
         Qualified digest, or None if no sidecar exists.
 
     Raises:
-        InstallError: If the sidecar is malformed or names another file.
+        InstallError: If the sidecar is unreadable, malformed or names another
+            file.
     """
     name = artifact_name(package)
     path = directory / (name + ".sha256")
     if not path.is_file():
         return None
-    match = _SIDECAR.fullmatch(path.read_text(encoding="utf-8"))
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise InstallError(f"{path}: unreadable digest sidecar ({error})") from error
+    match = _SIDECAR.fullmatch(text)
     if match is None or match.group(2) != name:
         raise InstallError(f"{path}: malformed digest sidecar")
     return "sha256:" + match.group(1)
@@ -172,26 +177,26 @@ def choose_pin(*, directory: Path, package: str, pins: Pins) -> tuple[str, PinSo
     Raises:
         InstallError: If no allowed pin exists or ``--digest`` contradicts it.
     """
+    flag = pins.flags.get(package)
     ranked = [
         (pins.profile.get(package), PinSource.PROFILE),
         (pins.lock.get(package), PinSource.LOCK),
     ]
-    if not pins.frozen:
-        ranked += [
-            (pins.flags.get(package), PinSource.DIGEST),
-            (_sidecar(directory, package), PinSource.SIDECAR),
-        ]
     for pin, source in ranked:
-        if pin is None:
-            continue
-        flag = pins.flags.get(package)
-        if flag is not None and flag != pin:
-            raise InstallError(
-                f"{package}: --digest {flag} contradicts the {source} pin {pin}"
-            )
-        return pin, source
+        if pin is not None:
+            if flag is not None and flag != pin:
+                raise InstallError(
+                    f"{package}: --digest {flag} contradicts the {source} pin {pin}"
+                )
+            return pin, source
     if pins.frozen:
         raise InstallError(f"{package}: --frozen needs a pin in the profile or lock")
+    if flag is not None:
+        return flag, PinSource.DIGEST
+    # Read the sidecar only when no higher-priority pin exists.
+    sidecar = _sidecar(directory, package)
+    if sidecar is not None:
+        return sidecar, PinSource.SIDECAR
     raise InstallError(
         f"{package}: no pinned digest (profile, lock, --digest, sidecar)"
     )

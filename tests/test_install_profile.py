@@ -1,5 +1,7 @@
 """Consumer profile persistence, update replay and stale selectors."""
 
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -180,13 +182,37 @@ def test_profile_write_is_atomic(
         raise OSError("interrupted")
 
     monkeypatch.setattr("ai_skills_engine.atomic_write.os.replace", interrupted)
-    with pytest.raises(OSError, match="interrupted"):
-        cli.main(["install", "--artifacts", str(golden)])
-    capsys.readouterr()
+    status = cli.main(["install", "--artifacts", str(golden)])
+    captured = capsys.readouterr()
+    assert_that(status).is_equal_to(1)
+    assert_that(captured.err).contains(f"cannot write profile {path}: interrupted")
+    assert_that(captured.out).is_empty()
     assert_that(path.read_bytes()).is_equal_to(recorded)
     assert_that(sorted(item.name for item in path.parent.iterdir())).is_equal_to(
         [path.name]
     )
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="needs POSIX directory permissions enforced for a non-root user",
+)
+def test_unwritable_profile_directory_is_reported_without_traceback(
+    golden: Path, consumer: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A read-only config directory yields a diagnostic and exit status 1."""
+    path = profile_path(consumer)
+    path.parent.mkdir(parents=True)
+    path.parent.chmod(0o555)
+    try:
+        status, report, err = run(capsys, "install", "--artifacts", str(golden))
+    finally:
+        path.parent.chmod(0o755)
+    assert_that(status).is_equal_to(1)
+    assert_that(report).is_none()
+    assert_that(err).starts_with(f"install: cannot write profile {path}: ")
+    assert_that(err).does_not_contain("Traceback")
+    assert_that(path.exists()).is_false()
 
 
 @pytest.mark.parametrize(
