@@ -23,6 +23,7 @@ from ai_skills_engine.install.profile import (
 pytest_plugins = ["artifact_helpers", "install_helpers"]
 OWN = "capability:z/tools:skill/own"
 VENDOR_Q = "github.com/fixture/q"
+API = "apiVersion: ai-skills.dev/selection/v1\n"
 
 
 def _add_extra(document: dict[str, Any], z: Path) -> None:
@@ -238,12 +239,79 @@ def test_unwritable_profile_directory_is_reported_without_traceback(
         ),
         ("apiVersion: ai-skills.dev/selection/v1\ndeny: [github.com/x]\n", "origin"),
         ("- not a mapping\n", "expected a mapping"),
+        (f"{API}artifacts: 0\n", "artifacts must be a mapping"),
+        (f"{API}artifacts: false\n", "artifacts must be a mapping"),
+        (f"{API}exclude: ''\n", "exclude must be a list"),
+        (f"{API}exclude: 0\n", "exclude must be a list"),
+        (f"{API}deny: false\n", "deny must be a list"),
+        (f"{API}deny: ''\n", "deny must be a list"),
+        (f"{API}modes: 0\n", "modes is reserved"),
     ],
 )
 def test_profile_reading_is_strict(text: str, message: str) -> None:
     """Unknown versions, keys, reserved data and malformed values fail."""
     with pytest.raises(InstallError, match=message):
         parse_profile(text, source="selection.yaml")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "",
+        "artifacts:\nexclude:\ndeny:\nmodes:\n",
+        "artifacts: null\nexclude: ~\ndeny: null\nmodes: null\n",
+    ],
+    ids=["absent", "empty-values", "explicit-null"],
+)
+def test_absent_or_null_fields_mean_empty(body: str) -> None:
+    """The documented contract: absent and YAML ``null`` fields are empty."""
+    assert_that(parse_profile(API + body, source="selection.yaml")).is_equal_to(
+        Profile()
+    )
+
+
+def _unreadable_profile(path: Path, kind: str) -> None:
+    """Write a profile that cannot be decoded or opened.
+
+    Args:
+        path: Profile path.
+        kind: ``utf8`` for invalid bytes, ``permission`` for mode 000.
+    """
+    path.parent.mkdir(parents=True)
+    if kind == "utf8":
+        path.write_bytes(API.encode() + b"deny: [{origin: \xff\xfe}]\n")
+    else:
+        write_profile(path, Profile())
+        path.chmod(0o000)
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "utf8",
+        pytest.param(
+            "permission",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32" or os.geteuid() == 0,
+                reason="needs POSIX file permissions enforced for a non-root user",
+            ),
+        ),
+    ],
+)
+def test_unreadable_profile_is_reported_cleanly(
+    golden: Path, consumer: Path, capsys: pytest.CaptureFixture[str], kind: str
+) -> None:
+    """Undecodable or unreadable profiles exit 1 with a diagnostic, not a traceback."""
+    path = profile_path(consumer)
+    _unreadable_profile(path, kind)
+    try:
+        status, report, err = run(capsys, "install", "--artifacts", str(golden))
+    finally:
+        path.chmod(0o644)
+    assert_that(status).is_equal_to(1)
+    assert_that(report).is_none()
+    assert_that(err).starts_with(f"install: {path}: unreadable profile (")
+    assert_that(err).does_not_contain("Traceback")
 
 
 def test_profile_location_honours_absolute_xdg_only(tmp_path: Path) -> None:

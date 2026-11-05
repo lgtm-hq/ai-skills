@@ -133,8 +133,28 @@ def _artifacts(value: object) -> dict[str, str]:
     return dict(value)
 
 
+def _present(document: dict[object, object], key: str, empty: object) -> object:
+    """Return a field's raw value, mapping only absent or ``null`` to empty.
+
+    Args:
+        document: Parsed profile mapping.
+        key: Field name.
+        empty: Empty value of the field's type.
+
+    Returns:
+        The raw value for strict type validation, or ``empty``.
+    """
+    value = document.get(key)
+    return empty if value is None else value
+
+
 def parse_profile(text: str, *, source: str) -> Profile:
     """Parse profile text strictly.
+
+    ``artifacts``, ``exclude``, ``deny`` and ``modes`` may be absent or an
+    explicit YAML ``null`` (an empty value, as written by ``key:`` with
+    nothing after it); both mean empty. Any other value must have the field's
+    type: a falsy ``0``, ``""`` or ``false`` is rejected, never coerced.
 
     Args:
         text: YAML document.
@@ -161,9 +181,9 @@ def parse_profile(text: str, *, source: str) -> Profile:
         raise InstallError(f"{source}: modes is reserved for delivery modes (#581)")
     try:
         return Profile(
-            artifacts=_artifacts(document.get("artifacts") or {}),
-            exclude=_excludes(document.get("exclude") or []),
-            deny=_denies(document.get("deny") or []),
+            artifacts=_artifacts(_present(document, "artifacts", {})),
+            exclude=_excludes(_present(document, "exclude", [])),
+            deny=_denies(_present(document, "deny", [])),
         )
     except InstallError as error:
         raise InstallError(f"{source}: {error}") from error
@@ -177,10 +197,17 @@ def load_profile(path: Path) -> Profile:
 
     Returns:
         Typed profile.
+
+    Raises:
+        InstallError: If the profile exists but cannot be read or decoded.
     """
     if not path.exists():
         return Profile()
-    return parse_profile(path.read_text(encoding="utf-8"), source=str(path))
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise InstallError(f"{path}: unreadable profile ({error})") from error
+    return parse_profile(text, source=str(path))
 
 
 def dump_profile(profile: Profile) -> bytes:
