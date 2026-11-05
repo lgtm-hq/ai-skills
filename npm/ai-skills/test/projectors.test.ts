@@ -533,10 +533,12 @@ describe("native CLI projector", () => {
       return { status: 0, stderr: "", stdout: "ok" };
     });
     try {
-      expect(calls.map((argv) => argv.slice(0, 3))).toEqual([
-        ["copilot", "plugin", "marketplace"],
-        ["copilot", "plugin", "install"],
+      expect(calls).toEqual([
+        ["copilot", "plugin", "marketplace", "add", join(home, ".ai-skills/native/copilot")],
+        ["copilot", "plugin", "install", "review@ai-skills"],
       ]);
+      // The local marketplace is the only source: no owner/repo slug reaches the CLI.
+      expect(calls.flat().some((argument) => /^[\w-]+\/[\w.-]+(@.+)?$/.test(argument))).toBe(false);
     } finally {
       await rm(home, { force: true, recursive: true });
     }
