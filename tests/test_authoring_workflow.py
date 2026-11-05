@@ -54,6 +54,14 @@ def test_reusable_workflow_inputs_permissions_and_pins() -> None:
     steps = job["steps"]
     assert_that(steps[0]["uses"]).starts_with("step-security/harden-runner@")
     assert_that(steps[0]["with"]["egress-policy"]).is_equal_to("block")
+    # setup-uv fetches its version manifest from raw.githubusercontent.com;
+    # without it every caller fails at uv setup under the blocking policy.
+    assert_that(steps[0]["with"]["allowed-endpoints"].split()).contains(
+        "raw.githubusercontent.com:443",
+        "pypi.org:443",
+        "files.pythonhosted.org:443",
+        "releases.astral.sh:443",
+    )
     for step in steps:
         if "uses" in step:
             assert_that(step["uses"]).matches(PINNED.pattern)
