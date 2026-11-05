@@ -200,3 +200,19 @@ arbitrary pattern containment. Advice does not reject a build or enforce a bump.
 catalog index built from the adjacent synthetic `source/` publication. Its cycle,
 shared copies, invocation restriction, structural rewrites and source portability
 losses are inputs for downstream verification/filtering tests in #578.
+
+## Host envelopes
+
+`ai-skills-engine generate` derives every host plugin envelope and marketplace
+from an artifact index and a kept-capability set; see the ADR 0002 amendment.
+`--index dist/artifacts/index.json --output DIR` writes a built envelope tree,
+with `plugins/<name>/` envelopes and Claude, Cursor and Codex marketplaces, for
+every exported package. `--exclude CAPABILITY_ID` and `--host` filter that tree.
+The rules are `schemas/envelope-rules.v1.json`; `tests/fixtures/envelopes/`
+holds its goldens. The tree contains envelopes only: the install plane places
+each kept capability's payload under `skills/` or `agents/` beside them. Codex
+has no repo-root slice projection: Codex copies the whole tree at `source.path`,
+so its repo-root marketplace lists no package. Codex native delivery uses these
+built `plugins/<name>/` trees (#384). Without `--index`, built output covers only
+the publisher's own packages and prints a note naming any exported vendor
+packages it omits.

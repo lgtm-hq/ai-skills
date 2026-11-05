@@ -1,0 +1,32 @@
+{
+  "name": "ai-skills",
+  "owner": {
+    "name": "fixture"
+  },
+  "$generated": "do not edit — regenerate via scripts/generate_marketplace.py",
+  "plugins": [
+    {
+      "name": "core",
+      "displayName": "Core Workflow",
+      "description": "Everyday workflow skills.",
+      "version": "2.0.0",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/alpha",
+        "./skills/beta"
+      ]
+    },
+    {
+      "name": "extras",
+      "displayName": "Extras",
+      "description": "Optional extra skills.",
+      "version": "2.0.0",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/gamma"
+      ]
+    }
+  ]
+}

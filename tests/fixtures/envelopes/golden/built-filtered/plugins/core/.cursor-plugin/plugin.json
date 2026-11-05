@@ -1,0 +1,10 @@
+{
+  "name": "core",
+  "version": "2.0.0",
+  "description": "Everyday workflow skills.",
+  "author": {
+    "name": "fixture-org"
+  },
+  "displayName": "Core Workflow",
+  "skills": "./skills/"
+}

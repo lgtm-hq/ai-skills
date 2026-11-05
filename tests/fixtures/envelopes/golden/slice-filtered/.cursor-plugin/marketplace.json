@@ -1,0 +1,23 @@
+{
+  "name": "ai-skills",
+  "owner": {
+    "name": "fixture"
+  },
+  "metadata": {
+    "description": "Harness-agnostic agent skills generated from bundles.yaml.",
+    "version": "2.0.0",
+    "$generated": "do not edit — regenerate via scripts/generate_marketplace.py"
+  },
+  "plugins": [
+    {
+      "name": "core",
+      "source": "./",
+      "description": "Everyday workflow skills."
+    },
+    {
+      "name": "extras",
+      "source": "./",
+      "description": "Optional extra skills."
+    }
+  ]
+}

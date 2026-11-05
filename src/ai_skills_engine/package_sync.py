@@ -132,6 +132,11 @@ def rendered_files(version: str, *, repo_root: Path | None = None) -> dict[Path,
                 / resource_module
                 / schema.name
             ] = content
+    # Envelope rules are shared data for both planes, not a JSON Schema.
+    for rules in sorted((project_root / "schemas").glob("envelope-rules.*.json")):
+        content = rules.read_text(encoding="utf-8")
+        files[data_root / "schema" / rules.name] = content
+        files[project_root / "src" / "ai_skills_engine" / "data" / rules.name] = content
     files[package_root / "NOTICE.md"] = files[package_root / "NOTICE.md"].replace(
         "`vendors.yaml`",
         "`data/vendors.yaml`",

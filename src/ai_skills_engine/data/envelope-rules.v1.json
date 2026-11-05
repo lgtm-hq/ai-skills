@@ -1,0 +1,116 @@
+{
+  "$comment": "Host plugin envelope rules shared by the Python build plane and the TypeScript install plane. Field names form a closed vocabulary; generators reject unknown names. Evidence: docs/parity/README.md (#563 host spike).",
+  "rulesVersion": 1,
+  "serialization": {
+    "indent": 2,
+    "ensureAscii": false,
+    "sortKeys": false,
+    "trailingNewline": true
+  },
+  "plugin": {
+    "path": "plugin.json",
+    "fields": ["name", "version", "description", "author", "skills"]
+  },
+  "hosts": {
+    "claude": {
+      "plugin": {
+        "path": ".claude-plugin/plugin.json",
+        "fields": ["name", "version", "description", "author"]
+      },
+      "marketplace": {
+        "path": ".claude-plugin/marketplace.json",
+        "fields": ["name", "owner", "$generated", "plugins"],
+        "source": "path",
+        "entries": {
+          "slice": [
+            "name",
+            "displayName",
+            "description",
+            "version",
+            "source",
+            "strict",
+            "skills"
+          ],
+          "built": ["name", "description", "version", "source"]
+        }
+      },
+      "roles": {
+        "skill": {
+          "projection": "directory",
+          "evidence": "docs/parity/evidence/claude-code/skill-user-native-plugin.yaml"
+        },
+        "specialist": {
+          "projection": "directory",
+          "evidence": "docs/parity/evidence/claude-code/specialist-user-native-plugin.yaml"
+        }
+      }
+    },
+    "cursor": {
+      "plugin": {
+        "path": ".cursor-plugin/plugin.json",
+        "fields": [
+          "name",
+          "version",
+          "description",
+          "author",
+          "displayName",
+          "license",
+          "skills"
+        ]
+      },
+      "marketplace": {
+        "path": ".cursor-plugin/marketplace.json",
+        "fields": ["name", "owner", "metadata", "plugins"],
+        "source": "path",
+        "entries": {
+          "slice": ["name", "source", "description"],
+          "built": ["name", "source", "description"]
+        }
+      },
+      "roles": {
+        "skill": {
+          "projection": "directory",
+          "evidence": "docs/parity/evidence/cursor/skill-user-native-plugin.yaml"
+        },
+        "specialist": {
+          "projection": "directory",
+          "evidence": "docs/parity/evidence/cursor/specialist-user-native-plugin.yaml"
+        }
+      }
+    },
+    "codex": {
+      "plugin": {
+        "path": ".codex-plugin/plugin.json",
+        "fields": ["name", "version", "description", "author"]
+      },
+      "marketplace": {
+        "path": ".agents/plugins/marketplace.json",
+        "fields": ["name", "plugins"],
+        "source": "local",
+        "policy": {
+          "installation": "AVAILABLE",
+          "authentication": "ON_INSTALL"
+        },
+        "entries": {
+          "slice": null,
+          "built": ["name", "source", "policy"]
+        }
+      },
+      "evidence": {
+        "state": "unverified",
+        "reason": "Codex 0.164.0 accepted the marketplace path, the local source object and the policy values only in the mixed three-envelope probe fixture. That probe did not isolate the Codex plugin fields, so the plugin envelope keeps the minimal name/version/description/author payload. Generated Codex envelopes were never installed. Codex copies the whole tree at source.path and has no evidenced slicing field, so a repo-root entry cannot narrow the shared root: slice entries are null and the repo-root Codex marketplace lists no package. A Codex entry may only point at a plugin directory whose delivered tree is the package's kept artifact tree; first-party Codex native delivery comes from the built layout (#384).",
+        "source": "docs/parity/README.md#codex-native-contract-for-384"
+      },
+      "roles": {
+        "skill": {
+          "projection": "directory",
+          "evidence": "docs/parity/evidence/codex/skill-user-native-plugin.yaml"
+        },
+        "specialist": {
+          "projection": "directory",
+          "evidence": "docs/parity/evidence/codex/specialist-user-native-plugin.yaml"
+        }
+      }
+    }
+  }
+}
