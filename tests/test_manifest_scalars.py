@@ -10,6 +10,7 @@ from assertpy import assert_that
 from ci.npm.scalar_helpers import CASES, ROOT, scalar_source
 
 from ai_skills_engine import cli
+from ai_skills_engine.manifest import scalars
 from ai_skills_engine.manifest.edit import dump_document, patch_document
 from ai_skills_engine.manifest.legacy import (
     legacy_documents,
@@ -187,3 +188,16 @@ def test_aliased_branch_unicode_prefix(tmp_path: Path, separator: str) -> None:
     data = load_unique_yaml_text(text=source)
     path.write_text(patch_document(text=source, data=data))
     assert_that(load_manifest(path).vendors[0].branch).is_equal_to("main")
+
+
+def test_scalar_resolver_names_the_pinned_renovate_parser() -> None:
+    """Bumping the pinned Renovate snapshot forces a scalar-resolver review."""
+    sources = json.loads(
+        (
+            Path(__file__).resolve().parent / "fixtures/manifest/renovate/sources.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert_that(scalars.__doc__).contains(
+        f"Renovate {sources['version']}",
+        f"yaml {sources['dependencies']['yaml']}",
+    )

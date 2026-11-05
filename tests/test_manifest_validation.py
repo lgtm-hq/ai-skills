@@ -225,3 +225,28 @@ def test_yaml_extensions_remain_json_values(tmp_path: Path, extension: str) -> N
     assert_that(
         [item.code for item in validate_document(read_document(path))]
     ).contains("schema")
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("id", "vendor\n"), ("repo", "owner/repo\n"), ("sha", "a" * 40 + "\n")],
+)
+def test_schema_patterns_use_ecma_end_anchors(
+    manifest_repo: Path, field: str, value: str
+) -> None:
+    """A trailing newline never satisfies a ``$``-anchored schema pattern."""
+    data = read_document(manifest_repo / "ai-skills.yaml")
+    assert_that(validate_document(data)).is_empty()
+    data["vendors"][0][field] = value
+    locations = {item.location for item in validate_document(data)}
+    assert_that(locations).contains(f"/vendors/0/{field}")
+
+
+def test_rename_collision_without_name_is_rejected(manifest_repo: Path) -> None:
+    """A rename collision override must name its new destination."""
+    data = read_document(manifest_repo / "ai-skills.yaml")
+    collision = data["overrides"]["collisions"][0]
+    assert_that(collision["action"]).is_equal_to("rename")
+    del collision["name"]
+    codes = {(item.code, item.location) for item in validate_document(data)}
+    assert_that(codes).contains(("schema", "/overrides/collisions/0"))

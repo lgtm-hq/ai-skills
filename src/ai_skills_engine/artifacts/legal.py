@@ -26,6 +26,26 @@ _LEGAL = re.compile(
 )
 
 
+def section_header(*, origin: str, revision: str | None, declared: str) -> str:
+    """Render the header that opens one ``(origin, revision)`` legal section.
+
+    ``repin.legal_text`` strips exactly the ``Revision:`` line of this header,
+    so both sides share this single template.
+
+    Args:
+        origin: Origin locator.
+        revision: Pinned revision, or None for the local publication.
+        declared: Declared SPDX license.
+
+    Returns:
+        Three header lines.
+    """
+    return (
+        f"Origin: {origin}\nRevision: {revision or 'local'}\n"
+        f"Declared license: {declared}\n"
+    )
+
+
 def origin_file(origin: str) -> str:
     """Encode an origin injectively into a portable license filename.
 
@@ -139,9 +159,8 @@ def legal_files(
                             ).encode()
                     content[child.relative_to(root).as_posix()] = data
         pieces = [
-            (
-                f"Origin: {coordinate[0]}\nRevision: {coordinate[1] or 'local'}\n"
-                f"Declared license: {declared}\n"
+            section_header(
+                origin=coordinate[0], revision=coordinate[1], declared=declared
             )
         ]
         pieces.extend(

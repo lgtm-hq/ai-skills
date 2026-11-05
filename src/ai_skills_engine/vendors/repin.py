@@ -206,12 +206,13 @@ def _text_at_ref(*, repo_root: Path, git_ref: str, name: str) -> str | None:
         msg = f"could not resolve baseline-ref {git_ref}: {error}"
         raise RuntimeError(msg) from error
     try:
+        # Bytes, then UTF-8: text mode would translate CRLF and break byte
+        # equality with the committed manifest and lock.
         return subprocess.check_output(  # nosec B603 B607 - fixed git argv
             ["git", "show", f"{git_ref}:{name}"],
             cwd=repo_root,
-            text=True,
             stderr=subprocess.DEVNULL,
-        )
+        ).decode("utf-8")
     except subprocess.CalledProcessError:
         return None
 

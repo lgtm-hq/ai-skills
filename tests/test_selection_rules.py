@@ -5,13 +5,25 @@ from pathlib import PurePosixPath
 
 import pytest
 from assertpy import assert_that
-from selection_helpers import PREFIX, RESOURCE, change, errors, plan, selected
+from selection_helpers import (
+    PREFIX,
+    RESOURCE,
+    change,
+    errors,
+    inventory_graph,
+    plan,
+    selected,
+)
 
 from ai_skills_engine.inventory.model import CapabilityId, Inventory
 from ai_skills_engine.manifest.deny import Deny
+from ai_skills_engine.manifest.diagnostic import Diagnostic
+from ai_skills_engine.manifest.identity import matches
 from ai_skills_engine.manifest.migration import Migration
 from ai_skills_engine.manifest.overrides import Overrides
 from ai_skills_engine.manifest.policy import Policy
+from ai_skills_engine.provenance.origins import denied_origin
+from ai_skills_engine.selection import select
 from ai_skills_engine.selection.deny import deny_matches
 from ai_skills_engine.selection.deny_subject import DenySubject
 from ai_skills_engine.selection.explain import explain
@@ -365,3 +377,111 @@ def test_explicit_package_migrations_chain_and_cycles(
         "selection.invalid-selector"
     )
     assert_that(errors(cyclic)[0].fix).contains("cyclic migrations")
+
+
+@pytest.mark.parametrize(
+    ("selector", "denied"),
+    [
+        ("github.com/fixture/x", True),
+        ("github.com/fixture/*", True),
+        ("github.com/fix*", True),
+        ("fixture/x", False),
+        ("github.com/Fixture/x", False),
+        ("https://github.com/fixture/x", False),
+        ("github.com/fixture/x.git", False),
+    ],
+    ids=[
+        "exact",
+        "owner-wildcard",
+        "raw-prefix",
+        "shorthand",
+        "case",
+        "url",
+        "git-suffix",
+    ],
+)
+def test_origin_deny_matches_documented_semantics(selector: str, denied: bool) -> None:
+    """Origin denies are exact or raw-prefix locator matches, never normalized."""
+    match = denied_origin(
+        origins=["github.com/fixture/x"],
+        policy=Policy(deny=Deny(origins=(selector,))),
+    )
+    assert_that(match is not None).is_equal_to(denied)
+
+
+@pytest.mark.parametrize(
+    ("graph", "verb"),
+    [
+        ({"a": {"requires": ["c"]}, "c": {}}, "requires"),
+        (
+            {"a": {"requires": ["b"]}, "b": {"requires": ["c"]}, "c": {}},
+            "transitively requires",
+        ),
+    ],
+    ids=["direct", "transitive"],
+)
+def test_required_veto_message_names_transitive_requirements(
+    graph: dict[str, dict[str, list[str]]], verb: str
+) -> None:
+    """A blocked requirement reached through another capability says so."""
+    inventory = inventory_graph({"capabilities": graph})
+    result = plan(inventory, include=(PREFIX + "a",), exclude=(PREFIX + "c",))
+    messages = [
+        item.message
+        for item in result.diagnostics
+        if item.code == "selection.required-excluded"
+    ]
+    assert_that(messages).is_length(1)
+    assert_that(messages[0]).starts_with(f"{PREFIX}a {verb} {PREFIX}c, ")
+
+
+def test_rejected_candidate_explanation_marks_the_invalid_plan() -> None:
+    """A rejected payload kept as a candidate is not explained as a clean pick."""
+    inventory = inventory_graph({"capabilities": {"a": {"requires": ["broken"]}}})
+    inventory = replace(
+        inventory,
+        rejected=(CapabilityId.parse(PREFIX + "broken"),),
+        diagnostics=(
+            *inventory.diagnostics,
+            Diagnostic("inventory.invalid-payload", PREFIX + "broken", "bad bytes"),
+        ),
+    )
+    result = select(inventory)
+    broken = next(item for item in result.capabilities if item.id == PREFIX + "broken")
+    assert_that(result.valid).is_false()
+    assert_that(broken.reason).ends_with("payload rejected by inventory (plan invalid)")
+    healthy = next(item for item in result.capabilities if item.id == PREFIX + "a")
+    assert_that(healthy.reason).does_not_contain("payload rejected")
+
+
+def test_explain_indents_multi_line_diagnostic_messages() -> None:
+    """Continuation lines of a message stay inside its diagnostic block."""
+    inventory = inventory_graph({"capabilities": {"a": {}}})
+    inventory = replace(
+        inventory,
+        diagnostics=(
+            Diagnostic("inventory.invalid-payload", PREFIX + "a", "line one\nline two"),
+        ),
+    )
+    text = explain(select(inventory))
+    assert_that(text).contains(
+        "error[inventory.invalid-payload]: line one\n  line two\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("selector", "identity", "expected"),
+    [
+        ("vendor/tools*", "vendor/tools-extra:skill/x", True),
+        ("vendor/tools", "vendor/tools-extra:skill/x", False),
+        ("vendor/tools", "vendor/tools:skill/x", True),
+        ("vendor/*", "vendor/other:skill/x", True),
+        ("vendor/tools:skill/x", "vendor/tools:skill/x", True),
+    ],
+    ids=["raw-prefix", "package-boundary", "package", "publisher", "exact"],
+)
+def test_selector_matching_documented_semantics(
+    selector: str, identity: str, expected: bool
+) -> None:
+    """A trailing ``*`` is a raw prefix; a package selector keeps its boundary."""
+    assert_that(matches(selector=selector, identity=identity)).is_equal_to(expected)

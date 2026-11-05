@@ -239,6 +239,14 @@ def test_duplicate_inventory_id_and_unused_mapping_are_errors(
     assert_that([item.code for item in result.diagnostics]).contains(
         "inventory.duplicate-id"
     )
+    duplicate_messages = [
+        item.message
+        for item in result.diagnostics
+        if item.code == "inventory.duplicate-id"
+    ]
+    assert_that(" ".join(duplicate_messages)).contains(
+        "conflicts with skills/help", "declare distinct capability IDs"
+    ).does_not_contain(str(root))
     (vendor / "ai-skills.yaml").unlink()
     document["vendors"].pop()
     document["vendors"][0]["mapping"]["packages"][0]["capabilities"]["typo"] = {}
@@ -293,6 +301,32 @@ def test_roots_only_mapping_retains_stem_identity(
     assert_that([item.code for item in result.diagnostics]).contains(
         "inventory.undeclared-resource"
     )
+
+
+def test_mapping_discovery_error_redacts_secret_shaped_names(
+    inventory_repo: tuple[Path, Path],
+) -> None:
+    """Mapping-discovery OS errors pass through the diagnostic redactor."""
+    root, vendor = inventory_repo
+    path = root / "ai-skills.yaml"
+    document = read_document(path)
+    document["vendors"][0]["mapping"].pop("packages")
+    capability = document["packages"][0]["capabilities"][0]
+    capability.pop("requires", None)
+    capability["related"] = []
+    document["exports"] = ["tools"]
+    path.write_text(dump_document(document))
+    secret = "AKIA" + "ABCDEFGHIJKLMNOP"
+    (vendor / secret).symlink_to("NOTICE.md")
+    result = load_inventory(root, vendor_roots={"vendor": vendor})
+    messages = [
+        item.message
+        for item in result.diagnostics
+        if item.code == "inventory.invalid-payload"
+        and item.location == "/vendors/vendor"
+    ]
+    assert_that(messages).is_not_empty()
+    assert_that(" ".join(messages)).contains("[REDACTED]").does_not_contain(secret)
 
 
 @pytest.mark.parametrize(

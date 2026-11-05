@@ -145,11 +145,18 @@ def package_version(
                 continue
             project = root / "pyproject.toml"
             if project.is_file():
-                static_version = (
-                    tomllib.loads(project.read_text()).get("project", {}).get("version")
+                table = tomllib.loads(project.read_text(encoding="utf-8")).get(
+                    "project", {}
                 )
+                if not isinstance(table, dict):
+                    raise ValueError("pyproject.toml: [project] must be a table")
+                static_version = table.get("version")
                 if static_version is not None:
-                    return str(static_version)
+                    if not isinstance(static_version, str):
+                        raise ValueError(
+                            "pyproject.toml: project.version must be a string"
+                        )
+                    return static_version
             return str(metadata.get("x-version", "0.0.0-local"))
         doc = (
             read_document(root / "ai-skills.yaml")

@@ -167,11 +167,12 @@ def select(
         if target in blocked:
             chain = dependency_chain(parents=parents, target=target)
             state, reason = blocked[target]
+            verb = "requires" if len(chain) <= 2 else "transitively requires"
             findings.append(
                 SelectionDiagnostic(
                     code=f"selection.required-{state}",
                     location=target,
-                    message=f"{chain[0]} requires {target}, {reason}",
+                    message=f"{chain[0]} {verb} {target}, {reason}",
                     chain=chain,
                     fix=(
                         f"Also exclude {chain[0]}, or remove the blocking "
@@ -317,6 +318,8 @@ def select(
                     f"required resource denied by policy.deny.origins: "
                     f"{denies[key].selector}"
                 )
+            elif key in rejected:
+                reason += "; payload rejected by inventory (plan invalid)"
         return SelectionEntry(
             id=key,
             state=state,

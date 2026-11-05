@@ -10,6 +10,7 @@ import json
 import re
 import shutil
 import subprocess  # nosec B404 - fixed gh argv list, no shell
+import sys
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
@@ -126,6 +127,12 @@ def declined_pr(
     pulls = json.loads(output)
     if not isinstance(pulls, list):
         raise TypeError("gh pr list did not return a JSON list")
+    if len(pulls) >= int(_LIST_LIMIT):
+        print(
+            f"repin: --skip-declined read only the {_LIST_LIMIT} most recent "
+            "closed PRs; a revision declined in an older PR is not skipped",
+            file=sys.stderr,
+        )
     found = [
         int(pull["number"])
         for pull in pulls

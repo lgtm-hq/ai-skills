@@ -88,7 +88,9 @@ Pointers follow RFC 6901. JSON/YAML pointers address the file root; Markdown
 pointers address frontmatter. Files must belong to the declared payload. Ordinary
 string scalars are supported; aliases, anchors, tags and block scalars receive a
 portability diagnostic. Rewrites change only scalar spans, preserving neighboring
-source. These declarations never create a resource or dependency edge.
+source. These declarations never create a resource or dependency edge. A value
+starting with `letters:` or `//` is read as a URL: remote URLs stay unchanged and
+other schemes are rejected, so spell a colon-bearing filename as `./notes:v1.md`.
 
 `NOTICE.md` and `LICENSES/<percent-encoded-origin>.txt` cover only ancestry present
 in the tar, including resource origins and every re-export hop. Available root,
@@ -144,6 +146,9 @@ hostnames. It records everything needed to rebuild the artifacts byte for byte:
   reordering YAML keys or reformatting does not change the lock.
   `manifest.inputsDigest` fingerprints the declared local payloads, legal files,
   `pyproject.toml` and builder sources; it is the offline checkout drift gate.
+  Any edit to `pyproject.toml` (including a Renovate dependency bump),
+  `src/ai_skills_engine/` or `schemas/` therefore changes it: run
+  `ai-skills-engine lock` and commit the regenerated lock with that change.
 - `vendors` lists every pinned import, including nested slash-qualified pins.
   `sourceDigest` is the SHA-256 of a canonical uncompressed tar of the extracted
   tree (sorted PAX entries, 0644/0755 file modes, link targets verbatim, no
@@ -174,8 +179,12 @@ through the same cache.
   changed and never moves an existing pin; `repin` moves pins (see
   [Vendor re-pin](../CONTRIBUTING.md#vendor-re-pin)). Unchanged pins
   must reproduce their locked `sourceDigest`. It fetches missing sources (or
-  seeds the cache from `--vendor-tree ID=PATH` snapshots), rebuilds all packages
-  in private scratch and rewrites the lock only when its bytes change.
+  uses `--vendor-tree ID=PATH` snapshots), rebuilds all packages in private
+  scratch and rewrites the lock only when its bytes change. A supplied snapshot
+  is cached by digest only and records no `repo@sha` ref. Locked `lock --check`,
+  `lock --fetch` and `build` runs still find it through the locked digest, but a
+  later `validate` needs `--vendor-root` again, and `inventory --fetch-vendors`
+  fetches the pin from GitHub rather than trusting the snapshot.
 - `lock --fetch` fills the cache for the existing lock only, verifying each
   fetched tree against its `sourceDigest`.
 - `lock --check` writes nothing. It fails on a builder, manifest or local-input

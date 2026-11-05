@@ -5,8 +5,8 @@ reusable workflows, per issue
 [#90](https://github.com/lgtm-hq/ai-skills/issues/90). Generated with
 `scripts/audit_lgtm_ci_adoption.py` against the pinned ref
 `23c79b65490a3307fb08cdefafa22db12f75b9b2` (v0.63.1).
-`reusable-ai-review.yml` is pinned independently at
-`62737ac1e3e0a25bd138d2d77d80ae03fb9741c5` (v0.67.0).
+`reusable-all-checks-gate.yml` is currently the only independently pinned
+reusable workflow (see below).
 
 This document is inventory and plan. Adoptions land in focused follow-up
 PRs (one workflow per PR).
@@ -26,19 +26,23 @@ uv run python scripts/audit_lgtm_ci_adoption.py
 ```
 
 The script exits non-zero on mixed pins, so re-running it after any repin
-catches partial updates. All callers except `reusable-ai-review.yml` and
-`reusable-scorecards.yml` share one SHA (currently
-`8f0fd9339df5d30a529aa572ceb51345b8be33a0`, v0.79.2). Local
-callers of `reusable-ai-review.yml` must share one SHA, include a
-`tooling-ref`, and keep `uses` / `tooling-ref` in lockstep.
-`reusable-scorecards.yml` is back on the shared SHA now that
-[lgtm-hq/lgtm-ci#1173](https://github.com/lgtm-hq/lgtm-ci/issues/1173)
-is fixed (v0.77.6+). The audit still excludes it from repo-wide
-uniqueness until that exception is removed; its callers must still
-share one SHA.
-`reusable-all-checks-gate.yml` (released in v0.78.0,
-[lgtm-hq/lgtm-ci#1188](https://github.com/lgtm-hq/lgtm-ci/pull/1188)) is
-on the shared SHA, with no audit exception.
+catches partial updates. Every caller except `reusable-all-checks-gate.yml`
+shares one SHA (currently `8f0fd9339df5d30a529aa572ceb51345b8be33a0`,
+v0.79.2). The audit excludes three names from repo-wide uniqueness
+(`INDEPENDENT_PIN_WORKFLOWS`); each excluded name must still use exactly one
+SHA across its own callers, and the audit prints a `<name> pinned ref:` line
+for any excluded name that differs from the shared SHA.
+
+- `reusable-ai-review.yml` may pin a newer published contract; it is
+  currently on the shared SHA. Its local callers must include a `tooling-ref`
+  and keep `uses` / `tooling-ref` in lockstep.
+- `reusable-scorecards.yml` is back on the shared SHA now that
+  [lgtm-hq/lgtm-ci#1173](https://github.com/lgtm-hq/lgtm-ci/issues/1173)
+  is fixed (v0.77.6+); its exception remains until #534 removes it.
+- `reusable-all-checks-gate.yml` (released in v0.78.0,
+  [lgtm-hq/lgtm-ci#1188](https://github.com/lgtm-hq/lgtm-ci/pull/1188)) is
+  pinned independently at `fff562d6558f7513f50dd128ea2461aab6855a03`
+  (v0.83.13) to adopt the released supersession repair for #645.
 
 ## Classification
 
@@ -137,11 +141,11 @@ SHA-pinned callers. This repo now adopts them per-repo as well:
   drift. See [lintro version alignment](#lintro-version-alignment).
 - **Single-SHA pin discipline:** quality/release callers share one SHA
   (currently `8f0fd9339df5d30a529aa572ceb51345b8be33a0`, v0.79.2).
-  `ai-review.yml` may pin a different `reusable-ai-review.yml` SHA;
-  `scripts/audit_lgtm_ci_adoption.py` excludes that name from repo-wide
-  uniqueness, and likewise `reusable-scorecards.yml`, which is back on
-  the shared SHA since lgtm-hq/lgtm-ci#1173 was fixed. Local callers of
-  `reusable-ai-review.yml` must still share one SHA and keep `uses` /
-  `tooling-ref` in lockstep. Always pin to a SHA
+  `scripts/audit_lgtm_ci_adoption.py` excludes `reusable-ai-review.yml`,
+  `reusable-scorecards.yml` and `reusable-all-checks-gate.yml` from repo-wide
+  uniqueness; only the all-checks gate currently uses a different SHA. Each
+  excluded name must still share one SHA across its callers, and local callers
+  of `reusable-ai-review.yml` keep `uses` / `tooling-ref` in lockstep. Always
+  pin to a SHA
   that is reachable from a tag or `main` — never to a PR-branch or
   squash-orphaned commit.

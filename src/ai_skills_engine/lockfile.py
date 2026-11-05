@@ -10,6 +10,7 @@ separate file and never mix with this lock.
 import json
 import re
 from collections.abc import Callable
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -170,6 +171,16 @@ def _list[T](
     )
 
 
+@cache
+def _lineage_validator() -> Draft202012Validator:
+    """Build the packaged lineage schema validator once per process.
+
+    Returns:
+        Validator for one lineage chain.
+    """
+    return Draft202012Validator(lineage_schema())
+
+
 def _lineage(value: object, location: str) -> tuple[dict[str, Any], ...]:
     """Validate lineage chains against the shipped lineage schema.
 
@@ -180,7 +191,7 @@ def _lineage(value: object, location: str) -> tuple[dict[str, Any], ...]:
     Returns:
         Validated chains.
     """
-    validator = Draft202012Validator(lineage_schema())
+    validator = _lineage_validator()
 
     def chain(element: object, pointer: str) -> dict[str, Any]:
         """Validate one chain.

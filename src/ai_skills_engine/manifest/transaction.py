@@ -29,6 +29,11 @@ def snapshot_files(paths: Iterable[Path]) -> FileSnapshots:
 def restore_files(*, originals: FileSnapshots, error: BaseException) -> None:
     """Restore each publication independently, retaining cleanup evidence on failure.
 
+    Bytes, modes and absence are restored in place; parent directories are not
+    recreated (artifact restoration does that separately). Restoring a path
+    that already holds its original bytes and mode is a no-op, so overlapping
+    snapshots are harmless.
+
     Args:
         originals: Original bytes and modes, or absence, for every destination.
         error: Original failure to annotate without replacing it.

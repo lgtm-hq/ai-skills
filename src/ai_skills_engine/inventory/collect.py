@@ -159,11 +159,21 @@ def collect_package(
             if identity in rejected or any(
                 item.capability.id == identity for item in pending
             ):
+                previous = next(
+                    (
+                        item.capability.source_path
+                        for item in pending
+                        if item.capability.id == identity
+                    ),
+                    "rejected payload",
+                )
                 diagnostics.append(
                     Diagnostic(
                         "inventory.duplicate-id",
                         location,
-                        "Capability identity is not unique across inputs",
+                        "Capability identity is not unique across inputs: "
+                        f"{previous} conflicts with {declaration.path}; "
+                        "declare distinct capability IDs in a vendor manifest",
                     )
                 )
                 continue

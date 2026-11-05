@@ -12,11 +12,22 @@ from typing import Any
 import pytest
 import yaml
 from assertpy import assert_that
-from authoring_helpers import FIXTURES, codes, run_cli, stage, validate_json
+from authoring_helpers import (
+    FIXTURES,
+    PINS,
+    REPOS,
+    Forge,
+    codes,
+    run_cli,
+    stage,
+    validate_json,
+)
 
 from ai_skills_engine.commands.validate_report import STAGES
 from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.load import read_document
+from ai_skills_engine.registry.ingest_checks import parse_limits
+from ai_skills_engine.registry.ingest_limits import IngestLimits
 from ai_skills_engine.registry.vendor import Vendor
 from ai_skills_engine.source_cache import SourceCache, canonical_snapshot
 
@@ -300,6 +311,48 @@ def test_dead_and_non_imported_exports_fail(vendor: Path) -> None:
     assert_that(codes(report, "exports")).is_equal_to(["export.not-imported"])
 
 
+def test_export_of_rejected_content_names_inventory_rejection(vendor: Path) -> None:
+    """An export whose only match failed inventory checks is not called excluded."""
+    from dataclasses import replace
+
+    from ai_skills_engine.commands import validate_checks
+    from ai_skills_engine.manifest.load import load_consumer
+    from ai_skills_engine.selection.load import load_inputs
+
+    inventory, selection = load_inputs(vendor, vendor_roots=None)
+    consumer, _, _ = load_consumer(vendor / "ai-skills.yaml", vendor_roots={})
+    reviewer = next(
+        item for item in inventory.capabilities if str(item.id).endswith("/reviewer")
+    )
+    inventory = replace(
+        inventory,
+        capabilities=tuple(
+            item for item in inventory.capabilities if item.id != reviewer.id
+        ),
+        rejected=(*inventory.rejected, reviewer.id),
+    )
+    selection = replace(
+        selection,
+        capabilities=tuple(
+            item for item in selection.capabilities if item.id != str(reviewer.id)
+        ),
+    )
+    findings = validate_checks.exports(
+        consumer=consumer,
+        inventory=inventory,
+        selection=selection,
+        roots={},
+        dangling=(),
+    )
+    assert_that([(item.code, item.location) for item in findings]).is_equal_to(
+        [("export.not-imported", "/exports/1")]
+    )
+    assert_that(findings[0].message).contains(
+        "Export crew names content that is not imported",
+        "rejected by inventory checks",
+    ).does_not_contain("include/exclude")
+
+
 def test_lock_and_generate_checks_run_the_real_commands(vendor: Path) -> None:
     """A stale lock and stale marketplaces fail stages 9 and 10."""
     # Repo-root marketplaces carry skill slices only; specialists need envelopes.
@@ -449,3 +502,154 @@ def test_actual_wheel_runs_init_validate_and_add_outside_checkout(
     assert_that(json.loads(run("validate", "--format", "json").stdout)["ok"]).is_true()
     assert_that((root / "ai-skills.lock").is_file()).is_true()
     assert_that(Path(__file__).resolve().parents[1].is_relative_to(root)).is_false()
+
+
+def test_unreadable_source_cache_is_reported_not_swallowed(
+    vendor: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A source-cache failure becomes a visible warning on a valid manifest."""
+    from ai_skills_engine.commands import validate_checks
+
+    def unreadable(**_kwargs: object) -> object:
+        """Fail like an unreadable cache root."""
+        raise PermissionError("cache root is not readable")
+
+    monkeypatch.setattr(validate_checks, "cached_sources", unreadable)
+    _status, report = validate_json(vendor)
+    findings = stage(report, "inventory")["diagnostics"]
+    assert_that(
+        [
+            (item["code"], item["location"])
+            for item in findings
+            if "cache root is not readable" in item["message"]
+        ]
+    ).is_equal_to([("validate.vendor-source-unavailable", "/vendors")])
+
+
+_OVERRIDE = {
+    "memberBytes": 2 * IngestLimits().member_bytes,
+    "reason": "Fixture vendor ships one oversized asset.",
+}
+
+
+def _oversize(tree: Path) -> None:
+    """Add one sparse file just above the default ``memberBytes`` limit.
+
+    Args:
+        tree: Served vendor tree.
+    """
+    (tree / "assets").mkdir()
+    with (tree / "assets/large.bin").open("wb") as handle:
+        handle.truncate(IngestLimits().member_bytes + 1)
+
+
+def _upstream_limits(present: bool) -> Callable[[dict[str, Any]], None]:
+    """Return an edit declaring or dropping the upstream pin's override.
+
+    Args:
+        present: Whether the ``upstream`` pin declares ``ingestLimits``.
+
+    Returns:
+        In-place manifest edit.
+    """
+
+    def change(document: dict[str, Any]) -> None:
+        upstream = next(
+            item for item in document["vendors"] if item["id"] == "upstream"
+        )
+        upstream.pop("ingestLimits", None)
+        if present:
+            upstream["ingestLimits"] = dict(_OVERRIDE)
+
+    return change
+
+
+def test_validate_keeps_pin_ingest_limits_on_cached_sources(
+    tmp_path: Path, forge: Forge
+) -> None:
+    """A fetched pin's reasoned override still governs ``validate`` re-checks.
+
+    The control drops the override over the same cached tree, so the
+    ref-resolved re-validation stays in force against the defaults.
+    """
+    root = tmp_path / "reexporter"
+    shutil.copytree(FIXTURES / "reexporter", root)
+    _oversize(forge.trees["fixture-org/manifest"])
+    _edit(root, _upstream_limits(present=True))
+    status, _, error = run_cli("lock", "--repo-root", str(root))
+    assert_that(status).described_as(error).is_zero()
+    assert_that(forge.fetched).contains(
+        f"fixture-org/manifest@{PINS['fixture-org/manifest']}"
+    )
+    status, report = validate_json(root)
+    assert_that(status).described_as(json.dumps(report, indent=1)).is_zero()
+    assert_that(codes(report, "inventory")).does_not_contain(
+        "validate.vendor-source-unavailable"
+    )
+    assert_that(codes(report, "selection")).does_not_contain(
+        "selection.vendor-unavailable"
+    )
+    _edit(root, _upstream_limits(present=False))
+    status, report = validate_json(root)
+    assert_that(status).is_equal_to(1)
+    unavailable = [
+        item
+        for item in stage(report, "inventory")["diagnostics"]
+        if item["code"] == "validate.vendor-source-unavailable"
+    ]
+    assert_that([item["location"] for item in unavailable]).is_equal_to(
+        ["/vendors/upstream"]
+    )
+    assert_that(unavailable[0]["message"]).contains("memberBytes")
+
+
+@pytest.mark.parametrize("declared", [True, False], ids=["override", "defaults"])
+def test_nested_pin_ingest_limits_survive_cached_sources(
+    tmp_path: Path, forge: Forge, declared: bool
+) -> None:
+    """A nested pin is re-checked with the limits its own manifest declares."""
+    from ai_skills_engine.commands import validate_checks
+
+    _oversize(forge.trees["fixture-org/manifest"])
+    _edit(forge.trees["fixture-org/reexporter"], _upstream_limits(present=declared))
+    cache = SourceCache.default()
+    for repo, name in REPOS.items():
+        # Stored with refs, as an earlier ``lock --fetch`` under the override did.
+        pin = Vendor(
+            id=name,
+            repo=repo,
+            sha=PINS[repo],
+            skill_roots=(),
+            license="",
+            homepage="",
+            ingest_limits=parse_limits(_OVERRIDE, label=name),
+        )
+        cache.store(
+            data=canonical_snapshot(tree=forge.trees[repo], vendor=pin),
+            repo=repo,
+            revision=PINS[repo],
+            label=name,
+            expected=None,
+        )
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    (consumer / "ai-skills.yaml").write_text(
+        "apiVersion: ai-skills.dev/v1\n"
+        "vendors:\n"
+        "  - id: rx\n"
+        "    repo: fixture-org/reexporter\n"
+        f"    sha: \"{PINS['fixture-org/reexporter']}\"\n"
+    )
+    roots, findings = validate_checks.cached_sources(
+        root=consumer, cache=cache, scratch=tmp_path / "scratch"
+    )
+    unavailable = (
+        []
+        if declared
+        else [("validate.vendor-source-unavailable", "/vendors/rx/upstream")]
+    )
+    assert_that([(item.code, item.location) for item in findings]).is_equal_to(
+        unavailable
+    )
+    assert_that("rx/upstream" in roots).is_equal_to(declared)
+    assert_that(roots).contains_key("rx", "rx/mapped")

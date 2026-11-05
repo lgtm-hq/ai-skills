@@ -7,7 +7,7 @@
   "manifest": {
     "apiVersion": "ai-skills.dev/v1",
     "digest": "sha256:5a22b4803b09672154cf5a4c1e72ed08cf86945578ed7edde8e07fb36bed07f3",
-    "inputsDigest": "sha256:7a2138201b03ea6b10c23dbf806c98d79525fc59762b36026a6c1fec7f60aeb1"
+    "inputsDigest": "sha256:198a057ffd610f68c317495db0d5c3aa180265654a9d442ffd2a49f49dda543c"
   },
   "packages": [
     {
@@ -996,7 +996,7 @@
       "version": "ca45fc4"
     },
     {
-      "artifactDigest": "sha256:051d2058ad15dd3e9a83af7a698090699694dafc48d542aa6975f1797b682ce3",
+      "artifactDigest": "sha256:1de2a2f2668a77edf1a5358969dc06080c282a270b4d70ea9b109bb3e6f34855",
       "capabilities": [
         {
           "closure": [
@@ -2554,7 +2554,7 @@
           ]
         }
       ],
-      "treeDigest": "sha256:79235537bb374e18b46795c22a1996565cdfe2df51f4fdf5670c6a5b3e9fa795",
+      "treeDigest": "sha256:f2916857183a5d61ca001da29bf7ecfcd5c7751ad519b49f70b1137b03d96f07",
       "version": "15581d1"
     },
     {
@@ -5256,7 +5256,7 @@
       "version": "0.30.9"
     },
     {
-      "artifactDigest": "sha256:3d7c38fcd0f2fc07a0c4db3de8899447fdf00a4c721f198f66113708ac4b4e53",
+      "artifactDigest": "sha256:c9ce98d49c3a5d99f460ef8a0f121c624cfc93d237ce2e0971a47848b6d281b6",
       "capabilities": [
         {
           "closure": [

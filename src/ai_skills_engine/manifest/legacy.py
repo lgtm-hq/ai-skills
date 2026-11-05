@@ -166,7 +166,7 @@ def legacy_documents(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
         if package.get("x-legacy-ungrouped"):
             bundles["ungrouped"] = skills
         else:
-            bundles["groups"][package.get("x-legacy-group", package["id"])] = {
+            bundles["groups"][destination[1]] = {
                 **package.get("x-legacy-fields", {}),
                 **{
                     field: package[field]

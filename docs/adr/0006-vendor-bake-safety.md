@@ -107,6 +107,17 @@ Regular ingested files become 0755 when owner-executable, otherwise 0644, matchi
 inventory's Git-like mode identity. Inventory observes without chmodding inputs.
 Transactional backup and rollback copies retain their exact original modes.
 
+Clarifications (2026-11-05, #634; no decision change): archive member names and
+symlink targets containing a backslash, an absolute path or a `..` segment are
+rejected on every platform. The special-bit check covers every directory and file of
+the archive or offline tree, including the root and unselected paths, so a tree
+created beneath a setgid directory inherits the bit and is rejected. Secret rules
+anchor on word boundaries: a shape glued to an adjacent letter, digit or underscore
+(for example `X_AKIA…`) is not reported. The PEM rule covers `BEGIN [TYPE ]PRIVATE
+KEY` with at most one type word, not OpenPGP `PRIVATE KEY BLOCK` armor. File names
+are never scanned, although diagnostics redact secret-shaped names. Content scans
+reuse `archiveMembers` as the per-package or per-plugin file-count bound.
+
 `BAKE.json.ingestChecks` and the coverage report's "Ingest checks" section record
 the rule-set version, effective limits and acknowledged findings. Offline `--check`
 re-scans and bounds actual bytes with the current registry policy before trusting

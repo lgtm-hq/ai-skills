@@ -13,8 +13,9 @@ from assertpy import assert_that
 
 from ai_skills_engine import cli
 from ai_skills_engine.artifact import artifact_name
+from ai_skills_engine.artifacts import materialize as materialize_module
 from ai_skills_engine.artifacts.materialize import materialize
-from ai_skills_engine.artifacts.references import rewrite_fields
+from ai_skills_engine.artifacts.references import resource_path, rewrite_fields
 from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.selection.load import load_inputs
@@ -384,7 +385,11 @@ def test_contained_resource_payload_is_authenticated(
         (resources["fixture/tools:resource/shared"], artifact_repo / "shared"),
     )
     if change != "unchanged":
-        with pytest.raises(ValueError, match="Source changed during artifact build"):
+        with pytest.raises(
+            ValueError,
+            match="Source changed during artifact build: contained resource "
+            "fixture/tools:resource/local differs from its capability copy",
+        ):
             materialize(
                 capability=capability,
                 source=artifact_repo / "skills/start",
@@ -399,3 +404,57 @@ def test_contained_resource_payload_is_authenticated(
     )
     assert_that(files["data/local.txt"][0]).is_equal_to(local.read_bytes())
     assert_that(files).contains_key("_shared/fixture/shared/data/input.txt")
+
+
+@pytest.mark.parametrize(
+    ("raw", "moved", "expected"),
+    [
+        ("data/", False, None),
+        ("data/", True, "../_shared/data/"),
+        ("data", True, "../_shared/data"),
+        ("data/#top", True, "../_shared/data/#top"),
+    ],
+    ids=["unmoved-dir", "moved-dir", "moved-bare", "moved-dir-fragment"],
+)
+def test_relocated_directory_reference_keeps_trailing_slash(
+    tmp_path: Path, raw: str, moved: bool, expected: str | None
+) -> None:
+    """A ``dir/`` link stays a directory link and is untouched when unmoved."""
+    data = tmp_path / "skill/data"
+    data.mkdir(parents=True)
+    (data / "a.txt").write_text("A.\n")
+    output = "_shared/data/a.txt" if moved else "skill/data/a.txt"
+    coordinates = {data / "a.txt": output}
+    keywords: dict[str, Any] = {
+        "original": tmp_path / "skill/SKILL.md",
+        "relative": "skill/SKILL.md",
+        "coordinates": coordinates,
+    }
+    assert_that(materialize_module._relocate(raw, **keywords)).is_equal_to(expected)
+    declared = materialize_module._declared_path(
+        raw.partition("#")[0], **keywords, reasons=set()
+    )
+    assert_that(declared).is_equal_to(
+        None if expected is None else expected.partition("#")[0]
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("./notes:v1.md", "./notes:v1.md"),
+        ("https://example.invalid/x", None),
+        ("//example.invalid/x", None),
+        ("notes:v1.md", ValueError),
+    ],
+    ids=["dot-relative-colon", "remote-url", "network-path", "scheme-like-name"],
+)
+def test_declared_scalar_colon_names_follow_url_policy(
+    raw: str, expected: str | type[ValueError] | None
+) -> None:
+    """``letters:`` reads as a URL scheme; ``./`` keeps a colon-bearing filename."""
+    if expected is ValueError:
+        with pytest.raises(ValueError, match="path escape rejected"):
+            resource_path(raw)
+    else:
+        assert_that(resource_path(raw)).is_equal_to(expected)

@@ -65,10 +65,16 @@ def _check_sha_sources(*, text: str, path: Path) -> None:
         if sha is None:
             continue  # The schema owns required fields and other structure.
         raw = text[sha.start_mark.index : sha.end_mark.index]
-        if re.fullmatch(r"[0-9a-f]{40}|'[0-9a-f]{40}'|\"[0-9a-f]{40}\"", raw):
-            continue
         identity = record.get("id")
         alias = identity.value if isinstance(identity, ScalarNode) else "unknown"
+        if re.fullmatch(r"[0-9]{40}", raw) and not isinstance(yaml.safe_load(raw), str):
+            raise ValueError(
+                f"{path}: schema /vendors/{index}/sha (vendor {alias}): a "
+                "decimal-only SHA is read as a number; quote it: "
+                f'sha: "{raw}"'
+            )
+        if re.fullmatch(r"[0-9a-f]{40}|'[0-9a-f]{40}'|\"[0-9a-f]{40}\"", raw):
+            continue
         raise ValueError(
             f"{path}: schema /vendors/{index}/sha (vendor {alias}): SHA must be a "
             "direct, unescaped 40-hex scalar, plain or ordinary single/double "
@@ -100,7 +106,8 @@ def read_document(path: Path) -> dict[str, Any]:
     _check_sha_sources(text=text, path=path)
     data = load_unique_yaml_text(text=text, source=str(path))
     # PyYAML accepts an unseparated comment after a quoted scalar. Enforce
-    # YAML's lexical boundary here before validation or compatibility publication.
+    # YAML's lexical boundary for this document before validation. Opaque
+    # ``x-legacy-format`` template bytes are stored, not linted, here.
     for token in yaml.scan(text):
         if (
             isinstance(token, ScalarToken)
@@ -114,6 +121,18 @@ def read_document(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise TypeError(f"{path}: manifest must be a mapping")
     return cast(dict[str, Any], data)
+
+
+def format_diagnostics(items: list[Diagnostic]) -> str:
+    """Render diagnostics as ``code location: message`` lines.
+
+    Args:
+        items: Diagnostics to report.
+
+    Returns:
+        One line per diagnostic, never Python reprs.
+    """
+    return "\n".join(f"{item.code} {item.location}: {item.message}" for item in items)
 
 
 def load_manifest(path: Path) -> Manifest:
@@ -133,9 +152,7 @@ def load_manifest(path: Path) -> Manifest:
     data = read_document(path)
     errors = validate_document(data)
     if errors:
-        raise ValueError(
-            "\n".join(f"{item.code} {item.location}: {item.message}" for item in errors)
-        )
+        raise ValueError(format_diagnostics(errors))
     return cast(Manifest, decode(data, Manifest))
 
 
@@ -173,7 +190,7 @@ def load_consumer(
         }
     structural = [item for item in validate_document(data) if item.code == "schema"]
     if structural:
-        raise ValueError(str(structural))
+        raise ValueError(format_diagnostics(structural))
     imported: dict[str, Manifest] = {}
     diagnostics: list[Diagnostic] = []
     for vendor in data.get("vendors", []):
@@ -198,7 +215,9 @@ def load_consumer(
             item for item in validate_document(document) if item.code == "schema"
         ]
         if structural:
-            raise ValueError(f"Invalid vendor manifest {alias}: {structural}")
+            raise ValueError(
+                f"Invalid vendor manifest {alias}:\n{format_diagnostics(structural)}"
+            )
         nested_packages: dict[str, set[str]] = {}
         for nested in document.get("vendors", []):
             nested_root = (vendor_roots or {}).get(alias + "/" + nested["id"])
@@ -226,7 +245,9 @@ def load_consumer(
             )
             findings = [item for item in findings if item.code != "dangling-export"]
         if findings:
-            raise ValueError(f"Invalid vendor manifest {alias}: {findings}")
+            raise ValueError(
+                f"Invalid vendor manifest {alias}:\n{format_diagnostics(findings)}"
+            )
         imported[alias] = replace(
             cast(Manifest, decode(document, Manifest)),
             policy=None,

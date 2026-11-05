@@ -1,5 +1,6 @@
 """Self-contained capability copies with resource layout and source diagnostics."""
 
+import json
 import os
 from collections.abc import Mapping
 from functools import partial
@@ -84,6 +85,8 @@ def _relocate(
         return None
     moved = os.path.relpath(mapped, start=str(PurePosixPath(relative).parent))
     parts = urlsplit(raw)
+    if parts.path.endswith("/") and not moved.endswith("/"):
+        moved += "/"  # Keep a directory reference spelled as one.
     rewritten = quote(moved, safe="/.-_~")
     if parts.query:
         rewritten += "?" + parts.query
@@ -120,6 +123,8 @@ def _declared_path(
         reasons.add(f"{relative}: declared path is outside payload/required resources")
         return None
     moved = os.path.relpath(mapped, start=str(PurePosixPath(relative).parent))
+    if raw.endswith("/") and not moved.endswith("/"):
+        moved += "/"  # Keep a directory reference spelled as one.
     return moved if moved != raw else None
 
 
@@ -132,8 +137,6 @@ def lineage_json(lineage: tuple[Lineage, ...]) -> list[dict[str, Any]]:
     Returns:
         Deterministically ordered chain records.
     """
-    import json
-
     return [
         json.loads(chain.to_json())
         for chain in sorted(lineage, key=lambda item: item.to_json())
@@ -215,7 +218,10 @@ def _authenticate_copied(
             or copied[1] != item.mode
             or digest(copied[0])[7:] != item.sha256
         ):
-            raise ValueError(f"Source changed during artifact build: {resource.id}")
+            raise ValueError(
+                f"Source changed during artifact build: contained resource "
+                f"{resource.id} differs from its capability copy"
+            )
 
 
 def resource_files(*, resource: Resource, source: Path) -> Files:

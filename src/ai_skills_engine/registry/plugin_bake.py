@@ -276,10 +276,10 @@ def _bake_plugin(
     ):
         generated.chmod(0o644)
     validate_tree(root=destination)
-    # Scan before interpreting links too: malformed content cannot leak a value.
+    # Scan before interpreting links: malformed content cannot leak a value.
+    # Link validation is read-only, so one scan covers the published bytes.
     scan_plugin(root=destination, vendor=vendor, plugin=plugin)
     validate_internal_references(root=destination)
-    scan_plugin(root=destination, vendor=vendor, plugin=plugin)
     return PluginBakeResult(
         plugin_id=plugin.id,
         version=version,

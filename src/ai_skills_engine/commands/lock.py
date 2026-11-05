@@ -24,12 +24,16 @@ from ai_skills_engine.inventory.cli import vendor_roots
 from ai_skills_engine.lockfile import (
     LOCK_FILENAME,
     LOCK_HINT,
+    LockFormatError,
+    LockKeyError,
+    LockVersionError,
     dumps,
     loads,
     read_lock,
     require_canonical,
     write_lock,
 )
+from ai_skills_engine.lockmodel.lock import Lock
 from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.paths import resolve_repo_root
 from ai_skills_engine.registry.ingest_checks import safe_diagnostic
@@ -91,7 +95,8 @@ def _check(*, root: Path, path: Path, inputs_only: bool) -> int:
     if inputs_only:
         return 0
     with TemporaryDirectory(prefix="ai-skills-lock-check-") as temporary:
-        scratch = Path(temporary)
+        # Resolve a symlinked TMPDIR (macOS /var) before artifact output checks.
+        scratch = Path(temporary).resolve()
         roots, vendors = materialize_sources(
             root=root,
             cache=SourceCache.default(),
@@ -118,6 +123,34 @@ def _check(*, root: Path, path: Path, inputs_only: bool) -> int:
     return 0
 
 
+def _read_existing(*, path: Path, fetch: bool) -> Lock | None:
+    """Read the lock that resolution starts from, naming the recovery path.
+
+    Plain ``lock`` cannot repair an unreadable lock (conflict markers, an
+    unknown ``lockVersion`` or key), so the error says how to regenerate it.
+
+    Args:
+        path: Lock file.
+        fetch: Whether ``--fetch`` requires an existing lock.
+
+    Returns:
+        The parsed lock, or None when resolving without one.
+
+    Raises:
+        LockFormatError: For a malformed lock, with the recovery hint.
+        LockKeyError: For an undefined key, with the recovery hint.
+        LockVersionError: For an unknown ``lockVersion``, with the recovery hint.
+    """
+    if not fetch and not path.exists(follow_symlinks=False):
+        return None
+    try:
+        return read_lock(path)
+    except (LockFormatError, LockKeyError, LockVersionError) as error:
+        raise type(error)(
+            f"{error}; to regenerate it, delete {path.name} and {LOCK_HINT}"
+        ) from error
+
+
 def main(argv: list[str] | None = None) -> int:
     """Resolve, check or fetch the resolution lock.
 
@@ -142,13 +175,10 @@ def main(argv: list[str] | None = None) -> int:
         if not args.fetch:
             # Mapped identities are consumer-asserted: never lock an unreviewed one.
             require_accepted(read_document(root / "ai-skills.yaml"))
-        existing = (
-            read_lock(path)
-            if args.fetch or path.exists(follow_symlinks=False)
-            else None
-        )
+        existing = _read_existing(path=path, fetch=args.fetch)
         with TemporaryDirectory(prefix="ai-skills-lock-") as temporary:
-            scratch = Path(temporary)
+            # Resolve a symlinked TMPDIR (macOS /var) before artifact output checks.
+            scratch = Path(temporary).resolve()
             roots, vendors = materialize_sources(
                 root=root,
                 cache=SourceCache.default(),

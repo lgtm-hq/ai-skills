@@ -27,7 +27,6 @@ if TYPE_CHECKING:
 
 pytest_plugins = ("renovate_helpers",)
 ROOT = Path(__file__).resolve().parents[3]
-_ROOT = ROOT
 FIXTURES = ROOT / "tests/fixtures/manifest"
 _NEW_HEAD = "a" * 40
 
@@ -288,7 +287,7 @@ def renovate_vendor_manager() -> dict[str, Any]:
     Returns:
         The git-refs custom manager configuration.
     """
-    config = json.loads((_ROOT / "renovate.json").read_text(encoding="utf-8"))
+    config = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
     return next(
         item
         for item in config["customManagers"]
@@ -304,10 +303,10 @@ def test_renovate_captures_every_explicit_vendor_branch(
     matches = [
         match.groupdict()
         for match in vendor_pin_matches(
-            (_ROOT / "vendors.yaml").read_text(encoding="utf-8")
+            (ROOT / "vendors.yaml").read_text(encoding="utf-8")
         )
     ]
-    vendors = load_registry(registry_path=_ROOT / "vendors.yaml")
+    vendors = load_registry(registry_path=ROOT / "vendors.yaml")
     assert_that(matches).is_equal_to(
         [
             {

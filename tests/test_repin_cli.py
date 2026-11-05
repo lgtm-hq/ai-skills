@@ -1,6 +1,9 @@
 """Upstream resolution, baseline reading and CLI argument boundaries of repin."""
 
 import json
+import os
+import shutil
+import subprocess  # nosec B404 - local git fixture, fixed argv, no shell
 from dataclasses import replace
 from pathlib import Path
 
@@ -116,6 +119,38 @@ def test_baseline_ref_must_resolve(tmp_path: Path) -> None:
     """An unknown revision fails with the baseline named."""
     with pytest.raises(RuntimeError, match="could not resolve baseline-ref"):
         repin.baseline_at_ref(repo_root=tmp_path, git_ref="does-not-exist")
+
+
+def test_baseline_ref_preserves_committed_bytes(tmp_path: Path) -> None:
+    """CRLF manifests and locks round-trip byte for byte from the baseline."""
+    git = shutil.which("git")
+    assert_that(git).described_as("git executable on PATH").is_not_none()
+    manifest = b"apiVersion: ai-skills.dev/v1\r\npublisher:\r\n  id: x\r\n"
+    lock = b'{\r\n  "lockVersion": 1\r\n}\r\n'
+    (tmp_path / "ai-skills.yaml").write_bytes(manifest)
+    (tmp_path / "ai-skills.lock").write_bytes(lock)
+    config = ["-c", "core.autocrlf=false", "-c", "commit.gpgsign=false"]
+    identity = ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid"]
+    env = {
+        "PATH": os.environ.get("PATH", os.defpath),
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+    for argv in (
+        ["init", "-q"],
+        ["add", "-A"],
+        [*identity, "commit", "-q", "-m", "base"],
+    ):
+        subprocess.run(  # nosec B603 - resolved local git, fixed argv
+            [str(git), *config, *argv],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            env=env,
+        )
+    baseline = repin.baseline_at_ref(repo_root=tmp_path, git_ref="HEAD")
+    assert_that(baseline.manifest_text.encode("utf-8")).is_equal_to(manifest)
+    assert_that(baseline.lock_bytes).is_equal_to(lock)
 
 
 @pytest.mark.parametrize(

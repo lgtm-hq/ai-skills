@@ -27,8 +27,10 @@ from repin_helpers import (
 )
 
 from ai_skills_engine import artifact, cli
+from ai_skills_engine.artifacts.legal import section_header
 from ai_skills_engine.bake import vendor_indexes
 from ai_skills_engine.lockfile import read_lock
+from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.repin import declined as declined_module
 from ai_skills_engine.repin import run as run_module
@@ -270,6 +272,24 @@ def test_legal_text_drops_only_the_revision_header() -> None:
     )
 
 
+@pytest.mark.parametrize("revision", [OLD_SHA, None], ids=["pinned", "local"])
+def test_revision_header_matches_the_legal_file_writer(revision: str | None) -> None:
+    """The stripper recognizes the header the artifact legal writer renders."""
+
+    def section(value: str | None) -> bytes:
+        """Render one section the way ``legal_files`` does."""
+        header = section_header(origin="github.com/a/b", revision=value, declared="MIT")
+        return (header + "\n--- LICENSE ---\nMIT text\n").encode()
+
+    path = "LICENSES/github.com%2Fa%2Fb.txt"
+    stripped = revision_free(path=path, data=section(revision))
+    assert_that(stripped).is_equal_to(revision_free(path=path, data=section(NEW_SHA)))
+    assert_that(stripped).does_not_contain(b"Revision: ")
+    assert_that(stripped.decode("utf-8")).starts_with(
+        "Origin: github.com/a/b\nDeclared license: MIT\n"
+    )
+
+
 def test_collisions_are_selected_by_diagnostic_code() -> None:
     """A collision is a diagnostic code, not a word in an unrelated message."""
     case = load_case(GOLDEN / "updated.input.json")
@@ -353,6 +373,24 @@ def test_declined_lookup_matches_only_the_same_unmerged_revision() -> None:
     ).is_none()
     assert_that(declined_pr(vendor="other", revision=NEW_SHA, runner=runner)).is_none()
     assert_that(calls[0][:4]).is_equal_to(["pr", "list", "--state", "closed"])
+
+
+def test_declined_lookup_warns_when_the_closed_pr_window_is_full(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A full ``gh pr list`` page is reported instead of truncating silently."""
+    pulls: list[dict[str, Any]] = [
+        {"number": number, "mergedAt": None, "body": "", "comments": []}
+        for number in range(200)
+    ]
+    assert_that(
+        declined_pr(vendor="example", revision=NEW_SHA, runner=_gh(pulls, []))
+    ).is_none()
+    assert_that(capsys.readouterr().err).contains("only the 200 most recent")
+    assert_that(
+        declined_pr(vendor="example", revision=NEW_SHA, runner=_gh(pulls[1:], []))
+    ).is_none()
+    assert_that(capsys.readouterr().err).is_empty()
 
 
 def test_declined_revision_is_skipped_but_a_newer_one_proceeds(
@@ -510,6 +548,18 @@ def test_unchanged_pin_writes_nothing(offline: Offline) -> None:
     report = repin_vendor(root=root, vendor_id="example", revision=OLD_SHA)
     assert_that(report.status).is_equal_to("unchanged")
     assert_that(render_markdown(report)).contains("Pin already current")
+    assert_that(_files(root)).is_equal_to(before)
+
+
+def test_unaccepted_mapping_scaffold_is_never_repinned(offline: Offline) -> None:
+    """repin refuses an unreviewed consumer-asserted mapping, like ``lock``."""
+    root = offline({OLD_SHA: BEFORE, NEW_SHA: AFTER}, consumer_document())
+    document = read_document(root / "ai-skills.yaml")
+    document["vendors"][0]["x-mapping-scaffold"] = True
+    (root / "ai-skills.yaml").write_text(dump_document(document), encoding="utf-8")
+    before = _files(root)
+    with pytest.raises(ValueError, match="mapping scaffold not accepted"):
+        repin_vendor(root=root, vendor_id="example", revision=NEW_SHA)
     assert_that(_files(root)).is_equal_to(before)
 
 
@@ -786,6 +836,7 @@ def test_cli_keep_sha_baseline_ref_summarizes_base_branch(
         manifest.read_text(encoding="utf-8").replace(OLD_SHA, NEW_SHA),
         encoding="utf-8",
     )
+    renovated = manifest.read_bytes()
     summary = root.parent / "summary.md"
     status = cli.main(
         [
@@ -813,6 +864,8 @@ def test_cli_keep_sha_baseline_ref_summarizes_base_branch(
     ).is_equal_to([NEW_SHA])
     changed = _git(root, "status", "--porcelain").split()
     assert_that(changed).contains("ai-skills.lock", "ai-skills.yaml")
+    # The CI path never rewrites the Renovate-edited manifest.
+    assert_that(manifest.read_bytes()).is_equal_to(renovated)
 
 
 def test_cli_json_failure_exits_one_with_action_required(

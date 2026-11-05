@@ -2,12 +2,13 @@
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 from assertpy import assert_that
 
 from ai_skills_engine import cli
-from ai_skills_engine.inventory import load_inventory
+from ai_skills_engine.inventory import host_attributes, load_inventory
 from ai_skills_engine.inventory.host_attribute import HostAttribute
 from ai_skills_engine.inventory.host_attributes import load_host_attributes
 from ai_skills_engine.manifest.edit import dump_document
@@ -287,3 +288,97 @@ def test_frontmatter_edges_are_inert(inventory_repo: tuple[Path, Path]) -> None:
             and item.location == str(start.id)
         ]
     ).is_length(3)
+
+
+def test_packaged_host_rules_load_once_per_process(
+    inventory_repo: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every capability reuses one validated packaged host-rule table."""
+    root, vendor = inventory_repo
+    calls: list[str | None] = []
+
+    def counting(text: str | None = None) -> dict[str, dict[str, object]]:
+        """Count packaged-table validations, then run the real loader."""
+        calls.append(text)
+        return load_host_attributes(text)
+
+    host_attributes._packaged_host_attributes.cache_clear()
+    monkeypatch.setattr(host_attributes, "load_host_attributes", counting)
+    try:
+        result = load_inventory(root, vendor_roots={"vendor": vendor})
+    finally:
+        host_attributes._packaged_host_attributes.cache_clear()
+    assert_that(len(result.capabilities)).is_greater_than(1)
+    assert_that(calls).is_equal_to([None])
+
+
+@pytest.mark.parametrize(
+    "rule",
+    ["preserve", "refuse", "unverified", "map:x", "map: x", "map:", "drop", 1],
+)
+def test_loader_and_record_share_one_rule_grammar(rule: object) -> None:
+    """The packaged-table loader and direct records accept exactly the same rules."""
+    hosts = {"claude-code": rule, "codex": "preserve", "cursor": "preserve"}
+    text = json.dumps({"key": {"semantics": "permission", "hosts": hosts}})
+    try:
+        load_host_attributes(text)
+        loaded = True
+    except ValueError:
+        loaded = False
+    try:
+        HostAttribute(
+            key="key",
+            value_json="1",
+            semantics="permission",
+            hosts=cast(tuple[tuple[str, str], ...], (("claude-code", rule),)),
+        )
+        constructed = True
+    except (TypeError, ValueError):
+        constructed = False
+    assert_that(loaded).is_equal_to(constructed)
+    assert_that(loaded).is_equal_to(
+        rule in {"preserve", "refuse", "unverified", "map:x"}
+    )
+
+
+def test_schema_errors_print_formatted_diagnostics(
+    inventory_repo: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Structural schema errors read like other diagnostics, not Python reprs."""
+    root, vendor = inventory_repo
+    path = root / "ai-skills.yaml"
+    document = read_document(path)
+    document["packages"][0]["bogus"] = 1
+    path.write_text(dump_document(document))
+    with pytest.raises(ValueError, match=r"^schema /packages/0: ") as raised:
+        load_inventory(root, vendor_roots={"vendor": vendor})
+    assert_that(str(raised.value)).does_not_contain("Diagnostic(")
+    capsys.readouterr()
+    status = cli.main(
+        ["--repo-root", str(root), "inventory", "--vendor-root", f"vendor={vendor}"]
+    )
+    assert_that(status).is_equal_to(1)
+    error = capsys.readouterr().err
+    assert_that(error).contains("schema /packages/0:").does_not_contain("Diagnostic(")
+
+
+def test_consumer_schema_errors_print_formatted_diagnostics(
+    inventory_repo: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """load_consumer's structural errors read like other diagnostics too."""
+    root, vendor = inventory_repo
+    path = root / "ai-skills.yaml"
+    document = read_document(path)
+    document["publisher"]["id"] = 7
+    path.write_text(dump_document(document))
+    capsys.readouterr()
+    for command in (["inventory"], ["manifest", "validate"]):
+        status = cli.main(
+            ["--repo-root", str(root), *command, "--vendor-root", f"vendor={vendor}"]
+        )
+        assert_that(status).is_equal_to(1)
+        captured = capsys.readouterr()
+        output = captured.out + captured.err
+        assert_that(output).contains("schema /publisher/id:").does_not_contain(
+            "Diagnostic("
+        )

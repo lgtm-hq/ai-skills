@@ -137,8 +137,9 @@ existing pin; repinning stays a separate command. `lock --fetch` fills the cache
 for the existing lock only. `lock --check` writes nothing and fails on a stale
 lock or any difference from a cache-only rebuild; `--inputs-only` performs the
 offline checkout drift check without vendor sources. `ai-skills-engine build`
-never resolves or fetches. It refuses a stale or non-canonical lock and any
-missing or corrupted cache entry with a `lock --fetch` hint, and it publishes
+never resolves or fetches. It refuses a stale or non-canonical lock with a
+`lock` hint and any missing or corrupted cache entry with a `lock --fetch` hint,
+and it publishes
 `dist/artifacts/` only when every rebuilt digest equals the lock. Cache reads
 re-verify digests; cache writes use a temporary file, fsync and rename, so
 concurrent CI jobs are safe. The compatibility vendor bake reads pinned trees

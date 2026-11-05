@@ -12,6 +12,7 @@ import pytest
 from assertpy import assert_that
 
 from ai_skills_engine.bake import vendor_plugins
+from ai_skills_engine.registry.ingest_limits import IngestLimits
 from ai_skills_engine.registry.vendor import Vendor
 from ai_skills_engine.source_cache import (
     CacheCorruptError,
@@ -260,6 +261,66 @@ def test_materialize_fetches_once_then_reads_cache(tree: Path, tmp_path: Path) -
             expected="sha256:" + "0" * 64,
         )
     assert_that(offline.root.exists()).is_false()
+
+
+def test_unindexed_store_keeps_bytes_without_a_ref(tree: Path, tmp_path: Path) -> None:
+    """Caller-supplied bytes never become the trusted answer for a pinned ref."""
+    cache = SourceCache(root=tmp_path / "cache")
+    data = canonical_source_tar(root=tree, vendor="upstream")
+    digest = cache.store(
+        data=data,
+        repo="upstream/tools",
+        revision=SHA,
+        label="upstream",
+        expected=None,
+        index=False,
+    )
+    assert_that(cache.read(digest, label="upstream")).is_equal_to(data)
+    assert_that(cache.lookup(repo="upstream/tools", revision=SHA)).is_none()
+    assert_that(cache.ref_path(repo="upstream/tools", revision=SHA).exists()).is_false()
+
+
+def test_ref_resolved_hit_reapplies_pin_limits(tree: Path, tmp_path: Path) -> None:
+    """A warm ref hit is revalidated; a lock-verified digest keeps lock authority."""
+    cache = SourceCache(root=tmp_path / "cache")
+
+    def fetch(*, vendor: Vendor, dest: Path) -> None:
+        """Supply the local fixture as the pinned upstream archive."""
+        del vendor
+        shutil.copytree(tree, dest, symlinks=True)
+
+    digest = materialize(
+        cache=cache, vendor=_vendor(), dest=tmp_path / "a", fetcher=fetch
+    )
+    tight = Vendor(
+        id="upstream",
+        repo="upstream/tools",
+        sha=SHA,
+        skill_roots=("skills",),
+        license="",
+        homepage="",
+        ingest_limits=IngestLimits(archive_members=1, reason="test"),
+    )
+    with pytest.raises(ValueError, match="upstream"):
+        materialize(cache=cache, vendor=tight, dest=tmp_path / "b", fetcher=None)
+    locked = materialize(
+        cache=cache,
+        vendor=tight,
+        dest=tmp_path / "c",
+        fetcher=None,
+        expected=digest,
+    )
+    assert_that(locked).is_equal_to(digest)
+
+
+def test_extract_without_o_nofollow_support(
+    tree: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Platforms without ``O_NOFOLLOW`` still extract through exclusive creates."""
+    data = canonical_source_tar(root=tree, vendor="upstream")
+    monkeypatch.delattr(os, "O_NOFOLLOW")
+    extract_canonical(data=data, dest=tmp_path / "dest")
+    assert_that(_snapshot(tmp_path / "dest")).is_equal_to(_snapshot(tree))
 
 
 def test_unsafe_fetched_tree_is_never_cached(tmp_path: Path) -> None:

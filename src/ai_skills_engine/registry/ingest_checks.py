@@ -360,6 +360,7 @@ def scan_paths(
     for path, relative in paths:
         size = path.stat(follow_symlinks=False).st_size
         budget.observe(path=path, size=size)
+        # archiveMembers also bounds the files scanned per package or plugin.
         if len(budget.sizes) > limits.archive_members:
             fail_limit(
                 vendor=vendor,

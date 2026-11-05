@@ -201,4 +201,10 @@ def test_six_actual_first_party_invocation_restrictions() -> None:
             for item in restricted
         )
     ).is_true()
-    assert_that(result.capabilities).is_length(40)
+    # Contract, not a catalog census: every declared local capability is inventoried.
+    declared = sum(
+        len(package.get("capabilities", []))
+        for package in read_document(ROOT / "ai-skills.yaml")["packages"]
+    )
+    assert_that(declared).is_positive()
+    assert_that(result.capabilities).is_length(declared)

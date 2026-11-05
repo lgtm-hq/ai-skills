@@ -123,15 +123,16 @@ else
   echo "AGENTS.md not found. Skipping AGENTS consistency checks."
 fi
 
-if [[ -f "bundles.yaml" ]]; then
+# The marketplaces render from the artifact index of ai-skills.yaml (#575).
+if [[ -f "ai-skills.yaml" ]]; then
   if ! command -v uv >/dev/null 2>&1; then
-    echo "uv is required to validate bundles/marketplace; please install it."
+    echo "uv is required to validate the marketplaces; please install it."
     errors=$((errors + 1))
   elif ! uv run python scripts/generate_marketplace.py --check; then
     errors=$((errors + 1))
   fi
 else
-  echo "bundles.yaml not found. Skipping marketplace consistency checks."
+  echo "ai-skills.yaml not found. Skipping marketplace consistency checks."
 fi
 
 if [[ -f "README.md" && -f "scripts/generate_readme.py" ]]; then

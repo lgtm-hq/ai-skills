@@ -2,6 +2,27 @@
 
 from dataclasses import dataclass
 
+_RULES = frozenset({"preserve", "refuse", "unverified"})
+
+
+def valid_rule(rule: object) -> bool:
+    """Tell whether a projection rule is defined; ``drop`` never is.
+
+    Args:
+        rule: Declared rule value.
+
+    Returns:
+        True for ``preserve``, ``refuse``, ``unverified`` or a trimmed ``map:<x>``.
+    """
+    return isinstance(rule, str) and (
+        rule in _RULES
+        or (
+            rule.startswith("map:")
+            and bool(rule[4:].strip())
+            and rule[4:] == rule[4:].strip()
+        )
+    )
+
 
 @dataclass(frozen=True)
 class HostAttribute:
@@ -18,11 +39,7 @@ class HostAttribute:
         if len(names) != len(set(names)):
             raise ValueError("Duplicate host rule")
         for _, rule in self.hosts:
-            if rule not in {"preserve", "refuse", "unverified"} and not (
-                rule.startswith("map:")
-                and rule[4:].strip()
-                and rule[4:] == rule[4:].strip()
-            ):
+            if not valid_rule(rule):
                 raise ValueError(f"Invalid projection rule: {rule}; drop is forbidden")
 
     def rule_for(self, host: str, *, strict: bool = True) -> str:

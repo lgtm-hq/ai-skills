@@ -16,6 +16,7 @@ import yaml
 from assertpy import assert_that
 
 from ai_skills_engine.bake import vendor_plugins as baker
+from ai_skills_engine.registry import plugin_ingest
 from ai_skills_engine.registry.ingest_allow import IngestAllow
 from ai_skills_engine.registry.ingest_checks import (
     inspect_bytes,
@@ -213,6 +214,25 @@ def test_special_bits_reject_direct_and_full_bake(
     with pytest.raises(ValueError, match="special mode bits"):
         baker.bake(repo_root=root, vendor_trees={vendor.id: source})
     assert_that((root / "plugins-baked").exists()).is_false()
+
+
+def test_each_baked_plugin_is_scanned_once(
+    ingest_repo: tuple[Path, Path, Vendor], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Read-only link validation does not need a second identical content scan."""
+    root, source, vendor = ingest_repo
+    scanned: list[str] = []
+    original = plugin_ingest.scan_plugin
+
+    def counting(**kwargs: Any) -> object:
+        """Record each plugin scan, then run the real one."""
+        scanned.append(kwargs["plugin"].id)
+        return original(**kwargs)
+
+    monkeypatch.setattr("ai_skills_engine.registry.plugin_bake.scan_plugin", counting)
+    bake_vendor_plugins(vendor=vendor, vendor_root=source, output_root=root / "out")
+    assert_that(scanned).is_not_empty()
+    assert_that(len(scanned)).is_equal_to(len(set(scanned)))
 
 
 def test_no_vendor_execution_and_canonical_modes(

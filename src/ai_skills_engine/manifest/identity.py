@@ -28,6 +28,12 @@ _IDENTITY = re.compile(
 def matches(*, selector: str, identity: str) -> bool:
     """Match an exact qualified ID, package or validated trailing wildcard.
 
+    A trailing ``*`` is a raw string prefix: ``vendor/tools*`` also matches
+    ``vendor/tools-extra:skill/x``. A package selector matches its own
+    ``package:`` members only. The ``selector + "/"`` arm serves bare
+    publishers, which :func:`parse_id` rejects, so validated selectors never
+    reach it; it is kept rather than widening or narrowing the grammar.
+
     Args:
         selector: Schema-validated manifest selector.
         identity: Exact capability or resource identity.

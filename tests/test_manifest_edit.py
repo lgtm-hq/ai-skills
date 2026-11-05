@@ -3,6 +3,7 @@
 import json
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from assertpy import assert_that
@@ -204,7 +205,7 @@ def test_unicode_scalar_edits_retain_codepoints(quoted: str, replacement: str) -
     ],
 )
 def test_nested_flow_shape_changes_preserve_values_and_surrounding_bytes(
-    text: str, desired: object
+    text: str, desired: dict[str, Any]
 ) -> None:
     """Shape edits stay legal inside flow parents and retain untouched comments."""
     text = "# before\n" + text.rstrip("\n") + " # keep\nother: 'untouched'\n"
@@ -235,3 +236,63 @@ def test_matched_block_shape_change_control() -> None:
             data={"items": [{"id": "one", "name": "One"}]},
         )
     ).is_equal_to("items:\n  - id: one\n    name: One\n")
+
+
+@pytest.mark.parametrize(
+    ("text", "value"),
+    [
+        ("items: [{d: old}]\n", "a, b"),
+        ("{d: old}\n", "has } brace"),
+        ("{d: old}\n", "x[1]"),
+        ("{d: old}\n", "true"),
+        ("{d: 'old'}\n", "it's, quoted"),
+        ('{d: "old"}\n', 'q, "x"'),
+        ("{d: old}\n", "engineering, productivity, and more " * 4),
+    ],
+    ids=["comma", "brace", "bracket", "bool-like", "single", "double", "long"],
+)
+def test_flow_parent_scalar_edits_quote_flow_indicators(text: str, value: str) -> None:
+    """A string edited inside a flow collection stays one exact flow scalar."""
+    data = cast(dict[str, Any], load_unique_yaml_text(text=text))
+    target = data["items"][0] if "items" in data else data
+    target["d"] = value
+    patched = patch_document(text=text, data=data)
+    assert_that(load_unique_yaml_text(text=patched)).is_equal_to(data)
+    assert_that(patched.removeprefix("items: ")[0]).is_in("[", "{")
+    assert_that(patched.count("\n")).is_equal_to(1)
+
+
+def test_unchanged_flow_parent_plain_scalar_stays_plain() -> None:
+    """Flow-safe replacements keep the plain source style."""
+    patched = patch_document(text="{d: old, e: 1}\n", data={"d": "new", "e": 1})
+    assert_that(patched).is_equal_to("{d: new, e: 1}\n")
+
+
+@pytest.mark.parametrize("key", ["on", "yes", "1", "1.5", "null"])
+def test_non_string_mapping_keys_fail_closed(key: str) -> None:
+    """Keys YAML resolves to non-strings fail with a ValueError, not a KeyError."""
+    text = f"apiVersion: x\n{key}: true\nvendors: []\n"
+    data = cast(dict[str, Any], load_unique_yaml_text(text=text))
+    data["vendors"] = ["added"]
+    with pytest.raises(ValueError, match="non-string keys"):
+        patch_document(text=text, data=data)
+
+
+def test_merge_keys_are_rejected_as_invalid_yaml() -> None:
+    """Merge keys never reach the lossless editor."""
+    with pytest.raises(ValueError, match="invalid YAML|merge"):
+        patch_document(text="b: &b {x: 1}\nc:\n  <<: *b\n", data={"b": {"x": 2}})
+
+
+@pytest.mark.parametrize("character", ["\x7f", "\x80", "\x85", "\x9f", "￾"], ids=repr)
+@pytest.mark.parametrize("template", ["'old'", '"old"', "old"], ids=repr)
+def test_unprintable_characters_are_escaped_not_rejected(
+    template: str, character: str
+) -> None:
+    """DEL and C1 controls round-trip through every scalar quoting style."""
+    text = f"key: {template}\nnext: 1\n"
+    data = {"key": f"a{character}b", "next": 1}
+    patched = patch_document(text=text, data=data)
+    assert_that(load_unique_yaml_text(text=patched)).is_equal_to(data)
+    assert_that(patched).does_not_contain(character).ends_with("\nnext: 1\n")
+    assert_that(patch_document(text=patched, data=data)).is_equal_to(patched)
