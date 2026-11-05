@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,7 +11,7 @@ import {
   scanInstalledSkills,
 } from "../lib/adopt.ts";
 import { acquireStateLock } from "../lib/journal/journal.ts";
-import { stateRoot } from "../lib/journal/receipts.ts";
+import { readReceipt, stateRoot } from "../lib/journal/receipts.ts";
 import { parseArguments, validateUnattendedCommandOptions } from "../lib/options.ts";
 import { readState } from "./fixtures/state.ts";
 
@@ -540,25 +540,36 @@ describe("adoptSkills", () => {
   });
 
   test("skips ambiguous disk-only skills under -y and leaves the lock unchanged when nothing maps", async () => {
-    const result = await adoptSkills(
-      {
-        agents: [],
-        global: false,
-        project: true,
-        yes: true,
-      },
-      {
-        loadVendors: async () => ({ vendors }),
-        readSkillsLock: async () => ({ version: 1, skills: {} }),
-        scanInstalled: async () => ({ mystery: ["cursor"] }),
-        write: () => {},
-      },
-    );
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-adopt-unmapped-"));
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-adopt-unmapped-home-"));
+    try {
+      const result = await adoptSkills(
+        {
+          agents: [],
+          global: false,
+          project: true,
+          yes: true,
+        },
+        {
+          loadVendors: async () => ({ vendors }),
+          pathEnvironment: { cwd, home },
+          readSkillsLock: async () => ({ version: 1, skills: {} }),
+          scanInstalled: async () => ({ mystery: ["cursor"] }),
+          write: () => {},
+        },
+      );
 
-    expect(result.wrote).toBe(false);
-    expect(result.adopted).toEqual([]);
-    expect(result.ambiguous).toEqual([
-      "mystery: installed on disk but absent from skills-lock.json",
-    ]);
+      expect(result.wrote).toBe(false);
+      expect(result.adopted).toEqual([]);
+      expect(result.ambiguous).toEqual([
+        "mystery: installed on disk but absent from skills-lock.json",
+      ]);
+      // Nothing was committed: no receipt, no state written at all.
+      expect(await readReceipt("project", { cwd, home })).toBeNull();
+      await expect(readdir(join(home, ".ai-skills"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+      await rm(home, { force: true, recursive: true });
+    }
   });
 });

@@ -15,6 +15,7 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
@@ -1441,8 +1442,15 @@ const TORN_LOCK_MS = 30_000;
  */
 export async function acquireStateLock(
   path: string,
-  options: { waitMs?: number; onStale?: (holder: LockHolder | null) => void } = {},
+  options: {
+    waitMs?: number;
+    onStale?: (holder: LockHolder | null) => void;
+    /** Writes the holder record into the new lock file (failure tests). */
+    writeHolder?: (handle: FileHandle, text: string) => Promise<void>;
+  } = {},
 ): Promise<() => Promise<void>> {
+  const writeHolder =
+    options.writeHolder ?? ((handle: FileHandle, text: string) => handle.writeFile(text));
   const waitMs = options.waitMs ?? DEFAULT_LOCK_WAIT_MS;
   const started = Date.now();
   await mkdirDurable(dirname(path));
@@ -1456,12 +1464,19 @@ export async function acquireStateLock(
     try {
       const handle = await open(path, "wx", 0o644);
       try {
-        await handle.writeFile(`${JSON.stringify(holder)}\n`);
-        await handle.sync();
-      } finally {
-        await handle.close();
+        try {
+          await writeHolder(handle, `${JSON.stringify(holder)}\n`);
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+        await fsyncPath(dirname(path));
+      } catch (error) {
+        // A lock this call created but could not finish writing would read as
+        // torn and block every command for 30 s: take it back before failing.
+        await unlink(path).catch(() => undefined);
+        throw error;
       }
-      await fsyncPath(dirname(path));
       return () => releaseStateLock(path, holder.token);
     } catch (error) {
       if (!isCode(error, "EEXIST")) {

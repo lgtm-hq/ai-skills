@@ -134,6 +134,23 @@ describe("state lock", () => {
     });
   });
 
+  test("a holder record that cannot be written leaves no lock behind", async () => {
+    await withHome(async (_home, lock) => {
+      await expect(
+        acquireStateLock(lock, {
+          waitMs: 0,
+          writeHolder: async () => {
+            throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" });
+          },
+        }),
+      ).rejects.toThrow("ENOSPC");
+      await expect(readFile(lock, "utf8")).rejects.toThrow("ENOENT");
+      // The next command takes the lock at once instead of waiting on a torn file.
+      const release = await acquireStateLock(lock, { waitMs: 0 });
+      await release();
+    });
+  });
+
   test("stale recovery never removes a lock that changed since it was judged", async () => {
     await withHome(async (_home, lock) => {
       await mkdir(dirname(lock), { recursive: true });

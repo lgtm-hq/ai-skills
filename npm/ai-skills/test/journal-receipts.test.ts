@@ -224,8 +224,14 @@ describe("install receipts", () => {
       expect(await readFile(path, "utf8")).toBe(legacy);
       const state = await readInstallState("project", environment(world));
       expect(Object.keys(state.plugins).sort()).toEqual(["legacy-one", WORLD_PLUGIN]);
+      const fingerprints = (await readReceipt("project", environment(world)))!.fingerprints;
+      expect(Object.keys(fingerprints.adapters).length).toBeGreaterThan(0);
       await runWorldCommand(world, "remove");
       expect(await readFile(path, "utf8")).toBe(legacy);
+      // Removing plugins keeps the recorded adapter fingerprints.
+      expect((await readReceipt("project", environment(world)))!.fingerprints).toEqual(
+        fingerprints,
+      );
       expect(Object.keys((await readInstallState("project", environment(world))).plugins)).toEqual(
         [],
       );

@@ -293,7 +293,11 @@ export async function removeSkills(
           kind: "remove",
           next: {
             artifactDigest: session.receipt?.artifactDigest ?? null,
-            fingerprints: { adapters: {}, policy: session.receipt?.fingerprints.policy ?? null },
+            // Plugins that stay keep the adapters that delivered them.
+            fingerprints: {
+              adapters: { ...session.receipt?.fingerprints.adapters },
+              policy: session.receipt?.fingerprints.policy ?? null,
+            },
             plugins,
           },
           ops: [],
