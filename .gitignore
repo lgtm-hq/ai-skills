@@ -27,7 +27,11 @@ allure*/
 report.xml
 
 ### local skills-CLI install artifacts (consumer-side, not repo infrastructure)
-.agents/
+.agents/*
+!.agents/plugins/
+.agents/plugins/*
+# Generated Codex marketplace adapter (ai-skills-engine generate).
+!.agents/plugins/marketplace.json
 skills-lock.json
 
 # Byte-compiled / optimized / DLL files

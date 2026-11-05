@@ -154,10 +154,12 @@ document:
 - **Plugins:** assign each skill to a package in **`ai-skills.yaml`** (or
   to package `other` until it joins a named publication). Each package needs a
   kebab-case **`id`** (the installable plugin name). Regenerate
-  **`.claude-plugin/marketplace.json`** and
-  **`.cursor-plugin/marketplace.json`** with
-  `uv run python scripts/generate_marketplace.py`. Both files are generated
-  adapters (do not edit by hand).
+  **`.claude-plugin/marketplace.json`**, **`.cursor-plugin/marketplace.json`**
+  and the Codex **`.agents/plugins/marketplace.json`** with
+  `uv run ai-skills-engine generate` (or
+  `uv run python scripts/generate_marketplace.py`). All three are generated
+  from the artifact index (do not edit by hand); see
+  [ADR 0002](docs/adr/0002-neutral-metadata-generated-adapters.md).
 - **README plugin table:** the `## Plugins` table in `README.md` is generated
   from `bundles.yaml`. Release-tag / npm-version pins are generated from
   `pyproject.toml`. Regenerate with `uv run python scripts/generate_readme.py`.
@@ -188,7 +190,7 @@ with raw **ruff**, **black**, etc.
 The shared typed Python engine is installed editable from `src/ai_skills_engine/`
 by `uv sync`. Its author CLI is `uv run ai-skills-engine --help`; existing
 `uv run python scripts/<name>.py` commands remain compatibility entry points.
-For example, `uv run ai-skills-engine generate marketplace --check` runs the same
+For example, `uv run ai-skills-engine generate --check` runs the same
 implementation as `scripts/generate_marketplace.py --check`. Commands discover a
 repository by walking up from cwd for `pyproject.toml` and `skills/`, or accept
 `--repo-root PATH`. Relative file operands retain their cwd-relative meaning.

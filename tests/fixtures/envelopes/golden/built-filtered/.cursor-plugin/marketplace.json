@@ -1,0 +1,23 @@
+{
+  "name": "ai-skills",
+  "owner": {
+    "name": "fixture"
+  },
+  "metadata": {
+    "description": "Harness-agnostic agent skills generated from the artifact index.",
+    "version": "2.0.0",
+    "$generated": "do not edit — regenerate via ai-skills-engine generate"
+  },
+  "plugins": [
+    {
+      "name": "core",
+      "source": "./plugins/core",
+      "description": "Everyday workflow skills."
+    },
+    {
+      "name": "crew",
+      "source": "./plugins/crew",
+      "description": "Delegated review specialist."
+    }
+  ]
+}

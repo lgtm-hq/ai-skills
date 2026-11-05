@@ -22,6 +22,7 @@ from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from urllib.parse import urlparse
 
+from ai_skills_engine.envelopes import check_files
 from ai_skills_engine.frontmatter import read_frontmatter_name
 from ai_skills_engine.paths import resolve_repo_root
 from ai_skills_engine.registry.ingest_archive import (
@@ -42,7 +43,7 @@ from ai_skills_engine.registry.plugin_ingest import ingest_record
 from ai_skills_engine.registry.plugin_manifest import (
     GENERATED_NOTICE,
     bake_lock_vendors,
-    plugin_manifest_files,
+    plugin_manifest_bytes,
     render_bake_manifest,
     render_marketplace,
 )
@@ -1414,7 +1415,7 @@ def _assert_host_manifests(
     vendor: Vendor,
     version: str,
 ) -> None:
-    """Require all four host manifests to match the registry pin.
+    """Require all four host manifests to match the shared envelope generator.
 
     Args:
         plugin_dir: Baked plugin directory.
@@ -1425,19 +1426,10 @@ def _assert_host_manifests(
     Raises:
         ValueError: If a host manifest is missing or stale.
     """
-    expected = plugin_manifest_files(
-        plugin=plugin,
-        vendor=vendor,
-        version=version,
+    check_files(
+        destination=plugin_dir,
+        files=plugin_manifest_bytes(plugin=plugin, vendor=vendor, version=version),
     )
-    for relative, text in expected.items():
-        path = plugin_dir / relative
-        if not path.is_file() or path.is_symlink():
-            msg = f"Missing generated file: {path}"
-            raise ValueError(msg)
-        if path.read_text(encoding="utf-8") != text:
-            msg = f"Generated file is stale: {path}"
-            raise ValueError(msg)
 
 
 _PLUGIN_TOP_LEVEL = PLUGIN_ROOT_RESERVED_NAMES

@@ -65,7 +65,9 @@ def bake_vendor_plugins(
         if (output_root / plugin.id).exists(follow_symlinks=False):
             raise FileExistsError(f"plugin output already exists: {plugin.id}")
     with TemporaryDirectory(prefix="ai-skills-slice-") as temporary:
-        staged = Path(temporary)
+        # Envelope writes reject symlinks below their destination, so stage
+        # under the resolved temporary directory (macOS /var, a linked TMPDIR).
+        staged = Path(temporary).resolve()
         results = tuple(
             _bake_plugin(
                 vendor=vendor,
