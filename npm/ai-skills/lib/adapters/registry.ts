@@ -52,14 +52,34 @@ export function createRegistry(): AdapterRegistry {
       return adapters.get(id);
     },
     forHost(host, mode) {
-      const id = mode === "native" ? nativeRoute(host)?.adapter : "skill-explode";
-      const adapter = id ? adapters.get(id) : undefined;
-      return adapter?.hosts.includes(host) && adapter.mode === mode ? adapter : undefined;
+      // A host's native route names its adapter; otherwise use whichever
+      // registered adapter serves this host and mode.
+      const serves = (adapter: DestinationAdapter | undefined) =>
+        adapter !== undefined && adapter.mode === mode && adapter.hosts.includes(host);
+      const routed = mode === "native" ? adapters.get(nativeRoute(host)?.adapter ?? "") : undefined;
+      return serves(routed) ? routed : [...adapters.values()].find(serves);
     },
     list() {
       return [...adapters.values()];
     },
   };
+}
+
+/**
+ * The adapter `registry` uses to deliver `mode` to `host`.
+ *
+ * @throws {Error} When no registered adapter serves that host and mode.
+ */
+export function resolveAdapter(
+  registry: AdapterRegistry,
+  host: string,
+  mode: Mode,
+): DestinationAdapter {
+  const adapter = registry.forHost(host, mode);
+  if (!adapter) {
+    throw new Error(`No ${mode} adapter is registered for host ${host}`);
+  }
+  return adapter;
 }
 
 /**

@@ -55,6 +55,8 @@ export interface TreeEntry {
   relative: string;
   kind: "dir" | "file" | "symlink";
   target?: string;
+  /** Permission bits of a file (`mode & 0o777`), when the view reports them. */
+  mode?: number;
 }
 
 /**
@@ -84,7 +86,12 @@ export async function walkTree(fs: ReadOnlyFs, root: string, prefix = ""): Promi
       walked.push({ kind: "dir", relative });
       walked.push(...(await walkTree(fs, root, relative)));
     } else if (entry.isFile()) {
-      walked.push({ kind: "file", relative });
+      const { mode } = await fs.lstat(join(root, relative));
+      walked.push(
+        mode === undefined
+          ? { kind: "file", relative }
+          : { kind: "file", mode: mode & 0o777, relative },
+      );
     }
   }
   return walked;
@@ -130,7 +137,15 @@ export async function copyTreeOps(fs: ReadOnlyFs, source: string, dest: string):
       ops.push({ kind: "symlink", path, target: entry.target! });
     } else {
       const content = await fs.readFile(join(source, entry.relative));
-      ops.push({ kind: "write-file", path, content, hash: sha256(content) });
+      // Keep the source mode so executable skill scripts stay executable,
+      // as the engine's recursive copy does.
+      ops.push({
+        kind: "write-file",
+        path,
+        content,
+        hash: sha256(content),
+        ...(entry.mode === undefined ? {} : { mode: entry.mode }),
+      });
     }
   }
   return ops;

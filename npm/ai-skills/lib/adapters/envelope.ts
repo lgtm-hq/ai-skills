@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import { copyTreeOps, existsNoFollow, jsonBytes, ownedPathHash, sha256, walkTree } from "./fs.ts";
 import { FIRST_PARTY_MARKETPLACE } from "./shared/native-cli.ts";
+import { assertInsideRoot, assertSafeSkillName } from "./shared/skill-explode.ts";
 import type { KeptSet, Op, ReadOnlyFs } from "./types.ts";
 
 /**
@@ -39,7 +40,9 @@ export async function renderEnvelopeOps(
   kept: KeptSet,
   marketplace: string = ENVELOPE_MARKETPLACE,
 ): Promise<Op[]> {
+  assertSafeSkillName(kept.pluginId);
   const pluginDir = join(root, kept.pluginId);
+  assertInsideRoot(root, pluginDir);
   const content: Op[] = [
     { kind: "mkdir", path: join(root, ".claude-plugin") },
     writeJson(join(root, MARKETPLACE_FILE), {
@@ -55,7 +58,10 @@ export async function renderEnvelopeOps(
     }),
   ];
   for (const skill of kept.skills) {
-    content.push(...(await copyTreeOps(fs, skill.source, join(pluginDir, "skills", skill.name))));
+    assertSafeSkillName(skill.name);
+    const dest = join(pluginDir, "skills", skill.name);
+    assertInsideRoot(join(pluginDir, "skills"), dest);
+    content.push(...(await copyTreeOps(fs, skill.source, dest)));
   }
   const written = new Set(content.flatMap((op) => (op.kind === "write-file" ? [op.path] : [])));
   const removals: Op[] = [];

@@ -179,7 +179,11 @@ function formatOp(op: Op, show: (path: string) => string): string {
     case "mkdir":
       return `op\tmkdir\t${show(op.path)}`;
     case "write-file":
-      return `op\twrite-file\t${show(op.path)}\tsha256:${op.hash}`;
+      return [
+        `op\twrite-file\t${show(op.path)}\tsha256:${op.hash}`,
+        // Only the execute bit is shown so output does not depend on umask.
+        ...(op.mode !== undefined && op.mode & 0o111 ? ["executable"] : []),
+      ].join("\t");
     case "symlink":
       return `op\tsymlink\t${show(op.path)}\t-> ${show(op.target)}`;
     case "remove-owned":

@@ -87,6 +87,14 @@ bunx --package=@lgtm-hq/ai-skills@0.31.0 sk install -y --global \
   -a cursor --bundle review
 ```
 
+> [!NOTE]
+> The published package does not ship the first-party catalog. Until #386
+> ships installable artifacts, managed first-party installs such as the
+> examples above need an ai-skills checkout (run `sk` from the repository);
+> elsewhere they fail closed. Baked vendor plugins install anywhere. Add
+> `--unmanaged` to hand the install to the upstream skills CLI instead, which
+> writes no gateway lock.
+
 Unattended installs need an explicit scope and agent. `--bundle` and
 `--skill` take a plugin id from the table below (`git-pr`, `review`,
 `standards`, …) or a baked vendor plugin id (`document-skills`,

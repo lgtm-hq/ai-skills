@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  access,
+  chmod,
+  rename,
+  stat,
   mkdir,
   mkdtemp,
   readFile,
@@ -22,12 +26,25 @@ import type { AdapterPlan, Op } from "../lib/adapters/types.ts";
 import { memoryFs } from "./fixtures/memory-fs.ts";
 
 const text = (value: string) => new TextEncoder().encode(value);
-const write = (path: string, value: string): Op => ({
+const write = (path: string, value: string, mode?: number): Op => ({
   content: text(value),
   hash: sha256(value),
   kind: "write-file",
   path,
+  ...(mode === undefined ? {} : { mode }),
 });
+
+/** Permission bits of every regular file under `root`, keyed by relative path. */
+async function modes(root: string): Promise<Record<string, number>> {
+  const found: Record<string, number> = {};
+  for (const relative of (await readdir(root, { recursive: true })).map(String)) {
+    const info = await stat(join(root, relative)).catch(() => null);
+    if (info?.isFile()) {
+      found[relative] = info.mode & 0o777;
+    }
+  }
+  return found;
+}
 
 /** Every directory, file and symlink under `root`, with content or target. */
 async function snapshot(root: string, prefix = ""): Promise<Record<string, string>> {
@@ -158,6 +175,74 @@ describe("plan executor", () => {
         }),
       ).rejects.toThrow("ENOSPC");
       expect(await snapshot(root)).toEqual({ dest: "<dir>" });
+    });
+  });
+
+  test("keeps a backup and names it when restoring a removed path fails", async () => {
+    await withRoot(async (root) => {
+      const prepared = await seededPlan(root);
+      const transaction = await applyPlan(prepared, {
+        io: {
+          rename: (async (from: string, to: string) => {
+            // Restoring `dest/old` from its backup fails (EXDEV, EACCES, ...).
+            if (String(from).includes("old.bak.") && String(to).endsWith("dest/old")) {
+              throw Object.assign(new Error("EXDEV: cross-device link"), { code: "EXDEV" });
+            }
+            return rename(from, to);
+          }) as typeof rename,
+        },
+      });
+      let message = "";
+      try {
+        await transaction.rollback();
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      const backup = /kept at (\S+)$/m.exec(message)?.[1] ?? "";
+      expect(message).toContain(`could not restore ${join(root, "dest/old")} (EXDEV`);
+      expect(backup).toStartWith(join(root, "dest/old.bak."));
+      // The only copy of the removed content survives, and every other op was undone.
+      expect(await readFile(join(backup, "SKILL.md"), "utf8")).toBe("old\n");
+      expect(await readFile(join(root, "dest/keep.md"), "utf8")).toBe("before\n");
+      await expect(access(join(root, "store"))).rejects.toMatchObject({ code: "ENOENT" });
+    });
+  });
+
+  test("keeps the backup when a failed apply cannot restore a removed path", async () => {
+    await withRoot(async (root) => {
+      const prepared = await seededPlan(root);
+      await expect(
+        applyPlan(prepared, {
+          failBeforeOp: 2,
+          io: {
+            rename: (async (from: string, to: string) => {
+              if (String(from).includes("old.bak.")) {
+                throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+              }
+              return rename(from, to);
+            }) as typeof rename,
+          },
+        }),
+      ).rejects.toThrow("its previous content is kept at");
+      const kept = (await readdir(join(root, "dest"))).filter((name) =>
+        name.startsWith("old.bak."),
+      );
+      expect(kept).toHaveLength(1);
+      expect(await readFile(join(root, "dest", kept[0]!, "SKILL.md"), "utf8")).toBe("old\n");
+    });
+  });
+
+  test("applies a write-file mode and restores the previous mode on undo", async () => {
+    await withRoot(async (root) => {
+      await writeFile(join(root, "run.sh"), "old\n");
+      await chmod(join(root, "run.sh"), 0o600);
+      const transaction = await applyPlan(
+        plan(root, [write(join(root, "run.sh"), "#!/bin/sh\n", 0o755)]),
+      );
+      expect((await stat(join(root, "run.sh"))).mode & 0o777).toBe(0o755);
+      await transaction.rollback();
+      expect((await stat(join(root, "run.sh"))).mode & 0o777).toBe(0o600);
+      expect(await readFile(join(root, "run.sh"), "utf8")).toBe("old\n");
     });
   });
 
@@ -364,6 +449,8 @@ describe("tree adapter parity with the transactional engines", () => {
       await symlink("docs/guide.md", join(source, "lint/GUIDE.md"));
       await mkdir(join(source, "test"), { recursive: true });
       await writeFile(join(source, "test/SKILL.md"), "# test\n");
+      await writeFile(join(source, "lint/check.sh"), "#!/bin/sh\nexit 0\n");
+      await chmod(join(source, "lint/check.sh"), 0o755);
       for (const copy of [false, true]) {
         const viaPlan = join(root, `plan-${copy}`);
         const viaEngine = join(root, `engine-${copy}`);
@@ -393,6 +480,10 @@ describe("tree adapter parity with the transactional engines", () => {
           storeRoot: join(viaEngine, ".agents/skills"),
         });
         expect(filesOnly(await snapshot(viaPlan))).toEqual(filesOnly(await snapshot(viaEngine)));
+        // Executable skill scripts keep their mode, exactly as the engine copy does.
+        expect(await modes(viaPlan)).toEqual(await modes(viaEngine));
+        const script = copy ? ".codex/skills/lint/check.sh" : ".agents/skills/lint/check.sh";
+        expect((await modes(viaPlan))[script]).toBe(0o755);
       }
     });
   });

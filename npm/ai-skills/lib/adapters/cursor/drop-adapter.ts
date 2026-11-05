@@ -12,7 +12,12 @@ import type {
   SupportReport,
   SupportRequest,
 } from "../types.ts";
-import { assertSafePluginId, PLUGIN_MANIFEST } from "./drop.ts";
+import {
+  assertInsideRoot,
+  assertSafePluginId,
+  assertSafeSkillName,
+  PLUGIN_MANIFEST,
+} from "./drop.ts";
 import { CURSOR_HOST } from "./host.ts";
 
 const DROP_HOSTS = [CURSOR_HOST.id];
@@ -76,9 +81,12 @@ export const cursorDropAdapter: DestinationAdapter = {
     }
     const content: Op[] = [{ kind: "mkdir", path: pluginDir }];
     for (const skill of input.kept.skills) {
-      content.push(
-        ...(await copyTreeOps(input.fs, skill.source, join(pluginDir, "skills", skill.name))),
-      );
+      // Same checks the engine applies before copying, so a plan never composes
+      // a path outside the plugin's skills directory.
+      assertSafeSkillName(skill.name);
+      const dest = join(pluginDir, "skills", skill.name);
+      assertInsideRoot(join(pluginDir, "skills"), dest);
+      content.push(...(await copyTreeOps(input.fs, skill.source, dest)));
     }
     const manifest = jsonBytes({
       description: input.kept.description,

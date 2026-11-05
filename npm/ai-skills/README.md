@@ -23,15 +23,17 @@ names a host or branches on one.
 
 The legacy golden fixture was captured from commit
 `fb3468e613584c2a7ec2aa337ffcda70a196ef63` before conversion, using the scenario in
-`scripts/golden-scenario.ts`. It was re-captured once, deliberately, for #579:
-managed installs now explode a local catalog, and the skills CLI runs only for the
-explicit `--unmanaged` handoff, which writes no lock. It exercises the original
-command dispatch against fixture homes with injected upstream execution and a
-fixed clock. It compares
-stdout, stderr, status, invocation arguments, lock JSON bytes, and written file
-bytes. Only the temporary home and catalog prefixes are normalized. The test runs the scenario
-against both source and emitted modules in separate processes. The fixture must
-not be regenerated from migrated code to make a failed comparison pass.
+`scripts/golden-scenario.ts`, and re-captured exactly once, by #579. That change
+removed the behavior the original capture recorded: managed installs no longer
+hand off to the skills CLI, so the scenario now explodes a local fixture catalog
+and adds an explicit `--unmanaged` step, which runs the CLI and writes no lock.
+The scenario exercises command dispatch against fixture homes with injected
+upstream execution and a fixed clock. It compares stdout, stderr, status,
+invocation arguments, lock JSON bytes, and written file bytes. Only the temporary
+home and catalog prefixes are normalized. The test runs the scenario against both
+source and emitted modules in separate processes. Outside a deliberate,
+documented behavior change like #579, never regenerate the fixture to make a
+failed comparison pass.
 `test/fixtures/legacy-catalog/{bundles,vendors}.json` preserves the catalog inputs
 from that same commit. The scenario uses the real catalog reader with those
 paths, independent of current bundle membership, vendor pins, and bake output.

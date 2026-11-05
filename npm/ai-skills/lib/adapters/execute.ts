@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { existsNoFollow, isAbsent, nodeReadOnlyFs, ownedPathHash, sha256 } from "./fs.ts";
@@ -9,6 +9,7 @@ import type { AdapterPlan, Op, ReadOnlyFs, VerifyResult } from "./types.ts";
 
 /** Filesystem writes the executor performs; injectable for failure tests. */
 export interface ExecuteIo {
+  chmod: typeof chmod;
   mkdir: typeof mkdir;
   writeFile: typeof writeFile;
   rename: typeof rename;
@@ -70,6 +71,7 @@ export async function applyPlan(
 ): Promise<Transaction> {
   const fs = options.fs ?? nodeReadOnlyFs;
   const io: ExecuteIo = {
+    chmod,
     mkdir,
     rename,
     rm,
@@ -122,10 +124,11 @@ export async function applyPlan(
       }
     },
     async rollback() {
+      // A successful restore consumes its backup by renaming it back. A backup
+      // still listed here belongs to a failed restore: it is the only copy of
+      // the user's content, so it is kept and named in the error.
       const failures = await rollback();
-      for (const backup of backups.splice(0)) {
-        await io.rm(backup, { force: true, recursive: true });
-      }
+      backups.length = 0;
       if (failures.length > 0) {
         throw new Error(failures.join("; "));
       }
@@ -204,6 +207,9 @@ async function applyOp(
       const staging = `${op.path}.tmp.${randomUUID()}`;
       try {
         await io.writeFile(staging, op.content);
+        if (op.mode !== undefined) {
+          await io.chmod(staging, op.mode);
+        }
         await io.rename(staging, op.path);
       } catch (error) {
         // A failed write (ENOSPC, EIO) or rename must not leave the staging file.
@@ -214,7 +220,10 @@ async function applyOp(
         if (previous === null) {
           await io.rm(op.path, { force: true });
         } else {
-          await io.writeFile(op.path, previous);
+          await io.writeFile(op.path, previous.content);
+          if (previous.mode !== undefined) {
+            await io.chmod(op.path, previous.mode);
+          }
         }
       });
       return;
@@ -245,8 +254,16 @@ async function applyOp(
       await io.rename(op.path, backup);
       context.backups.push(backup);
       undo.push(async () => {
-        await io.rm(op.path, { force: true, recursive: true });
-        await io.rename(backup, op.path);
+        try {
+          await io.rm(op.path, { force: true, recursive: true });
+          await io.rename(backup, op.path);
+        } catch (error) {
+          // Keep the backup: it is now the only copy of the removed content.
+          const detail = error instanceof Error ? error.message : String(error);
+          throw new Error(
+            `could not restore ${op.path} (${detail}); its previous content is kept at ${backup}`,
+          );
+        }
         const at = context.backups.indexOf(backup);
         if (at >= 0) {
           context.backups.splice(at, 1);
@@ -297,11 +314,14 @@ async function makeDirectory(
 }
 
 /**
- * Previous bytes of a regular file, or null when absent.
+ * Previous bytes and permission bits of a regular file, or null when absent.
  *
  * @throws {Error} When the path is a directory or symlink (plans must remove those first).
  */
-async function snapshotFile(path: string, fs: ReadOnlyFs): Promise<Uint8Array | null> {
+async function snapshotFile(
+  path: string,
+  fs: ReadOnlyFs,
+): Promise<{ content: Uint8Array; mode?: number } | null> {
   let info;
   try {
     info = await fs.lstat(path);
@@ -314,7 +334,8 @@ async function snapshotFile(path: string, fs: ReadOnlyFs): Promise<Uint8Array | 
   if (!info.isFile()) {
     throw new Error(`Refusing to overwrite a non-file with write-file: ${path}`);
   }
-  return fs.readFile(path);
+  const content = await fs.readFile(path);
+  return info.mode === undefined ? { content } : { content, mode: info.mode & 0o777 };
 }
 
 /**

@@ -1,7 +1,7 @@
 import { claudeCliAdapter } from "./claude-code/cli.ts";
 import { copilotCliAdapter } from "./copilot/cli.ts";
 import { cursorDropAdapter } from "./cursor/drop-adapter.ts";
-import { assertPlanConforms, createRegistry } from "./registry.ts";
+import { assertPlanConforms, createRegistry, resolveAdapter } from "./registry.ts";
 import { skillExplodeAdapter } from "./shared/skill-explode-adapter.ts";
 import type { AdapterPlan, DestinationAdapter, Mode } from "./types.ts";
 
@@ -25,11 +25,7 @@ for (const adapter of [
  * @throws {Error} When no adapter serves that host and mode.
  */
 export function adapterFor(host: string, mode: Mode): DestinationAdapter {
-  const adapter = ADAPTERS.forHost(host, mode);
-  if (!adapter) {
-    throw new Error(`No ${mode} adapter is registered for host ${host}`);
-  }
-  return adapter;
+  return resolveAdapter(ADAPTERS, host, mode);
 }
 
 /**

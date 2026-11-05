@@ -6,6 +6,7 @@ import {
   BUILTIN_ADAPTER_IDS,
   assertPlanConforms,
   createRegistry,
+  resolveAdapter,
 } from "../lib/adapters/registry.ts";
 import type { RegistrationRule } from "../lib/adapters/registry.ts";
 import type { AdapterPlan, DestinationAdapter, Op } from "../lib/adapters/types.ts";
@@ -117,6 +118,29 @@ describe("adapter registration", () => {
     expect(adapterFor("copilot", "native").id).toBe("copilot-cli");
     expect(adapterFor("codex", "explode").id).toBe("skill-explode");
     expect(() => adapterFor("codex", "native")).toThrow("No native adapter");
+  });
+});
+
+describe("adapter lookup", () => {
+  test("resolves explode adapters from what is registered, not a fixed id", () => {
+    const registry = createRegistry();
+    registry.register(adapter({ hosts: ["cursor"], id: "cursor-drop", mode: "native" }));
+    expect(registry.forHost("codex", "explode")).toBeUndefined();
+    expect(() => resolveAdapter(registry, "codex", "explode")).toThrow(
+      "No explode adapter is registered for host codex",
+    );
+    const custom = adapter({ hosts: ["codex"], id: "codex-copy" });
+    registry.register(custom);
+    expect(resolveAdapter(registry, "codex", "explode")).toBe(custom);
+    expect(registry.forHost("codex", "native")).toBeUndefined();
+  });
+
+  test("prefers the adapter a host's native route names", () => {
+    const registry = createRegistry();
+    registry.register(adapter({ hosts: ["cursor"], id: "skill-explode" }));
+    const drop = adapter({ hosts: ["cursor"], id: "cursor-drop", mode: "native" });
+    registry.register(drop);
+    expect(resolveAdapter(registry, "cursor", "native")).toBe(drop);
   });
 });
 

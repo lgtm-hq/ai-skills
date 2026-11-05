@@ -117,7 +117,7 @@ export function assertSafePluginId(pluginId: string): void {
  *
  * @throws {Error} When the name is not kebab-case.
  */
-function assertSafeSkillName(name: string): void {
+export function assertSafeSkillName(name: string): void {
   if (!isSafePluginId(name)) {
     throw new Error(`Refusing skill name ${JSON.stringify(name)}: must be kebab-case`);
   }
@@ -294,7 +294,7 @@ function cursorPluginPaths(
 /**
  * @throws {Error} When `candidate` escapes `root`.
  */
-function assertInsideRoot(root: string, candidate: string): void {
+export function assertInsideRoot(root: string, candidate: string): void {
   const resolvedRoot = resolve(root);
   const resolvedCandidate = resolve(candidate);
   const prefix = resolvedRoot.endsWith(sep) ? resolvedRoot : `${resolvedRoot}${sep}`;

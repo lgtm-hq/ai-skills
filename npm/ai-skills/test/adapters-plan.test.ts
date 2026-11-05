@@ -257,6 +257,33 @@ describe("plan() purity", () => {
   });
 });
 
+describe("skill names at plan time", () => {
+  const traversal = (host: string) =>
+    input(host, {
+      kept: {
+        description: "Review",
+        pluginId: "review",
+        skills: [{ name: "../escape", source: `${CATALOG}/lint` }],
+        version: "1.2.3",
+      },
+      mode: host === "codex" ? "explode" : "native",
+    });
+
+  test.each([
+    [cursorDropAdapter, "cursor"],
+    [claudeCliAdapter, "claude-code"],
+    [copilotCliAdapter, "copilot"],
+    [skillExplodeAdapter, "codex"],
+  ] as const)(
+    "%#: rejects a traversal-style skill name before composing paths",
+    async (adapter, host) => {
+      await expect(adapter.plan(traversal(host))).rejects.toThrow(
+        'Refusing skill name "../escape": must be kebab-case',
+      );
+    },
+  );
+});
+
 describe("envelope marketplace index", () => {
   const envelope = `${HOME}/.ai-skills/native/claude-code`;
   const index = `${envelope}/.claude-plugin/marketplace.json`;

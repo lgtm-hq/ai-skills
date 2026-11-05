@@ -64,6 +64,8 @@ export interface WriteFileOp {
   content: Uint8Array;
   /** sha256 of `content`, hex. */
   hash: string;
+  /** Permission bits to apply after the write (copied from the source). */
+  mode?: number;
 }
 
 /** Create a symlink inside a declared root. */
@@ -174,6 +176,8 @@ export interface FsStat {
   isFile(): boolean;
   isDirectory(): boolean;
   isSymbolicLink(): boolean;
+  /** Present on real stats; read-only test views may omit it. */
+  mode?: number;
 }
 
 /** Subset of `fs.Dirent` adapters read. */
