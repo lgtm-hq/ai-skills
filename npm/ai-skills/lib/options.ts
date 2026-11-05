@@ -9,6 +9,17 @@ import { AGENT_SKILL_PATHS, PROJECTOR_EXPLODE, PROJECTOR_NATIVE } from "./lockfi
 export const MINIMUM_SKILLS_VERSION = "1.5.0";
 
 /**
+ * Artifact-consumption options evaluated only by the bundled Python engine.
+ *
+ * The launcher checks arity and command placement, then forwards them
+ * verbatim; verification, filtering, denies and the profile live in
+ * `src/ai_skills_engine/install/` (ADR 0008).
+ */
+const ENGINE_VALUE_OPTIONS = new Set(["--exclude", "--deny-origin", "--digest", "--artifacts"]);
+const ENGINE_FLAG_OPTIONS = new Set(["--frozen", "--dry-run", "--json"]);
+const ENGINE_INSTALL_ONLY = new Set(["--exclude", "--deny-origin"]);
+
+/**
  * Parse wrapper command-line arguments.
  *
  * @throws {Error} When an option is malformed or unsupported.
@@ -16,6 +27,7 @@ export const MINIMUM_SKILLS_VERSION = "1.5.0";
 export function parseArguments(argv: string[]): {
   command: string;
   options: {
+    engine: string[];
     agents: string[];
     bundle: string | null;
     copy: boolean;
@@ -37,6 +49,7 @@ export function parseArguments(argv: string[]): {
     agents: [],
     bundle: null,
     copy: false,
+    engine: [],
     global: false,
     migrate: null,
     project: false,
@@ -48,6 +61,8 @@ export function parseArguments(argv: string[]): {
     vendor: null,
   };
 
+  // Engine option names only; `options.engine` also holds their values.
+  const engineNames: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     const value = args[index + 1];
@@ -89,6 +104,16 @@ export function parseArguments(argv: string[]): {
       }
       options.onConflict = value!;
       index += 1;
+    } else if (ENGINE_VALUE_OPTIONS.has(argument!)) {
+      if (value === undefined || value === "") {
+        throw new Error(`${argument} requires a value`);
+      }
+      options.engine.push(argument!, value);
+      engineNames.push(argument!);
+      index += 1;
+    } else if (ENGINE_FLAG_OPTIONS.has(argument!)) {
+      options.engine.push(argument!);
+      engineNames.push(argument!);
     } else if (argument === "--repair") {
       options.repair = true;
     } else if (argument === "--migrate") {
@@ -111,6 +136,15 @@ export function parseArguments(argv: string[]): {
   }
   if (options.vendor && options.bundle) {
     throw new Error("Choose only one source: --vendor or --bundle");
+  }
+  // Judge placement on option names, never on values that look like options.
+  const engineOption = engineNames[0];
+  if (engineOption && command !== "install" && command !== "update") {
+    throw new Error(`${engineOption} applies only to install and update`);
+  }
+  const installOnly = engineNames.find((name) => ENGINE_INSTALL_ONLY.has(name));
+  if (installOnly && command !== "install") {
+    throw new Error(`${installOnly} applies only to install; update replays the profile`);
   }
   if (command === "vendors" && args.length > 0) {
     throw new Error("vendors does not accept options");

@@ -1,4 +1,4 @@
-"""Author CLI for the common Python engine; install commands arrive separately."""
+"""Author and install-plane CLI for the common Python engine."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from ai_skills_engine.commands import init as init_command
 from ai_skills_engine.commands import lock as lock_command
 from ai_skills_engine.commands import validate as validate_command
 from ai_skills_engine.generate import agents_md, marketplace, readme, skills_manifest
+from ai_skills_engine.install import cli as install_cli
 from ai_skills_engine.inventory import cli as inventory_cli
 from ai_skills_engine.manifest import cli as manifest_cli
 from ai_skills_engine.selection import cli as selection_cli
@@ -71,6 +72,8 @@ def main(argv: list[str] | None = None) -> int:
         "init": init_command.main,
         "validate": validate_command.main,
         "add": add_command.main,
+        "install": install_cli.install_main,
+        "update": install_cli.update_main,
     }
     for name, handler in routes.items():
         commands.add_parser(name, add_help=False).set_defaults(handler=handler)

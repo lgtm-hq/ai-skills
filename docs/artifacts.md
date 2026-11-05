@@ -213,6 +213,63 @@ catalog index built from the adjacent synthetic `source/` publication. Its cycle
 shared copies, invocation restriction, structural rewrites and source portability
 losses are inputs for downstream verification/filtering tests in #578.
 
+## Consuming artifacts
+
+`ai-skills-engine install` and `update` (`src/ai_skills_engine/install/`) consume
+an artifact directory (`--artifacts DIR` or `$AI_SKILLS_ARTIFACTS`). They never
+resolve: they read only the indexes, the tars, an optional repository lock and
+the consumer profile. The install package imports nothing from inventory,
+selection, the source cache or the artifact writer.
+
+```sh
+sk install --exclude capability:lgtm-hq/other:skill/jira \
+  --deny-origin github.com/example/vendor-x -a codex -y --global
+sk install --frozen   # refuse any digest that differs from the recorded pin
+sk update             # replay the profile against the new artifact
+```
+
+- **Verify.** Each selected `publisher--package.tar` is hashed (SHA-256 of the
+  uncompressed tar) and compared with its pin. The pin comes from the profile,
+  then `<repo>/ai-skills.lock` `artifactDigest`, then `--digest
+[PACKAGE=]sha256:HEX`, then the published `.sha256` sidecar (first install).
+  A `--digest` that contradicts the winning pin is an error. `update` skips the
+  profile pin because it exists to move pins. `--frozen` accepts only profile or
+  lock pins, refuses new selectors and never writes. The catalog and each
+  tar's own `index.json` are validated against the packaged schemas. An unknown
+  `artifactFormat` gets its own diagnostic; unknown fields fail the schema.
+  Filtering reads only the verified tars' embedded indexes.
+- **Subtract.** `kept = inventory - excluded packages - excluded capabilities -
+denied origins`, using qualified IDs only. Resources are kept as dependencies
+  of kept capabilities, as the builder selects them. `--skill`, `--bundle` and
+  `--vendor` select package artifacts (a short plugin ID must name exactly one
+  package; a vendor selects every package it publishes).
+- **Closure.** A kept capability whose precomputed closure, including its own
+  `_shared/` copies, meets the removed set fails. The message walks embedded
+  `requires` edges for the chain and lists the extra `--exclude` values that
+  make the selection valid.
+- **Deny.** An origin (exact, or a prefix ending in `*`) matches any hop of any
+  lineage chain of a capability or resource copy, at any depth. Rules carry
+  their source, so org policy (#582) only adds inputs.
+- **Fail closed.** Missing lineage, a closure ID absent from the merged
+  inventory, artifacts that disagree about one ID, or a catalog that disagrees
+  with a verified tar stop the command before any write.
+
+The profile `~/.config/ai-skills/selection.yaml` (or an absolute
+`$XDG_CONFIG_HOME/ai-skills/`) holds `apiVersion: ai-skills.dev/selection/v1`,
+`artifacts` (one pin per package), `exclude` (`{capability: ID}` or
+`{package: ID}`), `deny` (`{origin: LOCATOR}`) and `modes: {}`, which stays
+reserved for #581. Reading is strict, and writes go to a temporary file that is
+renamed into place. An exclude, persisted or new, that matches nothing in the
+catalog fails with its name, and so does a recorded package missing from it.
+Projection into agent directories belongs to the destination adapters (#579).
+For now the commands report the verified packages and the kept set. The npm
+launcher forwards these options to the bundled engine unchanged. Without a
+bundled engine it refuses them and never falls back to TypeScript.
+`tests/fixtures/install/expected-kept.json` records the builder's kept sets for
+the golden artifact. pytest checks the builder and the install entry point
+against it, and `bun test` checks that the launcher reproduces the engine's
+output and exit status.
+
 ## Host envelopes
 
 `ai-skills-engine generate` derives every host plugin envelope and marketplace

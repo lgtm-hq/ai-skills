@@ -1,0 +1,52 @@
+{
+  "artifact": "tests/fixtures/artifacts/golden",
+  "cases": [
+    {
+      "name": "everything",
+      "exclude": [],
+      "deny": [],
+      "builder": { "exclude": [], "deny": [] },
+      "kept": {
+        "capabilities": ["fixture/tools:skill/peer", "fixture/tools:skill/start"],
+        "resources": ["fixture/tools:resource/shared"]
+      }
+    },
+    {
+      "name": "exclude-whole-cycle",
+      "exclude": [
+        "capability:fixture/tools:skill/peer",
+        "capability:fixture/tools:skill/start"
+      ],
+      "deny": [],
+      "builder": {
+        "exclude": ["fixture/tools:skill/peer", "fixture/tools:skill/start"],
+        "deny": []
+      },
+      "kept": { "capabilities": [], "resources": [] }
+    },
+    {
+      "name": "exclude-package",
+      "exclude": ["package:fixture/tools"],
+      "deny": [],
+      "builder": { "exclude": ["fixture/tools"], "deny": [] },
+      "kept": { "capabilities": [], "resources": [] }
+    },
+    {
+      "name": "deny-origin",
+      "exclude": [],
+      "deny": ["github.com/fixture/artifacts"],
+      "builder": { "exclude": [], "deny": ["github.com/fixture/artifacts"] },
+      "kept": { "capabilities": [], "resources": [] }
+    },
+    {
+      "name": "exclude-required",
+      "exclude": ["capability:fixture/tools:skill/peer"],
+      "deny": [],
+      "builder": { "exclude": ["fixture/tools:skill/peer"], "deny": [] },
+      "error": {
+        "chain": "fixture/tools:skill/start -> fixture/tools:skill/peer",
+        "suggest": ["capability:fixture/tools:skill/start"]
+      }
+    }
+  ]
+}
