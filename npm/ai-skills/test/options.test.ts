@@ -249,6 +249,28 @@ describe("engine-owned artifact options", () => {
     );
   });
 
+  test("judges placement on option names, not values that look like options", () => {
+    // Values are forwarded verbatim; the engine validates them.
+    expect(parseArguments(["update", "--digest", "--exclude"]).options.engine).toEqual([
+      "--digest",
+      "--exclude",
+    ]);
+    expect(
+      parseArguments(["update", "--artifacts", "--deny-origin", "--json"]).options.engine,
+    ).toEqual(["--artifacts", "--deny-origin", "--json"]);
+    expect(parseArguments(["install", "--exclude", "--frozen"]).options.engine).toEqual([
+      "--exclude",
+      "--frozen",
+    ]);
+    // A real install-only name is still caught after such a value.
+    expect(() =>
+      parseArguments(["update", "--digest", "--exclude", "--exclude", "package:a/b"]),
+    ).toThrow("--exclude applies only to install; update replays the profile");
+    expect(() => parseArguments(["list", "--json"])).toThrow(
+      "--json applies only to install and update",
+    );
+  });
+
   test("rejects missing values and other commands", () => {
     expect(() => parseArguments(["install", "--deny-origin"])).toThrow(
       "--deny-origin requires a value",

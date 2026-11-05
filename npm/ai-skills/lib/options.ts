@@ -61,6 +61,8 @@ export function parseArguments(argv: string[]): {
     vendor: null,
   };
 
+  // Engine option names only; `options.engine` also holds their values.
+  const engineNames: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     const value = args[index + 1];
@@ -107,9 +109,11 @@ export function parseArguments(argv: string[]): {
         throw new Error(`${argument} requires a value`);
       }
       options.engine.push(argument!, value);
+      engineNames.push(argument!);
       index += 1;
     } else if (ENGINE_FLAG_OPTIONS.has(argument!)) {
       options.engine.push(argument!);
+      engineNames.push(argument!);
     } else if (argument === "--repair") {
       options.repair = true;
     } else if (argument === "--migrate") {
@@ -133,13 +137,12 @@ export function parseArguments(argv: string[]): {
   if (options.vendor && options.bundle) {
     throw new Error("Choose only one source: --vendor or --bundle");
   }
-  const engineOption = options.engine.find(
-    (item) => ENGINE_VALUE_OPTIONS.has(item) || ENGINE_FLAG_OPTIONS.has(item),
-  );
+  // Judge placement on option names, never on values that look like options.
+  const engineOption = engineNames[0];
   if (engineOption && command !== "install" && command !== "update") {
     throw new Error(`${engineOption} applies only to install and update`);
   }
-  const installOnly = options.engine.find((item) => ENGINE_INSTALL_ONLY.has(item));
+  const installOnly = engineNames.find((name) => ENGINE_INSTALL_ONLY.has(name));
   if (installOnly && command !== "install") {
     throw new Error(`${installOnly} applies only to install; update replays the profile`);
   }

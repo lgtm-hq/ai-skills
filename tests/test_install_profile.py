@@ -159,6 +159,7 @@ def test_update_without_profile_and_dry_run(
 ) -> None:
     """``update`` needs an install first; ``--dry-run`` never writes."""
     status, _, err = run(capsys, "update", "--artifacts", str(golden))
+    assert_that(status).is_equal_to(1)
     assert_that(err).contains("profile records no artifacts")
     status, report, _ = run(capsys, "install", "--artifacts", str(golden), "--dry-run")
     assert_that(status).is_zero()
