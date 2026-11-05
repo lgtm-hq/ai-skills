@@ -478,26 +478,29 @@ describe("gateway maintenance commands", () => {
     let written;
     const denied = Object.assign(new Error("EACCES"), { code: "EACCES" });
     const catalog = await mkdtemp(join(tmpdir(), "ai-skills-hash-fail-"));
-    await mkdir(join(catalog, "pdf"), { recursive: true });
-    await writeFile(join(catalog, "pdf/SKILL.md"), "# pdf\n");
-    await expect(
-      updateSkills(options, {
-        hash: async () => {
-          throw denied;
-        },
-        isInstalled: async () => true,
-        readLock: async () => ({
-          ...lock,
-          plugins: { pdf: lock.plugins.pdf },
+    try {
+      await mkdir(join(catalog, "pdf"), { recursive: true });
+      await writeFile(join(catalog, "pdf/SKILL.md"), "# pdf\n");
+      await expect(
+        updateSkills(options, {
+          hash: async () => {
+            throw denied;
+          },
+          isInstalled: async () => true,
+          readLock: async () => ({
+            ...lock,
+            plugins: { pdf: lock.plugins.pdf },
+          }),
+          sourceSkills: { pdf: join(catalog, "pdf") },
+          writeLock: async (next) => {
+            written = next;
+          },
         }),
-        sourceSkills: { pdf: join(catalog, "pdf") },
-        writeLock: async (next) => {
-          written = next;
-        },
-      }),
-    ).rejects.toThrow("EACCES");
-    await rm(catalog, { force: true, recursive: true });
-    expect(written).toBeUndefined();
+      ).rejects.toThrow("EACCES");
+      expect(written).toBeUndefined();
+    } finally {
+      await rm(catalog, { force: true, recursive: true });
+    }
   });
 
   test("refuses to delete lock paths that escape the agent root", async () => {

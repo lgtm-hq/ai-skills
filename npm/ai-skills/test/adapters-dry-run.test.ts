@@ -3,13 +3,18 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import * as childProcess from "node:child_process";
+
 import type { AdapterPlan } from "../lib/adapters/types.ts";
+import { UNMANAGED_HANDOFF_LABEL } from "../lib/skills-runner.ts";
+import bundleCatalog from "../data/bundles.json" with { type: "json" };
 import { isAdapterDryRun, runCli } from "../lib/cli.ts";
 import { formatPlans } from "../lib/install-plan.ts";
 import { dryRunInstall, install } from "../lib/install.ts";
 import { PACKAGE_ROOT } from "../lib/paths.ts";
 
 const SNAPSHOT = join(PACKAGE_ROOT, "test/fixtures/install-dry-run.txt");
+const reviewSkills = bundleCatalog.groups.review.skills;
 
 async function listTree(root: string): Promise<string[]> {
   return (await readdir(root, { recursive: true })).map(String).sort();
@@ -84,6 +89,97 @@ describe("install --dry-run", () => {
         yes: false,
       }),
     ).rejects.toThrow("needs at least one -a/--agent");
+  });
+
+  test("--unmanaged --dry-run prints the handoff and never runs the skills CLI", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-dry-unmanaged-"));
+    const executed: string[][] = [];
+    const run = async (args: string[]) => {
+      executed.splice(executed.length, 0, args);
+    };
+    const unmanaged = {
+      agents: ["codex"],
+      bundle: null,
+      copy: false,
+      global: false,
+      onConflict: null,
+      project: true,
+      skills: ["lint"],
+      unmanaged: true,
+      vendor: null,
+      yes: true,
+    };
+    try {
+      const composed: Array<string[] | undefined> = [];
+      await install(
+        unmanaged,
+        run,
+        undefined,
+        { cwd, home: cwd },
+        {
+          dryRun: (_plans, handoff) => composed.splice(composed.length, 0, handoff),
+        },
+      );
+      expect(executed).toEqual([]);
+      expect(composed).toEqual([
+        [
+          "skills@^1.5.0",
+          "add",
+          "lgtm-hq/ai-skills@v0.0.0-dev",
+          "-a",
+          "codex",
+          "--skill",
+          "lint",
+          "-y",
+        ],
+      ]);
+
+      // Without a dry run the explicit handoff still executes.
+      const warnings: string[] = [];
+      await install(
+        unmanaged,
+        run,
+        undefined,
+        { cwd, home: cwd },
+        {
+          warn: (message) => warnings.splice(warnings.length, 0, message),
+        },
+      );
+      expect(executed).toEqual(composed as string[][]);
+      expect(warnings).toEqual([UNMANAGED_HANDOFF_LABEL]);
+      expect(await listTree(cwd)).toEqual([]);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("runCli install --dry-run --unmanaged prints the command without running it", async () => {
+    const lines: string[] = [];
+    const log = spyOn(console, "log").mockImplementation((line: string) => {
+      lines.splice(lines.length, 0, line);
+    });
+    const spawn = spyOn(childProcess, "spawn").mockImplementation((() => {
+      throw new Error("a dry run must not spawn the skills CLI");
+    }) as never);
+    try {
+      await runCli([
+        "install",
+        "--dry-run",
+        "--unmanaged",
+        "-y",
+        "--project",
+        "--bundle",
+        "review",
+      ]);
+    } finally {
+      log.mockRestore();
+      spawn.mockRestore();
+    }
+    expect(lines.join("\n")).toBe(
+      `${UNMANAGED_HANDOFF_LABEL}\n` +
+        "handoff\tunmanaged\tbunx skills@^1.5.0 add lgtm-hq/ai-skills@v0.0.0-dev --skill " +
+        `${reviewSkills.join(" ")} -y\tnot executed (dry run)`,
+    );
   });
 
   test("is the launcher's own plan only without other artifact options", () => {

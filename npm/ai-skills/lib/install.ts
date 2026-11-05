@@ -53,7 +53,13 @@ import {
   undoTransactions,
 } from "./install-plan.ts";
 import type { InstallComposition } from "./install-plan.ts";
-import { handOffUnmanaged, runSkills, unmanagedRequiredMessage } from "./skills-runner.ts";
+import {
+  buildSkillsArguments,
+  handOffUnmanaged,
+  runSkills,
+  UNMANAGED_HANDOFF_LABEL,
+  unmanagedRequiredMessage,
+} from "./skills-runner.ts";
 import {
   createClackUi,
   formatGatewayUpdateNotice,
@@ -732,7 +738,11 @@ export async function install(
       args: string[],
     ) => Promise<{ status: number; stderr: string; stdout: string }>;
     /** Compose and report the adapter plans instead of applying them. */
-    dryRun?: (plans: AdapterPlan[]) => void;
+    /**
+     * Compose and report instead of applying: receives the adapter plans, or,
+     * for `--unmanaged`, the skills CLI arguments that would run (never run).
+     */
+    dryRun?: (plans: AdapterPlan[], handoff?: string[]) => void;
     explode?: typeof explodePlugin;
     failAfter?: "stage" | "commit";
     hostCapabilities?: Record<string, "native" | "explode">;
@@ -826,6 +836,11 @@ export async function install(
     project: scope === "project",
   };
   if (scopedOptions.unmanaged) {
+    if (extras.dryRun) {
+      // A dry run never executes anything, including the unmanaged handoff.
+      extras.dryRun([], buildSkillsArguments(scopedOptions, source));
+      return { alreadyPresent: 0, installed: 0, repaired: 0 };
+    }
     return handOffUnmanaged(scopedOptions, source, run, extras.warn);
   }
   if (scopedOptions.agents.length === 0) {
@@ -1560,6 +1575,8 @@ async function pathExists(path: string): Promise<boolean> {
 /**
  * Compose the adapter plans an unattended install would apply, without
  * writing, executing a host CLI or probing hosts (doctor's cache is read).
+ * With `--unmanaged` it prints the skills CLI command the handoff would run
+ * and runs nothing.
  *
  * @returns Deterministic plan text (see `formatPlans`).
  * @throws {Error} When no agent is named; dry runs never detect agents.
@@ -1569,18 +1586,30 @@ export async function dryRunInstall(
   lockEnvironment: NonNullable<Parameters<typeof install>[3]> = {},
   extras: Omit<NonNullable<Parameters<typeof install>[4]>, "dryRun"> = {},
 ): Promise<string> {
-  if (options.agents.length === 0) {
+  if (options.agents.length === 0 && !options.unmanaged) {
     throw new Error("install --dry-run needs at least one -a/--agent");
   }
   const plans: AdapterPlan[] = [];
+  const handoffs: string[] = [];
   for (const batch of await batchesFromCliOptions(options)) {
     await install(
       { ...options, bundle: batch.pluginId, skills: batch.skills, vendor: batch.vendor },
       undefined,
       undefined,
       lockEnvironment,
-      { ...extras, dryRun: (composed) => plans.push(...composed) },
+      {
+        ...extras,
+        dryRun: (composed, handoff) => {
+          plans.push(...composed);
+          if (handoff) {
+            handoffs.push(`handoff\tunmanaged\tbunx ${handoff.join(" ")}\tnot executed (dry run)`);
+          }
+        },
+      },
     );
+  }
+  if (handoffs.length > 0) {
+    return [UNMANAGED_HANDOFF_LABEL, ...handoffs].join("\n");
   }
   if (plans.length === 0) {
     return "nothing to install: every requested agent is already present";

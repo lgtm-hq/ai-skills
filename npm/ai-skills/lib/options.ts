@@ -154,9 +154,12 @@ export function parseArguments(argv: string[]): {
   if (options.unmanaged && command !== "install") {
     throw new Error("--unmanaged applies only to install");
   }
-  if (options.unmanaged && options.engine.length > 0) {
+  // `--unmanaged --dry-run` only prints the handoff command (nothing runs);
+  // other artifact options belong to the engine and cannot combine with it.
+  if (options.unmanaged && options.engine.some((item) => item !== "--dry-run")) {
     throw new Error(
-      "--unmanaged hands off to the skills CLI; it cannot combine with engine options",
+      "--unmanaged hands off to the skills CLI; it combines only with --dry-run, " +
+        "which prints the handoff without running it",
     );
   }
   if (command === "vendors" && args.length > 0) {

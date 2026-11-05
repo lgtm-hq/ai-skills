@@ -6,6 +6,21 @@ import {
   validateUnattendedOptions,
 } from "../lib/options.ts";
 
+describe("--unmanaged placement", () => {
+  test("combines only with --dry-run among artifact options", () => {
+    expect(parseArguments(["install", "--unmanaged", "--dry-run"]).options).toMatchObject({
+      engine: ["--dry-run"],
+      unmanaged: true,
+    });
+    expect(() => parseArguments(["install", "--unmanaged", "--dry-run", "--json"])).toThrow(
+      "it combines only with --dry-run",
+    );
+    expect(() => parseArguments(["update", "--unmanaged"])).toThrow(
+      "--unmanaged applies only to install",
+    );
+  });
+});
+
 describe("parseArguments", () => {
   test("defaults to the install command", () => {
     expect(parseArguments(["--global", "--bundle", "review"])).toEqual({

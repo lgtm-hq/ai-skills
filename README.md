@@ -119,6 +119,8 @@ explicit, labeled handoff that writes no gateway lock, so `sk` cannot verify,
 update, remove or roll it back. `sk install --dry-run -a <host> …` prints the
 composed destination plan (adapter, recovery guarantee, recorded deviations
 and every file, link and host CLI operation) without writing anything.
+With `--unmanaged`, `--dry-run` prints the skills CLI command the handoff
+would run and runs nothing.
 `sk doctor` prints capability, lock↔disk drift, and orphans;
 `--repair` restores missing files; `--migrate <host>` cutovers locked
 first-party plugins on that host (native migrate skips vendor plugins).
