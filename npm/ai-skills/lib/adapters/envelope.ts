@@ -79,15 +79,25 @@ async function mergedPluginEntries(
 ): Promise<Array<Record<string, unknown>>> {
   const entries: Array<Record<string, unknown>> = [];
   if (await existsNoFollow(fs, path)) {
+    // Read errors (EACCES, EIO) propagate: the plan fails before any write.
+    const text = new TextDecoder().decode(await fs.readFile(path));
+    let parsed;
     try {
-      const parsed = JSON.parse(new TextDecoder().decode(await fs.readFile(path)));
-      for (const entry of Array.isArray(parsed?.plugins) ? parsed.plugins : []) {
-        if (entry && typeof entry.name === "string" && entry.name !== kept.pluginId) {
-          entries.push(entry);
-        }
+      parsed = JSON.parse(text);
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) {
+        throw error;
       }
-    } catch {
-      // A malformed envelope index is regenerated from this plugin alone.
+      // Fail closed: rewriting from this plugin alone would drop the others.
+      throw new Error(
+        `Refusing to rewrite malformed marketplace index ${path} (${error.message}); ` +
+          "repair or remove it, then reinstall",
+      );
+    }
+    for (const entry of Array.isArray(parsed?.plugins) ? parsed.plugins : []) {
+      if (entry && typeof entry.name === "string" && entry.name !== kept.pluginId) {
+        entries.push(entry);
+      }
     }
   }
   entries.push({

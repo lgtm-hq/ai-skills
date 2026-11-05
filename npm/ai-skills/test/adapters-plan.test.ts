@@ -257,6 +257,41 @@ describe("plan() purity", () => {
   });
 });
 
+describe("envelope marketplace index", () => {
+  const envelope = `${HOME}/.ai-skills/native/claude-code`;
+  const index = `${envelope}/.claude-plugin/marketplace.json`;
+
+  test("fails the plan closed on a malformed index instead of dropping other plugins", async () => {
+    await expect(
+      claudeCliAdapter.plan(input("claude-code", { mode: "native" }, { [index]: "{not json" })),
+    ).rejects.toThrow(`Refusing to rewrite malformed marketplace index ${index}`);
+  });
+
+  test("surfaces an unreadable index (EACCES) as a plan failure", async () => {
+    const view = memoryFs({ ...catalog, [index]: "{}" });
+    const denied = Object.assign(new Error(`EACCES: permission denied, open '${index}'`), {
+      code: "EACCES",
+    });
+    const unreadable = new Proxy(view, {
+      get(target, property) {
+        const value = Reflect.get(target, property);
+        if (property !== "readFile") {
+          return value;
+        }
+        return async (path: string) => {
+          if (path === index) {
+            throw denied;
+          }
+          return (value as typeof view.readFile)(path);
+        };
+      },
+    });
+    await expect(
+      claudeCliAdapter.plan({ ...input("claude-code", { mode: "native" }), fs: unreadable }),
+    ).rejects.toThrow("EACCES");
+  });
+});
+
 describe("support reports", () => {
   const request = (host: string, overrides: Partial<SupportRequest> = {}): SupportRequest => ({
     host,

@@ -19,6 +19,7 @@ import { nodeReadOnlyFs, ownedPathHash, sha256 } from "../lib/adapters/fs.ts";
 import { skillExplodeAdapter } from "../lib/adapters/shared/skill-explode-adapter.ts";
 import { explodePlugin } from "../lib/adapters/shared/skill-explode.ts";
 import type { AdapterPlan, Op } from "../lib/adapters/types.ts";
+import { memoryFs } from "./fixtures/memory-fs.ts";
 
 const text = (value: string) => new TextEncoder().encode(value);
 const write = (path: string, value: string): Op => ({
@@ -133,6 +134,30 @@ describe("plan executor", () => {
         }),
       ).rejects.toThrow("ENOSPC");
       expect(await snapshot(root)).toEqual(before);
+    });
+  });
+
+  test("removes the staging file when writing it fails", async () => {
+    await withRoot(async (root) => {
+      // The directory pre-exists so undoing mkdir cannot sweep the staging file away.
+      await mkdir(join(root, "dest"));
+      const target = join(root, "dest/new.md");
+      await expect(
+        applyPlan(plan(root, [write(target, "new\n")]), {
+          // Empty read view: the target does not exist yet.
+          fs: memoryFs({}),
+          io: {
+            writeFile: (async (path: Parameters<typeof writeFile>[0]) => {
+              // Partial write, then the disk fills up.
+              await writeFile(path, "partial");
+              throw Object.assign(new Error("ENOSPC: no space left on device"), {
+                code: "ENOSPC",
+              });
+            }) as typeof writeFile,
+          },
+        }),
+      ).rejects.toThrow("ENOSPC");
+      expect(await snapshot(root)).toEqual({ dest: "<dir>" });
     });
   });
 

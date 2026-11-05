@@ -202,10 +202,11 @@ async function applyOp(
       await makeDirectory(dirname(op.path), io, undo);
       const previous = await snapshotFile(op.path, fs);
       const staging = `${op.path}.tmp.${randomUUID()}`;
-      await io.writeFile(staging, op.content);
       try {
+        await io.writeFile(staging, op.content);
         await io.rename(staging, op.path);
       } catch (error) {
+        // A failed write (ENOSPC, EIO) or rename must not leave the staging file.
         await io.rm(staging, { force: true });
         throw error;
       }

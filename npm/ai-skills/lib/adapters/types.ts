@@ -84,8 +84,9 @@ export interface RemoveOwnedOp {
 }
 
 /**
- * Run a host CLI. `compensate` undoes the effect; `null` means the effect is
- * irreversible and `disclosure` names the declared irreversible step.
+ * Run a host CLI. `compensate` undoes the effect; `compensate: null` marks the
+ * effect irreversible, and the matching `HostExecStep` (named by `step`) must
+ * carry the `irreversible` disclosure.
  */
 export interface HostExecOp {
   kind: "host-exec";
