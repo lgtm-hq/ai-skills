@@ -13,6 +13,7 @@ from ai_skills_engine.manifest.identity import matches
 from ai_skills_engine.manifest.model import Manifest
 from ai_skills_engine.registry.ingest_checks import (
     parse_allow,
+    parse_limits,
     safe_diagnostic,
     scan_paths,
     validate_input_tree,
@@ -53,22 +54,32 @@ def cached_sources(
     roots: dict[str, Path] = {}
     findings: list[Finding] = []
     pending: list[tuple[Path, str, int]] = [(root, "", 0)]
+    extracted = 0
     while pending:
         current, prefix, depth = pending.pop(0)
         if depth > _DEPTH:
             break
         for entry in read_document(current / "ai-skills.yaml").get("vendors", []):
             alias = prefix + str(entry.get("id"))
-            vendor = RegistryVendor(
-                id=alias,
-                repo=str(entry.get("repo")),
-                sha=str(entry.get("sha")),
-                skill_roots=(),
-                license="",
-                homepage="",
-            )
-            destination = scratch / str(len(roots))
+            # A refused pin may leave a partial tree; never reuse its directory.
+            destination = scratch / str(extracted)
+            extracted += 1
             try:
+                # Ref-resolved hits are re-checked against this pin's own limits,
+                # exactly as ``lock`` parses them, never against bare defaults.
+                vendor = RegistryVendor(
+                    id=alias,
+                    repo=str(entry.get("repo")),
+                    sha=str(entry.get("sha")),
+                    skill_roots=(),
+                    license="",
+                    homepage="",
+                    ingest_limits=(
+                        parse_limits(entry["ingestLimits"], label=alias)
+                        if "ingestLimits" in entry
+                        else IngestLimits()
+                    ),
+                )
                 materialize(cache=cache, vendor=vendor, dest=destination, fetcher=None)
             except (OSError, ValueError, SourceCacheError) as error:
                 findings.append(

@@ -205,7 +205,7 @@ def test_unicode_scalar_edits_retain_codepoints(quoted: str, replacement: str) -
     ],
 )
 def test_nested_flow_shape_changes_preserve_values_and_surrounding_bytes(
-    text: str, desired: object
+    text: str, desired: dict[str, Any]
 ) -> None:
     """Shape edits stay legal inside flow parents and retain untouched comments."""
     text = "# before\n" + text.rstrip("\n") + " # keep\nother: 'untouched'\n"
@@ -258,7 +258,7 @@ def test_flow_parent_scalar_edits_quote_flow_indicators(text: str, value: str) -
     target["d"] = value
     patched = patch_document(text=text, data=data)
     assert_that(load_unique_yaml_text(text=patched)).is_equal_to(data)
-    assert_that(patched.lstrip("items: ")[0]).is_in("[", "{")
+    assert_that(patched.removeprefix("items: ")[0]).is_in("[", "{")
     assert_that(patched.count("\n")).is_equal_to(1)
 
 
