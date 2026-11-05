@@ -93,6 +93,36 @@ def record_source(
     raise ValueError(f"No authenticated source bytes for {record.id}")
 
 
+def identity_assertion(
+    *,
+    record: Capability | Resource,
+    snapshots: Mapping[tuple[str, str | None], tuple[Path, dict[str, Any]]],
+) -> dict[str, str]:
+    """Mark identities a consumer mapping asserted for a manifestless origin.
+
+    The authority is the record's own origin hop: a pinned origin publication
+    without ``ai-skills.yaml`` declared no identities, so the qualified ID came
+    from a consumer mapping. Equal bytes or names are never consulted.
+
+    Args:
+        record: Selected inventory record with lineage.
+        snapshots: Bound publication roots.
+
+    Returns:
+        ``{"identity": "consumer-asserted"}`` for mapped records, otherwise empty.
+    """
+    for chain in record.lineage:
+        origin = chain.lineage[0]
+        snapshot = snapshots.get((origin.origin, origin.rev))
+        if (
+            origin.rev is not None
+            and snapshot is not None
+            and not (snapshot[0] / "ai-skills.yaml").is_file()
+        ):
+            return {"identity": "consumer-asserted"}
+    return {}
+
+
 def package_version(
     *,
     publisher: str,

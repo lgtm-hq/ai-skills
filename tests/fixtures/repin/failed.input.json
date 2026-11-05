@@ -13,7 +13,7 @@
   "before": {
     "artifactDigests": {
       "consumer/git-pr": "sha256:059afb038a51bdf06db3a35f621a0c20be157a524727c43ab837c8d18e8674fe",
-      "example/tools": "sha256:cd3a4b897869c48bebab40a42fec44b60d726571c5a131269200cd9fa06edbb5"
+      "example/tools": "sha256:1b7a9a92cdf4c407fa680a5ac42a3311d9abf862e2c6206673d6123503dbf5dd"
     },
     "diagnostics": [],
     "files": {
@@ -120,6 +120,7 @@
               "executionSurface": {},
               "hostAttributes": [],
               "id": "example/tools:skill/alpha",
+              "identity": "consumer-asserted",
               "license": "MIT",
               "lineage": [
                 {
@@ -184,6 +185,7 @@
               "executionSurface": {},
               "hostAttributes": [],
               "id": "example/tools:skill/beta",
+              "identity": "consumer-asserted",
               "license": "MIT",
               "lineage": [
                 {

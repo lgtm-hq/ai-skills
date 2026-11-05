@@ -9,8 +9,11 @@ from collections.abc import Callable
 from ai_skills_engine import package_sync, validate_skills
 from ai_skills_engine.artifacts import cli as artifact_cli
 from ai_skills_engine.bake import vendor_indexes, vendor_plugins
+from ai_skills_engine.commands import add as add_command
 from ai_skills_engine.commands import build as build_command
+from ai_skills_engine.commands import init as init_command
 from ai_skills_engine.commands import lock as lock_command
+from ai_skills_engine.commands import validate as validate_command
 from ai_skills_engine.generate import agents_md, marketplace, readme, skills_manifest
 from ai_skills_engine.inventory import cli as inventory_cli
 from ai_skills_engine.manifest import cli as manifest_cli
@@ -65,6 +68,9 @@ def main(argv: list[str] | None = None) -> int:
         "plan": selection_cli.main,
         "lock": lock_command.main,
         "build": build_command.main,
+        "init": init_command.main,
+        "validate": validate_command.main,
+        "add": add_command.main,
     }
     for name, handler in routes.items():
         commands.add_parser(name, add_help=False).set_defaults(handler=handler)

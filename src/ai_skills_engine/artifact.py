@@ -25,6 +25,7 @@ from ai_skills_engine.artifacts.materialize import (
 )
 from ai_skills_engine.artifacts.references import validate_artifact_references
 from ai_skills_engine.artifacts.snapshot import (
+    identity_assertion,
     publications,
     record_source,
 )
@@ -183,6 +184,7 @@ def write_artifacts(
                     "treeDigest": files_digest(payload),
                     "sourceTreeDigest": "sha256:" + resource.tree_digest,
                     "lineage": lineage_json(resource.lineage),
+                    **identity_assertion(record=resource, snapshots=snapshots),
                 }
             )
         for key, capability in sorted(caps.items()):
@@ -256,6 +258,7 @@ def write_artifacts(
                         if capability.role in {"lifecycle", "integration"}
                         else {}
                     ),
+                    **identity_assertion(record=capability, snapshots=snapshots),
                 }
             )
         all_records: tuple[Capability | Resource, ...] = (

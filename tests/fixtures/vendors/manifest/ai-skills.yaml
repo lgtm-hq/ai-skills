@@ -1,0 +1,36 @@
+---
+# Generic fixture vendor with its own manifest. Its policy is deliberately
+# present so consumers can prove it is reported as ignored, never applied.
+apiVersion: ai-skills.dev/v1
+publisher:
+  id: fixture-vendor
+  repo: fixture-org/manifest
+packages:
+  - id: core
+    name: Core
+    description: Everyday fixture vendor skills.
+    capabilities:
+      - id: alpha
+        path: skills/alpha
+      - id: beta
+        path: skills/beta
+  - id: extras
+    name: Extras
+    description: Unexported fixture vendor skills.
+    capabilities:
+      - id: gamma
+        path: skills/gamma
+  - id: crew
+    name: Crew
+    description: Fixture vendor review specialist.
+    capabilities:
+      - id: reviewer
+        path: agents/reviewer.md
+        role: specialist
+exports: [core, crew]
+policy:
+  provenance:
+    mode: strict
+  deny:
+    origins:
+      - github.com/fixture-org/reexporter

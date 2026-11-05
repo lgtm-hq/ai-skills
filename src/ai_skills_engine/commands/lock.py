@@ -13,6 +13,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from ai_skills_engine.artifacts.drift import report_difference
+from ai_skills_engine.commands.mapping_scaffold import require_accepted
 from ai_skills_engine.commands.source_mode import SourceMode
 from ai_skills_engine.commands.sources import (
     build_lock,
@@ -29,6 +30,7 @@ from ai_skills_engine.lockfile import (
     require_canonical,
     write_lock,
 )
+from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.paths import resolve_repo_root
 from ai_skills_engine.registry.ingest_checks import safe_diagnostic
 from ai_skills_engine.source_cache import SourceCache
@@ -137,6 +139,9 @@ def main(argv: list[str] | None = None) -> int:
             if supplied:
                 parser.error("--check reads only the source cache")
             return _check(root=root, path=path, inputs_only=args.inputs_only)
+        if not args.fetch:
+            # Mapped identities are consumer-asserted: never lock an unreviewed one.
+            require_accepted(read_document(root / "ai-skills.yaml"))
         existing = (
             read_lock(path)
             if args.fetch or path.exists(follow_symlinks=False)

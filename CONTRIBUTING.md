@@ -350,6 +350,56 @@ uv run python scripts/manage_vendors.py check
 **`README.md`** and record the change under the Unreleased section of
 **`CHANGELOG.md`**. The script prints this reminder and never edits those files.
 
+### Vendor authoring: `init`, `validate` and `add`
+
+Any repository can become a vendor, a consumer or both with the engine CLI. None
+of these commands executes vendor content.
+
+```bash
+# Scaffold ai-skills.yaml and .github/workflows/ai-skills.yml (never overwrites;
+# a second run reports the existing files; --dry-run prints only)
+uv run ai-skills-engine init [--dry-run] [--engine-ref SHA]
+
+# Run every check offline; exits non-zero on any failure
+uv run ai-skills-engine validate [--strict] [--terminology] [--format json]
+
+# Import a pinned vendor, then lock it
+uv run ai-skills-engine add owner/repo[@ref] [--include ID]... [--exclude ID]...
+```
+
+- **`init`** detects `skills/*/SKILL.md`, `agents/*.md` and existing
+  `.claude-plugin`/`.cursor-plugin` manifests and proposes one package with
+  qualified capability IDs plus an explicit `exports:` entry. The caller workflow
+  pins the reusable `.github/workflows/ai-skills-validate.yml` and the engine to one
+  full 40-hex commit SHA: `--engine-ref`, or this engine's release tag resolved
+  from GitHub.
+- **`validate`** runs, in order: schema and manifest terminology lint, inventory
+  (including host-specific frontmatter), selection closure and selectors,
+  provenance, the ADR 0006 ingest checks on the repository's own content, the
+  internal link check, the collision report, export checks, `lock --check` and
+  `generate --check`. `--strict` fails missing lineage. `--terminology` also lints
+  `docs/**/*.md` against this catalog's canonical `docs/glossary.md` vocabulary;
+  it is opt-in (like `manifest validate --terminology`), so a vendor's own
+  glossary is never held to ours. A stage without inputs (no `ai-skills.lock`, no
+  committed host marketplaces) is reported as skipped. Vendor inputs come from
+  `--vendor-root ID=PATH` or the source cache (`ai-skills-engine lock --fetch`).
+  A vendor manifest's `policy:`, trust grants and `overrides:` are reported as
+  ignored and never applied. This catalog's CI and a fixture vendor
+  (`tests/fixtures/vendors/manifest`) call the reusable workflow with `strict`;
+  only this catalog also sets its `terminology` input.
+- **`add`** resolves `ref` (default branch when omitted) to a SHA, fetches the pin
+  into the source cache and runs the ingest checks. A vendor with an
+  `ai-skills.yaml` gets a pinned `vendors:` entry whose `include` imports the
+  upstream's `exports`. A vendor without one gets a consumer-owned `mapping`
+  scaffold whose identities this repository asserts; `lock` refuses it until you
+  review it and rerun `add owner/repo --accept-mapping`. Built artifacts record
+  `"identity": "consumer-asserted"` for mapped capabilities. Either way, `add`
+  then runs `lock`; ambiguous `sha`/`branch` scalars are written quoted.
+- **Exports:** importing never re-publishes. Only packages listed under
+  `exports:` are re-exported, and their lineage gains this publisher's hop. An
+  export that matches nothing, or names content that is not imported, fails
+  `validate`.
+
 ### Vendor plugin slices
 
 Each vendor may declare `plugins:` — reviewed bake slices, not runtime
@@ -711,8 +761,10 @@ stay flat (`skills/<name>/`).
 
 Pull requests and pushes to `main` run **lintro** (via the published **py-lintro**
 container image), the pytest suite, skill-structure validation,
-`bash scripts/validate.sh`, and the vendor plugin bake
-(`scripts/ci/bake_vendor_plugins_gate.sh`).
+`bash scripts/validate.sh`, the vendor plugin bake
+(`scripts/ci/bake_vendor_plugins_gate.sh`), and two callers of the reusable
+`ai-skills-validate.yml` workflow: this catalog with `strict` and `terminology`, and
+the fixture vendor in `tests/fixtures/vendors/manifest` with `strict`.
 
 **Validate Lintro Version** compares `pyproject.toml`'s exact `lintro==`
 pin to the version inside the pinned `ghcr.io/lgtm-hq/py-lintro` digest on

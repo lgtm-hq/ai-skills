@@ -37,7 +37,7 @@
   ],
   "digests": [
     {
-      "detail": "sha256:cd3a4b897869c48bebab40a42fec44b60d726571c5a131269200cd9fa06edbb5 -> sha256:dea5a6bf5815b5cc6539a9dd83a6e3f695d87fdfecda71bdcd12ea66dfbd7eff",
+      "detail": "sha256:1b7a9a92cdf4c407fa680a5ac42a3311d9abf862e2c6206673d6123503dbf5dd -> sha256:bbacd1b25c5158708df66f81d267f29abb75a4f8cce586fad99ea26b2c4184f7",
       "kind": "artifactDigest",
       "subject": "example/tools"
     },

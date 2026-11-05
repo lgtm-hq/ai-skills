@@ -257,6 +257,34 @@ jobs:
         security.ubuntu.com:80
         security.ubuntu.com:443
 
+  ai-skills-validate:
+    name: ai-skills validate --strict --terminology
+    needs: quality
+    # This catalog runs the same reusable workflow vendors call, pinned to the
+    # commit under test; the script fills the cache with lock --fetch first.
+    # Only this catalog opts into its own docs glossary lint.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ai-skills-validate.yml
+    with:
+      engine-ref: ${{ github.sha }}
+      manifest-path: ai-skills.yaml
+      strict: true
+      terminology: true
+
+  fixture-vendor-validate:
+    name: Fixture vendor calls reusable validate
+    needs: quality
+    # A generic fixture vendor (tests/fixtures/vendors/manifest) proves that a
+    # vendor repository calling the reusable workflow passes.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ai-skills-validate.yml
+    with:
+      engine-ref: ${{ github.sha }}
+      manifest-path: tests/fixtures/vendors/manifest/ai-skills.yaml
+      strict: true
+
   gateway:
     name: Gateway TypeScript and parity
     runs-on: ubuntu-latest
