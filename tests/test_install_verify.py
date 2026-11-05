@@ -363,6 +363,38 @@ def test_digest_flag_cannot_contradict_a_recorded_pin(
     assert_that(err).contains("contradicts the profile pin")
 
 
+@pytest.mark.parametrize(
+    "second",
+    [f"fixture/tools={WRONG}", WRONG],
+    ids=["qualified", "bare"],
+)
+def test_conflicting_digest_flags_for_one_package_fail(
+    golden: Path, consumer: Path, capsys: pytest.CaptureFixture[str], second: str
+) -> None:
+    """Two different --digest values for one package never silently pick one."""
+    flags = ["--digest", f"fixture/tools={GOLDEN_DIGEST}", "--digest", second]
+    status, _, err = run(capsys, "install", "--artifacts", str(golden), *flags)
+    assert_that(status).is_equal_to(1)
+    assert_that(err).contains(
+        f"conflicting --digest values for fixture/tools: {GOLDEN_DIGEST} and {WRONG}"
+    )
+    assert_that(profile_path(consumer).exists()).is_false()
+
+
+def test_identical_repeated_digest_flags_are_tolerated(
+    golden: Path, consumer: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Repeating the same pin, in either spelling, is not a conflict."""
+    flags = ["--digest", f"fixture/tools={GOLDEN_DIGEST}", "--digest", GOLDEN_DIGEST]
+    status, report, err = run(
+        capsys, "install", "--artifacts", str(golden), "--dry-run", *flags
+    )
+    assert_that(status).described_as(err).is_zero()
+    assert_that(report["packages"] if report else None).is_equal_to(
+        [{"digest": GOLDEN_DIGEST, "id": "fixture/tools", "pin": "digest"}]
+    )
+
+
 def test_frozen_installs_only_the_pinned_digest(
     golden: Path, consumer: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -118,9 +118,10 @@ def parse_digest_flags(
         Digest by package ID.
 
     Raises:
-        InstallError: For malformed values or packages outside the selection.
+        InstallError: For malformed values, packages outside the selection or
+            two different digests for one package (identical repeats are fine).
     """
-    pins = {}
+    pins: dict[str, str] = {}
     for value in values:
         package, separator, pin = value.rpartition("=")
         if not separator:
@@ -131,6 +132,10 @@ def parse_digest_flags(
             raise InstallError(f"--digest names unselected package {package!r}")
         if not DIGEST.fullmatch(pin):
             raise InstallError(f"--digest {value!r}: expected sha256:<64 hex>")
+        if pins.get(package, pin) != pin:
+            raise InstallError(
+                f"conflicting --digest values for {package}: {pins[package]} and {pin}"
+            )
         pins[package] = pin
     return pins
 
