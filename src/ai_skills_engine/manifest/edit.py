@@ -1,6 +1,7 @@
 """Lossless YAML value replacement using source positions, without execution."""
 
 import json
+import re
 from typing import Any
 
 import yaml
@@ -8,6 +9,9 @@ from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
 from ai_skills_engine.manifest.scalars import quote_vendor_scalars
 from ai_skills_engine.registry.registry import load_unique_yaml_text
+
+# Characters YAML cannot carry literally; double-quoted scalars escape them.
+_UNPRINTABLE = re.compile("[\x7f-\x9f\ud800-\udfff￾￿]")
 
 
 class ManifestDumper(yaml.SafeDumper):
@@ -132,6 +136,12 @@ def patch_document(*, text: str, data: object) -> str:
         ):
             for key_node, child in node.value:
                 key = key_node.value
+                if key not in before or key not in after:
+                    # A key YAML resolves to a non-string (``on``, ``1``, ``null``)
+                    # has no lossless source mapping; fail closed, not KeyError.
+                    raise ValueError(
+                        "Cannot edit YAML mappings with non-string keys losslessly"
+                    )
                 visit(child, before[key], after[key], flow or node.flow_style)
         elif (
             isinstance(node, SequenceNode)
@@ -171,17 +181,32 @@ def patch_document(*, text: str, data: object) -> str:
                 .rstrip("\n")
             )
             rendered = rendered.replace("\n", "\n" + " " * indent)
+            if flow and isinstance(after, str):
+                # Inside a flow collection, `,`, `[`, `]`, `{` and `}` end a plain
+                # scalar: render the value as a flow-sequence item instead.
+                rendered = yaml.dump(
+                    [after],
+                    Dumper=yaml.SafeDumper,
+                    default_flow_style=True,
+                    width=float("inf"),
+                    allow_unicode=False,
+                ).rstrip("\n")[1:-1]
             if collection:
                 if inline:
                     rendered = "\n" + " " * indent + rendered
             elif isinstance(after, str) and (
                 isinstance(node, ScalarNode)
-                and node.style == '"'
+                and (
+                    node.style == '"'
+                    or (node.style == "'" and _UNPRINTABLE.search(after) is not None)
+                )
                 or any(char in after for char in "\n\r\x85\u2028\u2029")
             ):
-                # YAML folds a literal NEL even inside double quotes.
-                rendered = json.dumps(after, ensure_ascii=False).replace(
-                    "\x85", r"\u0085"
+                # YAML folds a literal NEL even inside double quotes, and rejects
+                # DEL, C1 controls, surrogates and U+FFFE/U+FFFF in any scalar.
+                rendered = _UNPRINTABLE.sub(
+                    lambda match: f"\\u{ord(match.group()):04x}",
+                    json.dumps(after, ensure_ascii=False),
                 )
             elif (
                 isinstance(after, str)

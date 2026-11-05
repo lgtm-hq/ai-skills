@@ -265,9 +265,8 @@ def exports(
         *inventory.capabilities,
         *inventory.resources,
     )
-    candidates = {str(item.id) for item in records} | {
-        str(item) for item in inventory.rejected
-    }
+    rejected = {str(item) for item in inventory.rejected}
+    candidates = {str(item.id) for item in records} | rejected
     selected = {
         item.id
         for item in (*selection.capabilities, *selection.resources)
@@ -295,12 +294,17 @@ def exports(
                 )
             )
         elif not members & selected:
+            reason = (
+                "every match was rejected by inventory checks (see its errors)"
+                if members <= rejected
+                else "every match is excluded by include/exclude, a deny or an "
+                "override"
+            )
             findings.append(
                 Finding(
                     "export.not-imported",
                     location,
-                    f"Export {value} names content that is not imported: every "
-                    "match is excluded by include/exclude, a deny or an override",
+                    f"Export {value} names content that is not imported: {reason}",
                 )
             )
     return findings

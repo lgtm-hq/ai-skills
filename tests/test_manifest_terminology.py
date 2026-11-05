@@ -66,3 +66,16 @@ def test_docs_descriptions_and_missing_glossary_term(tmp_path: Path) -> None:
 def test_current_repository_passes_production_terminology() -> None:
     """The complete maintained docs and manifest pass the same CLI as CI."""
     assert_that(cli.main(["manifest", "validate", "--terminology"])).is_zero()
+
+
+def test_missing_glossary_is_one_actionable_error(tmp_path: Path) -> None:
+    """An absent glossary reports itself once, not once per canonical term."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/usage.md").write_text("A package is selected.\n")
+    findings = lint_terminology(tmp_path, {"packages": []})
+    assert_that([item.code for item in findings]).is_equal_to(["glossary-missing"])
+    assert_that(findings[0].location).is_equal_to("docs/glossary.md")
+    assert_that(findings[0].message).contains("docs/glossary.md not found")
+    assert_that(lint_terminology(tmp_path / "absent", {"packages": []})).extracting(
+        "code"
+    ).is_equal_to(["glossary-missing"])

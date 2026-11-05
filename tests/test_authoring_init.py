@@ -184,6 +184,26 @@ def test_origin_remote_and_explicit_identity(repo: Path) -> None:
     )
 
 
+@pytest.mark.parametrize("relative", [True, False], ids=["relative", "absolute"])
+def test_origin_remote_is_read_from_a_linked_worktree(
+    repo: Path, tmp_path: Path, relative: bool
+) -> None:
+    """A worktree's ``.git`` file leads to the shared config holding the remote."""
+    common = tmp_path / "main/.git"
+    private = common / "worktrees/tools-repo"
+    private.mkdir(parents=True)
+    (private / "commondir").write_text("../..\n")
+    (common / "config").write_text(
+        '[remote "origin"]\n\turl = https://github.com/example-org/tools.git\n'
+    )
+    target = Path("../main/.git/worktrees/tools-repo") if relative else private
+    (repo / ".git").write_text(f"gitdir: {target}\n")
+    proposal, _ = init.propose(root=repo, publisher=None, repo=None)
+    assert_that(proposal["publisher"]).is_equal_to(
+        {"id": "example-org", "repo": "example-org/tools"}
+    )
+
+
 def test_invalid_names_are_reported_and_empty_repositories_refused(
     tmp_path: Path,
 ) -> None:

@@ -18,7 +18,11 @@ from ai_skills_engine.inventory.pending import PendingCapability
 from ai_skills_engine.inventory.resource_id import ResourceId
 from ai_skills_engine.inventory.resource_record import Resource
 from ai_skills_engine.manifest.diagnostic import Diagnostic
-from ai_skills_engine.manifest.load import load_consumer, read_document
+from ai_skills_engine.manifest.load import (
+    format_diagnostics,
+    load_consumer,
+    read_document,
+)
 from ai_skills_engine.manifest.package import Package
 from ai_skills_engine.manifest.validate import validate_document
 from ai_skills_engine.manifest.vendor import Vendor
@@ -27,6 +31,7 @@ from ai_skills_engine.provenance.context import Context, origin_locator
 from ai_skills_engine.registry.ingest_checks import (
     parse_allow,
     parse_limits,
+    safe_diagnostic,
     validate_input_tree,
 )
 from ai_skills_engine.registry.ingest_limits import IngestLimits
@@ -122,7 +127,7 @@ def _load_inventory(
         }
     structural = [item for item in validate_document(document) if item.code == "schema"]
     if structural:
-        raise ValueError(str(structural))
+        raise ValueError(format_diagnostics(structural))
     roots = {key: value.absolute() for key, value in (vendor_roots or {}).items()}
     aliases = {item["id"] for item in document.get("vendors", [])}
     unknown = {
@@ -330,7 +335,7 @@ def _collect(
                 Diagnostic(
                     "inventory.invalid-payload",
                     f"/vendors/{vendor.id}",
-                    str(error).replace(str(vendor_root), "."),
+                    safe_diagnostic(str(error).replace(str(vendor_root), ".")),
                 )
             )
     for source_root, publisher, origin, package, aliases, import_vendor in packages:

@@ -8,6 +8,18 @@ at every depth, including required resource chains. Renames, frontmatter rewrite
 explicit migrations and resource copies retain earlier hops. A denied shared
 resource invalidates every kept capability that requires it.
 
+`policy.deny.origins` entries match recorded origin locators exactly and
+case-sensitively (for example `github.com/owner/repo`). A trailing `*` is a raw
+string prefix: `github.com/owner/*` matches every repository of that owner, and
+`github.com/own*` also matches `github.com/owner-two/x`. Deny entries are not
+normalized, so `owner/repo`, an `https://` URL, a `.git` suffix or different
+letter case never matches a recorded `github.com/owner/repo` hop. Imported hops
+use the consumer's pinned vendor repository. When a consumer omits
+`publisher.repo`, its own local hops use the publisher ID as a descriptive
+origin, never as imported trust evidence. The engine records only the `alias`
+transform it observes; `frontmatter-name` and other transforms come from an
+authenticated index, and an undeclared rewrite is never inferred.
+
 Provenance is an authenticated declaration, not a detector of copying. An imported
 `ai-skills.lineage.json` index is an array of records governed by
 [`schema/lineage.v1.schema.json`](../schema/lineage.v1.schema.json). The engine checks

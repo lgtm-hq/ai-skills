@@ -2,8 +2,9 @@
 
 Since #575 the committed marketplaces are rendered from the artifact index
 (``ai-skills.yaml``), never from ``bundles.yaml``. The README generator, through
-``load_validated_bundles``, is the remaining real reader of the legacy bundle
-declarations, so it is the consumer whose acceptance publication reproduces.
+``load_validated_bundles``, is the real legacy reader whose acceptance
+publication reproduces here; ``manifest legacy`` and the registry plugin-id
+collision check also read the generated ``bundles.yaml``.
 The artifact-fed marketplace path is checked against the equivalent manifest
 defects separately.
 """
@@ -78,7 +79,7 @@ def _author_tree(root: Path, change: str) -> dict[str, Any]:
         ("unknown-skill", "references missing skill dirs: unknown"),
     ],
 )
-def test_actual_marketplace_acceptance_before_publication(
+def test_actual_legacy_reader_acceptance_before_publication(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str, error: str | None
 ) -> None:
     """Matched source trees expose semantic failures without narrowing the schema."""

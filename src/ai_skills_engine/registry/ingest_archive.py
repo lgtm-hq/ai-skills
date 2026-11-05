@@ -34,12 +34,19 @@ def _tarinfo_type(*, vendor: str, limits: IngestLimits) -> type[tarfile.TarInfo]
     total = 0
 
     class CheckedTarInfo(tarfile.TarInfo):
-        """Reject hostile headers before tarfile processes extended records."""
+        """Reject hostile headers before tarfile processes extended records.
+
+        Attributes:
+            headers: Raw headers this hook has checked so far.
+        """
+
+        headers = 0
 
         def _proc_member(self, archive: tarfile.TarFile) -> tarfile.TarInfo | None:
             """Check each raw header, including headers hidden by PAX parsing."""
             nonlocal count, total
             count += 1
+            CheckedTarInfo.headers = count
             total += self.size
             for key, actual, maximum in (
                 ("archiveMembers", count, limits.archive_members),
@@ -75,6 +82,31 @@ def _tarinfo_type(*, vendor: str, limits: IngestLimits) -> type[tarfile.TarInfo]
             return process(self, archive)
 
     return CheckedTarInfo
+
+
+def _require_header_checks(
+    *, tarinfo: type[tarfile.TarInfo], seen: int, vendor: str
+) -> None:
+    """Fail closed if tarfile yielded a member the header hook never checked.
+
+    The hook overrides a private ``tarfile`` method; a Python release that
+    renames it would otherwise skip every header check silently.
+
+    Args:
+        tarinfo: Checked TarInfo type in use.
+        seen: Members yielded so far.
+        vendor: Vendor alias.
+
+    Raises:
+        ValueError: If fewer headers were checked than members were yielded.
+    """
+    if getattr(tarinfo, "headers", 0) < seen:
+        raise ValueError(
+            safe_diagnostic(
+                f"vendor {vendor}: <archive>: tar header checks did not run on "
+                "this Python; refusing extraction"
+            )
+        )
 
 
 class _BoundedInflater:
@@ -185,13 +217,19 @@ def extract_tarball(
                 )
                 # No member cache or eager metadata/body read. The TarInfo hook
                 # runs before tarfile consumes a PAX/GNU payload.
+                checked = _tarinfo_type(vendor=vendor, limits=limits)
+                seen = 0
                 with open_archive(
                     fileobj=reader,
                     mode="r|",
                     stream=True,
-                    tarinfo=_tarinfo_type(vendor=vendor, limits=limits),
+                    tarinfo=checked,
                 ) as archive:
                     while (member := archive.next()) is not None:
+                        seen += 1
+                        _require_header_checks(
+                            tarinfo=checked, seen=seen, vendor=vendor
+                        )
                         if member.size > limits.member_bytes or member.size < 0:
                             fail_limit(
                                 vendor=vendor,
@@ -226,13 +264,19 @@ def extract_tarball(
             ) as temporary:
                 staged = Path(temporary) / "tree"
                 staged.mkdir()
+                checked = _tarinfo_type(vendor=vendor, limits=limits)
+                seen = 0
                 with open_archive(
                     fileobj=spool,
                     mode="r:",
                     stream=True,
-                    tarinfo=_tarinfo_type(vendor=vendor, limits=limits),
+                    tarinfo=checked,
                 ) as archive:
                     while (member := archive.next()) is not None:
+                        seen += 1
+                        _require_header_checks(
+                            tarinfo=checked, seen=seen, vendor=vendor
+                        )
                         rewritten = rewrite_tarball_member(
                             member=member, vendor=vendor, archive_root=archive_root
                         )

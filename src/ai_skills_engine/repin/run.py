@@ -19,6 +19,7 @@ from typing import Any
 
 import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
 import ai_skills_engine.vendors.manage as manage_vendors
+from ai_skills_engine.commands.mapping_scaffold import require_accepted
 from ai_skills_engine.lockfile import LOCK_FILENAME, loads, write_lock
 from ai_skills_engine.lockmodel.locked_vendor import LockedVendor
 from ai_skills_engine.manifest import legacy
@@ -432,6 +433,8 @@ def repin_vendor(
     working_text = manifest.read_text(encoding="utf-8")
     load_manifest(manifest)
     document = read_document(manifest)
+    # Like ``lock``: never lock consumer-asserted identities nobody reviewed.
+    require_accepted(document)
     entry = find_vendor(document, vendor_id)
     if entry is None:
         raise ValueError(f"Unknown vendor id: {vendor_id}")
@@ -439,7 +442,8 @@ def repin_vendor(
     working_lock = lock_path.read_bytes() if lock_path.is_file() else None
     base = baseline or Baseline(manifest_text=working_text, lock_bytes=working_lock)
     with TemporaryDirectory(prefix="ai-skills-repin-") as temporary:
-        scratch = Path(temporary)
+        # Resolve a symlinked TMPDIR (macOS /var) before artifact output checks.
+        scratch = Path(temporary).resolve()
         old_entry = find_vendor(
             _document(text=base.manifest_text, scratch=scratch), vendor_id
         )

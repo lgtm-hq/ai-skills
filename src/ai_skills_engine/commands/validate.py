@@ -309,6 +309,7 @@ def run(
     with TemporaryDirectory(prefix="ai-skills-validate-") as temporary:
         roots: dict[str, Path]
         availability: list[Finding]
+        unreadable: str | None = None
         if supplied:
             roots, availability = dict(supplied), []
         else:
@@ -318,13 +319,26 @@ def run(
                     cache=SourceCache.default(),
                     scratch=Path(temporary),
                 )
-            except FAILURES:
+            except FAILURES as error:
+                # A malformed manifest is reported by the schema stage; any other
+                # cache failure is surfaced below rather than silently dropped.
                 roots, availability = {}, []
+                unreadable = safe_diagnostic(str(error))
         for item in availability:
             report.stages["inventory"].add(item)
         loaded = _schema(root=root, report=report, roots=roots, terminology=terminology)
         if loaded is None:
             return report
+        if unreadable is not None:
+            report.stages["inventory"].add(
+                Finding(
+                    "validate.vendor-source-unavailable",
+                    "/vendors",
+                    f"could not read declared vendor sources: {unreadable}; "
+                    "vendor checks ran without them",
+                    Severity.WARNING,
+                )
+            )
         document, dangling = loaded
         _graph(
             root=root,

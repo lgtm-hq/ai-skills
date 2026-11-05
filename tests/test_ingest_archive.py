@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import gzip
 import tarfile
+from collections.abc import Callable
 from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from assertpy import assert_that
@@ -317,6 +318,33 @@ def test_tar_iteration_does_not_collect_members(
     )
     assert_that((dest / "asset-0").read_bytes()).is_equal_to(bytes(range(256)))
     assert_that((dest / "asset-0").stat().st_mode & 0o7777).is_equal_to(0o755)
+
+
+def test_bypassed_header_hook_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tarfile that stops calling the private header hook cannot extract."""
+    base = vars(tarfile.TarInfo)["_proc_member"]
+
+    def renamed_hook(cls: Any, archive: Any, **_kwargs: Any) -> Any:
+        """Parse a header as if tarfile had renamed ``_proc_member``."""
+        block = archive.fileobj.read(tarfile.BLOCKSIZE)
+        member = cls.frombuf(block, archive.encoding, archive.errors)
+        member.offset = archive.fileobj.tell() - tarfile.BLOCKSIZE
+        return base(member, archive)
+
+    # Newer runtimes route fromtarfile() through _fromtarfile(); patch either.
+    entry = (
+        "_fromtarfile" if hasattr(tarfile.TarInfo, "_fromtarfile") else "fromtarfile"
+    )
+    hook = classmethod(cast(Callable[..., Any], renamed_hook))
+    monkeypatch.setattr(tarfile.TarInfo, entry, hook)
+    dest = tmp_path / "tree"
+    with pytest.raises(ValueError, match="tar header checks did not run"):
+        baker._extract_tarball(
+            payload=archive_bytes(mode=0o644), dest=dest, vendor_id="synthetic"
+        )
+    assert_that(dest.exists()).is_false()
 
 
 @pytest.mark.parametrize("length", ["10000", None, "1"])

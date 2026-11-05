@@ -155,6 +155,32 @@ def test_public_malformed_project_fails_closed(
     assert_that((artifact_repo / "ai-skills.lock").read_bytes()).is_equal_to(reviewed)
 
 
+@pytest.mark.parametrize(
+    ("project", "message"),
+    [
+        ('project = "x"\n', "[project] must be a table"),
+        ("[project]\nversion = 3\n", "project.version must be a string"),
+        ('[project]\nversion = ["1.2.3"]\n', "project.version must be a string"),
+    ],
+    ids=["project=scalar", "version=integer", "version=array"],
+)
+def test_public_misshapen_project_fails_closed(
+    artifact_repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    project: str,
+    message: str,
+) -> None:
+    """Valid TOML with a misshapen [project] is a diagnostic, not a traceback."""
+    args = ["--repo-root", str(artifact_repo)]
+    assert_that(cli.main([*args, "lock"])).is_zero()
+    reviewed = (artifact_repo / "ai-skills.lock").read_bytes()
+    (artifact_repo / "pyproject.toml").write_text(project, encoding="utf-8")
+    capsys.readouterr()
+    assert_that(cli.main([*args, "lock"])).is_equal_to(1)
+    assert_that(capsys.readouterr().err).contains("lock:", message)
+    assert_that((artifact_repo / "ai-skills.lock").read_bytes()).is_equal_to(reviewed)
+
+
 @pytest.mark.parametrize("key", ["allowed-tools", "tools", "disallowedTools"])
 @pytest.mark.parametrize(
     ("old", "new", "allow_level", "deny_level"), PERMISSION_CHANGES

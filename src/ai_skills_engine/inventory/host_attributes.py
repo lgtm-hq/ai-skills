@@ -1,12 +1,13 @@
 """Read and validate packaged host rules without author-checkout fallbacks."""
 
 import json
+from functools import cache
 
 # nosemgrep: python37-compatibility-importlib2 - runtime requires Python >=3.13
 from importlib import resources
 from typing import Any
 
-from ai_skills_engine.inventory.host_attribute import HostAttribute
+from ai_skills_engine.inventory.host_attribute import HostAttribute, valid_rule
 from ai_skills_engine.inventory.yaml_value import normalize_yaml_value
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.registry.registry import load_unique_yaml_text
@@ -51,23 +52,24 @@ def load_host_attributes(text: str | None = None) -> dict[str, dict[str, Any]]:
                 f"{key}: semantics and explicit per-host rules are required"
             )
         for host, rule in hosts.items():
-            if (
-                not isinstance(host, str)
-                or not isinstance(rule, str)
-                or (
-                    rule not in {"preserve", "refuse", "unverified"}
-                    and not (
-                        rule.startswith("map:")
-                        and rule[4:].strip()
-                        and rule[4:] == rule[4:].strip()
-                    )
-                )
-            ):
+            if not isinstance(host, str) or not valid_rule(rule):
                 raise ValueError(
                     f"{key}: invalid rule {rule!r}; drop is forbidden, "
                     "including invocation/activation/permission semantics"
                 )
     return data
+
+
+@cache
+def _packaged_host_attributes() -> dict[str, dict[str, Any]]:
+    """Validate the immutable packaged rule table once per process.
+
+    A failed validation is not cached, so every caller still observes it.
+
+    Returns:
+        Validated packaged rule definitions (read-only by convention).
+    """
+    return load_host_attributes()
 
 
 def inspect_attributes(
@@ -84,7 +86,7 @@ def inspect_attributes(
     Returns:
         Immutable attribute records and warning diagnostics.
     """
-    definitions = load_host_attributes()
+    definitions = _packaged_host_attributes()
     attributes: list[HostAttribute] = []
     diagnostics: list[Diagnostic] = []
     for key, value in sorted(metadata.items()):

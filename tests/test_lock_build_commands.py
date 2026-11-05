@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import socket
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from ai_skills_engine.lockfile import read_lock
 from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.registry.vendor import Vendor
+from ai_skills_engine.source_cache import SourceCache
 
 pytest_plugins = ["artifact_helpers"]
 PIN = "a" * 40
@@ -476,6 +478,70 @@ def test_supplied_snapshot_must_match_locked_source(
     assert_that(_run(root, "build")).is_zero()
 
 
+def test_supplied_snapshot_is_never_indexed_as_fetched(
+    upstream: tuple[Path, Upstream],
+    artifact_repo: Path,
+    isolated_source_cache: Path,
+    tmp_path: Path,
+) -> None:
+    """A --vendor-tree seed stores bytes but no ref a later lookup would trust."""
+    root, served = upstream
+    snapshot = tmp_path / "snapshot"
+    shutil.copytree(artifact_repo, snapshot, symlinks=True)
+    assert_that(_run(root, "lock", "--vendor-tree", f"upstream={snapshot}")).is_zero()
+    cache = SourceCache(root=isolated_source_cache)
+    locked = read_lock(root / "ai-skills.lock").vendors[0].source_digest
+    assert_that(cache.has(locked)).is_true()
+    assert_that(cache.lookup(repo="fixture/artifacts", revision=PIN)).is_none()
+    assert_that(_run(root, "build")).is_zero()
+    assert_that(served.calls).is_empty()
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "lock-version",
+        "conflict-markers",
+    ],
+)
+def test_damaged_lock_names_regeneration_path(
+    upstream: tuple[Path, Upstream],
+    capsys: pytest.CaptureFixture[str],
+    damage: str,
+) -> None:
+    """Plain ``lock`` cannot repair an unreadable lock, so it says how to recover."""
+    root, _served = upstream
+    assert_that(_run(root, "lock")).is_zero()
+    path = root / "ai-skills.lock"
+    if damage == "lock-version":
+        _rewrite_lock(root, lambda document: document.update(lockVersion=2))
+    else:
+        path.write_text("<<<<<<< ours\n" + path.read_text() + ">>>>>>> theirs\n")
+    damaged = path.read_bytes()
+    capsys.readouterr()
+    for command in (["lock"], ["lock", "--fetch"]):
+        assert_that(_run(root, *command)).is_equal_to(1)
+        assert_that(capsys.readouterr().err).contains(
+            "to regenerate it, delete ai-skills.lock and run `ai-skills-engine lock`"
+        )
+    assert_that(path.read_bytes()).is_equal_to(damaged)
+    path.unlink()
+    assert_that(_run(root, "lock")).is_zero()
+
+
+def test_build_cache_miss_creates_no_output_directory(
+    upstream: tuple[Path, Upstream],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Output parents are created only after every locked source is available."""
+    root, _served = upstream
+    assert_that(_run(root, "lock")).is_zero()
+    monkeypatch.setenv("AI_SKILLS_CACHE", str(tmp_path / "cold-cache"))
+    assert_that(_run(root, "build")).is_equal_to(1)
+    assert_that((root / "dist").exists()).is_false()
+
+
 @pytest.mark.parametrize("failing", ["", "--fetch", "--check", "build"])
 def test_ci_publish_and_validate_gate_on_the_lock(tmp_path: Path, failing: str) -> None:
     """CI and publish fetch, check and build from the lock; any step fails closed."""
@@ -531,3 +597,21 @@ def test_ci_publish_and_validate_gate_on_the_lock(tmp_path: Path, failing: str) 
     stop = {"": 3, "--fetch": 1, "--check": 2, "build": 3}[failing]
     assert_that(result.returncode).is_equal_to(9 if failing else 0)
     assert_that(calls.read_text().splitlines()).is_equal_to(expected[:stop])
+
+
+def test_lock_and_build_accept_a_symlinked_temporary_root(
+    upstream: tuple[Path, Upstream],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scratch under a symlinked TMPDIR (macOS ``/var``) is not an output link."""
+    root, _served = upstream
+    real = tmp_path / "real-tmp"
+    real.mkdir()
+    link = tmp_path / "linked-tmp"
+    link.symlink_to(real, target_is_directory=True)
+    monkeypatch.setattr(tempfile, "tempdir", str(link))
+    assert_that(_run(root, "lock")).is_zero()
+    assert_that(_run(root, "lock", "--check")).is_zero()
+    assert_that(_run(root, "build")).is_zero()
+    assert_that(list(real.iterdir())).is_empty()

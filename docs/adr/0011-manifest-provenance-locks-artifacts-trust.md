@@ -174,7 +174,10 @@ several candidates and selectors matching nothing fail closed. Renames come only
 from consumer `overrides.migrations` or publisher-local upstream migrations;
 identical content at a new ID is reported, never applied. Pin writes obey the
 vendor scalar-parity rule above. Automation publishes the regenerated lock but
-never the manifest; required manifest edits become action items. Contributor
+never the manifest; required manifest edits become action items. Because Renovate
+owns the PR description, automation delivers the body as one sticky PR comment,
+never as the description. `--skip-declined` reads only the 200 most
+recent closed PRs and warns when that window is full. Contributor
 usage is in [CONTRIBUTING](../../CONTRIBUTING.md#vendor-re-pin).
 
 ## Consequences

@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **engine**: package version normalization follows SemVer 2.0.0 strictly and
+  rejects numeric prerelease identifiers with leading zeroes and non-ASCII
+  digits, which the former regex accepted; first shipped in 0.30.9 (#633, #634).
+
 ### Deprecated
 
 ### Removed

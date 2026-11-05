@@ -300,6 +300,48 @@ def test_dead_and_non_imported_exports_fail(vendor: Path) -> None:
     assert_that(codes(report, "exports")).is_equal_to(["export.not-imported"])
 
 
+def test_export_of_rejected_content_names_inventory_rejection(vendor: Path) -> None:
+    """An export whose only match failed inventory checks is not called excluded."""
+    from dataclasses import replace
+
+    from ai_skills_engine.commands import validate_checks
+    from ai_skills_engine.manifest.load import load_consumer
+    from ai_skills_engine.selection.load import load_inputs
+
+    inventory, selection = load_inputs(vendor, vendor_roots=None)
+    consumer, _, _ = load_consumer(vendor / "ai-skills.yaml", vendor_roots={})
+    reviewer = next(
+        item for item in inventory.capabilities if str(item.id).endswith("/reviewer")
+    )
+    inventory = replace(
+        inventory,
+        capabilities=tuple(
+            item for item in inventory.capabilities if item.id != reviewer.id
+        ),
+        rejected=(*inventory.rejected, reviewer.id),
+    )
+    selection = replace(
+        selection,
+        capabilities=tuple(
+            item for item in selection.capabilities if item.id != str(reviewer.id)
+        ),
+    )
+    findings = validate_checks.exports(
+        consumer=consumer,
+        inventory=inventory,
+        selection=selection,
+        roots={},
+        dangling=(),
+    )
+    assert_that([(item.code, item.location) for item in findings]).is_equal_to(
+        [("export.not-imported", "/exports/1")]
+    )
+    assert_that(findings[0].message).contains(
+        "Export crew names content that is not imported",
+        "rejected by inventory checks",
+    ).does_not_contain("include/exclude")
+
+
 def test_lock_and_generate_checks_run_the_real_commands(vendor: Path) -> None:
     """A stale lock and stale marketplaces fail stages 9 and 10."""
     # Repo-root marketplaces carry skill slices only; specialists need envelopes.
@@ -449,3 +491,25 @@ def test_actual_wheel_runs_init_validate_and_add_outside_checkout(
     assert_that(json.loads(run("validate", "--format", "json").stdout)["ok"]).is_true()
     assert_that((root / "ai-skills.lock").is_file()).is_true()
     assert_that(Path(__file__).resolve().parents[1].is_relative_to(root)).is_false()
+
+
+def test_unreadable_source_cache_is_reported_not_swallowed(
+    vendor: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A source-cache failure becomes a visible warning on a valid manifest."""
+    from ai_skills_engine.commands import validate_checks
+
+    def unreadable(**_kwargs: object) -> object:
+        """Fail like an unreadable cache root."""
+        raise PermissionError("cache root is not readable")
+
+    monkeypatch.setattr(validate_checks, "cached_sources", unreadable)
+    _status, report = validate_json(vendor)
+    findings = stage(report, "inventory")["diagnostics"]
+    assert_that(
+        [
+            (item["code"], item["location"])
+            for item in findings
+            if "cache root is not readable" in item["message"]
+        ]
+    ).is_equal_to([("validate.vendor-source-unavailable", "/vendors")])

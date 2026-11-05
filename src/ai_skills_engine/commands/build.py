@@ -1,9 +1,9 @@
 """``ai-skills-engine build``: offline artifacts from ``ai-skills.lock`` and the cache.
 
 The build never resolves or fetches. It refuses a stale or non-canonical lock
-and any missing or corrupted cache entry, naming the ``lock --fetch`` fix. The
-rebuilt artifacts must reproduce every locked digest before they replace the
-output directory.
+(naming the ``lock`` fix) and any missing or corrupted cache entry (naming the
+``lock --fetch`` fix). The rebuilt artifacts must reproduce every locked digest
+before they replace the output directory.
 """
 
 import argparse
@@ -83,13 +83,7 @@ def build_from_lock(*, root: Path, lock_path: Path, destination: Path) -> int:
     check_current(root=root, lock=lock)
     if any(path.is_symlink() for path in (destination, *destination.parents)):
         raise ValueError("Symlink rejected in artifact output path")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with (
-        TemporaryDirectory(prefix="ai-skills-build-") as sources,
-        TemporaryDirectory(
-            prefix=".ai-skills-build-", dir=destination.parent
-        ) as staged,
-    ):
+    with TemporaryDirectory(prefix="ai-skills-build-") as sources:
         roots, vendors = materialize_sources(
             root=root,
             cache=SourceCache.default(),
@@ -97,24 +91,29 @@ def build_from_lock(*, root: Path, lock_path: Path, destination: Path) -> int:
             mode=SourceMode.FROZEN,
             locked={item.id: item for item in lock.vendors},
         )
-        output = Path(staged) / "artifacts"
-        rebuilt = build_lock(
-            root=root, roots=roots, vendors=vendors, destination=output
-        )
-        committed, regenerated = lock_path.read_bytes(), dumps(rebuilt)
-        if committed != regenerated:
-            for line in _mismatches(locked=lock, rebuilt=rebuilt):
-                print("build: " + line, file=sys.stderr)
-            report_difference(
-                actual=committed, expected=regenerated, label=lock_path.name
+        # Create the output parent only once every locked source is available.
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(
+            prefix=".ai-skills-build-", dir=destination.parent
+        ) as staged:
+            output = Path(staged) / "artifacts"
+            rebuilt = build_lock(
+                root=root, roots=roots, vendors=vendors, destination=output
             )
-            print(
-                f"build: rebuilt artifacts differ from {lock_path.name}; nothing "
-                "was published",
-                file=sys.stderr,
-            )
-            return 1
-        install_directory(source=output, destination=destination)
+            committed, regenerated = lock_path.read_bytes(), dumps(rebuilt)
+            if committed != regenerated:
+                for line in _mismatches(locked=lock, rebuilt=rebuilt):
+                    print("build: " + line, file=sys.stderr)
+                report_difference(
+                    actual=committed, expected=regenerated, label=lock_path.name
+                )
+                print(
+                    f"build: rebuilt artifacts differ from {lock_path.name}; nothing "
+                    "was published",
+                    file=sys.stderr,
+                )
+                return 1
+            install_directory(source=output, destination=destination)
     print(f"build: {len(rebuilt.packages)} package artifact(s) match {lock_path.name}")
     return 0
 

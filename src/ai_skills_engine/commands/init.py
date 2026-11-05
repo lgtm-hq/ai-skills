@@ -114,17 +114,46 @@ def caller_workflow(*, sha: str, version: str) -> str:
     )
 
 
-def _origin(root: Path) -> tuple[str, str] | None:
-    """Read the GitHub ``origin`` remote from ``.git/config`` text, never git itself.
+def _git_config(root: Path) -> Path | None:
+    """Locate the shared Git config of a checkout or linked worktree.
+
+    A linked worktree's ``.git`` is a file naming its private git directory,
+    whose ``commondir`` points at the repository holding the remotes.
 
     Args:
         root: Repository root.
 
     Returns:
+        Config path, or None when no readable layout is present.
+    """
+    marker = root / ".git"
+    if marker.is_symlink():
+        return None
+    if marker.is_dir():
+        return marker / "config"
+    if not marker.is_file():
+        return None
+    text = marker.read_text(encoding="utf-8", errors="replace").strip()
+    if not text.startswith("gitdir:"):
+        return None
+    git_dir = root / text.removeprefix("gitdir:").strip()
+    common = git_dir / "commondir"
+    if common.is_file() and not common.is_symlink():
+        git_dir /= common.read_text(encoding="utf-8", errors="replace").strip()
+    return git_dir / "config"
+
+
+def _origin(root: Path) -> tuple[str, str] | None:
+    """Read the GitHub ``origin`` remote from Git config text, never git itself.
+
+    Args:
+        root: Repository root (a checkout or a linked worktree).
+
+    Returns:
         Owner and repository name, when declared.
     """
-    config = root / ".git" / "config"
-    if not config.is_file() or config.is_symlink():
+    config = _git_config(root)
+    if config is None or not config.is_file() or config.is_symlink():
         return None
     section = ""
     for line in config.read_text(encoding="utf-8", errors="replace").splitlines():

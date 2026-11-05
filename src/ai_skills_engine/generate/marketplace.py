@@ -329,8 +329,8 @@ def _validate_bundles(
 def load_validated_bundles(*, repo_root: Path) -> BundlesDocument:
     """Load ``bundles.yaml`` and validate full, duplicate-free skill coverage.
 
-    Shared by the marketplace and README generators so both read the same
-    validated view of ``bundles.yaml``.
+    Used by the README generator (and its tests); the marketplaces render from
+    the artifact index of ``ai-skills.yaml`` instead.
 
     Args:
         repo_root: Repository root path.

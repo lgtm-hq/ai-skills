@@ -150,6 +150,7 @@ def materialize_sources(
                     revision=vendor.sha,
                     label=alias,
                     expected=expected,
+                    index=False,
                 )
                 extract_canonical(data=data, dest=destination)
             else:

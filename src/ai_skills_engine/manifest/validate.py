@@ -1,14 +1,16 @@
 """JSON Schema structural validation followed by identity/selection checks."""
 
 import json
-from collections.abc import Mapping
+import re
+from collections.abc import Callable, Iterator, Mapping
+from functools import cache
 
 # nosemgrep: python37-compatibility-importlib2 - pyproject.toml requires Python >=3.13
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError, validators
 
 from ai_skills_engine.manifest.diagnostic import Diagnostic
 from ai_skills_engine.manifest.identity import parse_id
@@ -36,6 +38,48 @@ def validate_inventory(
     from ai_skills_engine.inventory.load import load_inventory
 
     return load_inventory(root, vendor_roots=vendor_roots).diagnostics
+
+
+@cache
+def _ecma_anchored(pattern: str) -> re.Pattern[str]:
+    """Compile a schema pattern with ECMA-262 end-of-input ``$`` semantics.
+
+    Python's ``$`` also matches before a final newline; JSON Schema patterns
+    are ECMA-262, where it never does. The manifest schema uses ``$`` only as
+    an anchor (never escaped or inside a character class).
+
+    Args:
+        pattern: Schema ``pattern`` value.
+
+    Returns:
+        Compiled pattern whose unescaped ``$`` anchors are ``\\Z``.
+    """
+    return re.compile(re.sub(r"(?<!\\)\$", r"\\Z", pattern))
+
+
+def _pattern(
+    validator: Any, pattern: str, instance: object, _schema: object
+) -> Iterator[ValidationError]:
+    """Apply a ``pattern`` keyword with ECMA-262 anchors.
+
+    Args:
+        validator: Active validator.
+        pattern: Schema regular expression.
+        instance: Candidate value.
+        _schema: Enclosing schema (unused).
+
+    Yields:
+        The same error jsonschema reports for a non-matching string.
+    """
+    if validator.is_type(instance, "string") and not _ecma_anchored(pattern).search(
+        cast(str, instance)
+    ):
+        yield ValidationError(f"{instance!r} does not match {pattern!r}")
+
+
+# types-jsonschema leaves extend() untyped; it returns a Draft 2020-12 subclass.
+_extend = cast(Callable[..., type[Draft202012Validator]], validators.extend)
+_Validator = _extend(Draft202012Validator, {"pattern": _pattern})
 
 
 def schema_path() -> resources.abc.Traversable:
@@ -79,7 +123,7 @@ def validate_document(
             "/" + "/".join(str(part) for part in error.absolute_path),
             safe_diagnostic(error.message),
         )
-        for error in Draft202012Validator(schema).iter_errors(data)
+        for error in _Validator(schema).iter_errors(data)
     ]
     if findings:
         return findings

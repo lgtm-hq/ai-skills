@@ -29,7 +29,9 @@ def explain(result: SelectionResult) -> str:
             )
     for item in result.diagnostics:
         severity = "warning" if item.warning else "error"
-        lines.append(f"{severity}[{item.code}]: {item.message}")
+        # Indent continuation lines (e.g. multi-line YAML errors) under the item.
+        message = item.message.replace("\n", "\n  ")
+        lines.append(f"{severity}[{item.code}]: {message}")
         if item.chain:
             lines.append("  chain: " + " -> ".join(item.chain))
         if item.cycle:

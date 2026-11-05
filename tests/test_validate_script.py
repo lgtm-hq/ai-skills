@@ -476,3 +476,43 @@ def test_validate_succeeds_without_plugins_baked(tmp_path: Path) -> None:
     assert_that(result.stdout).contains("Validation passed")
     assert_that((tmp_path / "plugins-baked").exists()).is_false()
     logger.info("[TEST] validate without plugins-baked: rc={}", result.returncode)
+
+
+@pytest.mark.parametrize(
+    ("manifest", "expected"),
+    [(True, "invoked"), (False, "skipped")],
+    ids=["manifest=present", "manifest=absent"],
+)
+def test_marketplace_gate_follows_the_manifest_not_bundles(
+    tmp_path: Path, manifest: bool, expected: str
+) -> None:
+    """Step 4 checks the marketplaces whenever ai-skills.yaml exists (#575)."""
+    script_path = _copy_validate_script(repo_root=REPO_ROOT, tmp_path=tmp_path)
+    (tmp_path / "skills").mkdir()
+    if manifest:
+        (tmp_path / "ai-skills.yaml").write_text("apiVersion: ai-skills.dev/v1\n")
+    calls = tmp_path / "uv-calls.txt"
+    mock_bin = tmp_path / "bin"
+    mock_bin.mkdir()
+    (mock_bin / "uv").write_text(
+        '#!/usr/bin/env bash\nprintf \'%s\\n\' "$*" >> "$UV_CALLS"\n',
+        encoding="utf-8",
+    )
+    (mock_bin / "uv").chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{mock_bin}{os.pathsep}{os.environ['PATH']}",
+        "UV_CALLS": str(calls),
+    }
+    result = subprocess.run(  # nosec B603 B607 - fixed bash argv, no shell
+        ["bash", str(script_path)],
+        cwd=tmp_path,
+        check=False,
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+    invoked = "run python scripts/generate_marketplace.py --check" in calls.read_text()
+    assert_that("invoked" if invoked else "skipped").is_equal_to(expected)
+    assert_that("ai-skills.yaml not found" in result.stdout).is_equal_to(not manifest)
+    assert_that(result.stdout).does_not_contain("bundles.yaml not found")

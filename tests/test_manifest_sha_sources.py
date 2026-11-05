@@ -126,3 +126,24 @@ def test_escaped_and_aliased_sha_decode_to_valid_digests() -> None:
     )
     assert_that(data["escaped"]).is_equal_to(OLD)
     assert_that(data["alias"]).is_equal_to(OLD)
+
+
+def test_decimal_only_sha_names_the_quoting_fix(tmp_path: Path) -> None:
+    """A plain all-digit SHA parses as a number; the error says to quote it."""
+    digits = "1" + "2" * 39
+    path = tmp_path / "ai-skills.yaml"
+    path.write_text(
+        "apiVersion: ai-skills.dev/v1\npublisher: {id: example}\nexports: []\n"
+        f"vendors:\n  - id: first\n    repo: owner/first\n    sha: {digits}\n"
+        "    branch: main\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError, match=f'decimal-only SHA .*quote it: sha: "{digits}"'
+    ):
+        load_manifest(path)
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(digits, f'"{digits}"'),
+        encoding="utf-8",
+    )
+    assert_that(load_manifest(path).vendors[0].sha).is_equal_to(digits)

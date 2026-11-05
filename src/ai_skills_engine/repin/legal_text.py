@@ -11,7 +11,7 @@ import hashlib
 import re
 from collections.abc import Iterable
 
-# The exact header written by ``artifacts.legal.legal_files`` for one section.
+# The exact header written by ``artifacts.legal.section_header`` for one section.
 _REVISION_HEADER = re.compile(
     rb"^(Origin: [^\n]*\n)Revision: [^\n]*\n(?=Declared license: )",
     flags=re.MULTILINE,

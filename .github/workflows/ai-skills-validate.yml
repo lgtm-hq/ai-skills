@@ -45,8 +45,10 @@ jobs:
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
-          # Checkouts, uv/PyPI and pinned vendor source tarballs (lock --fetch).
-          # setup-uv reads its version manifest from raw.githubusercontent.com.
+          # Hosts for checkouts, uv/PyPI and pinned vendor source tarballs;
+          # lock --fetch itself reaches only api.github.com and
+          # codeload.github.com. setup-uv reads its version manifest from
+          # raw.githubusercontent.com.
           allowed-endpoints: >-
             github.com:443
             api.github.com:443

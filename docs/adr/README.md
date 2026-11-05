@@ -7,6 +7,9 @@ Each ADR records its status and date, with Context, Decision and
 Consequences sections. Accepted decisions guide implementation; proposed
 decisions remain subject to their stated follow-up. Engine v2 work is
 tracked in epic [#596](https://github.com/lgtm-hq/ai-skills/issues/596).
+Editorial edits (terminology, code-span formatting, dated clarifications that
+restate existing behavior) do not amend an accepted decision; amendments are
+marked in the Status column.
 
 ADR 0008 applies #562’s measured Python-first escape hatch: one bundled Python
 engine owns build and install behavior; strict TypeScript is the thin npm launcher.

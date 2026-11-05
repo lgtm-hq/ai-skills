@@ -26,7 +26,10 @@ def resource_path(raw: str) -> str | None:
     """Retain literal filesystem spelling in an explicitly declared scalar.
 
     Percent escapes, query and fragment characters are ordinary filename bytes.
-    URL operands retain the existing remote/unsafe scheme policy.
+    URL operands retain the existing remote/unsafe scheme policy: a value that
+    starts with ``letters:`` or ``//`` is read as a URL, so remote URLs stay
+    unchanged and other schemes are rejected. Spell a colon-bearing relative
+    filename with a leading ``./`` (``./notes:v1.md``).
 
     Args:
         raw: Parsed JSON/YAML/frontmatter scalar.

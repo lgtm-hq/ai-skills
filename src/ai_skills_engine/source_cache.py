@@ -185,9 +185,11 @@ def extract_canonical(*, data: bytes, dest: Path) -> None:
                 if stream is None:
                     raise CacheCorruptError(f"Missing cached source payload: {name!r}")
                 mode = 0o755 if member.mode & stat.S_IXUSR else 0o644
-                descriptor = os.open(
-                    target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode
-                )
+                # O_NOFOLLOW is POSIX-only; O_EXCL alone still refuses a link.
+                flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                if hasattr(os, "O_NOFOLLOW"):
+                    flags |= os.O_NOFOLLOW
+                descriptor = os.open(target, flags, mode)
                 with os.fdopen(descriptor, "wb") as handle:
                     handle.write(stream.read())
                     os.fchmod(handle.fileno(), mode)
@@ -321,7 +323,14 @@ class SourceCache:
         return value
 
     def store(
-        self, *, data: bytes, repo: str, revision: str, label: str, expected: str | None
+        self,
+        *,
+        data: bytes,
+        repo: str,
+        revision: str,
+        label: str,
+        expected: str | None,
+        index: bool = True,
     ) -> str:
         """Publish canonical bytes and their ref, verifying a locked digest first.
 
@@ -331,6 +340,9 @@ class SourceCache:
             revision: 40-hex commit SHA.
             label: Vendor alias for diagnostics.
             expected: Locked digest that the bytes must match, if any.
+            index: Whether to record the ``repo@revision`` ref. Caller-supplied
+                snapshots were never fetched from the forge, so they must not
+                become the trusted answer for a later ref lookup.
 
         Returns:
             Stored source digest.
@@ -347,10 +359,11 @@ class SourceCache:
         path = self.source_path(digest)
         if not self.has(digest) or digest_bytes(path.read_bytes()) != digest:
             atomic_write(path=path, data=data)
-        atomic_write(
-            path=self.ref_path(repo=repo, revision=revision),
-            data=(digest + "\n").encode(),
-        )
+        if index:
+            atomic_write(
+                path=self.ref_path(repo=repo, revision=revision),
+                data=(digest + "\n").encode(),
+            )
         return digest
 
     def extract(self, digest: str, *, dest: Path, label: str) -> None:
@@ -409,6 +422,11 @@ def materialize(
     digest = expected or cache.lookup(repo=vendor.repo, revision=vendor.sha)
     if digest is not None and cache.has(digest):
         cache.extract(digest, dest=dest, label=vendor.id)
+        if expected is None:
+            # A ref-resolved tree has no lock authority: re-apply this pin's limits.
+            validate_input_tree(
+                root=dest, vendor=vendor.id, limits=vendor.ingest_limits
+            )
         return digest
     if fetcher is None:
         raise CacheMissError(

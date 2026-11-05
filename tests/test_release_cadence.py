@@ -46,6 +46,12 @@ def test_version_pr_preparation_stays_enabled(
     )
     assert_that(job["with"]["tooling-ref"]).is_equal_to(job["uses"].rsplit("@", 1)[1])
     assert_that(job["with"]["egress-policy"]).is_equal_to("block")
+    assert_that(job["with"]).contains_entry(
+        {"max-bump": "minor"},
+        {"ecosystems": "python"},
+        {"version-update-script": "scripts/ci/update_release_version.sh"},
+        {"egress-preset": "pypi"},
+    )
     assert_that(job["secrets"]).is_equal_to(
         {
             "RELEASE_APP_ID": "${{ secrets.RELEASE_APP_ID }}",
@@ -69,7 +75,14 @@ def test_release_tagging_stays_enabled(release_workflows: dict[str, Any]) -> Non
         {"branches": ["main"], "paths": ["CHANGELOG.md"]},
     )
     assert_that(workflow["on"]).contains_key("workflow_dispatch")
-    assert_that(workflow["jobs"]["auto-tag"]).does_not_contain_key("if")
+    job = workflow["jobs"]["auto-tag"]
+    assert_that(job).does_not_contain_key("if")
+    assert_that(job["uses"]).matches(
+        r"^lgtm-hq/lgtm-ci/\.github/workflows/"
+        r"reusable-release-auto-tag\.yml@[0-9a-f]{40}$",
+    )
+    assert_that(job["with"]["tooling-ref"]).is_equal_to(job["uses"].rsplit("@", 1)[1])
+    assert_that(job["with"]["egress-policy"]).is_equal_to("block")
 
 
 @pytest.mark.parametrize("name", ["release-manifest", "release-sbom", "publish-npm"])

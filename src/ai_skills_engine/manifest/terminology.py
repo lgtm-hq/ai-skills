@@ -113,19 +113,31 @@ def lint_terminology(repo_root: Path, data: dict[str, Any]) -> list[Diagnostic]:
     """
     findings: list[Diagnostic] = []
     glossary = repo_root / "docs" / "glossary.md"
-    text = glossary.read_text(encoding="utf-8") if glossary.is_file() else ""
-    headings = {
-        match.casefold() for match in re.findall(r"^## (.+)$", text, flags=re.MULTILINE)
-    }
-    findings.extend(
-        Diagnostic(
-            "glossary-term-missing",
-            "docs/glossary.md",
-            f"Missing canonical term: {term}",
+    if glossary.is_file():
+        text = glossary.read_text(encoding="utf-8")
+        headings = {
+            match.casefold()
+            for match in re.findall(r"^## (.+)$", text, flags=re.MULTILINE)
+        }
+        findings.extend(
+            Diagnostic(
+                "glossary-term-missing",
+                "docs/glossary.md",
+                f"Missing canonical term: {term}",
+            )
+            for term in CANONICAL_TERMS
+            if term not in headings
         )
-        for term in CANONICAL_TERMS
-        if term not in headings
-    )
+    else:
+        # One actionable error instead of one per canonical term.
+        findings.append(
+            Diagnostic(
+                "glossary-missing",
+                "docs/glossary.md",
+                "docs/glossary.md not found; the terminology lint requires a "
+                f"glossary defining all {len(CANONICAL_TERMS)} canonical terms",
+            )
+        )
     for path in sorted((repo_root / "docs").rglob("*.md")):
         document = path.read_text(encoding="utf-8")
         if path == glossary:

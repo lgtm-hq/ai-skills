@@ -43,10 +43,12 @@ document:
   qualified IDs, sorted SHA-256/mode records, direct declared edges and shared
   resources. Both inventory and `manifest validate` include inventory diagnostics
   and exit nonzero on errors. Prose mentions and actual Markdown destinations
-  produce lint only; they never create dependency edges. Code fences and code
-  spans are inert. External local links must stay within that capability's
-  explicitly referenced resources; a resource declaration in another package
-  alone does not grant access. Resource Markdown uses the same boundary.
+  produce lint only; they never create dependency edges. Mention lint skips
+  same-named capabilities in other packages, because prose cannot tell them
+  apart. Code fences and code spans are inert. External local links must stay
+  within that capability's explicitly referenced resources; a resource
+  declaration in another package alone does not grant access. Resource
+  Markdown uses the same boundary.
   Tree digests hash compact ASCII JSON arrays of sorted path/hash/mode triples;
   payload modes are canonical Git-like `0644` (no owner execute bit) or `0755`
   (owner execute bit set), for files in capability and resource payloads alike.
@@ -56,7 +58,9 @@ document:
   by that filter and does not mark a payload executable. Thus equivalent local
   snapshots under umask `002` or `022` and fetched trees have the same digests.
   Collection observes these modes without changing source permissions or
-  authorizing or executing vendor code.
+  authorizing or executing vendor code. An unreadable payload or Markdown file
+  fails collection as `inventory.invalid-payload`; permissions are never
+  widened.
   Host-specific frontmatter retains canonical JSON values and explicit rules
   from the wheel's `data/host_attributes.yaml`. Unknown hosts and strict
   `unverified` rules refuse; collection does not certify host semantics.
@@ -72,7 +76,8 @@ document:
   Compatibility publication also requires explicit exports for every local
   marketplace package and mapped vendor package. Narrowed exports or vendor
   selectors fail before either generated registry is written. An explicit
-  include of every mapped package and an empty exclude list are supported;
+  include of every mapped package (qualified package IDs or a covering wildcard
+  such as `vendor/*`) and an empty exclude list are supported;
   narrower selection requires a manifest-aware publisher. Exporting the reserved
   ungrouped package is rejected because legacy marketplaces cannot publish it.
   Non-empty capability `requires`/`resources` and local package `resources` also
@@ -95,7 +100,8 @@ document:
   related references and prose mentions only produce directional dangling warnings.
   Every explicit selector must match a qualified ID, package or `publisher/*`
   (or a trailing wildcard), before destination aliases or content hashes are
-  considered. A bare publisher is invalid.
+  considered. A bare publisher is invalid. A trailing `*` is a raw string
+  prefix, so `vendor/tools*` also matches `vendor/tools-extra`.
   Resource exclusions are supported; file/path selectors are invalid. Exclusions,
   consumer role restrictions, origin denies and collision skips veto expansion;
   a retained dependency on a vetoed target fails with the shortest chain and fix.
@@ -135,7 +141,8 @@ document:
   or endpoints, and never rewrites supplied snapshots. Fetched trees are validated
   pristine: any symlink, including an unrelated documentation alias, fails the
   fetch before collection. Legacy bake's documentation-alias pruning stays
-  confined to baking. A manifest vendor's own
+  confined to baking. Likewise, a wildcard-discovered skill with an invalid
+  payload is an inventory error, not the bake's reported skip. A manifest vendor's own
   publisher names its IDs; consumer authority remains separate. Legacy
   `renameSkills` creates destination aliases. Legacy `extraFiles` declares
   resources named by lowercase file stem (underscores become hyphens), and
@@ -392,11 +399,16 @@ uv run ai-skills-engine add owner/repo[@ref] [--include ID]... [--exclude ID]...
   `ai-skills.yaml` gets a pinned `vendors:` entry whose `include` imports the
   upstream's `exports`. A vendor without one gets a consumer-owned `mapping`
   scaffold whose identities this repository asserts; `lock` refuses it until you
-  review it and rerun `add owner/repo --accept-mapping`. Built artifacts record
+  review it and rerun `add owner/repo --accept-mapping`. That rerun only removes
+  the scaffold marker; it ignores `--include`, `--exclude`, `--branch`,
+  `--license` and `--homepage`, so edit the entry directly to change them. Passing
+  `--accept-mapping` on the first `add` accepts a mapping nobody has reviewed yet;
+  review it before committing. Built artifacts record
   `"identity": "consumer-asserted"` for mapped capabilities. Either way, `add`
   then runs `lock`; ambiguous `sha`/`branch` scalars are written quoted.
 - **Exports:** importing never re-publishes. Only packages listed under
-  `exports:` are re-exported, and their lineage gains this publisher's hop. An
+  `exports:` (bare local package IDs or qualified `publisher/package` IDs) are
+  re-exported, and their lineage gains this publisher's hop. An
   export that matches nothing, or names content that is not imported, fails
   `validate`.
 
@@ -568,6 +580,7 @@ that PyYAML and Renovate read differently, and an unquoted ambiguous value fails
 before any write. `--skip-declined` asks `gh pr list --state closed` for closed,
 unmerged PRs whose body or comments carry the marker for the same vendor and
 revision; that revision is skipped and logged, and a newer revision proceeds.
+Only the 200 most recent closed PRs are read, and a full window prints a warning.
 
 Renovate tracks each manifest vendor's explicit `branch` (currently `main`
 for all five vendors). Its native YAML/JSONata manager discovers complete vendor
