@@ -11,9 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **selection**: add offline dependency-aware capability planning and `plan --json`,
-  including resource closure, veto diagnostics and persistent alias checks (#570).
-
 ### Changed
 
 - **engine**: package version normalization follows SemVer 2.0.0 strictly and
