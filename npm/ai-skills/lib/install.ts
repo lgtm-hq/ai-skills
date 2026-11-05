@@ -53,6 +53,34 @@ import {
   VENDOR_DRIFT_SUFFIX,
 } from "./ui.ts";
 import { checkGatewayUpdate, checkSkillDrift, checkVendorDrift } from "./update-check.ts";
+import { resolvePackagedRuntime, runPackagedRuntime } from "./runtime.ts";
+
+/**
+ * Hand an artifact install/update to the bundled Python engine unchanged.
+ *
+ * Digest verification, subtractive filtering, origin denies and the consumer
+ * profile are engine semantics (ADR 0008); the launcher only forwards the
+ * arguments and lets the engine own output and exit status. Without a bundled
+ * payload this is a launcher diagnostic, never a TypeScript fallback.
+ *
+ * @throws {Error} When this installation ships no bundled engine.
+ */
+export async function delegateArtifactCommand(
+  argv: string[],
+  dependencies: {
+    resolveRuntime?: typeof resolvePackagedRuntime;
+    run?: typeof runPackagedRuntime;
+  } = {},
+): Promise<void> {
+  const runtime = (dependencies.resolveRuntime ?? resolvePackagedRuntime)();
+  if (!runtime) {
+    throw new Error(
+      "--exclude, --deny-origin, --digest, --artifacts, --frozen, --dry-run and --json " +
+        "are evaluated by the bundled ai-skills engine, which this installation does not include",
+    );
+  }
+  await (dependencies.run ?? runPackagedRuntime)(runtime, argv);
+}
 
 /**
  * Fill unset install selections through the home/cart wizard.

@@ -2,7 +2,12 @@ import { adoptSkills } from "./adopt.ts";
 import { loadVendors } from "./catalog.ts";
 import { runDoctor } from "./doctor.ts";
 import { listSkills, removeSkills, updateSkills } from "./gateway-commands.ts";
-import { batchesFromCliOptions, install, installInteractively } from "./install.ts";
+import {
+  batchesFromCliOptions,
+  delegateArtifactCommand,
+  install,
+  installInteractively,
+} from "./install.ts";
 import {
   parseArguments,
   validateUnattendedCommandOptions,
@@ -45,6 +50,11 @@ async function printLockedSkills(options: { global: boolean; project: boolean })
  */
 export async function runCli(argv: string[]): Promise<void> {
   const { command, options } = parseArguments(argv);
+  if (options.engine.length > 0) {
+    // Artifact consumption is engine-owned; forward the command explicitly.
+    await delegateArtifactCommand(argv[0] === command ? argv : [command, ...argv]);
+    return;
+  }
   if (command === "vendors") {
     await printVendors();
     return;

@@ -14,6 +14,7 @@ describe("parseArguments", () => {
         agents: [],
         bundle: "review",
         copy: false,
+        engine: [],
         global: true,
         migrate: null,
         onConflict: null,
@@ -204,6 +205,59 @@ describe("parseArguments", () => {
   test("rejects --migrate without an agent", () => {
     expect(() => parseArguments(["doctor", "--migrate"])).toThrow(
       "--migrate requires an agent name",
+    );
+  });
+});
+
+describe("engine-owned artifact options", () => {
+  test("collects artifact options verbatim for the bundled engine", () => {
+    const parsed = parseArguments([
+      "install",
+      "--exclude",
+      "capability:lgtm-hq/other:skill/jira",
+      "--deny-origin",
+      "github.com/example/vendor-x",
+      "-a",
+      "codex",
+      "-y",
+      "--global",
+      "--frozen",
+    ]);
+    expect(parsed.options.engine).toEqual([
+      "--exclude",
+      "capability:lgtm-hq/other:skill/jira",
+      "--deny-origin",
+      "github.com/example/vendor-x",
+      "--frozen",
+    ]);
+    expect(parsed.options.agents).toEqual(["codex"]);
+  });
+
+  test("leaves selector semantics to the engine", () => {
+    // The launcher checks arity only; the engine rejects the unknown kind.
+    expect(parseArguments(["--exclude", "skill:anything"]).options.engine).toEqual([
+      "--exclude",
+      "skill:anything",
+    ]);
+  });
+
+  test("update forwards pins and frozen but not new selectors", () => {
+    const parsed = parseArguments(["update", "--frozen", "--digest", "sha256:ab", "--json"]);
+    expect(parsed.options.engine).toEqual(["--frozen", "--digest", "sha256:ab", "--json"]);
+    expect(() => parseArguments(["update", "--exclude", "package:a/b"])).toThrow(
+      "--exclude applies only to install; update replays the profile",
+    );
+  });
+
+  test("rejects missing values and other commands", () => {
+    expect(() => parseArguments(["install", "--deny-origin"])).toThrow(
+      "--deny-origin requires a value",
+    );
+    expect(() => parseArguments(["install", "--artifacts", ""])).toThrow(
+      "--artifacts requires a value",
+    );
+    expect(() => parseArguments(["list", "--frozen"])).toThrow(
+      "--frozen applies only to install and update",
     );
   });
 });
