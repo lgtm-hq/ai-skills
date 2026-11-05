@@ -98,6 +98,8 @@ export interface HostExecOp {
   compensate: string[] | null;
   /** Treat "already present" output as success that needs no compensation. */
   tolerateAlreadyPresent?: boolean;
+  /** Treat "already absent" output as success (unregistering steps). */
+  tolerateAlreadyAbsent?: boolean;
 }
 
 /** One operation in an adapter plan. */
@@ -222,6 +224,13 @@ export interface AdapterPlan {
   support: SupportReport;
   /** Informational lines (skipped identical dests and similar). */
   notes: string[];
+  /**
+   * Files this plan makes the gateway own once applied, relative to `root`,
+   * with the hashes it installs (symlinks as `sha256("symlink:" + target)`).
+   * Tree adapters set it; receipts and plugin records are built from it
+   * before anything is applied, so an interrupted install can roll forward.
+   */
+  owns?: { root: string; files: Record<string, string> };
 }
 
 /** Environment for `verify()`. */

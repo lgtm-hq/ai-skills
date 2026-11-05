@@ -110,6 +110,7 @@ export const skillExplodeAdapter: DestinationAdapter = {
       notes: decisions.skipped.map(
         (item) => `skipped identical ${item.dest} (not claiming ${item.skill} on ${item.agent})`,
       ),
+      owns: { files: { ...decisions.claimed[input.host] }, root },
     };
   },
   verify(plan, env) {

@@ -122,7 +122,8 @@ and every file, link and host CLI operation) without writing anything.
 With `--unmanaged`, `--dry-run` prints the skills CLI command the handoff
 would run and runs nothing.
 `sk doctor` prints capability, lock↔disk drift, and orphans;
-`--repair` restores missing files; `--migrate <host>` cutovers locked
+`--repair` first recovers any interrupted transaction, then restores missing
+files; `--migrate <host>` cutovers locked
 first-party plugins on that host (native migrate skips vendor plugins).
 `sk install --projector` cutovers one plugin.
 See [docs/smoke-test.md](docs/smoke-test.md).
@@ -182,12 +183,35 @@ JSON as build output. Settled _why_ lives in
   records vendor source digests and capability artifact digests so
   `ai-skills-engine build` rebuilds offline from a source cache (see
   [docs/artifacts.md](./docs/artifacts.md#resolution-lock-and-source-cache)).
-  It is build-plane state, separate from the gateway lockfiles below.
-- **Gateway lockfiles** (schema v2; do not overwrite stock `skills-lock.json`):
-  - Global: `~/.ai-skills/lock.json`
-  - Project: `./ai-skills-lock.json`
-  - v1 locks are treated as empty — wipe and reinstall. `list` annotates
-    MISSING and MODIFIED installs instead of listing them as healthy.
+  It is build-plane state, separate from the machine-local install state below.
+- **Install receipts** (machine-local, never written into a repository):
+  - Global: `~/.ai-skills/state/user/receipt.json`
+  - Project: `~/.ai-skills/state/projects/<sha256 of the repo's real path>/receipt.json`
+  - A receipt records the plugins, owned paths with their installed and
+    previous hashes, host CLI registrations the gateway created, adapter
+    fingerprints and the generation number. An unknown receipt version fails
+    closed. `AI_SKILLS_STATE_DIR` relocates the state root.
+  - Every `install`, `update`, `remove`, `adopt` and `rollback` runs as one journaled
+    transaction under `~/.ai-skills/state/journal/<txn>/` while holding
+    `~/.ai-skills/state/lock`; a second command waits, then fails naming the
+    holder, and a lock left by a dead process is recovered. The next mutating
+    command (or `sk doctor --repair`) finishes or undoes a transaction a crash
+    interrupted. If it can do neither, it stops and prints the journal path.
+  - Earlier gateway lockfiles (`~/.ai-skills/lock.json`,
+    `./ai-skills-lock.json`, schema v2) are still read but never written;
+    the first commit copies their entries into the receipt. From then on the
+    receipt is authoritative and the old file is ignored and goes stale: edits
+    to a committed `./ai-skills-lock.json` (a merge, a teammate's install) no
+    longer reach this machine. Teams that shared that file should install (or
+    `sk adopt`) on each machine; #586 converts and retires it. v1 locks are
+    treated as empty. `list` annotates MISSING and MODIFIED installs instead
+    of listing them as healthy.
+- **`rollback`** restores the previous generation of a scope byte for byte,
+  keeps and reports files edited locally since, and unregisters only host
+  plugins the receipt records as created by that generation.
+  `--dry-run` prints the compensating plan. One previous generation is kept
+  by default; `--keep-generations <n>` on `install`, `update`, `remove` or
+  `rollback` keeps more (or `0` for none).
 - **`update`** refreshes lock-managed plugins whose pin moved or files
   drifted; current matching pins are a no-op. Entries missing on disk
   are pruned.
@@ -195,7 +219,7 @@ JSON as build output. Settled _why_ lives in
   warning for locally modified paths, then prunes empty directory trees.
 - **`list`** shows installed plugins, per-agent status, and contained
   skill names (read-only).
-- **`adopt`** imports existing `skills add` installs into the gateway lock
+- **`adopt`** imports existing `skills add` installs into the receipt
   from `skills-lock.json` + on-disk agent skill dirs (no reinstall).
   Ambiguous sources are skipped with a report under `-y`, or confirmed
   interactively.
@@ -205,6 +229,8 @@ sk vendors   # offline: baked vendors + SHAs
 sk list --global
 sk update -y --global -a cursor
 sk adopt -y --project
+sk rollback --project --dry-run
+sk rollback --global
 ```
 
 First-party gateway installs resolve `lgtm-hq/ai-skills@v0.31.0`.

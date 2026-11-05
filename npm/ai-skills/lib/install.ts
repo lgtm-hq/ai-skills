@@ -1,4 +1,4 @@
-import { access, rm } from "node:fs/promises";
+import type { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -7,52 +7,36 @@ import {
   agentProjector,
   agentSkillsRoot,
   allAgentSkillRoots,
-  hashFile,
-  hashTree,
   isCliOwnedNativeInstall,
   LOCKFILE_VERSION,
   mergeLockEntries,
   otherPluginSkillNames,
   PROJECTOR_EXPLODE,
   PROJECTOR_NATIVE,
-  readLockfile,
   reconcileLock,
   skillNamesFromFiles,
-  writeLockfile,
 } from "./lockfile.ts";
+import type { LockEnvironment } from "./lockfile.ts";
 import { resolveScope } from "./options.ts";
 import { getPackageVersion } from "./package-version.ts";
 import { resolveDoctorCapabilities, removeLockedAgentProjection } from "./doctor.ts";
 import { assertProjectorSupported, resolveProjector } from "./adapters/defaults.ts";
 import { hostPluginsRoot, nativeRoute } from "./adapters/hosts.ts";
-import {
-  cursorDestHasFiles,
-  discardCursorPluginBackup,
-  findCatalogSourceRoot,
-  installCursorPlugin,
-  ownedPluginTreeFiles,
-  restoreCursorPluginInstall,
-} from "./adapters/cursor/drop.ts";
-import type { Transaction } from "./adapters/execute.ts";
+import { findCatalogSourceRoot, ownedPluginTreeFiles } from "./adapters/cursor/drop.ts";
+import { assertPlansInsideRoots, PlanApplyError, planOps } from "./adapters/execute.ts";
 import type { AdapterPlan } from "./adapters/types.ts";
+import { defaultStoreRoot, resolveExplodeSourceSkills } from "./adapters/shared/skill-explode.ts";
 import {
-  defaultStoreRoot,
-  destUsesCopyMaterialization,
-  discardExplodeBackups,
-  explodePlugin,
-  resolveExplodeSourceSkills,
-  restoreExplodeInstall,
-  warnSkippedExplodeDests,
-} from "./adapters/shared/skill-explode.ts";
-import {
-  applyCliLane,
+  adapterFingerprints,
   cachedCapabilities,
   composeInstallPlans,
-  finishTransactions,
   formatPlans,
-  undoTransactions,
+  irreversibleEffects,
 } from "./install-plan.ts";
 import type { InstallComposition } from "./install-plan.ts";
+import { readInstallState } from "./journal/receipts.ts";
+import { withStateSession } from "./journal/recover.ts";
+import type { JournalHooks, StateSession } from "./journal/recover.ts";
 import {
   buildSkillsArguments,
   handOffUnmanaged,
@@ -292,11 +276,11 @@ async function gatherWizardSignals(
  */
 async function readWizardLock(
   options: { global: boolean; project: boolean },
-  lockEnvironment: Parameters<typeof readLockfile>[1] | undefined,
+  lockEnvironment: LockEnvironment | undefined,
 ): Promise<WizardSignals["lock"]> {
   const readScope = async (scope: "global" | "project") => {
     try {
-      return await readLockfile(scope, lockEnvironment);
+      return await readInstallState(scope, lockEnvironment);
     } catch {
       return {
         gatewayVersion: "",
@@ -728,10 +712,12 @@ export async function install(
     unmanaged?: boolean;
     vendor: string | null;
     yes: boolean;
+    /** Generations whose preimages stay available to `rollback` (default 1). */
+    keepGenerations?: number | null;
   },
   run: (args: string[]) => Promise<void> = runSkills,
   now: () => Date = () => new Date(),
-  lockEnvironment: Parameters<typeof readLockfile>[1] | null = {},
+  lockEnvironment: LockEnvironment | null = {},
   extras: {
     exec?: (
       command: string,
@@ -743,10 +729,9 @@ export async function install(
      * for `--unmanaged`, the skills CLI arguments that would run (never run).
      */
     dryRun?: (plans: AdapterPlan[], handoff?: string[]) => void;
-    explode?: typeof explodePlugin;
-    failAfter?: "stage" | "commit";
     hostCapabilities?: Record<string, "native" | "explode">;
-    move?: typeof import("node:fs/promises").rename;
+    /** Op-index injectors and lock wait for the install transaction. */
+    journal?: JournalHooks;
     prompt?: (agent: string) => Promise<"native" | "explode">;
     remove?: typeof rm;
     sourceRoot?: string | null;
@@ -764,7 +749,7 @@ export async function install(
   }
   let source;
   let selectedOptions = options;
-  let vendor;
+  let vendor: Awaited<ReturnType<typeof loadVendors>>["vendors"][number] | undefined;
 
   let bakedPlugin: import("./catalog.ts").BakedPlugin | null = null;
   if (options.vendor) {
@@ -853,306 +838,209 @@ export async function install(
     cwd: lockEnvironment.cwd ?? process.cwd(),
     home: lockEnvironment.home ?? homedir(),
   };
-  const lock = await readLockfile(scope, lockEnvironment);
-  const pluginId = resolvePluginId(scopedOptions, vendor);
-  const existing = lock.plugins[pluginId];
-  const agentsToInstall = await agentsNeedingInstall(
-    existing,
-    scopedOptions.agents,
-    scopedOptions.skills,
-    lockEnvironment,
-    scopedOptions.projector,
-  );
-  const alreadyPresent = scopedOptions.agents.length - agentsToInstall.length;
-  const repaired = existing
-    ? agentsToInstall.filter((agent) => isRepairInstall(existing, agent, scopedOptions)).length
-    : 0;
-  const installed = agentsToInstall.length - repaired;
-  if (agentsToInstall.length === 0 && !extras.dryRun) {
-    return { alreadyPresent, installed, repaired };
-  }
-  const doctorCapabilities =
-    vendor || scopedOptions.projector
-      ? {}
-      : extras.dryRun
-        ? await cachedCapabilities(agentsToInstall, existing, extras.hostCapabilities, env.home)
-        : await resolveDoctorCapabilities(agentsToInstall, existing, {
-            cwd: lockEnvironment.cwd,
-            exec: extras.exec,
-            home: lockEnvironment.home,
-            hostCapabilities: extras.hostCapabilities,
-            prompt: extras.prompt,
-            scope,
-            yes: scopedOptions.yes,
-          });
-  const lanes = partitionProjectorLanes(
-    agentsToInstall,
-    scopedOptions.projector,
-    Boolean(vendor),
-    existing,
-    doctorCapabilities,
-  );
-  const catalogRoot =
-    extras.sourceRoot !== undefined
-      ? extras.sourceRoot
-      : findCatalogSourceRoot(lockEnvironment.cwd ?? process.cwd());
-  // Native lanes need a local source; without one they fall back to explode
-  // unless native was explicit or is locked (then the install refuses).
-  const nativeSources = vendor
-    ? null
-    : resolveExplodeSourceSkills(scopedOptions.skills, extras, catalogRoot);
-  for (const lane of [lanes.treeNative, lanes.cliNative]) {
-    if (lane.length === 0 || (lane === lanes.treeNative ? catalogRoot : nativeSources)) {
-      continue;
-    }
-    const lockedNative = lane.some(
-      (agent) =>
-        Boolean(existing?.agents?.[agent]) && agentProjector(existing!, agent) === PROJECTOR_NATIVE,
+  const warn = extras.warn ?? ((message: string) => console.warn(message));
+  const environment = lockEnvironment;
+  const proceed = async (
+    lock: import("./lockfile.ts").GatewayLock,
+    session: StateSession | null,
+  ): Promise<{ alreadyPresent: number; installed: number; repaired: number }> => {
+    const pluginId = resolvePluginId(scopedOptions, vendor);
+    const existing = lock.plugins[pluginId];
+    const agentsToInstall = await agentsNeedingInstall(
+      existing,
+      scopedOptions.agents,
+      scopedOptions.skills,
+      environment,
+      scopedOptions.projector,
     );
-    if (scopedOptions.projector === PROJECTOR_NATIVE || lockedNative) {
-      throw new Error(
-        lane === lanes.treeNative
-          ? "Native Cursor projector requires a catalog checkout (skills/ + " +
-              ".claude-plugin/marketplace.json). Use --projector explode, or run from the " +
-              "ai-skills repository."
-          : `Native ${lane.join(", ")} install requires a locally rendered artifact (a catalog ` +
-              "checkout with skills/); the remote marketplace is never used. Use --projector " +
-              "explode, or run from the ai-skills repository.",
-      );
+    const alreadyPresent = scopedOptions.agents.length - agentsToInstall.length;
+    const repaired = existing
+      ? agentsToInstall.filter((agent) => isRepairInstall(existing, agent, scopedOptions)).length
+      : 0;
+    const installed = agentsToInstall.length - repaired;
+    if (agentsToInstall.length === 0 && !extras.dryRun) {
+      return { alreadyPresent, installed, repaired };
     }
-    lanes.explode.push(...lane);
-    lane.length = 0;
-  }
-  const explodeSources =
-    lanes.explode.length === 0
+    const doctorCapabilities =
+      vendor || scopedOptions.projector
+        ? {}
+        : extras.dryRun
+          ? await cachedCapabilities(agentsToInstall, existing, extras.hostCapabilities, env.home)
+          : await resolveDoctorCapabilities(agentsToInstall, existing, {
+              cwd: environment.cwd,
+              exec: extras.exec,
+              home: environment.home,
+              hostCapabilities: extras.hostCapabilities,
+              prompt: extras.prompt,
+              scope,
+              yes: scopedOptions.yes,
+            });
+    const lanes = partitionProjectorLanes(
+      agentsToInstall,
+      scopedOptions.projector,
+      Boolean(vendor),
+      existing,
+      doctorCapabilities,
+    );
+    const catalogRoot =
+      extras.sourceRoot !== undefined
+        ? extras.sourceRoot
+        : findCatalogSourceRoot(environment.cwd ?? process.cwd());
+    // Native lanes need a local source; without one they fall back to explode
+    // unless native was explicit or is locked (then the install refuses).
+    const nativeSources = vendor
       ? null
-      : resolveExplodeSourceSkills(
-          scopedOptions.skills,
-          extras,
-          bakedPlugin ? bakedPlugin.pluginRoot : vendor ? null : catalogRoot,
-        );
-  if (lanes.explode.length > 0 && !explodeSources) {
-    if (bakedPlugin) {
-      throw new Error(`Baked plugin "${bakedPlugin.id}" cannot install via the skills CLI`);
-    }
-    throw new Error(unmanagedRequiredMessage(pluginId));
-  }
-  const composition: InstallComposition = {
-    copy: scopedOptions.copy,
-    description: await pluginDescription(pluginId, vendor, bakedPlugin),
-    destRoots: allAgentSkillRoots(scope, lockEnvironment, lock),
-    env,
-    existing,
-    lanes,
-    pluginId,
-    retainStoreSkills: [...otherPluginSkillNames(lock, pluginId)],
-    scope,
-    skills: scopedOptions.skills,
-    sources: { explode: explodeSources, native: nativeSources },
-    storeRoot: extras.storeRoot ?? defaultStoreRoot(scope, lockEnvironment),
-    version: bakedPlugin?.version ?? vendor?.sha ?? getPackageVersion(),
-  };
-  if (extras.dryRun) {
-    extras.dryRun(await composeInstallPlans(composition));
-    return { alreadyPresent, installed, repaired };
-  }
-  const preexisting = await snapshotExistingSkillDirs(
-    scopedOptions,
-    lanes.explode,
-    lockEnvironment,
-  );
-
-  let explodeClaims: Record<string, Record<string, string>> | null = null;
-  const treeLanes = await Promise.all(
-    lanes.treeNative.map(async (agent) => {
-      const destRoot = hostPluginsRoot(agent, { ...env, scope })!;
-      return {
-        agent,
-        destRoot,
-        existed: await cursorDestHasFiles(join(destRoot, pluginId)),
-        // Dest existence is not a swap; installCursorPlugin sets this after dest→`.bak`.
-        progress: { swapped: false },
-      };
-    }),
-  );
-  let lockCommitted = false;
-  const cliTransactions: Transaction[] = [];
-
-  let explodeProgress: import("./adapters/shared/skill-explode.ts").ExplodeResult | null = null;
-  try {
-    if (lanes.explode.length > 0) {
-      const explode = extras.explode ?? explodePlugin;
-      const exploded = await explode({
-        agents: await Promise.all(
-          lanes.explode.map(async (agent) => {
-            const root = agentSkillsRoot(scope, agent, lockEnvironment);
-            const names = [
-              ...new Set([
-                ...scopedOptions.skills,
-                ...skillNamesFromFiles(existing?.agents?.[agent]?.files ?? {}),
-              ]),
-            ];
-            return {
-              id: agent,
-              copy: Boolean(scopedOptions.copy) || (await destUsesCopyMaterialization(root, names)),
-              replace: existing?.agents?.[agent]
-                ? new Set(skillNamesFromFiles(existing.agents[agent].files))
-                : new Set(),
-              root,
-            };
-          }),
-        ),
-        copy: scopedOptions.copy,
-        failAfter: extras.failAfter,
-        hash: lockEnvironment.hash ?? hashFile,
-        keepBackups: true,
-        skills: scopedOptions.skills,
-        sourceSkills: explodeSources!,
-        destRoots: composition.destRoots,
-        retainStoreSkills: new Set(composition.retainStoreSkills),
-        storeRoot: composition.storeRoot,
-      });
-      explodeClaims = exploded.claimed;
-      explodeProgress = exploded;
-      warnSkippedExplodeDests(exploded.skipped, extras.warn);
-    }
-    for (const lane of treeLanes) {
-      const replace = Boolean(
-        existing?.agents?.[lane.agent] && agentProjector(existing, lane.agent) === PROJECTOR_NATIVE,
+      : resolveExplodeSourceSkills(scopedOptions.skills, extras, catalogRoot);
+    for (const lane of [lanes.treeNative, lanes.cliNative]) {
+      if (lane.length === 0 || (lane === lanes.treeNative ? catalogRoot : nativeSources)) {
+        continue;
+      }
+      const lockedNative = lane.some(
+        (agent) =>
+          Boolean(existing?.agents?.[agent]) &&
+          agentProjector(existing!, agent) === PROJECTOR_NATIVE,
       );
-      await installCursorPlugin({
-        commit: false,
-        description: composition.description,
-        destRoot: lane.destRoot,
-        move: extras.move,
-        pluginId,
-        progress: lane.progress,
-        replace,
-        skills: scopedOptions.skills,
-        sourceRoot: catalogRoot!,
-        version: composition.version,
-      });
+      if (scopedOptions.projector === PROJECTOR_NATIVE || lockedNative) {
+        throw new Error(
+          lane === lanes.treeNative
+            ? "Native Cursor projector requires a catalog checkout (skills/ + " +
+                ".claude-plugin/marketplace.json). Use --projector explode, or run from the " +
+                "ai-skills repository."
+            : `Native ${lane.join(", ")} install requires a locally rendered artifact (a catalog ` +
+                "checkout with skills/); the remote marketplace is never used. Use --projector " +
+                "explode, or run from the ai-skills repository.",
+        );
+      }
+      lanes.explode.push(...lane);
+      lane.length = 0;
     }
-    for (const agent of lanes.cliNative) {
-      cliTransactions.push(await applyCliLane(composition, agent, { exec: extras.exec }));
+    const explodeSources =
+      lanes.explode.length === 0
+        ? null
+        : resolveExplodeSourceSkills(
+            scopedOptions.skills,
+            extras,
+            bakedPlugin ? bakedPlugin.pluginRoot : vendor ? null : catalogRoot,
+          );
+    if (lanes.explode.length > 0 && !explodeSources) {
+      if (bakedPlugin) {
+        throw new Error(`Baked plugin "${bakedPlugin.id}" cannot install via the skills CLI`);
+      }
+      throw new Error(unmanagedRequiredMessage(pluginId));
     }
-    if (lanes.explode.length > 0) {
-      await assertCompletePluginInstall(scopedOptions, lanes.explode, lockEnvironment);
+    const composition: InstallComposition = {
+      copy: scopedOptions.copy,
+      description: await pluginDescription(pluginId, vendor, bakedPlugin),
+      destRoots: allAgentSkillRoots(scope, environment, lock),
+      env,
+      existing,
+      lanes,
+      pluginId,
+      retainStoreSkills: [...otherPluginSkillNames(lock, pluginId)],
+      scope,
+      skills: scopedOptions.skills,
+      sources: { explode: explodeSources, native: nativeSources },
+      storeRoot: extras.storeRoot ?? defaultStoreRoot(scope, environment),
+      version: bakedPlugin?.version ?? vendor?.sha ?? getPackageVersion(),
+    };
+    const plans = await composeInstallPlans(composition);
+    if (extras.dryRun || !session) {
+      extras.dryRun?.(plans);
+      return { alreadyPresent, installed, repaired };
     }
-    const entries = await createLockEntries(
+    await assertPlansInsideRoots(plans);
+    for (const note of plans.flatMap((plan) => plan.notes)) {
+      warn(note);
+    }
+    const entries = createLockEntries(
       { ...scopedOptions, agents: agentsToInstall },
       vendor,
       now,
-      lockEnvironment,
+      environment,
       pluginId,
       existing,
       new Set(lanes.explode),
-      explodeClaims,
+      ownedByAgent(plans),
       bakedPlugin,
     );
     if (Object.keys(entries).length === 0) {
-      if (explodeProgress) {
-        await restoreExplodeInstall(explodeProgress, {
-          move: extras.move,
-          remove: extras.remove,
-        });
-      }
       return { alreadyPresent: 0, installed: 0, repaired: 0 };
     }
+    for (const effect of irreversibleEffects(plans)) {
+      warn(`note: ${effect} is not undone by rollback`);
+    }
     try {
-      await writeLockfile(mergeLockEntries(lock, entries), lockEnvironment);
+      await session.transact({
+        hooks: extras.journal,
+        keepGenerations: scopedOptions.keepGenerations,
+        kind: "install",
+        next: {
+          artifactDigest: session.receipt?.artifactDigest ?? null,
+          fingerprints: {
+            // Adapters this transaction did not plan keep their recorded fingerprints.
+            adapters: { ...session.receipt?.fingerprints.adapters, ...adapterFingerprints(plans) },
+            policy: session.receipt?.fingerprints.policy ?? null,
+          },
+          plugins: mergeLockEntries(lock, entries).plugins,
+        },
+        ops: planOps(plans),
+      });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(
-        `Install rolled back after gateway lock update failed (${detail}). ` +
-          "Fix the lockfile path permissions and re-run install.",
-      );
-    }
-    lockCommitted = true;
-    const warn = extras.warn ?? ((message) => console.warn(message));
-    if (explodeProgress) {
-      try {
-        await discardExplodeBackups(explodeProgress, { remove: extras.remove });
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        warn(`Warning: could not discard explode backups after install (${detail})`);
+      if (error instanceof PlanApplyError) {
+        throw new Error(`Install rolled back: ${error.message}`);
       }
+      throw error;
     }
-    for (const lane of treeLanes) {
-      try {
-        await discardCursorPluginBackup({
-          destRoot: lane.destRoot,
-          pluginId,
-          remove: extras.remove,
-        });
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        warn(`Warning: could not discard Cursor plugin backup after install (${detail})`);
-      }
-    }
-    await finishTransactions(cliTransactions, warn);
     await removeSupersededProjections({
       agents: agentsToInstall,
       doctorCapabilities,
       existing,
       extras,
-      lockEnvironment,
+      lockEnvironment: environment,
       pluginId,
       projectorOverride: scopedOptions.projector,
       scope,
       vendor: Boolean(vendor),
     });
     return { alreadyPresent, installed, repaired };
-  } catch (error) {
-    if (lockCommitted) {
-      throw error;
-    }
-    const rollbackErrors = [];
-    if (explodeProgress) {
-      try {
-        await restoreExplodeInstall(explodeProgress, {
-          move: extras.move,
-          remove: extras.remove,
-        });
-      } catch (rollbackError) {
-        rollbackErrors.push(rollbackError);
-      }
-    }
-    try {
-      await rollbackNewSkillDirs(scopedOptions, lanes.explode, preexisting, lockEnvironment);
-    } catch (rollbackError) {
-      rollbackErrors.push(rollbackError);
-    }
-    for (const lane of treeLanes) {
-      try {
-        await restoreCursorPluginInstall({
-          created: !lane.existed,
-          destRoot: lane.destRoot,
-          move: extras.move,
-          pluginId,
-          remove: extras.remove,
-          swapped: lane.progress.swapped,
-        });
-      } catch (rollbackError) {
-        rollbackErrors.push(rollbackError);
-      }
-    }
-    rollbackErrors.push(...(await undoTransactions(cliTransactions)));
-    if (rollbackErrors.length > 0) {
-      const original = error instanceof Error ? error.message : String(error);
-      const rollback = rollbackErrors
-        .map((item) => (item instanceof Error ? item.message : String(item)))
-        .join("; ");
-      throw new Error(`${original} (rollback also failed: ${rollback})`);
-    }
-    throw error;
+  };
+  if (extras.dryRun) {
+    // A dry run never takes the lock, recovers or writes.
+    return proceed(await readInstallState(scope, lockEnvironment), null);
   }
+  return withStateSession(
+    {
+      env: lockEnvironment,
+      hooks: extras.exec ? { exec: extras.exec } : {},
+      ...(extras.journal?.lockWaitMs === undefined
+        ? {}
+        : { lockWaitMs: extras.journal.lockWaitMs }),
+      report: warn,
+      scope,
+    },
+    (session) => proceed(session.view, session),
+  );
+}
+
+/**
+ * Ownership each lane's plan establishes, keyed by host.
+ */
+function ownedByAgent(
+  plans: AdapterPlan[],
+): Record<string, { root: string; files: Record<string, string> }> {
+  const owned: Record<string, { root: string; files: Record<string, string> }> = {};
+  for (const plan of plans) {
+    if (plan.owns) {
+      owned[plan.host] = plan.owns;
+    }
+  }
+  return owned;
 }
 
 /**
  * Build lockfile entries for an installation that completed successfully.
  */
-async function createLockEntries(
+function createLockEntries(
   options: {
     agents: string[];
     bundle: string | null;
@@ -1164,18 +1052,17 @@ async function createLockEntries(
   },
   vendor: { id: string; repo: string; sha: string } | undefined,
   now: () => Date,
-  lockEnvironment: Parameters<typeof readLockfile>[1] = {},
+  lockEnvironment: LockEnvironment = {},
   pluginId: string,
-  existing?: import("./lockfile.ts").PluginLockEntry,
-  explodeLockAgents: Set<string> = new Set(),
-  explodeClaims: Record<string, Record<string, string>> | null = null,
+  existing: import("./lockfile.ts").PluginLockEntry | undefined,
+  explodeLockAgents: Set<string>,
+  owned: Record<string, { root: string; files: Record<string, string> }>,
   bakedPlugin: import("./catalog.ts").BakedPlugin | null = null,
-): Promise<Record<string, import("./lockfile.ts").PluginLockEntry>> {
+): Record<string, import("./lockfile.ts").PluginLockEntry> {
   lockEnvironment = lockEnvironment ?? {};
   const installedAt = now().toISOString();
   const scope = resolveScope(options);
   const packageVersion = getPackageVersion();
-  const hash = lockEnvironment.hash ?? hashFile;
   const agents: Record<string, import("./lockfile.ts").AgentInstall> = {};
   const projectors: Record<string, "native" | "explode"> = {};
   for (const agent of options.agents) {
@@ -1189,11 +1076,11 @@ async function createLockEntries(
       scope,
     });
     if (projector === PROJECTOR_NATIVE && pluginsRoot) {
-      const root = join(pluginsRoot, pluginId);
+      // Ownership comes from the plan, before anything is applied.
       agents[agent] = {
-        files: ownedPluginTreeFiles(await hashTree(root, hash), options.skills),
+        files: ownedPluginTreeFiles(owned[agent]?.files ?? {}, options.skills),
         projector,
-        root,
+        root: owned[agent]?.root ?? join(pluginsRoot, pluginId),
       };
       continue;
     }
@@ -1205,8 +1092,8 @@ async function createLockEntries(
       };
       continue;
     }
-    // Explode lanes always run the engine; ownership is exactly what it claimed.
-    const claimed = explodeClaims?.[agent];
+    // Explode ownership is exactly what the plan claims (identical dests are not claimed).
+    const claimed = owned[agent]?.files;
     if (claimed && Object.keys(claimed).length > 0) {
       agents[agent] = {
         files: claimed,
@@ -1258,7 +1145,7 @@ async function agentsNeedingInstall(
   existing: import("./lockfile.ts").PluginLockEntry | undefined,
   requestedAgents: string[],
   requestedSkills: string[],
-  lockEnvironment?: Parameters<typeof readLockfile>[1],
+  lockEnvironment?: LockEnvironment,
   projectorOverride?: "native" | "explode" | null,
 ): Promise<string[]> {
   if (!existing) {
@@ -1377,7 +1264,7 @@ async function removeSupersededProjections(args: {
   doctorCapabilities: Record<string, "native" | "explode">;
   existing: import("./lockfile.ts").PluginLockEntry | undefined;
   extras: NonNullable<Parameters<typeof install>[4]>;
-  lockEnvironment: Parameters<typeof readLockfile>[1];
+  lockEnvironment: LockEnvironment;
   pluginId: string;
   projectorOverride: "native" | "explode" | null | undefined;
   scope: "global" | "project";
@@ -1476,100 +1363,6 @@ async function pluginDescription(
   }
   const bundles = await loadBundles();
   return bundles.groups[pluginId]?.description ?? pluginId;
-}
-
-/**
- * Fail a targeted install that wrote only some of the plugin's skills.
- *
- * Empty mocked installs (no files on disk) stay silent so unit tests can
- * exercise lock writes without a real skills CLI. A mix of present and
- * absent skill files is a partial plugin and is rolled back by the caller.
- *
- * @throws {Error} When an agent has some but not all requested skill files.
- */
-async function assertCompletePluginInstall(
-  options: { skills: string[]; global: boolean; project: boolean },
-  agents: string[],
-  lockEnvironment: Parameters<typeof readLockfile>[1] = {},
-): Promise<void> {
-  const exists = lockEnvironment.exists ?? pathExists;
-  for (const agent of agents) {
-    const root = agentSkillsRoot(resolveScope(options), agent, lockEnvironment);
-    const present = [];
-    const absent = [];
-    for (const name of options.skills) {
-      if (await exists(join(root, name, "SKILL.md"))) {
-        present.push(name);
-      } else {
-        absent.push(name);
-      }
-    }
-    if (present.length > 0 && absent.length > 0) {
-      throw new Error(`Plugin install incomplete for ${agent}: missing ${absent.join(", ")}`);
-    }
-  }
-}
-
-/**
- * Snapshot skill directories that already exist for the agents in this install.
- *
- * Used so a failed install can delete only the trees it created.
- */
-async function snapshotExistingSkillDirs(
-  options: { skills: string[]; global: boolean; project: boolean },
-  agents: string[],
-  lockEnvironment: Parameters<typeof readLockfile>[1] = {},
-): Promise<Set<string>> {
-  const exists = lockEnvironment.exists ?? pathExists;
-
-  const existing: Set<string> = new Set();
-  for (const agent of agents) {
-    const root = agentSkillsRoot(resolveScope(options), agent, lockEnvironment);
-    for (const name of options.skills) {
-      const dir = join(root, name);
-      if (await exists(dir)) {
-        existing.add(dir);
-      }
-    }
-  }
-  return existing;
-}
-
-/**
- * Remove skill directories created by a failed plugin install.
- *
- * Directories that existed before the run are left in place.
- */
-async function rollbackNewSkillDirs(
-  options: { skills: string[]; global: boolean; project: boolean },
-  agents: string[],
-  preexisting: Set<string>,
-  lockEnvironment: Parameters<typeof readLockfile>[1] = {},
-): Promise<void> {
-  const exists = lockEnvironment.exists ?? pathExists;
-  const remove = lockEnvironment.rm ?? rm;
-  for (const agent of agents) {
-    const root = agentSkillsRoot(resolveScope(options), agent, lockEnvironment);
-    for (const name of options.skills) {
-      const dir = join(root, name);
-      if (preexisting.has(dir) || !(await exists(dir))) {
-        continue;
-      }
-      await remove(dir, { force: true, recursive: true });
-    }
-  }
-}
-
-/**
- * Test whether a path exists.
- */
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -1692,5 +1485,5 @@ export interface WizardSignals {
 
 /** Injectable fetch/env/lockfile dependencies for the wizard's soft signals. */
 export type WizardDependencies = import("./update-check.ts").UpdateCheckDependencies & {
-  lockEnvironment?: Parameters<typeof readLockfile>[1];
+  lockEnvironment?: LockEnvironment;
 };

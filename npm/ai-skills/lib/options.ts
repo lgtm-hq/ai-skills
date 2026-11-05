@@ -32,7 +32,11 @@ export function parseArguments(argv: string[]): {
     agents: string[];
     bundle: string | null;
     copy: boolean;
+    /** `rollback --dry-run`: print the compensating plan only. */
+    dryRun: boolean;
     global: boolean;
+    /** Generations whose preimages stay available to rollback; null keeps the default. */
+    keepGenerations: number | null;
     migrate: string | null;
     project: boolean;
     projector: "native" | "explode" | null;
@@ -44,15 +48,26 @@ export function parseArguments(argv: string[]): {
     vendor: string | null;
   };
 } {
-  const commands = new Set(["adopt", "doctor", "install", "list", "remove", "update", "vendors"]);
+  const commands = new Set([
+    "adopt",
+    "doctor",
+    "install",
+    "list",
+    "remove",
+    "rollback",
+    "update",
+    "vendors",
+  ]);
   const command = commands.has(argv[0]!) ? argv[0]! : "install";
   const args = commands.has(argv[0]!) ? argv.slice(1) : argv;
   const options: ReturnType<typeof parseArguments>["options"] = {
     agents: [],
     bundle: null,
     copy: false,
+    dryRun: false,
     engine: [],
     global: false,
+    keepGenerations: null,
     migrate: null,
     project: false,
     projector: null,
@@ -77,6 +92,15 @@ export function parseArguments(argv: string[]): {
       options.yes = true;
     } else if (argument === "--copy") {
       options.copy = true;
+    } else if (argument === "--dry-run" && command === "rollback") {
+      // The gateway's own dry run; for install/update it is an engine option.
+      options.dryRun = true;
+    } else if (argument === "--keep-generations") {
+      if (value === undefined || !/^\d+$/.test(value)) {
+        throw new Error("--keep-generations requires a non-negative integer");
+      }
+      options.keepGenerations = Number(value);
+      index += 1;
     } else if (argument === "--unmanaged") {
       options.unmanaged = true;
     } else if (argument === "--agent" || argument === "-a") {
@@ -162,6 +186,18 @@ export function parseArguments(argv: string[]): {
         "which prints the handoff without running it",
     );
   }
+  if (
+    options.keepGenerations !== null &&
+    !["install", "remove", "rollback", "update"].includes(command)
+  ) {
+    throw new Error("--keep-generations applies only to install, update, remove and rollback");
+  }
+  if (
+    command === "rollback" &&
+    (options.agents.length > 0 || options.skills.length > 0 || options.unmanaged)
+  ) {
+    throw new Error("rollback restores a whole scope; it does not accept -a/--agent or --skill");
+  }
   if (command === "vendors" && args.length > 0) {
     throw new Error("vendors does not accept options");
   }
@@ -171,7 +207,7 @@ export function parseArguments(argv: string[]): {
     );
   }
   if (
-    ["adopt", "doctor", "list", "remove", "update"].includes(command) &&
+    ["adopt", "doctor", "list", "remove", "rollback", "update"].includes(command) &&
     (options.bundle || options.copy || options.onConflict || options.vendor || options.projector)
   ) {
     throw new Error(`${command} does not accept install source options`);

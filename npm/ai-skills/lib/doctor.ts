@@ -12,9 +12,10 @@ import {
   agentProjector,
   hashFile,
   pluginSkillNames,
-  readLockfile,
   skillNamesFromFiles,
 } from "./lockfile.ts";
+import { readInstallState } from "./journal/receipts.ts";
+import { recoverState } from "./journal/recover.ts";
 import {
   hostIds,
   hostPluginsRoot,
@@ -221,7 +222,7 @@ export async function runDoctor(
     log?: (line: string) => void;
     lockEnvironment?: import("./lockfile.ts").LockEnvironment;
     now?: () => Date;
-    readLock?: typeof readLockfile;
+    readLock?: typeof readInstallState;
     remove?: typeof import("node:fs/promises").rm;
     run?: (args: string[]) => Promise<void>;
     warn?: (message: string) => void;
@@ -242,6 +243,16 @@ export async function runDoctor(
     scope,
     yes: options.yes,
   };
+  if (options.repair) {
+    // Finish or undo any transaction a crash left behind before judging state.
+    const recovered = await recoverState(
+      dependencies.lockEnvironment ?? {},
+      dependencies.exec ? { exec: dependencies.exec } : {},
+    );
+    for (const line of recovered) {
+      log(line);
+    }
+  }
   const hosts = doctorHosts(options.agents);
   for (const agent of hosts) {
     try {
@@ -571,7 +582,7 @@ async function migrateHost(
     throw new Error(`Unknown agent: ${host}`);
   }
   const target = await ensureHostCapability(host, environment);
-  const readLock = dependencies.readLock ?? readLockfile;
+  const readLock = dependencies.readLock ?? readInstallState;
   const warn = dependencies.warn ?? ((message) => console.warn(message));
   const scope = resolveScope(options);
   const lock = await readLock(scope, dependencies.lockEnvironment);
@@ -688,7 +699,7 @@ function recordedLooksLikeBundle(
 
 async function agentHasModifiedFiles(
   install: import("./lockfile.ts").AgentInstall,
-  lockEnvironment: Parameters<typeof readLockfile>[1] = {},
+  lockEnvironment: Parameters<typeof readInstallState>[1] = {},
 ): Promise<boolean> {
   const exists = lockEnvironment.exists;
   const hash = lockEnvironment.hash ?? hashFile;
@@ -754,7 +765,7 @@ export async function removeLockedAgentProjection(
     return;
   }
   const scope = dependencies.scope ?? "global";
-  const readLock = dependencies.readLock ?? readLockfile;
+  const readLock = dependencies.readLock ?? readInstallState;
   if (
     await siblingLockHasCliNative(pluginId, agent, scope, readLock, dependencies.lockEnvironment)
   ) {
@@ -785,7 +796,7 @@ async function siblingLockHasCliNative(
   pluginId: string,
   agent: string,
   scope: "global" | "project",
-  readLock: typeof readLockfile,
+  readLock: typeof readInstallState,
   lockEnvironment?: import("./lockfile.ts").LockEnvironment,
 ): Promise<boolean> {
   const siblingScope = scope === "global" ? "project" : "global";

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
 import { HOST_DEFINITIONS } from "../hosts.ts";
+import type { HostExecOp } from "../types.ts";
 
 /**
  * Host CLI binary for native plugin install/uninstall, read from host definitions.
@@ -55,6 +56,21 @@ export async function uninstallCliPlugin(args: {
   if (removed.status !== 0 && !isAlreadyAbsent(removed)) {
     throw new Error(`${cli} plugin uninstall failed: ${detail(removed)}`);
   }
+}
+
+/**
+ * Host step that unregisters a first-party plugin; compensated by reinstalling it.
+ */
+export function cliUninstallOp(agent: string, pluginId: string): HostExecOp {
+  const cli = cliForAgent(agent);
+  const plugin = `${pluginId}@${FIRST_PARTY_MARKETPLACE}`;
+  return {
+    argv: [cli, "plugin", "uninstall", plugin],
+    compensate: [cli, "plugin", "install", plugin],
+    kind: "host-exec",
+    step: "plugin-uninstall",
+    tolerateAlreadyAbsent: true,
+  };
 }
 
 function cliForAgent(agent: string): string {

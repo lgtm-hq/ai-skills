@@ -19,11 +19,11 @@ import { join } from "node:path";
 import { cursorDropAdapter } from "../lib/adapters/cursor/drop-adapter.ts";
 import { installCursorPlugin } from "../lib/adapters/cursor/drop.ts";
 import { applyPlan, PlanApplyError, verifyPlanOps } from "../lib/adapters/execute.ts";
+import type { ExecuteOptions } from "../lib/adapters/execute.ts";
 import { nodeReadOnlyFs, ownedPathHash, sha256 } from "../lib/adapters/fs.ts";
 import { skillExplodeAdapter } from "../lib/adapters/shared/skill-explode-adapter.ts";
 import { explodePlugin } from "../lib/adapters/shared/skill-explode.ts";
 import type { AdapterPlan, Op } from "../lib/adapters/types.ts";
-import { memoryFs } from "./fixtures/memory-fs.ts";
 
 const text = (value: string) => new TextEncoder().encode(value);
 const write = (path: string, value: string, mode?: number): Op => ({
@@ -89,14 +89,27 @@ function plan(root: string, ops: Op[], roots: string[] = [root]): AdapterPlan {
   };
 }
 
+/** Journal directory of the current `withRoot`, kept outside the snapshotted tree. */
+let journalRoot = "";
+
 async function withRoot(run: (root: string) => Promise<void>): Promise<void> {
-  const root = await mkdtemp(join(tmpdir(), "ai-skills-execute-"));
+  const base = await mkdtemp(join(tmpdir(), "ai-skills-execute-"));
+  const root = join(base, "tree");
+  await mkdir(root);
+  journalRoot = join(base, "journal");
   try {
     await run(root);
   } finally {
-    await rm(root, { force: true, recursive: true });
+    await rm(base, { force: true, recursive: true });
   }
 }
+
+/** `applyPlan` journaled under the current root's journal directory. */
+const apply = (planned: AdapterPlan, options: Omit<ExecuteOptions, "journalRoot"> = {}) =>
+  applyPlan(planned, { journalRoot, ...options });
+
+/** Transaction directories left in the journal. */
+const journals = async () => readdir(journalRoot).catch(() => [] as string[]);
 
 /** A prior tree plus a plan touching every op kind except host-exec. */
 async function seededPlan(root: string): Promise<AdapterPlan> {
@@ -124,7 +137,7 @@ describe("plan executor", () => {
       const prepared = await seededPlan(root);
       const before = await snapshot(root);
       for (let index = 0; index < prepared.ops.length; index += 1) {
-        await expect(applyPlan(prepared, { failBeforeOp: index })).rejects.toThrow(
+        await expect(apply(prepared, { failBeforeOp: index })).rejects.toThrow(
           `injected failure before op ${index}`,
         );
         expect(await snapshot(root)).toEqual(before);
@@ -138,7 +151,7 @@ describe("plan executor", () => {
       const before = await snapshot(root);
       let writes = 0;
       await expect(
-        applyPlan(prepared, {
+        apply(prepared, {
           io: {
             writeFile: (async (...args: Parameters<typeof writeFile>) => {
               writes += 1;
@@ -160,9 +173,7 @@ describe("plan executor", () => {
       await mkdir(join(root, "dest"));
       const target = join(root, "dest/new.md");
       await expect(
-        applyPlan(plan(root, [write(target, "new\n")]), {
-          // Empty read view: the target does not exist yet.
-          fs: memoryFs({}),
+        apply(plan(root, [write(target, "new\n")]), {
           io: {
             writeFile: (async (path: Parameters<typeof writeFile>[0]) => {
               // Partial write, then the disk fills up.
@@ -178,57 +189,57 @@ describe("plan executor", () => {
     });
   });
 
-  test("keeps a backup and names it when restoring a removed path fails", async () => {
+  test("keeps the journal and names it when restoring a removed path fails", async () => {
     await withRoot(async (root) => {
       const prepared = await seededPlan(root);
-      const transaction = await applyPlan(prepared, {
-        io: {
-          rename: (async (from: string, to: string) => {
-            // Restoring `dest/old` from its backup fails (EXDEV, EACCES, ...).
-            if (String(from).includes("old.bak.") && String(to).endsWith("dest/old")) {
-              throw Object.assign(new Error("EXDEV: cross-device link"), { code: "EXDEV" });
-            }
-            return rename(from, to);
-          }) as typeof rename,
-        },
-      });
+      const failRestore = (async (from: string, to: string) => {
+        // Putting `dest/old` back from its staged preimage fails (EXDEV, EACCES, ...).
+        if (String(from).includes(".aiskills-") && String(to).endsWith("dest/old")) {
+          throw Object.assign(new Error("EXDEV: cross-device link"), { code: "EXDEV" });
+        }
+        return rename(from, to);
+      }) as typeof rename;
+      const transaction = await apply(prepared, { io: { rename: failRestore } });
       let message = "";
       try {
         await transaction.rollback();
       } catch (error) {
         message = (error as Error).message;
       }
-      const backup = /kept at (\S+)$/m.exec(message)?.[1] ?? "";
-      expect(message).toContain(`could not restore ${join(root, "dest/old")} (EXDEV`);
-      expect(backup).toStartWith(join(root, "dest/old.bak."));
-      // The only copy of the removed content survives, and every other op was undone.
-      expect(await readFile(join(backup, "SKILL.md"), "utf8")).toBe("old\n");
+      expect(message).toContain(`remove-owned ${join(root, "dest/old")}: EXDEV`);
+      const kept = /journal kept at (\S+)\)$/.exec(message)?.[1] ?? "";
+      expect(kept).toStartWith(journalRoot);
+      // The removed content survives as a preimage, and every other op was undone.
+      const objects = await readdir(join(kept, "pre"));
+      const contents = await Promise.all(
+        objects.map((name) => readFile(join(kept, "pre", name), "utf8")),
+      );
+      expect(contents).toContain("old\n");
       expect(await readFile(join(root, "dest/keep.md"), "utf8")).toBe("before\n");
       await expect(access(join(root, "store"))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(
+        Object.keys(await snapshot(root)).filter((path) => path.includes(".aiskills-")),
+      ).toEqual([]);
     });
   });
 
-  test("keeps the backup when a failed apply cannot restore a removed path", async () => {
+  test("keeps the journal when a failed apply cannot restore a removed path", async () => {
     await withRoot(async (root) => {
       const prepared = await seededPlan(root);
       await expect(
-        applyPlan(prepared, {
+        apply(prepared, {
           failBeforeOp: 2,
           io: {
             rename: (async (from: string, to: string) => {
-              if (String(from).includes("old.bak.")) {
+              if (String(from).includes(".aiskills-") && String(to).endsWith("dest/old")) {
                 throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
               }
               return rename(from, to);
             }) as typeof rename,
           },
         }),
-      ).rejects.toThrow("its previous content is kept at");
-      const kept = (await readdir(join(root, "dest"))).filter((name) =>
-        name.startsWith("old.bak."),
-      );
-      expect(kept).toHaveLength(1);
-      expect(await readFile(join(root, "dest", kept[0]!, "SKILL.md"), "utf8")).toBe("old\n");
+      ).rejects.toThrow("(rollback also failed: remove-owned");
+      expect(await journals()).toHaveLength(1);
     });
   });
 
@@ -236,7 +247,7 @@ describe("plan executor", () => {
     await withRoot(async (root) => {
       await writeFile(join(root, "run.sh"), "old\n");
       await chmod(join(root, "run.sh"), 0o600);
-      const transaction = await applyPlan(
+      const transaction = await apply(
         plan(root, [write(join(root, "run.sh"), "#!/bin/sh\n", 0o755)]),
       );
       expect((await stat(join(root, "run.sh"))).mode & 0o777).toBe(0o755);
@@ -250,20 +261,24 @@ describe("plan executor", () => {
     await withRoot(async (root) => {
       const prepared = await seededPlan(root);
       const before = await snapshot(root);
-      const transaction = await applyPlan(prepared);
+      const transaction = await apply(prepared);
       expect(transaction.applied).toBe(prepared.ops.length);
       expect(await verifyPlanOps(prepared)).toEqual({ ok: true, problems: [], unverified: [] });
       const applied = await snapshot(root);
       expect(applied["dest/keep.md"]).toBe("after\n");
       expect(applied["dest/lint"]).toBe("-> <root>/store/lint");
-      expect(Object.keys(applied).some((path) => path.includes(".bak."))).toBe(true);
+      // Undo lives in the journal, not in backup trees beside the destination.
+      expect(Object.keys(applied).some((path) => /\.bak\.|\.aiskills-/.test(path))).toBe(false);
+      expect(await journals()).toHaveLength(1);
       await transaction.rollback();
       expect(await snapshot(root)).toEqual(before);
+      expect(await journals()).toEqual([]);
 
-      const again = await applyPlan(await seededPlan(root));
+      const again = await apply(await seededPlan(root));
       await again.commit();
+      expect(await journals()).toEqual([]);
       const committed = await snapshot(root);
-      expect(Object.keys(committed).some((path) => path.includes(".bak."))).toBe(false);
+      expect(Object.keys(committed).some((path) => /\.bak\.|\.aiskills-/.test(path))).toBe(false);
       expect(committed["dest/old"]).toBeUndefined();
       expect(committed["untracked.md"]).toBe("mine\n");
     });
@@ -272,7 +287,7 @@ describe("plan executor", () => {
   test("verify reports drift after apply", async () => {
     await withRoot(async (root) => {
       const prepared = await seededPlan(root);
-      await (await applyPlan(prepared)).commit();
+      await (await apply(prepared)).commit();
       await writeFile(join(root, "dest/keep.md"), "tampered\n");
       await mkdir(join(root, "dest/old"));
       const result = await verifyPlanOps(prepared);
@@ -289,7 +304,7 @@ describe("plan executor", () => {
       await mkdir(join(root, "inside"));
       const before = await snapshot(root);
       await expect(
-        applyPlan(
+        apply(
           plan(
             root,
             [write(join(root, "inside/a.md"), "a\n"), write(join(root, "outside.md"), "b\n")],
@@ -298,7 +313,7 @@ describe("plan executor", () => {
         ),
       ).rejects.toThrow("outside the plan's declared roots");
       await expect(
-        applyPlan(
+        apply(
           plan(root, [write(join(root, "inside/../escape.md"), "x\n")], [join(root, "inside")]),
         ),
       ).rejects.toThrow("outside the plan's declared roots");
@@ -312,9 +327,7 @@ describe("plan executor", () => {
       await mkdir(join(root, "inside"));
       await symlink(join(root, "elsewhere"), join(root, "inside/link"));
       await expect(
-        applyPlan(
-          plan(root, [write(join(root, "inside/link/a.md"), "a\n")], [join(root, "inside")]),
-        ),
+        apply(plan(root, [write(join(root, "inside/link/a.md"), "a\n")], [join(root, "inside")])),
       ).rejects.toThrow("through a symlinked directory");
       expect(await readdir(join(root, "elsewhere"))).toEqual([]);
     });
@@ -326,7 +339,7 @@ describe("plan executor", () => {
       const expectHash = await ownedPathHash(nodeReadOnlyFs, join(root, "owned.md"));
       await writeFile(join(root, "owned.md"), "edited by the user\n");
       await expect(
-        applyPlan(
+        apply(
           plan(root, [
             write(join(root, "first.md"), "1\n"),
             { expectHash, kind: "remove-owned", path: join(root, "owned.md") },
@@ -342,13 +355,13 @@ describe("plan executor", () => {
       await mkdir(join(root, "dir"));
       await writeFile(join(root, "file.md"), "x\n");
       await expect(
-        applyPlan(plan(root, [{ kind: "symlink", path: join(root, "file.md"), target: "x" }])),
+        apply(plan(root, [{ kind: "symlink", path: join(root, "file.md"), target: "x" }])),
       ).rejects.toThrow("Refusing to replace existing path");
-      await expect(applyPlan(plan(root, [write(join(root, "dir"), "x\n")]))).rejects.toThrow(
+      await expect(apply(plan(root, [write(join(root, "dir"), "x\n")]))).rejects.toThrow(
         "non-file",
       );
       await expect(
-        applyPlan(
+        apply(
           plan(root, [{ expectHash: "x", kind: "remove-owned", path: join(root, "absent.md") }]),
         ),
       ).rejects.toThrow("no longer present");
@@ -376,7 +389,7 @@ describe("host-exec ops", () => {
     await withRoot(async (root) => {
       const calls: string[][] = [];
       await expect(
-        applyPlan(plan(root, [register, install, write(join(root, "x.md"), "x\n")]), {
+        apply(plan(root, [register, install, write(join(root, "x.md"), "x\n")]), {
           exec: async (command, args) => {
             calls.push([command, ...args]);
             return { status: 0, stderr: "", stdout: "ok" };
@@ -397,7 +410,7 @@ describe("host-exec ops", () => {
       const calls: string[][] = [];
       let caught: PlanApplyError | undefined;
       try {
-        await applyPlan(plan(root, [register, install, write(join(root, "x.md"), "x\n")]), {
+        await apply(plan(root, [register, install, write(join(root, "x.md"), "x\n")]), {
           exec: async (command, args) => {
             calls.push([command, ...args]);
             return args.includes("install")
@@ -419,12 +432,12 @@ describe("host-exec ops", () => {
   test("surfaces host failures and failed compensation", async () => {
     await withRoot(async (root) => {
       await expect(
-        applyPlan(plan(root, [install]), {
+        apply(plan(root, [install]), {
           exec: async () => ({ status: 1, stderr: "boom", stdout: "" }),
         }),
       ).rejects.toThrow("claude plugin install failed: boom");
       await expect(
-        applyPlan(plan(root, [install, write(join(root, "x.md"), "x\n")]), {
+        apply(plan(root, [install, write(join(root, "x.md"), "x\n")]), {
           exec: async (_command, args) =>
             args.includes("uninstall")
               ? { status: 1, stderr: "locked", stdout: "" }
@@ -432,8 +445,8 @@ describe("host-exec ops", () => {
           failBeforeOp: 1,
         }),
       ).rejects.toThrow(
-        "injected failure before op 1 (write-file) (rollback also failed: " +
-          "claude plugin uninstall failed: locked)",
+        "injected failure before op 1 (write-file) (rollback also failed: host-exec claude " +
+          "plugin install review@ai-skills: claude plugin uninstall failed: locked",
       );
     });
   });
@@ -471,7 +484,7 @@ describe("tree adapter parity with the transactional engines", () => {
           role: "skill",
           scope: "global",
         });
-        await (await applyPlan(planned)).commit();
+        await (await apply(planned)).commit();
         await explodePlugin({
           agents: [{ copy, id: "codex", root: join(viaEngine, ".codex/skills") }],
           copy,
@@ -526,7 +539,7 @@ describe("tree adapter parity with the transactional engines", () => {
         role: "skill",
         scope: "global",
       });
-      await (await applyPlan(planned)).commit();
+      await (await apply(planned)).commit();
       await installCursorPlugin({
         description: "Review",
         destRoot: join(enginePlugin, ".."),

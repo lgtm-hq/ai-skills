@@ -11,9 +11,11 @@ import {
 } from "./install.ts";
 import {
   parseArguments,
+  resolveScope,
   validateUnattendedCommandOptions,
   validateUnattendedOptions,
 } from "./options.ts";
+import { rollbackGeneration } from "./journal/rollback.ts";
 import { formatInstallCounts } from "./ui.ts";
 
 /**
@@ -88,14 +90,28 @@ export async function runCli(argv: string[]): Promise<void> {
     await printLockedSkills(options);
     return;
   }
+  const keep = { keepGenerations: options.keepGenerations };
   if (command === "remove") {
     validateUnattendedCommandOptions(options);
-    await removeSkills(options);
+    await removeSkills({ ...options, ...keep });
     return;
   }
   if (command === "update") {
     validateUnattendedCommandOptions(options);
-    await updateSkills(options);
+    await updateSkills({ ...options, ...keep });
+    return;
+  }
+  if (command === "rollback") {
+    validateUnattendedCommandOptions(options, { requireAgents: false });
+    const result = await rollbackGeneration({
+      dryRun: options.dryRun,
+      scope: resolveScope(options),
+      ...keep,
+    });
+    console.log(result.text);
+    if (!options.dryRun) {
+      console.log(`rolled back\tgeneration ${result.from} -> ${result.to}`);
+    }
     return;
   }
   if (command === "adopt") {
@@ -122,6 +138,7 @@ export async function runCli(argv: string[]): Promise<void> {
       try {
         const counts = await install({
           ...options,
+          ...keep,
           bundle: batch.pluginId,
           vendor: batch.vendor,
           skills: batch.skills,

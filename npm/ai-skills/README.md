@@ -16,23 +16,37 @@ Host-specific code lives only in `lib/adapters/` (ADR 0010). Each host directory
 (`claude-code/`, `copilot/`, `cursor/`, `codex/`) declares its host table entry
 (skill directory, CLI binary, label, native route) and its adapter;
 `shared/skill-explode.ts` is the multi-host explode engine. `registry.ts`
-validates every adapter when it registers, `execute.ts` applies a plan's ops with
-in-memory undo inside the plan's declared roots, and `types.ts` is the contract.
+validates every adapter when it registers, `execute.ts` turns plans into journal
+ops confined to their declared roots, and `types.ts` is the contract.
+
+Install state and recovery live in `lib/journal/` (ADR 0010).
+`journal.ts` applies ops write-ahead: each op's `begin` record and preimage
+(content-addressed under `pre/`) are flushed before it runs and `done` after,
+and undo is computed from the log and the filesystem, never from memory. It also
+holds the `O_EXCL` state lock. `receipts.ts` reads and atomically replaces the
+per-scope receipt, the commit point. `recover.ts` opens state sessions (lock,
+then recovery, then the installed view), commits receipts and archives journals
+as generations. `rollback.ts` plans the compensating ops for `sk rollback`.
+`test/journal-crash.test.ts` kills a child after and inside every op of a
+multi-adapter install and update and checks the next command converges.
 `test/adapters-host-literals.test.ts` fails when code outside `lib/adapters/`
 names a host or branches on one.
 
 The legacy golden fixture was captured from commit
 `fb3468e613584c2a7ec2aa337ffcda70a196ef63` before conversion, using the scenario in
-`scripts/golden-scenario.ts`, and re-captured exactly once, by #579. That change
-removed the behavior the original capture recorded: managed installs no longer
-hand off to the skills CLI, so the scenario now explodes a local fixture catalog
-and adds an explicit `--unmanaged` step, which runs the CLI and writes no lock.
+`scripts/golden-scenario.ts`, and re-captured by #579 and #580. #579 removed the
+behavior the original capture recorded: managed installs no longer hand off to
+the skills CLI, so the scenario now explodes a local fixture catalog and adds an
+explicit `--unmanaged` step, which runs the CLI and writes no lock. #580 moved
+install state from `ai-skills-lock.json` into the machine-local receipt; the
+scenario records the receipt's generation and plugin records (identical to the
+records the lock held) instead of the raw state files.
 The scenario exercises command dispatch against fixture homes with injected
 upstream execution and a fixed clock. It compares stdout, stderr, status,
-invocation arguments, lock JSON bytes, and written file bytes. Only the temporary
+invocation arguments, committed plugin records, and written file bytes. Only the temporary
 home and catalog prefixes are normalized. The test runs the scenario against both
 source and emitted modules in separate processes. Outside a deliberate,
-documented behavior change like #579, never regenerate the fixture to make a
+documented behavior change like #579 or #580, never regenerate the fixture to make a
 failed comparison pass.
 `test/fixtures/legacy-catalog/{bundles,vendors}.json` preserves the catalog inputs
 from that same commit. The scenario uses the real catalog reader with those

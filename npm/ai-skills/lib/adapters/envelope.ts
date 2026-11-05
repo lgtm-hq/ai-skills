@@ -1,6 +1,14 @@
 import { join } from "node:path";
 
-import { copyTreeOps, existsNoFollow, jsonBytes, ownedPathHash, sha256, walkTree } from "./fs.ts";
+import {
+  assertSkillSource,
+  copyTreeOps,
+  existsNoFollow,
+  jsonBytes,
+  ownedPathHash,
+  sha256,
+  walkTree,
+} from "./fs.ts";
 import { FIRST_PARTY_MARKETPLACE } from "./shared/native-cli.ts";
 import { assertInsideRoot, assertSafeSkillName } from "./shared/skill-explode.ts";
 import type { KeptSet, Op, ReadOnlyFs } from "./types.ts";
@@ -59,6 +67,7 @@ export async function renderEnvelopeOps(
   ];
   for (const skill of kept.skills) {
     assertSafeSkillName(skill.name);
+    await assertSkillSource(fs, skill.name, skill.source);
     const dest = join(pluginDir, "skills", skill.name);
     assertInsideRoot(join(pluginDir, "skills"), dest);
     content.push(...(await copyTreeOps(fs, skill.source, dest)));

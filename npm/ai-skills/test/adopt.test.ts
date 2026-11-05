@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,7 +10,10 @@ import {
   readSkillsLock,
   scanInstalledSkills,
 } from "../lib/adopt.ts";
+import { acquireStateLock } from "../lib/journal/journal.ts";
+import { readReceipt, stateRoot } from "../lib/journal/receipts.ts";
 import { parseArguments, validateUnattendedCommandOptions } from "../lib/options.ts";
+import { readState } from "./fixtures/state.ts";
 
 const vendors = [
   { id: "anthropics", repo: "anthropics/skills" },
@@ -379,6 +382,58 @@ describe("planAdopt", () => {
 });
 
 describe("adoptSkills", () => {
+  test("asks for confirmation without holding the state lock and refuses on drift", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-adopt-confirm-"));
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-adopt-confirm-home-"));
+    const env = { cwd, home };
+    try {
+      await mkdir(join(cwd, ".cursor/skills/pdf"), { recursive: true });
+      await writeFile(join(cwd, ".cursor/skills/pdf/SKILL.md"), "# pdf\n");
+      const skillsLock = {
+        version: 1,
+        skills: {
+          pdf: {
+            sourceType: "github",
+            sourceUrl: "https://github.com/anthropics/skills",
+            ref: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+            skillPath: "skills/pdf/SKILL.md",
+          },
+        },
+      };
+      let scans = 0;
+      const dependencies = (drift: boolean) => ({
+        confirm: async () => {
+          // Another command can take the lock while the user reads the prompt.
+          const release = await acquireStateLock(join(stateRoot(env), "lock"), { waitMs: 0 });
+          await release();
+          return true;
+        },
+        loadVendors: async () => ({ vendors }),
+        now: () => new Date("2026-07-10T21:00:00.000Z"),
+        pathEnvironment: env,
+        readSkillsLock: async () => skillsLock,
+        scanInstalled: async (): Promise<Record<string, string[]>> => {
+          scans += 1;
+          return drift && scans > 1 ? {} : { pdf: ["cursor"] };
+        },
+        write: () => {},
+      });
+      const options = { agents: [], global: false, project: true, yes: false };
+
+      await expect(adoptSkills(options, dependencies(true))).rejects.toThrow(
+        "Installed state changed while adopt was waiting for confirmation",
+      );
+      expect((await readState("project", env)).plugins).toEqual({});
+
+      const result = await adoptSkills(options, dependencies(false));
+      expect(result.adopted).toEqual(["anthropics"]);
+      expect(Object.keys((await readState("project", env)).plugins)).toEqual(["anthropics"]);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+      await rm(home, { force: true, recursive: true });
+    }
+  });
+
   test("writes a gateway lock from skills-lock installs without calling skills CLI", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-adopt-"));
     try {
@@ -415,24 +470,15 @@ describe("adoptSkills", () => {
           loadVendors: async () => ({ vendors }),
           now: () => new Date("2026-07-10T21:00:00.000Z"),
           pathEnvironment: { cwd },
-          readLock: async () => ({
-            gatewayVersion: "0.0.0-dev",
-            plugins: {},
-            scope: "project" as const,
-            version: 2,
-          }),
           readSkillsLock: async () => readSkillsLock("project", { cwd }),
           scanInstalled: async () => scanInstalledSkills("project", { cwd }),
-          writeLock: async (lock) => {
-            await writeFile(join(cwd, "ai-skills-lock.json"), `${JSON.stringify(lock, null, 2)}\n`);
-          },
           write: (line) => lines.push(line),
         },
       );
 
       expect(result.wrote).toBe(true);
       expect(result.adopted).toEqual(["anthropics"]);
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.plugins.anthropics).toMatchObject({
         projector: "explode" as const,
         repo: "anthropics/skills",
@@ -486,7 +532,7 @@ describe("adoptSkills", () => {
       );
 
       expect(result.wrote).toBe(true);
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.plugins.anthropics.vendor).toBe("anthropics");
     } finally {
       await rm(cwd, { force: true, recursive: true });
@@ -494,34 +540,36 @@ describe("adoptSkills", () => {
   });
 
   test("skips ambiguous disk-only skills under -y and leaves the lock unchanged when nothing maps", async () => {
-    const result = await adoptSkills(
-      {
-        agents: [],
-        global: false,
-        project: true,
-        yes: true,
-      },
-      {
-        loadVendors: async () => ({ vendors }),
-        readLock: async () => ({
-          gatewayVersion: "0.0.0-dev",
-          plugins: {},
-          scope: "project" as const,
-          version: 2,
-        }),
-        readSkillsLock: async () => ({ version: 1, skills: {} }),
-        scanInstalled: async () => ({ mystery: ["cursor"] }),
-        writeLock: async () => {
-          throw new Error("should not write");
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-adopt-unmapped-"));
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-adopt-unmapped-home-"));
+    try {
+      const result = await adoptSkills(
+        {
+          agents: [],
+          global: false,
+          project: true,
+          yes: true,
         },
-        write: () => {},
-      },
-    );
+        {
+          loadVendors: async () => ({ vendors }),
+          pathEnvironment: { cwd, home },
+          readSkillsLock: async () => ({ version: 1, skills: {} }),
+          scanInstalled: async () => ({ mystery: ["cursor"] }),
+          write: () => {},
+        },
+      );
 
-    expect(result.wrote).toBe(false);
-    expect(result.adopted).toEqual([]);
-    expect(result.ambiguous).toEqual([
-      "mystery: installed on disk but absent from skills-lock.json",
-    ]);
+      expect(result.wrote).toBe(false);
+      expect(result.adopted).toEqual([]);
+      expect(result.ambiguous).toEqual([
+        "mystery: installed on disk but absent from skills-lock.json",
+      ]);
+      // Nothing was committed: no receipt, no state written at all.
+      expect(await readReceipt("project", { cwd, home })).toBeNull();
+      await expect(readdir(join(home, ".ai-skills"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+      await rm(home, { force: true, recursive: true });
+    }
   });
 });

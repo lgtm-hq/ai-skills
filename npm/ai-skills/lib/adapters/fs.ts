@@ -125,6 +125,30 @@ export async function ownedPathHash(fs: ReadOnlyFs, path: string): Promise<strin
 }
 
 /**
+ * Fail closed when a kept skill's source directory is missing: a plan must
+ * never deliver an empty skill directory where the skill should be.
+ *
+ * @throws {Error} When `source` is absent or not a directory.
+ */
+export async function assertSkillSource(
+  fs: ReadOnlyFs,
+  name: string,
+  source: string,
+): Promise<void> {
+  let info;
+  try {
+    info = await fs.stat(source);
+  } catch (error) {
+    if (!isAbsent(error)) {
+      throw error;
+    }
+  }
+  if (!info?.isDirectory()) {
+    throw new Error(`Kept skill ${JSON.stringify(name)} has no source directory at ${source}`);
+  }
+}
+
+/**
  * Ops that reproduce `source` at `dest`, keeping symlink targets verbatim.
  */
 export async function copyTreeOps(fs: ReadOnlyFs, source: string, dest: string): Promise<Op[]> {

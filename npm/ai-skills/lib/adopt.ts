@@ -13,10 +13,11 @@ import {
   pluginAgentNames,
   pluginSkillNames,
   PROJECTOR_EXPLODE,
-  readLockfile,
   refreshPluginFileHashes,
-  writeLockfile,
 } from "./lockfile.ts";
+import { readInstallState } from "./journal/receipts.ts";
+import { withStateSession } from "./journal/recover.ts";
+import type { JournalHooks } from "./journal/recover.ts";
 import { resolveScope } from "./options.ts";
 
 /**
@@ -236,11 +237,10 @@ export async function adoptSkills(
     pathEnvironment?: { cwd?: string; home?: string };
     hash?: typeof hashFile;
     loadVendors?: () => Promise<{ vendors: { id: string; repo: string }[] }>;
+    journal?: JournalHooks;
     now?: () => Date;
-    readLock?: typeof readLockfile;
     readSkillsLock?: typeof readSkillsLock;
     scanInstalled?: typeof scanInstalledSkills;
-    writeLock?: typeof writeLockfile;
     write?: (line: string) => void;
   } = {},
 ): Promise<AdoptResult> {
@@ -249,8 +249,6 @@ export async function adoptSkills(
   }
   const scope = resolveScope(options);
   const pathEnv = dependencies.pathEnvironment ?? {};
-  const readLock = dependencies.readLock ?? ((target) => readLockfile(target, pathEnv));
-  const writeLock = dependencies.writeLock ?? ((next) => writeLockfile(next, pathEnv));
   const readStock = dependencies.readSkillsLock ?? ((target) => readSkillsLock(target, pathEnv));
   const scanInstalled =
     dependencies.scanInstalled ?? ((target) => scanInstalledSkills(target, pathEnv));
@@ -263,7 +261,7 @@ export async function adoptSkills(
       const prompt = createInterface({ input: stdin, output: stdout });
       try {
         write(summary);
-        const answer = (await prompt.question("Write gateway lock updates? [y/N] "))
+        const answer = (await prompt.question("Record these installs? [y/N] "))
           .trim()
           .toLowerCase();
         return answer === "y" || answer === "yes";
@@ -272,50 +270,73 @@ export async function adoptSkills(
       }
     });
 
-  const lock = await readLock(scope);
-  const stock = await readStock(scope);
-  const installed = await scanInstalled(scope);
-  const filteredInstalled = filterAgents(installed, options.agents);
-  const { vendors } = await loadVendorCatalog();
-  const plan = planAdopt(lock, filteredInstalled, stock.skills, vendors, now, pathEnv);
-  const summary = formatAdoptSummary(plan);
-
-  if (Object.keys(plan.adopt).length === 0) {
+  const plan = async (lock: Awaited<ReturnType<typeof readInstallState>>) => {
+    const stock = await readStock(scope);
+    const installed = filterAgents(await scanInstalled(scope), options.agents);
+    const { vendors } = await loadVendorCatalog();
+    return planAdopt(lock, installed, stock.skills, vendors, now, pathEnv);
+  };
+  const report = (planned: Awaited<ReturnType<typeof plan>>, wrote: boolean) => ({
+    adopted: wrote ? Object.keys(planned.adopt).sort() : [],
+    alreadyTracked: planned.alreadyTracked,
+    ambiguous: planned.ambiguous,
+    skippedMissingLock: planned.skippedMissingLock,
+    wrote,
+  });
+  // Plan and confirm without the state lock, so a prompt never blocks other
+  // commands; the commit below re-plans under the lock and refuses on drift.
+  const preview = await plan(await readInstallState(scope, pathEnv));
+  const summary = formatAdoptSummary(preview);
+  if (Object.keys(preview.adopt).length === 0) {
     write(summary);
-    return {
-      adopted: [],
-      alreadyTracked: plan.alreadyTracked,
-      ambiguous: plan.ambiguous,
-      skippedMissingLock: plan.skippedMissingLock,
-      wrote: false,
-    };
+    return report(preview, false);
   }
-
   if (!options.yes) {
-    const accepted = await confirm(summary);
-    if (!accepted) {
-      write("Adopt cancelled; gateway lock unchanged.");
-      return {
-        adopted: [],
-        alreadyTracked: plan.alreadyTracked,
-        ambiguous: plan.ambiguous,
-        skippedMissingLock: plan.skippedMissingLock,
-        wrote: false,
-      };
+    if (!(await confirm(summary))) {
+      write("Adopt cancelled; installed state unchanged.");
+      return report(preview, false);
     }
   } else {
     write(summary);
   }
-
-  const next = mergeLockEntries(lock, await hashAdoptedEntries(plan.adopt, dependencies.hash));
-  await writeLock(next);
-  return {
-    adopted: Object.keys(plan.adopt).sort(),
-    alreadyTracked: plan.alreadyTracked,
-    ambiguous: plan.ambiguous,
-    skippedMissingLock: plan.skippedMissingLock,
-    wrote: true,
-  };
+  return withStateSession(
+    {
+      env: pathEnv,
+      report: write,
+      scope,
+      ...(dependencies.journal?.lockWaitMs === undefined
+        ? {}
+        : { lockWaitMs: dependencies.journal.lockWaitMs }),
+    },
+    async (session) => {
+      const planned = await plan(session.view);
+      if (JSON.stringify(planned.adopt) !== JSON.stringify(preview.adopt)) {
+        throw new Error(
+          "Installed state changed while adopt was waiting for confirmation; nothing was " +
+            "recorded. Re-run adopt.",
+        );
+      }
+      const next = mergeLockEntries(
+        session.view,
+        await hashAdoptedEntries(planned.adopt, dependencies.hash),
+      );
+      // Adopt records ownership only: a transaction with no ops, committed by the receipt.
+      await session.transact({
+        hooks: dependencies.journal,
+        kind: "adopt",
+        next: {
+          artifactDigest: session.receipt?.artifactDigest ?? null,
+          fingerprints: {
+            adapters: { ...session.receipt?.fingerprints.adapters },
+            policy: session.receipt?.fingerprints.policy ?? null,
+          },
+          plugins: next.plugins,
+        },
+        ops: [],
+      });
+      return report(planned, true);
+    },
+  );
 }
 
 /**
