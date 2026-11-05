@@ -1,5 +1,6 @@
 """Consumer profile persistence, update replay and stale selectors."""
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -8,7 +9,7 @@ from typing import Any
 import pytest
 import yaml
 from assertpy import assert_that
-from install_helpers import build_two_hop, profile_path, run
+from install_helpers import GOLDEN_DIGEST, build_two_hop, profile_path, run
 
 from ai_skills_engine import cli
 from ai_skills_engine.install.errors import InstallError
@@ -86,7 +87,9 @@ def test_install_persists_excludes_denies_and_pins(
     artifacts = build_two_hop(tmp_path / "src", tmp_path / "out")
     report = _install(capsys, artifacts)
     path = profile_path(consumer)
-    assert_that(report["profile"]).is_equal_to({"path": str(path), "written": True})
+    assert_that(report["profile"]).is_equal_to(
+        {"path": str(path), "written": True, "changed": True}
+    )
     document = yaml.safe_load(path.read_text())
     assert_that(document).is_equal_to(
         {
@@ -161,6 +164,67 @@ def test_update_without_profile_and_dry_run(
     assert_that(status).is_zero()
     assert_that(report["profile"]["written"] if report else None).is_false()
     assert_that(profile_path(consumer).exists()).is_false()
+
+
+def _text(capsys: pytest.CaptureFixture[str], *args: str) -> tuple[int, str]:
+    """Run an engine command without ``--json`` and return its last line.
+
+    Args:
+        capsys: Output capture.
+        *args: Command and arguments.
+
+    Returns:
+        Exit status and the final (profile) report line.
+    """
+    status = cli.main(list(args))
+    return status, capsys.readouterr().out.splitlines()[-1]
+
+
+def test_dry_run_reports_a_pending_profile_change(
+    golden: Path, consumer: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A dry run with changes says so in text and JSON; nothing is written."""
+    path = profile_path(consumer)
+    args = ["install", "--artifacts", str(golden), "--dry-run"]
+    args += ["--exclude", "package:fixture/tools"]
+    status, report, _ = run(capsys, *args)
+    assert_that(status).is_zero()
+    assert_that(report["profile"] if report else None).is_equal_to(
+        {"path": str(path), "written": False, "changed": True}
+    )
+    assert_that(_text(capsys, *args)).is_equal_to(
+        (0, f"install: profile would be written (dry run): {path}")
+    )
+    assert_that(path.exists()).is_false()
+
+
+def test_profile_state_reports_unchanged_and_frozen(
+    golden: Path, consumer: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``unchanged`` means no difference; ``--frozen`` never hides a pending one."""
+    path = profile_path(consumer)
+    args = ["install", "--artifacts", str(golden)]
+    assert_that(_text(capsys, *args)).is_equal_to(
+        (0, f"install: profile written: {path}")
+    )
+    _status, report, _ = run(capsys, *args, "--dry-run")
+    assert_that(report["profile"] if report else None).is_equal_to(
+        {"path": str(path), "written": False, "changed": False}
+    )
+    assert_that(_text(capsys, *args, "--dry-run")).is_equal_to(
+        (0, f"install: profile unchanged: {path}")
+    )
+    lock = {
+        "lockVersion": 1,
+        "packages": [{"id": "fixture/tools", "artifactDigest": GOLDEN_DIGEST}],
+    }
+    write_profile(path, Profile())
+    (Path.cwd() / "ai-skills.lock").write_text(json.dumps(lock))
+    recorded = path.read_bytes()
+    assert_that(_text(capsys, *args, "--frozen")).is_equal_to(
+        (0, f"install: profile not written (--frozen): {path}")
+    )
+    assert_that(path.read_bytes()).is_equal_to(recorded)
 
 
 def test_profile_write_is_atomic(

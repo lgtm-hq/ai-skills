@@ -15,6 +15,10 @@ GOLDEN = FIXTURES / "artifacts/golden"
 EXPECTED = FIXTURES / "install/expected-kept.json"
 TWO_HOP = FIXTURES / "provenance/two-hop"
 X_ORIGIN = "github.com/fixture/x"
+# SHA-256 of the golden fixture--tools.tar, as its published sidecar records.
+GOLDEN_DIGEST = (
+    "sha256:f80ed0ba4b5211fe7a194f471c64d6321dc1a7f29720cd81062d0610bafc5b94"
+)
 
 type Edit = Callable[[dict[str, Any], Path], None]
 

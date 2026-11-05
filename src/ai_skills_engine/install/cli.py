@@ -116,17 +116,39 @@ def _report(
             "resources": list(result.result.resources),
         },
         "removed": dict(result.result.removed),
-        "profile": {"path": str(path), "written": written},
+        "profile": {"path": str(path), "written": written, "changed": result.changed},
     }
 
 
-def _print_text(command: Command, result: Plan, *, written: bool, path: Path) -> None:
+def _profile_state(*, changed: bool, written: bool, frozen: bool) -> str:
+    """Describe what happened to the profile, never hiding a pending change.
+
+    Args:
+        changed: Whether the plan's profile differs from the stored one.
+        written: Whether this run wrote it.
+        frozen: Whether ``--frozen`` suppressed the write.
+
+    Returns:
+        ``written``, ``unchanged``, ``not written (--frozen)`` or
+        ``would be written (dry run)``.
+    """
+    if written:
+        return "written"
+    if not changed:
+        return "unchanged"
+    return "not written (--frozen)" if frozen else "would be written (dry run)"
+
+
+def _print_text(
+    command: Command, result: Plan, *, written: bool, frozen: bool, path: Path
+) -> None:
     """Print the human-readable report, one tab-separated record per line.
 
     Args:
         command: Command.
         result: Completed plan.
         written: Whether the profile was written.
+        frozen: Whether ``--frozen`` suppressed any write.
         path: Profile path.
     """
     for item in result.packages:
@@ -135,7 +157,8 @@ def _print_text(command: Command, result: Plan, *, written: bool, path: Path) ->
         print(f"keep\t{key}")
     for key, reason in result.result.removed.items():
         print(f"remove\t{key}\t{reason}")
-    print(f"{command}: profile {'written' if written else 'unchanged'}: {path}")
+    state = _profile_state(changed=result.changed, written=written, frozen=frozen)
+    print(f"{command}: profile {state}: {path}")
 
 
 def run(command: Command, argv: list[str] | None) -> int:
@@ -167,7 +190,13 @@ def run(command: Command, argv: list[str] | None) -> int:
         report = _report(command, result, written=written, path=request.profile_path)
         print(json.dumps(report, indent=2, sort_keys=True))
     else:
-        _print_text(command, result, written=written, path=request.profile_path)
+        _print_text(
+            command,
+            result,
+            written=written,
+            frozen=args.frozen,
+            path=request.profile_path,
+        )
     return 0
 
 

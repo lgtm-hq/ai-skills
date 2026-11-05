@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 from assertpy import assert_that
-from install_helpers import profile_path, run
+from install_helpers import GOLDEN_DIGEST, profile_path, run
 
 from ai_skills_engine.install import verify
 from ai_skills_engine.install.profile import Profile, write_profile
@@ -19,9 +19,6 @@ from ai_skills_engine.install.selectors import SelectorKind, make_selector
 
 pytest_plugins = ["install_helpers"]
 TAR = "fixture--tools.tar"
-GOLDEN_DIGEST = (
-    "sha256:f80ed0ba4b5211fe7a194f471c64d6321dc1a7f29720cd81062d0610bafc5b94"
-)
 WRONG = "sha256:" + "0" * 64
 
 
