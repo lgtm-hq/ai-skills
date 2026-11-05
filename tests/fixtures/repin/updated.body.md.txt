@@ -1,0 +1,71 @@
+## Vendor re-pin: `example`
+
+### Pin
+
+- Revision: `0123456789abcdef0123456789abcdef01234567` → `89abcdef0123456789abcdef0123456789abcdef`
+- displayRef: `latest`
+- Compare: https://github.com/owner/example/compare/0123456789abcdef0123456789abcdef01234567...89abcdef0123456789abcdef0123456789abcdef
+
+### SemVer advice (advisory)
+
+Level: **major**
+
+- Capability added: example/tools:skill/delta
+- Capability added: example/tools:skill/gamma
+- Capability removed: example/tools:skill/beta
+- Content or metadata changed: example/tools:skill/alpha
+
+### Capabilities
+
+- changed `example/tools:skill/alpha` (skill: sourceTreeDigest, treeDigest)
+- removed `example/tools:skill/beta` (skill)
+- added `example/tools:skill/delta` (skill)
+- added `example/tools:skill/gamma` (skill)
+
+#### Unapplied: identical content at a new ID
+
+- `example/tools:skill/beta` → `example/tools:skill/gamma`
+
+### Files
+
+- `example/tools:skill/alpha`
+  - `+` `reference.md`
+  - `~` `SKILL.md`
+
+### Resources
+
+None.
+
+### Lineage
+
+None.
+
+### License and notice
+
+None.
+
+### Coverage
+
+- count `capabilities` (2 -> 3)
+- no longer uncovered `template/placeholder`
+
+### Collisions
+
+None.
+
+### Selectors
+
+- `mapping.packages[tools].skills` `*`: 3 match(es), ok
+- `mapping.packages[tools].skillsRoot` `skills`: 1 match(es), ok
+- `mapping.skillRoots` `skills`: 3 match(es), ok
+
+### Path drift
+
+None.
+
+### Digests
+
+- artifactDigest `example/tools` (sha256:cd3a4b897869c48bebab40a42fec44b60d726571c5a131269200cd9fa06edbb5 -> sha256:dea5a6bf5815b5cc6539a9dd83a6e3f695d87fdfecda71bdcd12ea66dfbd7eff)
+- treeDigest `example/tools` (sha256:47b81e2c1f880c9a4067218eb5e8a4fbfe4f39a78e8752b37a8e828d661dd47e -> sha256:afcfe398c1aa35a2c6ddf592298040dc09209130d20848ec0d37043ca5560522)
+
+<!-- ai-skills-repin vendor=example revision=89abcdef0123456789abcdef0123456789abcdef -->

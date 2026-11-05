@@ -161,6 +161,22 @@ archive. Unknown versions, unknown keys and duplicate keys fail. The source cach
 [the artifact contract](../artifacts.md#resolution-lock-and-source-cache) and the
 [ADR 0007](./0007-publish-time-vendor-bake.md) amendment.
 
+## Amendment: re-pin on the lock and artifact model (2026-11-05)
+
+Issue #577 implements `repin` on `ai-skills.lock`. It moves one vendor's pin,
+resolves the lock, builds every artifact and diffs the old and new artifact
+indexes, never artifact bytes or inferred ancestry. The body is deterministic and
+carries `<!-- ai-skills-repin vendor=<id> revision=<sha> -->`; a closed, unmerged
+PR carrying that marker suppresses only the same vendor and revision. A vanished
+mapping path is reconciled only when exactly one path at the new revision has the
+same final name and content digest, so the capability ID is unchanged; zero or
+several candidates and selectors matching nothing fail closed. Renames come only
+from consumer `overrides.migrations` or publisher-local upstream migrations;
+identical content at a new ID is reported, never applied. Pin writes obey the
+vendor scalar-parity rule above. Automation publishes the regenerated lock but
+never the manifest; required manifest edits become action items. Contributor
+usage is in [CONTRIBUTING](../../CONTRIBUTING.md#vendor-re-pin).
+
 ## Consequences
 
 - Publication and consumption share a reproducible contract without inheriting

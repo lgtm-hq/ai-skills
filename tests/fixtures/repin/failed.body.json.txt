@@ -1,0 +1,69 @@
+{
+  "actionRequired": [
+    "Ambiguous path drift mapping.packages[tools].skills: skills/beta has 2 identical candidates: x/beta, y/beta",
+    "Dead selector mapping.packages[tools].skills: 'beta' matches nothing at the new revision"
+  ],
+  "capabilities": [],
+  "collisions": [],
+  "coverage": [],
+  "digests": [],
+  "drift": [
+    {
+      "candidates": [
+        "x/beta",
+        "y/beta"
+      ],
+      "location": "mapping.packages[tools].skills",
+      "oldPath": "skills/beta",
+      "selector": "beta",
+      "status": "ambiguous"
+    }
+  ],
+  "files": [],
+  "filesOmitted": 0,
+  "legal": [],
+  "lineage": [],
+  "marker": "<!-- ai-skills-repin vendor=example revision=89abcdef0123456789abcdef0123456789abcdef -->",
+  "pin": {
+    "compare": "https://github.com/owner/example/compare/0123456789abcdef0123456789abcdef01234567...89abcdef0123456789abcdef0123456789abcdef",
+    "displayRef": "latest",
+    "new": "89abcdef0123456789abcdef0123456789abcdef",
+    "old": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "repo": "owner/example",
+  "resources": [],
+  "selectors": [
+    {
+      "detail": "",
+      "location": "mapping.packages[tools].skills",
+      "matches": 1,
+      "selector": "alpha",
+      "status": "ok"
+    },
+    {
+      "detail": "",
+      "location": "mapping.packages[tools].skills",
+      "matches": 0,
+      "selector": "beta",
+      "status": "dead"
+    },
+    {
+      "detail": "",
+      "location": "mapping.packages[tools].skillsRoot",
+      "matches": 1,
+      "selector": "skills",
+      "status": "ok"
+    },
+    {
+      "detail": "",
+      "location": "mapping.skillRoots",
+      "matches": 2,
+      "selector": "skills",
+      "status": "ok"
+    }
+  ],
+  "semver": null,
+  "status": "failed",
+  "unappliedMoves": [],
+  "vendor": "example"
+}

@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Re-pin a vendor SHA, re-bake, and summarize skill/coverage/collision deltas.
+"""Re-pin vendors on the lock/artifact model with deterministic bake-diff bodies.
 
 Usage:
-    uv run python scripts/repin_vendor.py --id mattpocock
-    uv run python scripts/repin_vendor.py --all
-    uv run python scripts/repin_vendor.py --id mattpocock --json
+    uv run ai-skills-engine repin --vendor anthropics --summary-path body.md [--json]
+    uv run ai-skills-engine repin --all
+    uv run ai-skills-engine repin --all --keep-sha --baseline-ref BASE
+
+Each re-pin moves the pin in ``ai-skills.yaml``, resolves ``ai-skills.lock``,
+builds the artifacts and diffs the old and new artifact indexes. Failures (dead
+selectors, ambiguous or missing path drift, collisions) restore every file and
+still emit a body with an "Action required" section and exit 1.
 """
 
 from __future__ import annotations
@@ -16,29 +21,24 @@ import re
 import subprocess  # nosec B404 - fixed git argv list, no shell
 import sys
 import tempfile
-from collections.abc import Callable, Mapping
-from dataclasses import replace
 from pathlib import Path
 from urllib.parse import quote
 
-import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
 import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
-import ai_skills_engine.vendors.manage as manage_vendors
+from ai_skills_engine.inventory.cli import vendor_roots
+from ai_skills_engine.lockfile import LOCK_FILENAME
 from ai_skills_engine.manifest import legacy
-from ai_skills_engine.manifest.transaction import restore_files, snapshot_files
+from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.paths import resolve_repo_root
+from ai_skills_engine.registry.ingest_checks import safe_diagnostic
 from ai_skills_engine.registry.registry import load_registry
 from ai_skills_engine.registry.vendor import Vendor
-from ai_skills_engine.registry.vendor_repin_diff import (
-    VendorRepinDiff,
-    diff_snapshots,
-    render_json,
-    render_markdown,
-)
-from ai_skills_engine.registry.vendor_repin_snapshot import (
-    VendorRepinSnapshot,
-    snapshot_for_vendor,
-)
+from ai_skills_engine.repin.baseline import Baseline
+from ai_skills_engine.repin.declined import declined_pr
+from ai_skills_engine.repin.render import render_markdown, to_json
+from ai_skills_engine.repin.report import RepinReport
+from ai_skills_engine.repin.run import MANIFEST, find_vendor, repin_vendor
+from ai_skills_engine.repin.vendor_pin import VendorPin
 
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _FLOATING_REFS = frozenset({"latest", "HEAD", "head"})
@@ -52,7 +52,6 @@ _CLI_FAILURES = (
     json.JSONDecodeError,
     RuntimeError,
 )
-ResolveSha = Callable[[Vendor], str]
 
 
 def _selection_vendors(*, repo_root: Path) -> tuple[Vendor, ...]:
@@ -161,67 +160,6 @@ def _github_json(*, path: str) -> dict[str, object]:
     return parsed
 
 
-def _snapshot_vendor(
-    *,
-    repo_root: Path,
-    vendor: Vendor,
-    vendor_trees: Mapping[str, Path] | None,
-) -> VendorRepinSnapshot:
-    """Bake the current registry and snapshot one vendor.
-
-    Args:
-        repo_root: Repository root.
-        vendor: Vendor whose slices to project.
-        vendor_trees: Optional local trees keyed by vendor id.
-
-    Returns:
-        Snapshot including the global collision report.
-    """
-    (
-        results,
-        skipped_by_vendor,
-        ingested_counts,
-        _fetched,
-        skill_collisions,
-        agent_collisions,
-        skill_digests,
-    ) = bake_vendor_plugins.collect_bake(
-        repo_root=repo_root,
-        vendor_trees=vendor_trees,
-        install=True,
-    )
-    return snapshot_for_vendor(
-        vendor=vendor,
-        results=results,
-        skipped_by_vendor=skipped_by_vendor,
-        ingested_counts=ingested_counts,
-        skill_collisions=skill_collisions,
-        agent_collisions=agent_collisions,
-        skill_digests=skill_digests,
-    )
-
-
-def _reload_vendor(*, repo_root: Path, vendor_id: str) -> Vendor:
-    """Load one vendor after the registry file may have changed.
-
-    Args:
-        repo_root: Repository root.
-        vendor_id: Vendor slug.
-
-    Returns:
-        Matching vendor record.
-
-    Raises:
-        ValueError: If the vendor id is unknown.
-    """
-    vendors = load_registry(registry_path=repo_root / "vendors.yaml")
-    vendor = next((item for item in vendors if item.id == vendor_id), None)
-    if vendor is None:
-        msg = f"Unknown vendor id: {vendor_id}"
-        raise ValueError(msg)
-    return vendor
-
-
 def _vendors_from_registry_text(*, text: str) -> tuple[Vendor, ...]:
     """Load registry text through the real reader in private scratch space.
 
@@ -240,220 +178,158 @@ def _vendors_from_registry_text(*, text: str) -> tuple[Vendor, ...]:
         return load_registry(registry_path=path)
 
 
-def _vendor_from_registry_text(*, text: str, vendor_id: str) -> Vendor | None:
-    """Find a vendor in a baseline, or return None for a newly added vendor.
-
-    Args:
-        text: Registry file contents.
-        vendor_id: Vendor slug.
-
-    Returns:
-        Matching vendor record, or None for a newly added vendor.
-    """
-    vendors = _vendors_from_registry_text(text=text)
-    return next((item for item in vendors if item.id == vendor_id), None)
-
-
-def _registry_text_at_ref(*, repo_root: Path, git_ref: str) -> str:
-    """Return ``vendors.yaml`` from ``git_ref``.
+def _text_at_ref(*, repo_root: Path, git_ref: str, name: str) -> str | None:
+    """Return a tracked file at ``git_ref``.
 
     Args:
         repo_root: Repository root.
         git_ref: Commit SHA or other git revision.
+        name: Repository-relative file name.
 
     Returns:
-        File contents at that revision.
+        File contents, or None when the revision has no such file.
 
     Raises:
         ValueError: If ``git_ref`` is empty or looks like an option/path.
-        RuntimeError: If git cannot show the file.
+        RuntimeError: If git cannot resolve the revision.
     """
     if not git_ref or git_ref.startswith("-") or ":" in git_ref:
         msg = f"invalid baseline-ref {git_ref!r}"
         raise ValueError(msg)
     try:
-        argv = ["git", "show", f"{git_ref}:vendors.yaml"]
-        return subprocess.check_output(  # nosec B603 B607 - fixed git argv
-            argv,
+        subprocess.check_output(  # nosec B603 B607 - fixed git argv
+            ["git", "rev-parse", "--verify", "--quiet", f"{git_ref}^{{commit}}"],
             cwd=repo_root,
             text=True,
         )
     except (OSError, subprocess.CalledProcessError) as error:
-        msg = f"could not read vendors.yaml at {git_ref}: {error}"
+        msg = f"could not resolve baseline-ref {git_ref}: {error}"
         raise RuntimeError(msg) from error
+    try:
+        return subprocess.check_output(  # nosec B603 B607 - fixed git argv
+            ["git", "show", f"{git_ref}:{name}"],
+            cwd=repo_root,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError:
+        return None
 
 
-def repin_vendor(
-    *,
-    repo_root: Path,
-    vendor_id: str,
-    vendor_trees: Mapping[str, Path] | None = None,
-    resolve_sha: ResolveSha | None = None,
-    baseline_ref: str | None = None,
-    baseline_registry_text: str | None = None,
-    keep_sha: bool = False,
-) -> VendorRepinDiff:
-    """Bump one vendor pin, refresh derived artifacts, and diff bakes.
-
-    Unresolved collisions fail closed: the pin SHA stays updated so a
-    re-pin PR can add ``renameSkills``, and the returned diff includes
-    the collision lines.
-
-    ``baseline_ref`` / ``baseline_registry_text`` select the *full*
-    registry used for the ``before`` snapshot (main's ``vendors.yaml``
-    when updating an existing re-pin PR). Resetting only the SHA would
-    bake main's pin against branch-only ``renameSkills`` and can raise
-    unused-rename errors or omit the real main-to-branch delta.
-
-    Failures restore the exact pre-call files, including stale compatibility
-    output. Publication and upstream resolution belong to the same transaction
-    as baking; rollback never regenerates from the manifest.
+def baseline_at_ref(*, repo_root: Path, git_ref: str) -> Baseline:
+    """Read the manifest and lock committed at the baseline revision.
 
     Args:
-        repo_root: Repository root containing ``vendors.yaml``.
-        vendor_id: Vendor slug to re-pin.
-        vendor_trees: Optional local trees keyed by vendor id.
-        resolve_sha: Optional SHA resolver (tests inject a stub).
-        baseline_ref: Git revision whose ``vendors.yaml`` is the summary
-            baseline. Mutually exclusive with ``baseline_registry_text``.
-        baseline_registry_text: Registry snapshot used as ``before``.
-            Tests inject this instead of a git ref.
-        keep_sha: Summarize the selected pin without resolving upstream.
+        repo_root: Repository root.
+        git_ref: Base-branch revision (for example the merge base).
 
     Returns:
-        Snapshot delta. ``unchanged`` is true when the pin already
-        matches upstream.
+        Baseline declarations.
 
     Raises:
-        ValueError: If the vendor id is unknown or both baseline inputs
-            are set.
-        RuntimeError: If GitHub cannot resolve the upstream ref or git
-            cannot read the baseline registry.
-        TypeError: If a GitHub payload is the wrong type.
+        RuntimeError: If the revision has no ``ai-skills.yaml``.
     """
-    if baseline_ref is not None and baseline_registry_text is not None:
-        msg = "baseline_ref and baseline_registry_text are mutually exclusive"
-        raise ValueError(msg)
-    manifest_path = repo_root / "ai-skills.yaml"
-    registry_path = repo_root / "vendors.yaml"
-    originals = snapshot_files(
-        (manifest_path, registry_path, repo_root / "bundles.yaml")
+    manifest = _text_at_ref(repo_root=repo_root, git_ref=git_ref, name=MANIFEST)
+    if manifest is None:
+        msg = f"could not read {MANIFEST} at {git_ref}"
+        raise RuntimeError(msg)
+    lock = _text_at_ref(repo_root=repo_root, git_ref=git_ref, name=LOCK_FILENAME)
+    return Baseline(
+        manifest_text=manifest,
+        lock_bytes=None if lock is None else lock.encode("utf-8"),
     )
-    artifact_paths = manage_vendors._generated_artifact_paths(repo_root=repo_root)
-    snapshot, directories = manage_vendors._snapshot_artifacts(paths=artifact_paths)
-    try:
-        if manifest_path.is_file():
-            legacy.write_legacy(repo_root)
-        vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
-        working_text = registry_path.read_text(encoding="utf-8")
-        if baseline_ref is not None:
-            baseline_text = _registry_text_at_ref(
-                repo_root=repo_root,
-                git_ref=baseline_ref,
-            )
-        elif baseline_registry_text is not None:
-            baseline_text = baseline_registry_text
-        else:
-            baseline_text = working_text
-        baseline_vendor = _vendor_from_registry_text(
-            text=baseline_text,
-            vendor_id=vendor_id,
-        )
-        if keep_sha:
-            new_sha = vendor.sha
-        elif resolve_sha is not None:
-            new_sha = resolve_sha(vendor)
-        else:
-            new_sha = resolve_upstream_sha(vendor=vendor)
-        if new_sha == vendor.sha and baseline_text == working_text:
-            before = _snapshot_vendor(
-                repo_root=repo_root,
-                vendor=vendor,
-                vendor_trees=vendor_trees,
-            )
-            after = replace(before)
-            return diff_snapshots(before=before, after=after)
-        if baseline_text != working_text:
-            registry_path.write_text(baseline_text, encoding="utf-8")
-            load_registry(registry_path=registry_path)
-        before = _snapshot_vendor(
-            repo_root=repo_root,
-            vendor=baseline_vendor if baseline_vendor is not None else vendor,
-            vendor_trees=vendor_trees,
-        )
-        if baseline_vendor is None:
-            before = replace(before, sha="new")
-        registry_path.write_text(working_text, encoding="utf-8")
-        if new_sha != vendor.sha:
-            manage_vendors.set_sha(
-                repo_root=repo_root,
-                vendor_id=vendor_id,
-                sha=new_sha,
-            )
-        bake_vendor_indexes.bake(repo_root=repo_root)
-        after_vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
-        after = _snapshot_vendor(
-            repo_root=repo_root,
-            vendor=after_vendor,
-            vendor_trees=vendor_trees,
-        )
-        manage_vendors._sync_artifacts(repo_root=repo_root, check_only=False)
-        return diff_snapshots(before=before, after=after)
-    except BaseException as error:
-        restore_files(originals=originals, error=error)
-        manage_vendors._restore_artifacts(
-            paths=artifact_paths,
-            snapshot=snapshot,
-            directories=directories,
-            error=error,
-        )
-        raise
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Parse CLI arguments and re-pin one or every vendor.
+def _failure_report(*, entry: dict[str, object], error: BaseException) -> RepinReport:
+    """Describe an exception as a failed re-pin so a body is always emitted.
 
     Args:
-        argv: CLI arguments, defaulting to process arguments.
+        entry: Manifest vendor declaration.
+        error: Failure, including any rollback notes.
 
     Returns:
-        ``0`` when every targeted pin is current or bumped cleanly.
-        ``1`` when a bump introduces unresolved collisions or a
-        resolution/bake error occurs.
+        Failed report naming the pinned revision.
     """
-    parser = argparse.ArgumentParser(description=__doc__)
-    exclusive = parser.add_mutually_exclusive_group(required=False)
-    exclusive.add_argument(
-        "--id",
-        dest="vendor_id",
-        help="Vendor id to re-pin",
+    messages = [safe_diagnostic(str(error))]
+    messages.extend(
+        safe_diagnostic(str(note)) for note in getattr(error, "__notes__", ())
     )
-    exclusive.add_argument(
-        "--all",
-        action="store_true",
-        help="Re-pin every vendor in vendors.yaml",
+    return RepinReport(
+        pin=VendorPin(
+            id=str(entry["id"]),
+            repo=str(entry["repo"]),
+            publisher=str(entry["id"]),
+            display_ref=str(entry.get("displayRef") or "latest"),
+            old_sha=str(entry["sha"]),
+            new_sha=str(entry["sha"]),
+        ),
+        status="failed",
+        action_required=tuple(messages),
+    )
+
+
+def _parser() -> argparse.ArgumentParser:
+    """Define the command line.
+
+    Returns:
+        Argument parser.
+    """
+    parser = argparse.ArgumentParser(
+        prog="ai-skills-engine repin",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    exclusive = parser.add_mutually_exclusive_group(required=False)
+    exclusive.add_argument("--vendor", "--id", dest="vendor_id", help="Vendor id")
+    exclusive.add_argument("--all", action="store_true", help="Re-pin every vendor")
+    parser.add_argument(
+        "--revision",
+        help="Explicit new 40-hex revision instead of resolving upstream",
     )
     parser.add_argument(
         "--keep-sha",
         action="store_true",
-        help="Keep the registry pin instead of resolving a newer upstream SHA",
+        help="Summarize the declared pin instead of resolving a newer revision",
     )
     parser.add_argument(
         "--json",
         action="store_true",
-        help="Print the machine-readable summary to stdout",
+        help="Print JSON (an object for --vendor, an array for --all)",
     )
     parser.add_argument(
         "--summary-path",
         type=Path,
         default=None,
-        help="Write combined Markdown summaries to this path",
+        help="Write the combined Markdown PR body to this path",
     )
     parser.add_argument(
         "--baseline-ref",
-        dest="baseline_ref",
         default=None,
-        help="Git revision whose vendors.yaml is the summary baseline",
+        help="Git revision whose ai-skills.yaml and ai-skills.lock are the baseline",
+    )
+    parser.add_argument(
+        "--vendor-root",
+        "--vendor-tree",
+        action="append",
+        default=[],
+        metavar="ID=PATH",
+        help="Local snapshot of the new revision instead of fetching",
+    )
+    parser.add_argument(
+        "--skip-declined",
+        action="store_true",
+        help=(
+            "Skip a revision declined in a closed, unmerged re-pin PR (uses gh); "
+            "a no-op with --keep-sha or when the revision equals the current pin"
+        ),
+    )
+    parser.add_argument(
+        "--no-manifest-rewrite",
+        action="store_true",
+        help=(
+            "Report reconciled paths and declared renames as action items "
+            "instead of editing ai-skills.yaml (automation cannot publish it)"
+        ),
     )
     parser.add_argument(
         "--list-json",
@@ -466,72 +342,129 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Repository root override (default: discover from current directory)",
     )
+    return parser
+
+
+def _resolve(vendor: Vendor) -> str:
+    """Resolve upstream through GitHub.
+
+    Args:
+        vendor: Vendor record.
+
+    Returns:
+        Resolved revision.
+    """
+    return resolve_upstream_sha(vendor=vendor)
+
+
+def _declined(vendor: str, revision: str) -> int | None:
+    """Look up a declined revision through ``gh``.
+
+    Args:
+        vendor: Vendor alias.
+        revision: Candidate revision.
+
+    Returns:
+        Declining PR number, or None.
+    """
+    return declined_pr(vendor=vendor, revision=revision)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Parse CLI arguments and re-pin one or every vendor.
+
+    Args:
+        argv: CLI arguments, defaulting to process arguments.
+
+    Returns:
+        ``0`` when every targeted vendor is current, re-pinned or declined;
+        ``1`` when any re-pin requires action or a selection error occurs.
+    """
+    parser = _parser()
     args = parser.parse_args(argv)
     if not args.list_json and args.vendor_id is None and not args.all:
-        parser.error("one of --id, --all, or --list-json is required")
-    if args.all and args.json:
-        parser.error("--json requires --id")
+        parser.error("one of --vendor, --all, or --list-json is required")
+    if args.revision is not None and (args.all or args.keep_sha):
+        parser.error("--revision requires --vendor and excludes --keep-sha")
     repo_root = resolve_repo_root(override=args.repo_root, parser=parser)
     try:
-        # Selection is read-only, including list and baseline filtering. Each
-        # repin owns publication and rollback, so --all retains earlier successes
-        # if a later vendor fails rather than becoming an all-vendor transaction.
-        vendors = _selection_vendors(repo_root=repo_root)
-        vendor_ids = tuple(vendor.id for vendor in vendors)
-        if args.vendor_id is not None and args.vendor_id not in vendor_ids:
-            msg = f"Unknown vendor id: {args.vendor_id}"
-            raise ValueError(msg)
-        selected = vendor_ids if args.vendor_id is None else (args.vendor_id,)
         if args.list_json:
-            print(json.dumps(list(selected), separators=(",", ":")))
+            ids = list_vendor_ids(repo_root=repo_root)
+            if args.vendor_id is not None and args.vendor_id not in ids:
+                raise ValueError(f"Unknown vendor id: {args.vendor_id}")
+            selected_ids = ids if args.vendor_id is None else (args.vendor_id,)
+            print(json.dumps(list(selected_ids), separators=(",", ":")))
             return 0
-        baseline_text = (
-            _registry_text_at_ref(repo_root=repo_root, git_ref=args.baseline_ref)
+        manifest = repo_root / MANIFEST
+        if not manifest.is_file():
+            raise ValueError(
+                "repin requires ai-skills.yaml; run "
+                "`ai-skills-engine manifest migrate`"
+            )
+        document = read_document(manifest)
+        entries = {item["id"]: item for item in document.get("vendors", [])}
+        if args.vendor_id is not None and args.vendor_id not in entries:
+            raise ValueError(f"Unknown vendor id: {args.vendor_id}")
+        baseline = (
+            baseline_at_ref(repo_root=repo_root, git_ref=args.baseline_ref)
             if args.baseline_ref is not None
             else None
         )
-        if args.all and args.keep_sha and baseline_text is not None:
-            selected = tuple(
-                vendor.id
-                for vendor in vendors
-                if vendor
-                != _vendor_from_registry_text(text=baseline_text, vendor_id=vendor.id)
-            )
-        failed = False
-        summaries: list[str] = []
-        for vendor_id in selected:
-            diff = repin_vendor(
-                repo_root=repo_root,
-                vendor_id=vendor_id,
-                baseline_registry_text=baseline_text,
-                keep_sha=args.keep_sha,
-            )
-            vendor = _reload_vendor(repo_root=repo_root, vendor_id=vendor_id)
-            markdown = render_markdown(diff=diff, display_ref=vendor.display_ref)
-            summaries.append(markdown)
-            if diff.new_collisions and not diff.unchanged:
-                failed = True
-            if args.json:
-                print(
-                    render_json(
-                        diff=diff,
-                        display_ref=vendor.display_ref,
-                    ),
-                    end="",
-                )
-            else:
-                print(markdown, end="")
-        if args.summary_path is not None:
-            args.summary_path.write_text(
-                "\n".join(summaries) or "No vendor pin or slice changes.\n",
-                encoding="utf-8",
-            )
-        return 1 if failed else 0
+        selected = list(entries) if args.vendor_id is None else [args.vendor_id]
+        if args.all and args.keep_sha and baseline is not None:
+            with tempfile.TemporaryDirectory(prefix="vendor-repin-") as tmp:
+                path = Path(tmp) / MANIFEST
+                path.write_text(baseline.manifest_text, encoding="utf-8")
+                previous = read_document(path)
+            selected = [
+                vendor_id
+                for vendor_id in selected
+                if find_vendor(previous, vendor_id) != entries[vendor_id]
+            ]
+        supplied = vendor_roots(args.vendor_root)
     except _CLI_FAILURES as error:
-        print(error, file=sys.stderr)
-        for note in getattr(error, "__notes__", ()):
-            print(note, file=sys.stderr)
+        print(safe_diagnostic(str(error)), file=sys.stderr)
         return 1
+    reports: list[RepinReport] = []
+    for vendor_id in selected:
+        try:
+            report = repin_vendor(
+                root=repo_root,
+                vendor_id=vendor_id,
+                revision=args.revision,
+                keep_sha=args.keep_sha,
+                baseline=baseline,
+                supplied={
+                    key: value for key, value in supplied.items() if key == vendor_id
+                },
+                resolve=_resolve,
+                declined=_declined if args.skip_declined else None,
+                rewrite_manifest=not args.no_manifest_rewrite,
+            )
+        except _CLI_FAILURES as error:
+            report = _failure_report(entry=entries[vendor_id], error=error)
+        for line in report.action_required:
+            print(f"repin: {vendor_id}: {line}", file=sys.stderr)
+        reports.append(report)
+    bodies = [render_markdown(report) for report in reports]
+    if args.json:
+        payload = [to_json(report) for report in reports]
+        print(
+            json.dumps(
+                payload[0] if args.vendor_id is not None else payload,
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+        )
+    else:
+        print("\n".join(bodies), end="")
+    if args.summary_path is not None:
+        args.summary_path.write_text(
+            "\n".join(bodies) or "No vendor pin or slice changes.\n",
+            encoding="utf-8",
+        )
+    return 1 if any(report.failed for report in reports) else 0
 
 
 if __name__ == "__main__":

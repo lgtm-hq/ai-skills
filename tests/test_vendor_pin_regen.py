@@ -291,6 +291,18 @@ def test_non_generated_change_is_rejected(git_tree: Path, name: str) -> None:
         create_signed_commit.file_changes(repo_root=git_tree)
 
 
+def test_regenerated_lock_is_publishable_but_manifest_is_not(git_tree: Path) -> None:
+    """Re-pin publishes its rewritten lock; manifest edits stay human-only."""
+    (git_tree / "ai-skills.lock").write_text("{}\n", encoding="utf-8")
+    changes = create_signed_commit.file_changes(repo_root=git_tree)
+    assert_that([item["path"] for item in changes["additions"]]).contains(
+        "ai-skills.lock"
+    )
+    (git_tree / "ai-skills.yaml").write_text("changed\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="non-generated"):
+        create_signed_commit.file_changes(repo_root=git_tree)
+
+
 def test_symlink_is_rejected(git_tree: Path) -> None:
     """A generated path cannot cause publication of an external file."""
     (git_tree / "vendor-indexes" / "link.json").symlink_to(git_tree / "NOTICE.md")
@@ -863,7 +875,8 @@ def test_regeneration_uses_merge_base_and_preserves_collision_report(
     )
     assert_that(result.returncode).described_as(result.stderr).is_zero()
     assert_that(Path(env["BASELINE_LOG"]).read_text()).contains(
-        "--baseline-ref merge-base-sha"
+        "--baseline-ref merge-base-sha",
+        "--keep-sha --no-manifest-rewrite",
     )
     assert_that(Path(env["CALL_LOG"]).read_text()).contains(
         "merge-base base-tip-sha HEAD"
