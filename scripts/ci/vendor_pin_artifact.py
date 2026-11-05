@@ -14,7 +14,13 @@ from pathlib import Path
 from typing import Any
 
 GENERATED_FILES = frozenset(
-    {"NOTICE.md", "npm/ai-skills/NOTICE.md", "bundles.yaml", "vendors.yaml"}
+    {
+        "NOTICE.md",
+        "npm/ai-skills/NOTICE.md",
+        "bundles.yaml",
+        "vendors.yaml",
+        "ai-skills.lock",
+    }
 )
 GENERATED_DIRS = ("vendor-indexes/", "npm/ai-skills/data/")
 # Conservative local budget, not a measured GitHub API limit.

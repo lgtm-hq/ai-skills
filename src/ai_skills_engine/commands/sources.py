@@ -11,6 +11,7 @@ from ai_skills_engine.artifacts.drift import inputs_digest, manifest_digest
 from ai_skills_engine.artifacts.format import ARTIFACT_FORMAT
 from ai_skills_engine.bake import vendor_plugins
 from ai_skills_engine.commands.source_mode import SourceMode
+from ai_skills_engine.inventory.model import Inventory
 from ai_skills_engine.lockfile import LOCK_HINT, StaleLockError
 from ai_skills_engine.lockmodel.builder import Builder
 from ai_skills_engine.lockmodel.filters import Filters
@@ -25,6 +26,7 @@ from ai_skills_engine.registry.ingest_checks import parse_limits
 from ai_skills_engine.registry.ingest_limits import IngestLimits
 from ai_skills_engine.registry.vendor import Vendor
 from ai_skills_engine.selection.load import load_inputs
+from ai_skills_engine.selection.model import SelectionResult
 from ai_skills_engine.source_cache import (
     Fetcher,
     SourceCache,
@@ -237,6 +239,7 @@ def build_lock(
     roots: Mapping[str, Path],
     vendors: tuple[LockedVendor, ...],
     destination: Path,
+    inputs: tuple[Inventory, SelectionResult] | None = None,
 ) -> Lock:
     """Build every artifact from extracted sources and describe it as a lock.
 
@@ -248,11 +251,12 @@ def build_lock(
         roots: Extracted vendor trees by alias.
         vendors: Resolved vendor records.
         destination: New artifact directory (installed atomically).
+        inputs: Inventory and selection already observed from ``roots``.
 
     Returns:
         Regenerated lock.
     """
-    inventory, selection = load_inputs(root, vendor_roots=roots)
+    inventory, selection = inputs or load_inputs(root, vendor_roots=roots)
     result = artifact.write_artifacts(
         inventory=inventory,
         selection=selection,

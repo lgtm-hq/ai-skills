@@ -513,19 +513,61 @@ an older vendor version long-term means promoting it to first-party
 
 ### Vendor re-pin
 
-`scripts/repin_vendor.py` resolves the upstream ref for a vendor
-(`branch` takes precedence; otherwise `displayRef: latest` / missing /
-`HEAD` → default-branch HEAD; any other `displayRef` is that git ref), updates
-the `sha` pin, re-bakes, and prints added / removed / renamed skills, coverage
-deltas, and new collisions. Unresolved collisions fail closed. Bake output stays
-gitignored; the reviewable diff is the pin plus generated indexes and
-npm catalog data.
+`ai-skills-engine repin` (also `scripts/repin_vendor.py`) re-pins on the lock and
+artifact model. It resolves the new revision (`branch` takes precedence;
+otherwise `displayRef: latest` / missing / `HEAD` → default-branch HEAD; any other
+`displayRef` is that git ref), or takes `--revision SHA`. It then moves the pin in
+`ai-skills.yaml`, resolves `ai-skills.lock` through the source cache, builds every
+artifact in scratch space and diffs the old and new artifact indexes. Compatibility
+outputs (`vendors.yaml`, `bundles.yaml`, vendor indexes and npm data) are refreshed
+when the repository maintains them.
 
 ```bash
-uv run python scripts/repin_vendor.py --id mattpocock
-uv run python scripts/repin_vendor.py --all
-uv run python scripts/repin_vendor.py --id mattpocock --json
+uv run ai-skills-engine repin --vendor anthropics --summary-path body.md [--json]
+uv run ai-skills-engine repin --vendor anthropics --revision <40-hex sha>
+uv run ai-skills-engine repin --all [--skip-declined]
 ```
+
+The body is deterministic: fixed section order, sorted lists, no timestamps.
+Sections: **Pin** (old → new, `displayRef`, compare link), **SemVer advice**
+(advisory level and every reason from `recommend_semver`), **Capabilities**
+(added, removed, changed and declared renames, with roles) plus "Unapplied:
+identical content at a new ID", **Files** per changed capability (`+`/`-`/`~`,
+capped at 50 lines), **Resources**, **Lineage**, **License and notice**,
+**Coverage**, **Collisions**, **Selectors** with match counts, **Path drift** and
+**Digests** (`treeDigest`, `artifactDigest`). License and notice text is compared
+without the `Revision:` header of the generated `LICENSES/` files, so a bare pin
+bump with unchanged text reports no license change. It ends with the marker
+`<!-- ai-skills-repin vendor=<id> revision=<sha> -->`. `--json` mirrors the
+Markdown (an object for `--vendor`, an array for `--all`).
+
+Identity is never inferred from content:
+
+- **Path drift.** When a mapping path (`skillsRoot`, a `skills` entry,
+  `extraSkills`, `extraFiles`, an `artifactResources` path or a `skillRoots`
+  entry) disappears, a candidate is a path at the new revision with the same final
+  name and the old content digest, so the capability ID stays the same. Exactly
+  one candidate rewrites the mapping and is listed. A moved listed skill moves to
+  `extraSkills`. Zero or several candidates fail closed and are listed.
+  Vendors with their own manifest declare paths themselves; a declared upstream
+  ID at a new path is reported under path drift.
+- **Selectors must match.** A mapping selector or a vendor `include`/`exclude`
+  selector that matches nothing at the new revision fails and is named.
+- **Renames** apply only from an explicit declaration: a consumer
+  `overrides.migrations: [{from: <old id>, to: <new id>}]` entry or a
+  publisher-local migration in the upstream's own manifest. They rewrite the
+  selectors that name the old ID (mapped skill names, `renameSkills` and
+  `capabilities` keys, `include`/`exclude`). Identical content at a new ID without
+  a declaration is reported under "Unapplied" and never applied; a selector naming
+  the old ID then fails.
+
+Any failure, including collisions, restores every file and still prints the
+body with an **Action required** section; the command exits 1. Pin writes follow
+the vendor scalar-parity contract below: the writer quotes `sha`/`branch` values
+that PyYAML and Renovate read differently, and an unquoted ambiguous value fails
+before any write. `--skip-declined` asks `gh pr list --state closed` for closed,
+unmerged PRs whose body or comments carry the marker for the same vendor and
+revision; that revision is skipped and logged, and a newer revision proceeds.
 
 Renovate tracks each manifest vendor's explicit `branch` (currently `main`
 for all five vendors). Its native YAML/JSONata manager discovers complete vendor
@@ -560,13 +602,22 @@ does not require either runtime.
 
 [`.github/workflows/vendor-pin-regen.yml`](.github/workflows/vendor-pin-regen.yml)
 refreshes generated data on same-repository `renovate/**` PRs authored by
-`renovate[bot]` that change `vendors.yaml`. Both jobs also require the triggering
-actor to be `renovate[bot]` or `lgtm-release-bot[bot]` (including reruns). The
-read-only `regenerate` job checks out the exact PR head and summarizes changed
-vendors against `git merge-base base head` with `--keep-sha`; it never advances
-a Renovate-selected pin. A vendor absent from the baseline is reported as `new`.
-Regeneration sees only a read-only job token, never release App credentials.
-A single sticky PR comment contains skill, coverage, and collision deltas.
+`renovate[bot]` that change `ai-skills.yaml` or `vendors.yaml`. Both jobs also
+require the triggering actor to be `renovate[bot]` or `lgtm-release-bot[bot]`
+(including reruns). The read-only `regenerate` job checks out the exact PR head
+and runs `repin --all --keep-sha --no-manifest-rewrite` against
+`git merge-base base head` (the base branch's `ai-skills.yaml` and
+`ai-skills.lock`, so branch-only edits never skew the diff); it never advances a
+Renovate-selected pin. A vendor absent from the baseline is reported as new. The
+regenerated `ai-skills.lock` is published with the other generated data. The
+publisher never commits `ai-skills.yaml`, so a needed manifest edit (path drift or
+a declared rename) becomes an "Action required" item: on the branch, run
+`ai-skills-engine repin --vendor <id> --keep-sha --baseline-ref origin/main`
+and push the result. Regeneration sees only a read-only job token, never release App
+credentials. Renovate owns the PR description and rewrites it on every run, so the
+re-pin body is delivered as a single sticky PR comment rather than with
+`gh pr edit --body-file`; Renovate's own closed-PR handling keeps a declined
+digest from reopening.
 
 The `publish` job checks out the exact base SHA. Only this job mints the release
 App token. Both jobs use Python 3.15, matching npm publication. The publisher

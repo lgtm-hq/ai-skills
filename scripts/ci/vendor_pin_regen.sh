@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Summarize selected pins against the merge base, then refresh without credentials.
+# repin rewrites ai-skills.lock from the artifact indexes; manifest edits it would
+# need (path drift, declared renames) become "Action required" items because the
+# publisher only commits generated data.
 set -euo pipefail
 
 : "${SUMMARY_PATH:?SUMMARY_PATH is required}"
@@ -9,11 +12,12 @@ rm -f "$SUMMARY_PATH" "$ARTIFACT_DIR/publication.json"
 baseline=$(git merge-base "${BASE_SHA:?BASE_SHA is required}" HEAD)
 status=0
 uv run python scripts/repin_vendor.py \
-  --all --keep-sha \
+  --all --keep-sha --no-manifest-rewrite \
   --baseline-ref "$baseline" \
   --summary-path "$SUMMARY_PATH" || status=$?
 
-# Only collisions produce both a nonzero status and a complete summary.
+# Only re-pin failures (collisions, dead selectors, path drift) produce both a
+# nonzero status and a complete summary with an "Action required" section.
 # Publish their report without committing any generated data.
 if [[ ! -s "$SUMMARY_PATH" ]]; then
   exit 1

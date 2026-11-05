@@ -1,0 +1,65 @@
+## Vendor re-pin: `example`
+
+### Action required
+
+- Ambiguous path drift mapping.packages[tools].skills: skills/beta has 2 identical candidates: x/beta, y/beta
+- Dead selector mapping.packages[tools].skills: 'beta' matches nothing at the new revision
+
+### Pin
+
+- Revision: `0123456789abcdef0123456789abcdef01234567` → `89abcdef0123456789abcdef0123456789abcdef`
+- displayRef: `latest`
+- Compare: https://github.com/owner/example/compare/0123456789abcdef0123456789abcdef01234567...89abcdef0123456789abcdef0123456789abcdef
+
+### SemVer advice (advisory)
+
+n/a (no comparison)
+
+### Capabilities
+
+None.
+
+#### Unapplied: identical content at a new ID
+
+None.
+
+### Files
+
+None.
+
+### Resources
+
+None.
+
+### Lineage
+
+None.
+
+### License and notice
+
+None.
+
+### Coverage
+
+None.
+
+### Collisions
+
+None.
+
+### Selectors
+
+- `mapping.packages[tools].skills` `alpha`: 1 match(es), ok
+- `mapping.packages[tools].skills` `beta`: 0 match(es), dead
+- `mapping.packages[tools].skillsRoot` `skills`: 1 match(es), ok
+- `mapping.skillRoots` `skills`: 2 match(es), ok
+
+### Path drift
+
+- ambiguous `mapping.packages[tools].skills` `beta`: `skills/beta` → `x/beta`, `y/beta`
+
+### Digests
+
+None.
+
+<!-- ai-skills-repin vendor=example revision=89abcdef0123456789abcdef0123456789abcdef -->

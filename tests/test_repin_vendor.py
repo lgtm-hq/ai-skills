@@ -1,1564 +1,922 @@
-"""Tests for vendor re-pin summaries, CLI, and the scheduled workflow."""
-
-from __future__ import annotations
+"""Re-pin v2 on the lock/artifact model with local fake upstream revisions."""
 
 import json
-import runpy
-import stat
-import subprocess  # nosec B404 - monkeypatch the fixed git baseline reader
-import sys
-from collections.abc import Mapping
-from copy import deepcopy
+import os
+import shutil
+import subprocess  # nosec B404 - local git fixture with fixed argv
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Never
+from typing import Any
 
 import pytest
 import yaml
 from assertpy import assert_that
+from repin_helpers import (
+    AFTER,
+    BEFORE,
+    NEW_SHA,
+    NEWER_SHA,
+    NUMERIC_SHA,
+    OLD_SHA,
+    Tree,
+    consumer_document,
+    dump_case,
+    load_case,
+    skill,
+)
 
-import ai_skills_engine.bake.vendor_indexes as bake_vendor_indexes
-import ai_skills_engine.bake.vendor_plugins as bake_vendor_plugins
-import ai_skills_engine.vendors.manage as manage_vendors
-import ai_skills_engine.vendors.repin as repin_vendor
-from ai_skills_engine.manifest.edit import dump_document
-from ai_skills_engine.manifest.legacy import write_legacy
+from ai_skills_engine import artifact, cli
+from ai_skills_engine.bake import vendor_indexes
+from ai_skills_engine.lockfile import read_lock
 from ai_skills_engine.manifest.load import read_document
-from ai_skills_engine.manifest.migrate import migrate
-from ai_skills_engine.registry.registry import load_registry
-from ai_skills_engine.registry.vendor import Vendor
-from ai_skills_engine.registry.vendor_repin_diff import (
-    VendorRepinDiff,
-    diff_snapshots,
-    render_json,
-    render_markdown,
-)
-from ai_skills_engine.registry.vendor_repin_snapshot import VendorRepinSnapshot
+from ai_skills_engine.repin import declined as declined_module
+from ai_skills_engine.repin import run as run_module
+from ai_skills_engine.repin.change import Change
+from ai_skills_engine.repin.compare import COLLISION_CODES, compare
+from ai_skills_engine.repin.declined import declined_pr, marker, markers
+from ai_skills_engine.repin.legal_text import content_digest, revision_free
+from ai_skills_engine.repin.render import FILE_CAP, render_json, render_markdown
+from ai_skills_engine.repin.report import RepinReport
+from ai_skills_engine.repin.run import repin_vendor
+from ai_skills_engine.repin.vendor_pin import VendorPin
+from ai_skills_engine.vendors import repin as repin_cli
 
-_EXISTING_SHA = "0123456789abcdef0123456789abcdef01234567"
-_NEW_SHA = "89abcdef0123456789abcdef0123456789abcdef"
-_BASELINE_SHA = "fedcba9876543210fedcba9876543210fedcba98"
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_PLUGINS_YAML = (
-    "plugins:\n"
-    "      - id: example-plugin\n"
-    "        description: Example vendor plugin.\n"
-    "        skillsRoot: skills\n"
-    '        skills: "*"\n'
-)
-
-_PREPUBLICATION_CASES = [
-    ("new", "bundles.yaml", "none", "write"),
-    ("new", "vendors.yaml", "none", "write"),
-    ("new", "resolve", "none", "write"),
-    ("new", "unknown", "none", "write"),
-    ("new", "baseline", "none", "write"),
-    ("new", "baseline-parse", "none", "write"),
-    ("new", "index", "none", "write"),
-    ("baseline", "sync", "none", "write"),
-    ("new", "resolve", "vendors.yaml", "write"),
-    ("new", "resolve", "bundles.yaml", "write"),
-    ("new", "sync", "ai-skills.yaml", "write"),
-    ("new", "sync", "NOTICE.md", "mode"),
-    ("new", "sync", "npm/ai-skills/NOTICE.md", "unlink"),
-    ("new", "none", "none", "write"),
-    ("noop", "none", "none", "write"),
-    ("keep", "none", "none", "write"),
-    ("baseline", "none", "none", "write"),
-]
+pytest_plugins = ["repin_helpers"]
+GOLDEN = Path(__file__).parent / "fixtures/repin"
+# Regenerate every golden file from the real offline pipeline (never by hand):
+# AI_SKILLS_UPDATE_REPIN_GOLDENS=1 pytest tests/test_repin_vendor.py -k golden
+UPDATE_GOLDENS = os.environ.get("AI_SKILLS_UPDATE_REPIN_GOLDENS") == "1"
+type Offline = Callable[..., Path]
+# beta vanished from skills/ and reappears at two identical candidates.
+AMBIGUOUS: Tree = {
+    **{key: value for key, value in AFTER.items() if "gamma" not in key},
+    "x/beta/SKILL.md": skill("beta", "beta body"),
+    "y/beta/SKILL.md": skill("beta", "beta body"),
+}
+GOLDEN_RUNS: dict[str, tuple[dict[str, Tree], dict[str, Any]]] = {
+    "updated": ({OLD_SHA: BEFORE, NEW_SHA: AFTER}, consumer_document()),
+    "failed": (
+        {OLD_SHA: BEFORE, NEW_SHA: AMBIGUOUS},
+        consumer_document(skills=["alpha", "beta"]),
+    ),
+}
 
 
-def _assert_prepublication_report(
-    *,
-    report: dict[str, Any],
-    state: str,
-    entry: str,
-    mode: str,
-    boundary: str,
-    blocked: str,
+def _files(root: Path) -> dict[str, bytes]:
+    """Read every committed-style output of the fixture repository.
+
+    Args:
+        root: Repository root.
+
+    Returns:
+        Relative path to bytes, excluding nothing but directories.
+    """
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def _component_ids(root: Path) -> set[str]:
+    """List capability IDs recorded in the committed lock.
+
+    Args:
+        root: Repository root.
+
+    Returns:
+        Locked capability IDs.
+    """
+    return {
+        capability.id
+        for package in read_lock(root / "ai-skills.lock").packages
+        for capability in package.capabilities
+    }
+
+
+def _vendor(root: Path) -> dict[str, Any]:
+    """Read the fixture vendor declaration.
+
+    Args:
+        root: Repository root.
+
+    Returns:
+        Vendor mapping.
+    """
+    return dict(read_document(root / "ai-skills.yaml")["vendors"][0])
+
+
+@pytest.mark.parametrize("name", ["updated", "failed"])
+def test_golden_bodies_are_byte_identical(name: str) -> None:
+    """Rendering the same indexes twice matches the pinned golden bodies."""
+    first = compare(**load_case(GOLDEN / f"{name}.input.json"))
+    second = compare(**load_case(GOLDEN / f"{name}.input.json"))
+    assert_that(render_markdown(first)).is_equal_to(render_markdown(second))
+    assert_that(render_json(first)).is_equal_to(render_json(second))
+    assert_that(render_markdown(first)).is_equal_to(
+        (GOLDEN / f"{name}.body.md.txt").read_text(encoding="utf-8")
+    )
+    assert_that(render_json(first)).is_equal_to(
+        (GOLDEN / f"{name}.body.json.txt").read_text(encoding="utf-8")
+    )
+
+
+@pytest.mark.parametrize("name", sorted(GOLDEN_RUNS))
+def test_pipeline_reproduces_golden_inputs_and_bodies(
+    name: str, offline: Offline, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Check independent observations shared by source and installed-wheel runs."""
-    if boundary == "none":
-        assert_that(report["status"]).is_zero()
-        assert_that(report["sha"]).is_equal_to(
-            _EXISTING_SHA
-            if mode in {"noop", "keep", "list", "all", "all-unchanged"}
-            else _NEW_SHA
+    """A real offline run reproduces the golden input, Markdown and JSON bytes.
+
+    This is also the golden generator: ``AI_SKILLS_UPDATE_REPIN_GOLDENS=1``
+    rewrites the three files from the run instead of comparing them.
+    """
+    # Tar digests embed the engine version; pin it like the artifact fixtures.
+    monkeypatch.setattr(artifact, "installed_engine_version", lambda: "0.0.0-fixture")
+    captured: list[dict[str, Any]] = []
+
+    def capture(**arguments: Any) -> RepinReport:
+        """Record the comparison input of the run.
+
+        Args:
+            **arguments: ``compare`` keyword arguments.
+
+        Returns:
+            The real comparison.
+        """
+        captured.append(arguments)
+        return compare(**arguments)
+
+    monkeypatch.setattr(run_module, "compare", capture)
+    trees, document = GOLDEN_RUNS[name]
+    root = offline(trees, document)
+    report = repin_vendor(root=root, vendor_id="example", revision=NEW_SHA)
+    assert_that(captured).is_length(1)
+    outputs = {
+        f"{name}.input.json": dump_case(captured[0]),
+        f"{name}.body.md.txt": render_markdown(report),
+        f"{name}.body.json.txt": render_json(report),
+    }
+    for file, text in outputs.items():
+        if UPDATE_GOLDENS:
+            (GOLDEN / file).write_text(text, encoding="utf-8")
+        assert_that(text).described_as(file).is_equal_to(
+            (GOLDEN / file).read_text(encoding="utf-8")
         )
-        if mode == "list":
-            assert_that(json.loads(report["output"])).is_equal_to(["example-vendor"])
-        if mode in {"list", "all-unchanged"}:
-            assert_that(report["changed"]).is_empty()
-            assert_that(report["changed_artifacts"]).is_empty()
-            assert_that(report["events"]).is_empty()
-        if mode == "baseline":
-            assert_that(report["output"]).contains(_BASELINE_SHA, "delta", "gamma")
-        if mode not in {"list", "all-unchanged"}:
-            assert_that(report["published"]).is_equal_to(
-                [
-                    [
-                        "example-vendor",
-                        "owner/example" if state == "current" else "changed/repository",
-                        None if state == "current" else "release/changed",
-                        report["sha"],
-                    ]
-                ]
-            )
-    else:
-        assert_that(report["status"]).is_equal_to(1)
-        diagnostic = (
-            "Unknown vendor id"
-            if boundary == "unknown"
-            else (
-                "invalid baseline-ref"
-                if boundary == "baseline"
-                else (
-                    "must be a non-empty list"
-                    if boundary == "baseline-parse"
-                    else "primary installed repin failure"
-                )
-            )
-        )
-        assert_that(report["output"]).contains(diagnostic)
-        if entry == "api" and boundary not in {"unknown", "baseline", "baseline-parse"}:
-            assert_that(report["caught_primary"]).is_true()
-        effective_block = blocked
-        if boundary == "resolve" and state != "stale":
-            effective_block = "none"  # Current bytes or original absence need no write.
-        assert_that(report["changed"]).is_equal_to(
-            [effective_block]
-            if effective_block not in {"none", "npm/ai-skills/NOTICE.md"}
-            else []
-        )
-        assert_that(report["changed_artifacts"]).is_equal_to(
-            [effective_block]
-            if effective_block in {"NOTICE.md", "npm/ai-skills/NOTICE.md"}
-            else []
-        )
-        assert_that(report["absent_exists"]).is_equal_to(
-            effective_block == "npm/ai-skills/NOTICE.md"
-        )
-        if effective_block != "none":
-            assert_that(report["output"]).contains("cleanup", effective_block)
-            assert_that("\n".join(report["notes"])).contains(effective_block)
-        else:
-            assert_that(report["notes"]).is_empty()
-    if boundary in {"none", "resolve", "index", "sync"}:
-        assert_that(report["resolved"]).is_equal_to(
-            []
-            if mode in {"keep", "list", "all", "all-unchanged"}
-            else [
-                [
-                    "owner/example" if state == "current" else "changed/repository",
-                    None if state == "current" else "release/changed",
-                    _EXISTING_SHA,
-                ]
-            ]
-        )
-    else:
-        assert_that(report["resolved"]).is_empty()
 
 
-@pytest.mark.parametrize("state", ["current", "stale", "absent"])
-@pytest.mark.parametrize(
-    ("entry", "mode", "boundary", "blocked", "operation"),
-    [
-        (entry, *case)
-        for entry in ("api", "source-cli")
-        for case in _PREPUBLICATION_CASES
-    ]
-    + [
-        ("source-cli", mode, "none", "none", "write")
-        for mode in ("list", "all", "all-unchanged")
-    ],
-)
-def test_repin_transaction_starts_before_publication(
-    repo_root: Path,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    state: str,
-    entry: str,
-    mode: str,
-    boundary: str,
-    blocked: str,
-    operation: str,
-) -> None:
-    """Real API/CLI failures restore the pre-publication state, including absence."""
-    trees = tmp_path / "trees"
-    _write_before_tree(dest=trees / "before")
-    _write_after_tree(dest=trees / "after")
-    fixture = _REPO_ROOT / "tests/fixtures/manifest/repin-cli.py"
-    monkeypatch.setattr(
-        sys,
-        "argv",
+def test_body_sections_are_in_fixed_order_without_timestamps() -> None:
+    """The body uses the documented section order and ends with the marker."""
+    body = (GOLDEN / "updated.body.md.txt").read_text(encoding="utf-8")
+    headings = [line for line in body.splitlines() if line.startswith("#")]
+    assert_that(headings).is_equal_to(
         [
-            str(fixture),
-            "unused",
-            str(repo_root),
-            str(trees),
-            mode,
-            boundary,
-            blocked,
-            operation,
-            state,
-            entry,
-        ],
-    )
-    runpy.run_path(str(fixture), run_name="__main__")
-    report = json.loads(capsys.readouterr().out)
-    _assert_prepublication_report(
-        report=report,
-        state=state,
-        entry=entry,
-        mode=mode,
-        boundary=boundary,
-        blocked=blocked,
-    )
-
-
-def test_all_keeps_successful_vendor_when_later_resolution_fails(
-    repo_root: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """CLI selection follows a stale manifest while rollback stays per vendor."""
-    migrate(repo_root)
-    manage_vendors.refresh(repo_root=repo_root)
-    manifest = repo_root / "ai-skills.yaml"
-    data = read_document(manifest)
-    second = deepcopy(data["vendors"][0])
-    second["id"] = "second-vendor"
-    second["mapping"]["packages"][0]["id"] = "second-plugin"
-    data["vendors"].append(second)
-    data["exports"].append("second-vendor/second-plugin")
-    data["vendors"][0]["branch"] = "release/changed"
-    manifest.write_text(dump_document(data))
-    paths = [
-        repo_root / name for name in ("ai-skills.yaml", "vendors.yaml", "bundles.yaml")
-    ]
-    artifact_paths = manage_vendors._generated_artifact_paths(repo_root=repo_root)
-    checkpoint = {}
-    artifacts = []
-    calls = []
-
-    def resolve(*, vendor: Vendor) -> str:
-        """Fail only after the first actual repin has committed its outputs."""
-        calls.append(vendor.id)
-        if vendor.id == "second-vendor":
-            checkpoint.update(
-                {path: (path.read_bytes(), path.stat().st_mode) for path in paths}
-            )
-            artifacts.append(manage_vendors._snapshot_artifacts(paths=artifact_paths))
-            raise RuntimeError("second vendor upstream failure")
-        assert_that(vendor.branch).is_equal_to("release/changed")
-        return _NEW_SHA
-
-    monkeypatch.setattr(repin_vendor, "resolve_upstream_sha", resolve)
-    assert_that(
-        repin_vendor.main(["--repo-root", str(repo_root), "--all"])
-    ).is_equal_to(1)
-    assert_that(capsys.readouterr().err).contains("second vendor upstream failure")
-    assert_that(calls).is_equal_to(["example-vendor", "second-vendor"])
-    assert_that(
-        [vendor["sha"] for vendor in read_document(manifest)["vendors"]]
-    ).is_equal_to([_NEW_SHA, _EXISTING_SHA])
-    assert_that(
-        {path: (path.read_bytes(), path.stat().st_mode) for path in paths}
-    ).is_equal_to(checkpoint)
-    assert_that(manage_vendors._snapshot_artifacts(paths=artifact_paths)).is_equal_to(
-        artifacts[0]
-    )
-
-
-@pytest.mark.parametrize("mode", ["keep", "resolve-current", "resolve-new", "rollback"])
-@pytest.mark.parametrize("baseline", [False, True])
-def test_direct_repin_uses_manifest_only_edits(
-    repo_root: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    mode: str,
-    baseline: bool,
-) -> None:
-    """Direct API resolution and real snapshots use manifest declarations."""
-    migrate(repo_root)
-    manage = manage_vendors
-    manage.refresh(repo_root=repo_root)
-    baseline_text = (repo_root / "vendors.yaml").read_text()
-    path = repo_root / "ai-skills.yaml"
-    data = read_document(path)
-    data["vendors"][0].update(
-        repo="changed/repository", branch="release/next", sha=_NEW_SHA
-    )
-    path.write_text(dump_document(data))
-    manifest_bytes = path.read_bytes()
-    # Compute expected derived declarations, then restore stale outputs before calling.
-    stale = {
-        name: (repo_root / name).read_bytes()
-        for name in ("vendors.yaml", "bundles.yaml")
-    }
-    write_legacy(repo_root)
-    generated = {name: (repo_root / name).read_bytes() for name in stale}
-    for name, content in stale.items():
-        (repo_root / name).write_bytes(content)
-    artifacts = manage._generated_artifact_paths(repo_root=repo_root)
-    artifact_snapshot = manage._snapshot_artifacts(paths=artifacts)
-    observed = []
-    snapshots = []
-    real_snapshot = repin_vendor._snapshot_vendor
-
-    def snapshot(
-        *, repo_root: Path, vendor: Vendor, vendor_trees: Mapping[str, Path] | None
-    ) -> VendorRepinSnapshot:
-        """Observe the vendor but retain the production bake and snapshot path."""
-        snapshots.append((vendor.repo, vendor.branch, vendor.sha))
-        return real_snapshot(
-            repo_root=repo_root, vendor=vendor, vendor_trees=vendor_trees
-        )
-
-    def resolver(vendor: Vendor) -> str:
-        """Resolve against authoritative fields without any network calls."""
-        observed.append((vendor.repo, vendor.branch, vendor.sha))
-        return _BASELINE_SHA if mode in {"resolve-new", "rollback"} else vendor.sha
-
-    def no_network(**kwargs: object) -> bytes:
-        """Fail if any test leaves the fixture's offline vendor acquisition path."""
-        pytest.fail(f"Unexpected network request: {kwargs.get('host')}")
-
-    monkeypatch.setattr(repin_vendor, "_snapshot_vendor", snapshot)
-    monkeypatch.setattr(bake_vendor_plugins, "_http_get_bytes", no_network)
-    if mode == "rollback":
-
-        def fail_bake(*, repo_root: Path) -> None:
-            """Fail after a genuine before snapshot and pin update."""
-            raise RuntimeError("index bake failed")
-
-        monkeypatch.setattr(bake_vendor_indexes, "bake", fail_bake)
-
-    def repin() -> VendorRepinDiff:
-        """Call the production API directly with the unchanged legacy registry."""
-        return repin_vendor.repin_vendor(
-            repo_root=repo_root,
-            vendor_id="example-vendor",
-            keep_sha=mode == "keep",
-            resolve_sha=resolver,
-            baseline_registry_text=baseline_text if baseline else None,
-        )
-
-    authoritative = ("changed/repository", "release/next", _NEW_SHA)
-    if mode == "rollback":
-        with pytest.raises(RuntimeError, match="index bake failed"):
-            repin()
-        assert_that(path.read_bytes()).is_equal_to(manifest_bytes)
-        assert_that(
-            {name: (repo_root / name).read_bytes() for name in generated}
-        ).is_equal_to(stale)
-        assert_that(manage._snapshot_artifacts(paths=artifacts)).is_equal_to(
-            artifact_snapshot
-        )
-    else:
-        diff = repin()
-        expected_sha = _BASELINE_SHA if mode == "resolve-new" else _NEW_SHA
-        assert_that(diff.new_sha).is_equal_to(expected_sha)
-        assert_that(diff.old_sha).is_equal_to(_EXISTING_SHA if baseline else _NEW_SHA)
-        if baseline and mode != "resolve-new":
-            assert_that(diff.added_skills).contains("delta")
-            assert_that(diff.renamed_skills).contains(("beta", "gamma"))
-        if mode != "resolve-new":
-            assert_that(path.read_bytes()).is_equal_to(manifest_bytes)
-            assert_that(
-                {name: (repo_root / name).read_bytes() for name in generated}
-            ).is_equal_to(generated)
-        assert_that(
-            load_registry(registry_path=repo_root / "vendors.yaml")[0].sha
-        ).is_equal_to(expected_sha)
-    assert_that(observed).is_equal_to([] if mode == "keep" else [authoritative])
-    assert_that(snapshots[0]).is_equal_to(
-        ("owner/example", None, _EXISTING_SHA) if baseline else authoritative
-    )
-    if baseline and mode != "rollback" or mode == "resolve-new":
-        assert_that(snapshots[-1][:2]).is_equal_to(authoritative[:2])
-
-
-def test_manifest_repin_and_failure_restore(
-    repo_root: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Re-pin production declarations and restore source plus outputs on failure."""
-    migrate(repo_root)
-    manage_vendors.refresh(repo_root=repo_root)
-    diff = repin_vendor.repin_vendor(
-        repo_root=repo_root, vendor_id="example-vendor", resolve_sha=_fixed_new_sha
-    )
-    assert_that(diff.new_sha).is_equal_to(_NEW_SHA)
-    assert_that(
-        read_document(repo_root / "ai-skills.yaml")["vendors"][0]["sha"]
-    ).is_equal_to(_NEW_SHA)
-    assert_that(
-        load_registry(registry_path=repo_root / "vendors.yaml")[0].sha
-    ).is_equal_to(_NEW_SHA)
-    before = {
-        name: (repo_root / name).read_bytes()
-        for name in ("ai-skills.yaml", "vendors.yaml", "bundles.yaml")
-    }
-
-    def fail_bake(*, repo_root: Path) -> None:
-        """Simulate a failed downstream bake after editing the source pin."""
-        raise RuntimeError("index bake failed")
-
-    monkeypatch.setattr(bake_vendor_indexes, "bake", fail_bake)
-    with pytest.raises(RuntimeError, match="index bake failed"):
-        repin_vendor.repin_vendor(
-            repo_root=repo_root,
-            vendor_id="example-vendor",
-            resolve_sha=lambda vendor: _EXISTING_SHA,
-        )
-    assert_that({name: (repo_root / name).read_bytes() for name in before}).is_equal_to(
-        before
-    )
-
-
-@pytest.mark.parametrize("boundary", ["index", "sync"])
-@pytest.mark.parametrize(
-    ("blocked", "operation"),
-    [
-        (None, "write"),
-        ("ai-skills.yaml", "write"),
-        ("vendors.yaml", "write"),
-        ("bundles.yaml", "write"),
-        ("ai-skills.yaml", "mode"),
-        ("vendors.yaml", "mode"),
-        ("NOTICE.md", "write"),
-        ("NOTICE.md", "mode"),
-        ("npm/ai-skills/NOTICE.md", "unlink"),
-        ("ai-skills.yaml,vendors.yaml,NOTICE.md", "write"),
-    ],
-)
-def test_actual_repin_cleanup_preserves_primary_and_other_destinations(
-    repo_root: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    boundary: str,
-    blocked: str | None,
-    operation: str,
-) -> None:
-    """Real snapshots, pin edits and bakes survive independent cleanup I/O errors."""
-    migrate(repo_root)
-    manage = manage_vendors
-    manage.refresh(repo_root=repo_root)
-    manifest = repo_root / "ai-skills.yaml"
-    manifest.write_bytes(b"# source bytes\r\n" + manifest.read_bytes())
-    notice = repo_root / "NOTICE.md"
-    notice.write_bytes(b"original notice\r\n")
-    absent = repo_root / "npm/ai-skills/NOTICE.md"
-    absent.unlink()
-    paths = [
-        repo_root / name
-        for name in ("ai-skills.yaml", "vendors.yaml", "bundles.yaml", "NOTICE.md")
-    ]
-    for path in paths:
-        path.chmod(0o640)
-    before = {path: (path.read_bytes(), path.stat().st_mode) for path in paths}
-    artifacts = manage._generated_artifact_paths(repo_root=repo_root)
-    artifact_snapshot = manage._snapshot_artifacts(paths=artifacts)
-    real_bake, real_sync = bake_vendor_indexes.bake, manage._sync_artifacts
-    real_write, real_chmod, real_unlink = Path.write_bytes, Path.chmod, Path.unlink
-    failure = ValueError("primary actual repin failure")
-    cleaning = False
-    denied: list[str] = []
-    blocked_paths = [repo_root / name for name in blocked.split(",")] if blocked else []
-
-    def fail() -> None:
-        """Fail after production writes, also changing modes and a legacy output."""
-        nonlocal cleaning
-        assert_that(read_document(manifest)["vendors"][0]["sha"]).is_equal_to(_NEW_SHA)
-        (repo_root / "bundles.yaml").write_bytes(b"partial bundles")
-        notice.write_bytes(b"partial notice")
-        absent.write_bytes(b"new notice")
-        for path in paths:
-            path.chmod(0o666)
-        cleaning = True
-        raise failure
-
-    def bake(*, repo_root: Path) -> None:
-        """Run the real index bake before injecting its downstream error."""
-        real_bake(repo_root=repo_root)
-        if boundary == "index":
-            fail()
-
-    def sync(*, repo_root: Path, check_only: bool) -> None:
-        """Run the real package sync before injecting its downstream error."""
-        real_sync(repo_root=repo_root, check_only=check_only)
-        fail()
-
-    def deny(path: Path, action: str) -> None:
-        """Deny only the selected actual cleanup operation after the bake error."""
-        if cleaning and path in blocked_paths and operation == action:
-            denied.append(str(path.relative_to(repo_root)))
-            raise PermissionError(f"cleanup {action} denied")
-
-    def write(path: Path, content: bytes) -> int:
-        """Observe the actual restoration write boundary."""
-        deny(path, "write")
-        return real_write(path, content)
-
-    def chmod(path: Path, mode: int, *, follow_symlinks: bool = True) -> None:
-        """Observe mode restoration without changing privilege boundaries."""
-        deny(path, "mode")
-        real_chmod(path, mode, follow_symlinks=follow_symlinks)
-
-    def unlink(path: Path, missing_ok: bool = False) -> None:
-        """Observe cleanup of a generated output that did not originally exist."""
-        deny(path, "unlink")
-        real_unlink(path, missing_ok=missing_ok)
-
-    monkeypatch.setattr(bake_vendor_indexes, "bake", bake)
-    monkeypatch.setattr(manage, "_sync_artifacts", sync)
-    monkeypatch.setattr(Path, "write_bytes", write)
-    monkeypatch.setattr(Path, "chmod", chmod)
-    monkeypatch.setattr(Path, "unlink", unlink)
-    with pytest.raises(ValueError) as caught:
-        repin_vendor.repin_vendor(
-            repo_root=repo_root,
-            vendor_id="example-vendor",
-            resolve_sha=_fixed_new_sha,
-        )
-    assert_that(caught.value).is_same_as(failure)
-    assert_that(denied).is_equal_to(blocked.split(",") if blocked else [])
-    if blocked:
-        assert_that(caught.value.__notes__).is_length(len(blocked_paths))
-        for name in blocked.split(","):
-            assert_that("\n".join(caught.value.__notes__)).contains(name, "cleanup")
-    else:
-        assert_that(getattr(caught.value, "__notes__", [])).is_empty()
-    for path, original in before.items():
-        if path not in blocked_paths:
-            assert_that((path.read_bytes(), path.stat().st_mode)).is_equal_to(original)
-        elif operation == "mode":
-            assert_that(path.read_bytes()).is_equal_to(original[0])
-            assert_that(stat.S_IMODE(path.stat().st_mode)).is_equal_to(0o666)
-    after_snapshot, after_directories = manage._snapshot_artifacts(paths=artifacts)
-    expected_snapshot, expected_directories = artifact_snapshot
-    for path, original in expected_snapshot.items():
-        if path not in blocked_paths:
-            assert_that(after_snapshot[path]).described_as(str(path)).is_equal_to(
-                original
-            )
-    assert_that(after_directories).is_equal_to(expected_directories)
-    assert_that(absent.exists()).is_equal_to(operation == "unlink")
-
-
-@pytest.mark.parametrize("mode", ["new", "baseline", "keep", "noop"])
-@pytest.mark.parametrize("manifest", [False, True])
-def test_actual_repin_snapshot_failure_restores_bytes_modes_and_absence(
-    repo_root: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    mode: str,
-    manifest: bool,
-) -> None:
-    """A production before bake failure restores legacy and unchanged-pin paths."""
-    if manifest:
-        migrate(repo_root)
-    manage = manage_vendors
-    manage.refresh(repo_root=repo_root)
-    if not manifest:
-        registry = repo_root / "vendors.yaml"
-        registry.write_bytes(registry.read_bytes().replace(b"\n", b"\r\n"))
-        (repo_root / "bundles.yaml").unlink()
-    notice = repo_root / "NOTICE.md"
-    notice.unlink()
-    paths = [
-        repo_root / name for name in ("ai-skills.yaml", "vendors.yaml", "bundles.yaml")
-    ]
-    before = {
-        path: (path.read_bytes(), path.stat().st_mode) if path.exists() else None
-        for path in paths
-    }
-    artifacts = manage._generated_artifact_paths(repo_root=repo_root)
-    snapshot = manage._snapshot_artifacts(paths=artifacts)
-    baseline = (
-        (repo_root / "vendors.yaml").read_text().replace(_EXISTING_SHA, _BASELINE_SHA)
-    )
-    real_collect = bake_vendor_plugins.collect_bake
-    failure = ValueError("primary before snapshot failure")
-
-    def collect(
-        *,
-        repo_root: Path,
-        vendor_trees: Mapping[str, Path] | None = None,
-        install: bool = True,
-    ) -> Never:
-        """Complete the production plugin bake before raising its failure."""
-        real_collect(repo_root=repo_root, vendor_trees=vendor_trees, install=install)
-        notice.write_bytes(b"new artifact")
-        raise failure
-
-    monkeypatch.setattr(bake_vendor_plugins, "collect_bake", collect)
-    with pytest.raises(ValueError) as caught:
-        repin_vendor.repin_vendor(
-            repo_root=repo_root,
-            vendor_id="example-vendor",
-            resolve_sha=(
-                _fixed_new_sha if mode in {"new", "baseline"} else lambda v: v.sha
-            ),
-            keep_sha=mode == "keep",
-            baseline_registry_text=baseline if mode == "baseline" else None,
-        )
-    assert_that(caught.value).is_same_as(failure)
-    assert_that(
-        {
-            path: (path.read_bytes(), path.stat().st_mode) if path.exists() else None
-            for path in paths
-        }
-    ).is_equal_to(before)
-    assert_that(manage._snapshot_artifacts(paths=artifacts)).is_equal_to(snapshot)
-
-
-def test_manifest_renovate_summary_uses_selected_pin(
-    repo_root: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Actual summary CLI regenerates stale legacy pins after a Renovate edit."""
-    migrate(repo_root)
-    manage_vendors.refresh(repo_root=repo_root)
-    baseline = (repo_root / "vendors.yaml").read_text()
-    path = repo_root / "ai-skills.yaml"
-    path.write_text(path.read_text().replace(_EXISTING_SHA, _NEW_SHA, 1))
-    monkeypatch.setattr(
-        repin_vendor, "_registry_text_at_ref", lambda **kwargs: baseline
-    )
-    summary = repo_root / "summary.md"
-    assert_that(
-        repin_vendor.main(
-            [
-                "--repo-root",
-                str(repo_root),
-                "--all",
-                "--keep-sha",
-                "--baseline-ref",
-                "base",
-                "--summary-path",
-                str(summary),
-            ]
-        )
-    ).is_zero()
-    assert_that(summary.read_text()).contains(_EXISTING_SHA, _NEW_SHA)
-    assert_that(read_document(path)["vendors"][0]["sha"]).is_equal_to(_NEW_SHA)
-    assert_that(
-        load_registry(registry_path=repo_root / "vendors.yaml")[0].sha
-    ).is_equal_to(_NEW_SHA)
-
-
-def _fixed_new_sha(_vendor: object) -> str:
-    """Return the post-re-pin SHA, ignoring the vendor record.
-
-    Args:
-        _vendor: Registry vendor (unused).
-
-    Returns:
-        The new pin SHA.
-    """
-    del _vendor
-    return _NEW_SHA
-
-
-def _fixed_new_sha_kw(*, vendor: Vendor) -> str:
-    """Return the post-re-pin SHA for keyword-only stubs.
-
-    Args:
-        vendor: Registry vendor (unused).
-
-    Returns:
-        The new pin SHA.
-    """
-    del vendor
-    return _NEW_SHA
-
-
-def _current_sha_kw(*, vendor: Vendor) -> str:
-    """Return the vendor's current pin SHA.
-
-    Args:
-        vendor: Registry vendor.
-
-    Returns:
-        The existing pin SHA.
-    """
-    return str(vendor.sha)
-
-
-def _write_skill(*, directory: Path, name: str, body: str | None = None) -> None:
-    """Write a SKILL.md into ``directory``.
-
-    Args:
-        directory: Skill directory to create.
-        name: Frontmatter ``name`` value.
-        body: Optional body appended after the frontmatter.
-    """
-    directory.mkdir(parents=True, exist_ok=True)
-    extra = f"{body}\n" if body is not None else ""
-    directory.joinpath("SKILL.md").write_text(
-        f"---\nname: {name}\ndescription: {name} skill.\n---\n{extra}",
-        encoding="utf-8",
-    )
-
-
-def _write_before_tree(*, dest: Path) -> None:
-    """Populate the pre-re-pin vendor tree.
-
-    Args:
-        dest: Unpacked vendor destination.
-    """
-    dest.mkdir(parents=True, exist_ok=True)
-    _write_skill(directory=dest / "skills" / "alpha", name="alpha", body="alpha-body")
-    _write_skill(directory=dest / "skills" / "beta", name="beta", body="beta-body")
-    _write_skill(
-        directory=dest / "template" / "placeholder",
-        name="placeholder",
-        body="skip-me",
-    )
-
-
-def _write_after_tree(*, dest: Path) -> None:
-    """Populate the post-re-pin vendor tree.
-
-    ``gamma`` keeps ``beta``'s body so the diff reports a rename.
-    ``delta`` is new. The template skill is gone (coverage delta).
-
-    Args:
-        dest: Unpacked vendor destination.
-    """
-    dest.mkdir(parents=True, exist_ok=True)
-    _write_skill(directory=dest / "skills" / "alpha", name="alpha", body="alpha-body")
-    _write_skill(directory=dest / "skills" / "gamma", name="gamma", body="beta-body")
-    _write_skill(directory=dest / "skills" / "delta", name="delta", body="delta-body")
-
-
-def _write_collision_tree(*, dest: Path) -> None:
-    """Populate a tree that collides with first-party ``skills/alpha``.
-
-    Args:
-        dest: Unpacked vendor destination.
-    """
-    dest.mkdir(parents=True, exist_ok=True)
-    _write_skill(directory=dest / "skills" / "alpha", name="alpha", body="alpha-body")
-    _write_skill(directory=dest / "skills" / "teach", name="teach", body="teach-body")
-
-
-def _write_registry(*, repo_root: Path) -> None:
-    """Write vendors.yaml, bundles.yaml, and a stub npm package.
-
-    Args:
-        repo_root: Isolated repository root.
-    """
-    _write_skill(directory=repo_root / "skills/branch", name="branch")
-    repo_root.joinpath("vendors.yaml").write_text(
-        "---\n"
-        "vendors:\n"
-        "  - id: example-vendor\n"
-        "    repo: owner/example\n"
-        f'    sha: "{_EXISTING_SHA}"\n'
-        "    displayRef: latest\n"
-        "    skillRoots:\n"
-        "      - skills\n"
-        f"    {_PLUGINS_YAML}"
-        "    license: MIT\n"
-        "    homepage: https://github.com/owner/example\n",
-        encoding="utf-8",
-    )
-    repo_root.joinpath("bundles.yaml").write_text(
-        "---\n"
-        "groups:\n"
-        "  git-pr:\n"
-        "    id: git-pr\n"
-        "    name: Git & PR Workflow\n"
-        "    description: First-party plugin.\n"
-        "    skills:\n"
-        "      - branch\n",
-        encoding="utf-8",
-    )
-    package_root = repo_root / "npm" / "ai-skills"
-    package_root.mkdir(parents=True)
-    package_root.joinpath("package.json").write_text(
-        '{\n  "name": "@lgtm-hq/ai-skills",\n  "version": "0.0.0-dev"\n}\n',
-        encoding="utf-8",
-    )
-
-
-def _snapshot(
-    *,
-    sha: str,
-    names: frozenset[str],
-    skipped: tuple[str, ...],
-    ingested: int,
-    collisions: tuple[str, ...] = (),
-    digests: tuple[tuple[str, str], ...] = (),
-) -> VendorRepinSnapshot:
-    """Build a snapshot for pure diff tests.
-
-    Args:
-        sha: Pin SHA.
-        names: Explode names.
-        skipped: Skipped SKILL.md paths.
-        ingested: Ingested count.
-        collisions: Collision lines.
-        digests: Explode name → digest pairs.
-
-    Returns:
-        Frozen snapshot.
-    """
-    return VendorRepinSnapshot(
-        vendor_id="example-vendor",
-        sha=sha,
-        explode_names=names,
-        skipped=skipped,
-        ingested_count=ingested,
-        collisions=collisions,
-        skill_digests=digests,
-    )
-
-
-@pytest.fixture
-def tree_kind() -> dict[str, str]:
-    """Mutable after-pin tree selector shared with the fetch stubs.
-
-    Returns:
-        Mapping with a ``kind`` of ``before``, ``after``, or ``collision``.
-    """
-    return {"kind": "before"}
-
-
-@pytest.fixture
-def repo_root(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    tree_kind: dict[str, str],
-) -> Path:
-    """Isolated repo with plugin slices and a stubbed GitHub tree fetch.
-
-    Args:
-        tmp_path: Pytest temporary directory.
-        monkeypatch: Fixture used to stub fetches.
-        tree_kind: Selector for the post-pin vendor tree.
-
-    Returns:
-        Repository root.
-    """
-
-    def fake_index_tree(*, vendor: object) -> list[str]:
-        sha = getattr(vendor, "sha", "")
-        if sha in {_EXISTING_SHA, _BASELINE_SHA}:
-            return [
-                "skills/alpha/SKILL.md",
-                "skills/beta/SKILL.md",
-                "template/placeholder/SKILL.md",
-            ]
-        if tree_kind["kind"] == "collision":
-            return ["skills/alpha/SKILL.md", "skills/teach/SKILL.md"]
-        return [
-            "skills/alpha/SKILL.md",
-            "skills/gamma/SKILL.md",
-            "skills/delta/SKILL.md",
+            "## Vendor re-pin: `example`",
+            "### Pin",
+            "### SemVer advice (advisory)",
+            "### Capabilities",
+            "#### Unapplied: identical content at a new ID",
+            "### Files",
+            "### Resources",
+            "### Lineage",
+            "### License and notice",
+            "### Coverage",
+            "### Collisions",
+            "### Selectors",
+            "### Path drift",
+            "### Digests",
         ]
-
-    def fake_plugin_tree(*, vendor: object, dest: Path) -> None:
-        sha = getattr(vendor, "sha", "")
-        if sha in {_EXISTING_SHA, _BASELINE_SHA}:
-            _write_before_tree(dest=dest)
-            return
-        if tree_kind["kind"] == "collision":
-            _write_collision_tree(dest=dest)
-            return
-        _write_after_tree(dest=dest)
-
-    monkeypatch.setattr(bake_vendor_indexes, "_fetch_tree_paths", fake_index_tree)
-    monkeypatch.setattr(bake_vendor_plugins, "_fetch_vendor_tree", fake_plugin_tree)
-    _write_registry(repo_root=tmp_path)
-    return tmp_path
-
-
-def test_diff_reports_added_removed_and_renamed() -> None:
-    """Digest-matched explode names are renamed, not added+removed."""
-    before = _snapshot(
-        sha=_EXISTING_SHA,
-        names=frozenset({"alpha", "beta"}),
-        skipped=("template/placeholder/SKILL.md",),
-        ingested=2,
-        digests=(("alpha", "aaa"), ("beta", "bbb")),
     )
-    after = _snapshot(
-        sha=_NEW_SHA,
-        names=frozenset({"alpha", "gamma", "delta"}),
-        skipped=(),
-        ingested=3,
-        digests=(("alpha", "aaa"), ("gamma", "bbb"), ("delta", "ddd")),
+    assert_that(body.rstrip("\n").splitlines()[-1]).is_equal_to(
+        marker(vendor="example", revision=NEW_SHA)
     )
+    assert_that(body).does_not_match(r"20\d\d-\d\d-\d\d")
 
-    diff = diff_snapshots(before=before, after=after)
 
-    assert_that(diff.unchanged).is_false()
-    assert_that(diff.added_skills).is_equal_to(("delta",))
-    assert_that(diff.removed_skills).is_equal_to(())
-    assert_that(diff.renamed_skills).is_equal_to((("beta", "gamma"),))
-    assert_that(diff.skipped_removed).is_equal_to(
-        ("template/placeholder/SKILL.md",),
+def test_body_includes_semver_level_and_every_reason() -> None:
+    """Every advisory reason from recommend_semver is rendered in both forms."""
+    report = compare(**load_case(GOLDEN / "updated.input.json"))
+    advice = report.semver
+    assert_that(advice).is_not_none()
+    level, reasons = getattr(advice, "level", None), getattr(advice, "reasons", ())
+    assert_that(level).is_equal_to("major")
+    # LICENSE is "MIT\n" at both revisions: the revision-only header of the
+    # generated license file is not a license change.
+    assert_that(reasons).is_equal_to(
+        (
+            "Capability added: example/tools:skill/delta",
+            "Capability added: example/tools:skill/gamma",
+            "Capability removed: example/tools:skill/beta",
+            "Content or metadata changed: example/tools:skill/alpha",
+        )
     )
-    assert_that(diff.ingested_before).is_equal_to(2)
-    assert_that(diff.ingested_after).is_equal_to(3)
-
-
-def test_diff_same_sha_with_bake_delta_is_not_unchanged() -> None:
-    """Equal pins still report skill deltas from slice or rename edits."""
-    before = _snapshot(
-        sha=_EXISTING_SHA,
-        names=frozenset({"alpha", "delta"}),
-        skipped=(),
-        ingested=2,
-        digests=(("alpha", "aaa"), ("delta", "ddd")),
-    )
-    after = _snapshot(
-        sha=_EXISTING_SHA,
-        names=frozenset({"alpha", "renamed-delta"}),
-        skipped=(),
-        ingested=2,
-        digests=(("alpha", "aaa"), ("renamed-delta", "ddd")),
-    )
-
-    diff = diff_snapshots(before=before, after=after)
-    markdown = render_markdown(diff=diff, display_ref="latest")
-
-    assert_that(diff.unchanged).is_false()
-    assert_that(diff.renamed_skills).is_equal_to((("delta", "renamed-delta"),))
-    assert_that(markdown).does_not_contain("No bake delta")
-    assert_that(markdown).contains("renamed-delta")
-    assert_that(markdown).does_not_contain(f"{_EXISTING_SHA}` →")
-
-
-def test_diff_identical_snapshots_are_unchanged() -> None:
-    """Matching SHA and bake fields remain a no-op summary."""
-    before = _snapshot(
-        sha=_EXISTING_SHA,
-        names=frozenset({"alpha"}),
-        skipped=(),
-        ingested=1,
-        digests=(("alpha", "aaa"),),
-    )
-    after = _snapshot(
-        sha=_EXISTING_SHA,
-        names=frozenset({"alpha"}),
-        skipped=(),
-        ingested=1,
-        digests=(("alpha", "aaa"),),
-    )
-
-    diff = diff_snapshots(before=before, after=after)
-
-    assert_that(diff.unchanged).is_true()
-    assert_that(render_markdown(diff=diff, display_ref="latest")).contains(
-        "No bake delta",
+    assert_that(report.legal).is_empty()
+    markdown = render_markdown(report)
+    payload = json.loads(render_json(report))
+    assert_that(markdown).contains("Level: **major**")
+    for reason in reasons:
+        assert_that(markdown).contains(f"- {reason}")
+    assert_that(payload["semver"]).is_equal_to(
+        {"level": "major", "reasons": list(reasons)}
     )
 
 
-def test_diff_rename_matching_is_one_to_one() -> None:
-    """Duplicate SKILL.md bodies claim each old explode name at most once."""
-    before = _snapshot(
-        sha=_EXISTING_SHA,
-        names=frozenset({"old-a", "old-b"}),
-        skipped=(),
-        ingested=2,
-        digests=(("old-a", "same"), ("old-b", "same")),
+def test_files_are_capped_in_markdown_and_json() -> None:
+    """At most FILE_CAP file lines are listed; the remainder is counted."""
+    files = tuple(
+        Change(subject="pub/pkg:skill/big", kind="+", detail=f"file-{index:03}.md")
+        for index in range(FILE_CAP + 7)
     )
-    after = _snapshot(
-        sha=_NEW_SHA,
-        names=frozenset({"new-a", "new-b"}),
-        skipped=(),
-        ingested=2,
-        digests=(("new-a", "same"), ("new-b", "same")),
-    )
-
-    diff = diff_snapshots(before=before, after=after)
-
-    assert_that(diff.renamed_skills).is_equal_to((("old-b", "new-a"),))
-    assert_that(diff.added_skills).is_equal_to(("new-b",))
-    assert_that(diff.removed_skills).is_equal_to(("old-a",))
-
-
-def test_diff_surfaces_new_collisions() -> None:
-    """Collisions present only after the bump are listed as new."""
-    before = _snapshot(
-        sha=_EXISTING_SHA,
-        names=frozenset({"alpha"}),
-        skipped=(),
-        ingested=1,
-    )
-    after = _snapshot(
-        sha=_NEW_SHA,
-        names=frozenset({"alpha", "teach"}),
-        skipped=(),
-        ingested=2,
-        collisions=("COLLIDES 'teach': first-party skills/teach vs example-plugin",),
-    )
-
-    diff = diff_snapshots(before=before, after=after)
-
-    assert_that(diff.collisions).is_length(1)
-    assert_that(diff.new_collisions).is_equal_to(diff.collisions)
-    payload = json.loads(render_json(diff=diff, display_ref="latest"))
-    assert_that(payload["newCollisions"]).is_equal_to(list(diff.new_collisions))
-
-
-def test_repin_updates_sha_and_summarizes_skill_delta(
-    repo_root: Path,
-    tree_kind: dict[str, str],
-) -> None:
-    """A pin bump rebakes and reports added, renamed, and coverage deltas."""
-    bake_vendor_plugins.bake(repo_root=repo_root)
-    tree_kind["kind"] = "after"
-
-    diff = repin_vendor.repin_vendor(
-        repo_root=repo_root,
-        vendor_id="example-vendor",
-        resolve_sha=_fixed_new_sha,
-    )
-
-    vendor = load_registry(registry_path=repo_root / "vendors.yaml")[0]
-    assert_that(vendor.sha).is_equal_to(_NEW_SHA)
-    assert_that(diff.unchanged).is_false()
-    assert_that(diff.added_skills).contains("delta")
-    assert_that(diff.renamed_skills).contains(("beta", "gamma"))
-    assert_that(diff.collisions).is_empty()
-    assert_that(diff.skipped_removed).contains("template/placeholder/SKILL.md")
-    package_vendors = yaml.safe_load(
-        (repo_root / "npm" / "ai-skills" / "data" / "vendors.yaml").read_text(
-            encoding="utf-8",
+    report = RepinReport(
+        pin=VendorPin(
+            id="pub",
+            repo="owner/pub",
+            publisher="pub",
+            display_ref="latest",
+            old_sha=OLD_SHA,
+            new_sha=NEW_SHA,
         ),
+        status="updated",
+        files=files,
     )
-    assert_that(package_vendors["vendors"][0]["sha"]).is_equal_to(_NEW_SHA)
+    markdown = render_markdown(report)
+    payload = json.loads(render_json(report))
+    assert_that(markdown.count("  - `+` ")).is_equal_to(FILE_CAP)
+    assert_that(markdown).contains("7 more file change(s) omitted")
+    assert_that(payload["files"]).is_length(FILE_CAP)
+    assert_that(payload["filesOmitted"]).is_equal_to(7)
 
 
-def test_repin_summary_baselines_from_main_registry_not_sha_only(
-    repo_root: Path,
-    tree_kind: dict[str, str],
-) -> None:
-    """Baseline bake uses main's vendor slice, not a SHA reset on the PR.
+def test_legal_text_drops_only_the_revision_header() -> None:
+    """Only the generated section header loses its Revision line."""
+    sections = (
+        b"Origin: github.com/a/b\nRevision: %s\nDeclared license: MIT\n"
+        b"\n--- LICENSE ---\nRevision: kept verbatim\n"
+        b"\nOrigin: github.com/a/b\nRevision: %s\nDeclared license: MIT\n"
+    )
+    old = sections % (OLD_SHA.encode(), NEWER_SHA.encode())
+    new = sections % (NEW_SHA.encode(), NEW_SHA.encode())
+    path = "LICENSES/github.com%2Fa%2Fb.txt"
+    stripped = revision_free(path=path, data=new)
+    assert_that(stripped).is_equal_to(revision_free(path=path, data=old))
+    assert_that(stripped.count(b"Revision: ")).is_equal_to(1)
+    assert_that(stripped).contains(b"Revision: kept verbatim\n")
+    assert_that(revision_free(path="NOTICE.md", data=new)).is_equal_to(new)
+    assert_that(content_digest([stripped, stripped])).is_equal_to(
+        content_digest([stripped])
+    )
+    assert_that(content_digest([stripped])).is_not_equal_to(
+        content_digest([stripped.replace(b"verbatim", b"edited")])
+    )
 
-    A human ``renameSkills`` on the open PR would be unused at main's pin
-    if the baseline snapshot only rewrote the SHA.
+
+def test_collisions_are_selected_by_diagnostic_code() -> None:
+    """A collision is a diagnostic code, not a word in an unrelated message."""
+    case = load_case(GOLDEN / "updated.input.json")
+    collision = "selection.namespace-collision skill/alpha: Reserved destination"
+    unrelated = "selection.other x: message mentions a collision"
+    report = compare(
+        **{
+            **case,
+            "before": replace(case["before"], diagnostics=(unrelated,)),
+            "after": replace(case["after"], diagnostics=(collision, unrelated)),
+        }
+    )
+    assert_that(report.collisions).is_equal_to((Change(subject=collision, kind="new"),))
+    assert_that(COLLISION_CODES).contains("selection.namespace-collision")
+
+
+def test_marker_round_trips() -> None:
+    """The rendered marker identifies vendor and revision exactly."""
+    body = (GOLDEN / "updated.body.md.txt").read_text(encoding="utf-8")
+    assert_that(markers(body)).is_equal_to({("example", NEW_SHA)})
+
+
+def _gh(pulls: list[dict[str, Any]], calls: list[list[str]]) -> Callable[..., str]:
+    """Build a fake ``gh`` runner.
+
+    Args:
+        pulls: Closed PR records to return.
+        calls: Receives each argv.
+
+    Returns:
+        Runner.
     """
-    registry = repo_root / "vendors.yaml"
-    working = registry.read_text(encoding="utf-8")
-    baseline = working.replace(_EXISTING_SHA, _BASELINE_SHA)
-    bake_vendor_plugins.bake(repo_root=repo_root)
-    registry.write_text(
-        working.replace(
-            '        skills: "*"',
-            (
-                '        skills: "*"\n'
-                "        renameSkills:\n"
-                "          delta: renamed-delta"
-            ),
-        ),
-        encoding="utf-8",
+
+    def run(argv: list[str]) -> str:
+        """Return the closed PR listing.
+
+        Args:
+            argv: ``gh`` arguments.
+
+        Returns:
+            JSON listing.
+        """
+        calls.append(argv)
+        return json.dumps(pulls)
+
+    return run
+
+
+def test_declined_lookup_matches_only_the_same_unmerged_revision() -> None:
+    """A closed unmerged PR declines R; merged PRs and newer revisions do not."""
+    calls: list[list[str]] = []
+    runner = _gh(
+        [
+            {"number": 9, "mergedAt": None, "body": "x", "comments": []},
+            {
+                "number": 12,
+                "mergedAt": None,
+                "body": "",
+                "comments": [{"body": marker(vendor="example", revision=NEW_SHA)}],
+            },
+            {
+                "number": 11,
+                "mergedAt": "2026-10-01T00:00:00Z",
+                "body": marker(vendor="example", revision=NEWER_SHA),
+                "comments": [],
+            },
+            {
+                "number": 10,
+                "mergedAt": None,
+                "body": marker(vendor="example", revision=NEW_SHA),
+                "comments": [],
+            },
+        ],
+        calls,
     )
-    tree_kind["kind"] = "after"
-
-    diff = repin_vendor.repin_vendor(
-        repo_root=repo_root,
-        vendor_id="example-vendor",
-        resolve_sha=_fixed_new_sha,
-        baseline_registry_text=baseline,
-    )
-
-    assert_that(diff.old_sha).is_equal_to(_BASELINE_SHA)
-    assert_that(diff.new_sha).is_equal_to(_NEW_SHA)
-    vendor = load_registry(registry_path=registry)[0]
-    assert_that(vendor.sha).is_equal_to(_NEW_SHA)
-    assert_that(vendor.plugins[0].rename_skills).is_equal_to(
-        (("delta", "renamed-delta"),),
-    )
-    assert_that(diff.added_skills).contains("renamed-delta")
+    assert_that(
+        declined_pr(vendor="example", revision=NEW_SHA, runner=runner)
+    ).is_equal_to(10)
+    assert_that(
+        declined_pr(vendor="example", revision=NEWER_SHA, runner=runner)
+    ).is_none()
+    assert_that(declined_pr(vendor="other", revision=NEW_SHA, runner=runner)).is_none()
+    assert_that(calls[0][:4]).is_equal_to(["pr", "list", "--state", "closed"])
 
 
-def test_repin_same_pin_summarizes_rename_skills_vs_baseline(
-    repo_root: Path,
-    tree_kind: dict[str, str],
+def test_declined_revision_is_skipped_but_a_newer_one_proceeds(
+    offline: Offline,
 ) -> None:
-    """A slice rename on an already-current pin still appears in the summary."""
-    registry = repo_root / "vendors.yaml"
-    original = registry.read_text(encoding="utf-8")
-    bake_vendor_plugins.bake(repo_root=repo_root)
-    at_new = original.replace(_EXISTING_SHA, _NEW_SHA)
-    registry.write_text(
-        at_new.replace(
-            '        skills: "*"',
-            (
-                '        skills: "*"\n'
-                "        renameSkills:\n"
-                "          delta: renamed-delta"
-            ),
-        ),
-        encoding="utf-8",
+    """A declined revision never reopens; a newer revision re-pins normally."""
+    root = offline(
+        {OLD_SHA: BEFORE, NEW_SHA: AFTER, NEWER_SHA: AFTER}, consumer_document()
     )
-    tree_kind["kind"] = "after"
+    before = _files(root)
+    lookups: list[tuple[str, str]] = []
 
-    diff = repin_vendor.repin_vendor(
-        repo_root=repo_root,
-        vendor_id="example-vendor",
-        resolve_sha=_fixed_new_sha,
-        baseline_registry_text=at_new,
+    def declined(vendor: str, revision: str) -> int | None:
+        lookups.append((vendor, revision))
+        return 41 if revision == NEW_SHA else None
+
+    skipped = repin_vendor(
+        root=root, vendor_id="example", revision=NEW_SHA, declined=declined
     )
-    names = set(diff.added_skills) | {new for _old, new in diff.renamed_skills}
-
-    assert_that(diff.old_sha).is_equal_to(_NEW_SHA)
-    assert_that(diff.new_sha).is_equal_to(_NEW_SHA)
-    assert_that(diff.unchanged).is_false()
-    assert_that(names).contains("renamed-delta")
-
-
-def test_repin_rejects_both_baseline_inputs(repo_root: Path) -> None:
-    """``baseline_ref`` and injected registry text cannot both be set."""
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        repin_vendor.repin_vendor(
-            repo_root=repo_root,
-            vendor_id="example-vendor",
-            resolve_sha=_fixed_new_sha,
-            baseline_ref="HEAD",
-            baseline_registry_text="vendors: []\n",
-        )
-
-
-def test_registry_text_at_ref_rejects_option_like_refs(tmp_path: Path) -> None:
-    """Refs that look like options or pathspecs must not reach git show."""
-    with pytest.raises(ValueError, match="invalid baseline-ref"):
-        repin_vendor._registry_text_at_ref(repo_root=tmp_path, git_ref="")
-    with pytest.raises(ValueError, match="invalid baseline-ref"):
-        repin_vendor._registry_text_at_ref(repo_root=tmp_path, git_ref="-HEAD")
-    with pytest.raises(ValueError, match="invalid baseline-ref"):
-        repin_vendor._registry_text_at_ref(
-            repo_root=tmp_path,
-            git_ref="abc:vendors.yaml",
-        )
-
-
-def test_registry_text_at_ref_reads_git_show(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Baseline text is ``git show <ref>:vendors.yaml`` at the repo root."""
-
-    def fake_show(
-        argv: list[str],
-        *,
-        cwd: Path,
-        text: bool,
-    ) -> str:
-        del text
-        assert_that(argv).is_equal_to(
-            ["git", "show", "abc123:vendors.yaml"],
-        )
-        assert_that(cwd).is_equal_to(tmp_path)
-        return "vendors:\n"
-
-    monkeypatch.setattr(subprocess, "check_output", fake_show)
-    text = repin_vendor._registry_text_at_ref(
-        repo_root=tmp_path,
-        git_ref="abc123",
+    assert_that(skipped.status).is_equal_to("declined")
+    assert_that(_files(root)).is_equal_to(before)
+    assert_that(render_markdown(skipped)).contains("declined").does_not_contain(
+        "ai-skills-repin"
     )
-    assert_that(text).is_equal_to("vendors:\n")
-
-
-def test_main_baseline_ref_requires_selection() -> None:
-    """A baseline needs a vendor selection."""
-    with pytest.raises(SystemExit):
-        repin_vendor.main(["--baseline-ref", "abc123"])
-
-
-def test_repin_is_unchanged_when_upstream_matches_pin(
-    repo_root: Path,
-) -> None:
-    """Resolving the current SHA is a no-op."""
-    bake_vendor_plugins.bake(repo_root=repo_root)
-
-    diff = repin_vendor.repin_vendor(
-        repo_root=repo_root,
-        vendor_id="example-vendor",
-        resolve_sha=lambda vendor: str(vendor.sha),
+    updated = repin_vendor(
+        root=root, vendor_id="example", revision=NEWER_SHA, declined=declined
     )
-
-    assert_that(diff.unchanged).is_true()
-    vendor = load_registry(registry_path=repo_root / "vendors.yaml")[0]
-    assert_that(vendor.sha).is_equal_to(_EXISTING_SHA)
-
-
-def test_repin_keeps_pin_and_reports_unresolved_collision(
-    repo_root: Path,
-    tree_kind: dict[str, str],
-) -> None:
-    """Collisions fail closed but leave the bumped pin for a review PR."""
-    first_party = repo_root / "skills" / "teach"
-    _write_skill(directory=first_party, name="teach", body="first-party")
-    bake_vendor_plugins.bake(repo_root=repo_root)
-    tree_kind["kind"] = "collision"
-
-    diff = repin_vendor.repin_vendor(
-        repo_root=repo_root,
-        vendor_id="example-vendor",
-        resolve_sha=_fixed_new_sha,
-    )
-
-    vendor = load_registry(registry_path=repo_root / "vendors.yaml")[0]
-    assert_that(vendor.sha).is_equal_to(_NEW_SHA)
-    assert_that(diff.collisions).is_not_empty()
-    assert_that(diff.new_collisions).is_not_empty()
-    assert_that("".join(diff.collisions)).contains("teach")
+    assert_that(updated.status).is_equal_to("updated")
+    assert_that(_vendor(root)["sha"]).is_equal_to(NEWER_SHA)
+    assert_that(lookups).is_equal_to([("example", NEW_SHA), ("example", NEWER_SHA)])
 
 
-def test_repin_restores_pin_when_index_bake_fails(
-    repo_root: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A failed rebake must not leave a bumped SHA or half-written indexes."""
-    bake_vendor_plugins.bake(repo_root=repo_root)
-
-    def fail_index_bake(*, repo_root: Path) -> None:
-        del repo_root
-        raise RuntimeError("index bake failed")
-
-    monkeypatch.setattr(bake_vendor_indexes, "bake", fail_index_bake)
-
-    with pytest.raises(RuntimeError, match="index bake failed"):
-        repin_vendor.repin_vendor(
-            repo_root=repo_root,
-            vendor_id="example-vendor",
-            resolve_sha=_fixed_new_sha,
-        )
-
-    vendor = load_registry(registry_path=repo_root / "vendors.yaml")[0]
-    assert_that(vendor.sha).is_equal_to(_EXISTING_SHA)
-
-
-def test_main_returns_one_when_repin_introduces_collisions(
-    repo_root: Path,
-    tree_kind: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """CLI exit code 1 surfaces unresolved collisions."""
-    _write_skill(
-        directory=repo_root / "skills" / "teach",
-        name="teach",
-        body="first-party",
-    )
-    bake_vendor_plugins.bake(repo_root=repo_root)
-    tree_kind["kind"] = "collision"
-    monkeypatch.setattr(
-        repin_vendor,
-        "resolve_upstream_sha",
-        _fixed_new_sha_kw,
-    )
-
-    status = repin_vendor.main(
-        ["--repo-root", str(repo_root), "--id", "example-vendor"],
-    )
-
-    assert_that(status).is_equal_to(1)
-    vendor = load_registry(registry_path=repo_root / "vendors.yaml")[0]
-    assert_that(vendor.sha).is_equal_to(_NEW_SHA)
-
-
-def test_main_list_json_and_summary_path(
-    repo_root: Path,
-    tmp_path: Path,
+def test_cli_skip_declined_queries_gh(
+    offline: Offline,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """``--list-json`` prints ids; ``--summary-path`` writes Markdown."""
-    listed = repin_vendor.main(
-        ["--repo-root", str(repo_root), "--list-json"],
-    )
-    captured = capsys.readouterr()
-    assert_that(listed).is_zero()
-    assert_that(json.loads(captured.out)).is_equal_to(["example-vendor"])
-
-    bake_vendor_plugins.bake(repo_root=repo_root)
+    """The public CLI consults closed PRs and logs the skipped revision."""
+    root = offline({OLD_SHA: BEFORE, NEW_SHA: AFTER}, consumer_document())
+    calls: list[list[str]] = []
     monkeypatch.setattr(
-        repin_vendor,
-        "resolve_upstream_sha",
-        _current_sha_kw,
+        declined_module,
+        "run_gh",
+        _gh(
+            [
+                {
+                    "number": 7,
+                    "mergedAt": None,
+                    "body": marker(vendor="example", revision=NEW_SHA),
+                }
+            ],
+            calls,
+        ),
     )
-    summary = tmp_path / "summary.md"
-    status = repin_vendor.main(
+    before = _files(root)
+    status = cli.main(
         [
             "--repo-root",
-            str(repo_root),
-            "--id",
-            "example-vendor",
-            "--summary-path",
-            str(summary),
-        ],
+            str(root),
+            "repin",
+            "--vendor",
+            "example",
+            "--revision",
+            NEW_SHA,
+            "--skip-declined",
+        ]
     )
     assert_that(status).is_zero()
-    assert_that(summary.read_text(encoding="utf-8")).contains("already at")
+    assert_that(calls).is_length(1)
+    assert_that(capsys.readouterr().err).contains("declined in closed PR #7")
+    assert_that(_files(root)).is_equal_to(before)
 
 
-@pytest.mark.parametrize("display_ref", [None, "latest", "HEAD", "head"])
-def test_resolve_upstream_sha_uses_default_branch_for_latest(
-    monkeypatch: pytest.MonkeyPatch,
-    display_ref: str | None,
-) -> None:
-    """``latest`` tracks the GitHub default branch HEAD."""
-    vendor = replace(
-        load_registry(registry_path=_REPO_ROOT / "vendors.yaml")[0],
-        branch=None,
-        display_ref=display_ref,
-    )
-
-    def fake_get(*, host: str, path: str, headers: dict[str, str]) -> bytes:
-        del host, headers
-        if path.endswith("/commits/main"):
-            return json.dumps({"sha": _NEW_SHA}).encode("utf-8")
-        if path == f"/repos/{vendor.repo}":
-            return json.dumps({"default_branch": "main"}).encode("utf-8")
-        raise AssertionError(path)
-
-    monkeypatch.setattr(bake_vendor_plugins, "_http_get_bytes", fake_get)
-    sha = repin_vendor.resolve_upstream_sha(vendor=vendor)
-    assert_that(sha).is_equal_to(_NEW_SHA)
-
-
-def test_resolve_upstream_sha_uses_display_ref_tag(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A tag ``displayRef`` is resolved as that git ref."""
-    vendors = load_registry(registry_path=_REPO_ROOT / "vendors.yaml")
-    vendor = vendors[0]
-    tagged = replace(vendor, display_ref="v1.2.3", branch=None)
-
-    def fake_get(*, host: str, path: str, headers: dict[str, str]) -> bytes:
-        del host, headers
-        assert_that(path).contains("/commits/v1.2.3")
-        return json.dumps({"sha": _NEW_SHA}).encode("utf-8")
-
-    monkeypatch.setattr(bake_vendor_plugins, "_http_get_bytes", fake_get)
-    sha = repin_vendor.resolve_upstream_sha(vendor=tagged)
-    assert_that(sha).is_equal_to(_NEW_SHA)
-
-
-def test_resolve_upstream_sha_percent_encodes_slash_in_ref(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Slash-containing ``displayRef`` values are encoded in the commits URL."""
-    vendors = load_registry(registry_path=_REPO_ROOT / "vendors.yaml")
-    vendor = vendors[0]
-    tagged = replace(vendor, display_ref="heads/feature/foo", branch=None)
-
-    def fake_get(*, host: str, path: str, headers: dict[str, str]) -> bytes:
-        del host, headers
-        assert_that(path).contains("/commits/heads%2Ffeature%2Ffoo")
-        return json.dumps({"sha": _NEW_SHA}).encode("utf-8")
-
-    monkeypatch.setattr(bake_vendor_plugins, "_http_get_bytes", fake_get)
-    sha = repin_vendor.resolve_upstream_sha(vendor=tagged)
-    assert_that(sha).is_equal_to(_NEW_SHA)
-
-
-@pytest.mark.parametrize("branch", ["stable", "release/next"])
-def test_resolve_upstream_sha_prefers_explicit_branch_over_same_name_tag(
-    monkeypatch: pytest.MonkeyPatch,
-    branch: str,
-) -> None:
-    """Use heads even when a tag shares the explicit branch's name."""
-    vendor = replace(
-        load_registry(registry_path=_REPO_ROOT / "vendors.yaml")[0],
-        branch=branch,
-        display_ref=branch,
-    )
-    encoded_branch = branch.replace("/", "%2F")
-
-    def fake_get(*, host: str, path: str, headers: dict[str, str]) -> bytes:
-        """Return distinct commits for the branch and its same-name tag."""
-        del host, headers
-        if path == f"/repos/{vendor.repo}/commits/refs%2Fheads%2F{encoded_branch}":
-            return json.dumps({"sha": _NEW_SHA}).encode()
-        if path in {
-            f"/repos/{vendor.repo}/commits/{encoded_branch}",
-            f"/repos/{vendor.repo}/commits/refs%2Ftags%2F{encoded_branch}",
-        }:
-            return json.dumps({"sha": _BASELINE_SHA}).encode()
-        pytest.fail(f"Unexpected upstream lookup: {path}")
-
-    monkeypatch.setattr(bake_vendor_plugins, "_http_get_bytes", fake_get)
-    assert_that(repin_vendor.resolve_upstream_sha(vendor=vendor)).is_equal_to(_NEW_SHA)
-
-
-def test_keep_sha_summarizes_baseline_without_resolving_upstream(
-    repo_root: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Renovate summaries keep the selected digest even if upstream moves."""
-    registry_path = repo_root / "vendors.yaml"
-    baseline = registry_path.read_text(encoding="utf-8")
-    manage_vendors.set_sha(
-        repo_root=repo_root,
-        vendor_id="example-vendor",
-        sha=_NEW_SHA,
-    )
-
-    def no_resolution(*, vendor: Vendor) -> str:
-        del vendor
-        pytest.fail("A summary must not resolve upstream")
-
-    monkeypatch.setattr(repin_vendor, "resolve_upstream_sha", no_resolution)
-    diff = repin_vendor.repin_vendor(
-        repo_root=repo_root,
-        vendor_id="example-vendor",
-        baseline_registry_text=baseline,
-        keep_sha=True,
-    )
-    assert_that(diff.old_sha).is_equal_to(_EXISTING_SHA)
-    assert_that(diff.new_sha).is_equal_to(_NEW_SHA)
-    assert_that(load_registry(registry_path=registry_path)[0].sha).is_equal_to(_NEW_SHA)
-
-
-def test_keep_sha_all_summarizes_only_changed_vendors(
-    repo_root: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The workflow CLI summarizes only vendors that differ from its baseline."""
-    registry = repo_root / "vendors.yaml"
-    baseline = registry.read_text(encoding="utf-8")
-    manage_vendors.set_sha(
-        repo_root=repo_root,
-        vendor_id="example-vendor",
-        sha=_NEW_SHA,
-    )
-    monkeypatch.setattr(
-        repin_vendor, "_registry_text_at_ref", lambda **kwargs: baseline
-    )
-    summary = repo_root / "summary.md"
-    args = [
-        "--repo-root",
-        str(repo_root),
-        "--all",
-        "--keep-sha",
-        "--baseline-ref",
-        "base",
-        "--summary-path",
-        str(summary),
-    ]
-    assert_that(repin_vendor.main(args)).is_zero()
-    assert_that(summary.read_text(encoding="utf-8")).contains(_EXISTING_SHA, _NEW_SHA)
-    monkeypatch.setattr(
-        repin_vendor,
-        "_registry_text_at_ref",
-        lambda **kwargs: registry.read_text(encoding="utf-8"),
-    )
-    assert_that(repin_vendor.main(args)).is_zero()
-    assert_that(summary.read_text(encoding="utf-8")).contains(
-        "No vendor pin or slice changes",
-    )
-
-
-def test_keep_sha_all_summarizes_new_vendor(
-    repo_root: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """An absent baseline vendor becomes a new pin with all its skills added."""
-    baseline = (
-        (repo_root / "vendors.yaml")
-        .read_text()
-        .replace(
-            "example-vendor",
-            "old-vendor",
+def test_repin_updates_pin_lock_and_reports_delta(offline: Offline) -> None:
+    """A clean re-pin moves the pin, rewrites the lock and diffs the indexes."""
+    root = offline({OLD_SHA: BEFORE, NEW_SHA: AFTER}, consumer_document())
+    report = repin_vendor(root=root, vendor_id="example", revision=NEW_SHA)
+    assert_that(report.status).is_equal_to("updated")
+    assert_that(_vendor(root)["sha"]).is_equal_to(NEW_SHA)
+    assert_that(
+        [item.sha for item in read_lock(root / "ai-skills.lock").vendors]
+    ).is_equal_to([NEW_SHA])
+    assert_that(_component_ids(root)).contains(
+        "example/tools:skill/delta", "example/tools:skill/gamma"
+    ).does_not_contain("example/tools:skill/beta")
+    assert_that((root / "vendors.yaml").read_text(encoding="utf-8")).contains(NEW_SHA)
+    assert_that(report.unapplied_moves).is_equal_to(
+        (
+            Change(
+                subject="example/tools:skill/beta",
+                kind="identical-content",
+                detail="example/tools:skill/gamma",
+            ),
         )
-        .replace("example-plugin", "old-plugin")
     )
-    monkeypatch.setattr(
-        repin_vendor,
-        "_registry_text_at_ref",
-        lambda **kwargs: baseline,
+    assert_that([item.kind for item in report.capabilities]).does_not_contain("renamed")
+    assert_that(cli.main(["--repo-root", str(root), "lock", "--check"])).is_zero()
+
+    def engine_independent(body: str) -> list[str]:
+        """Drop tar digests, which embed the installed engine version."""
+        return [line for line in body.splitlines() if "artifactDigest" not in line]
+
+    def engine_independent_json(body: str) -> dict[str, Any]:
+        """Drop tar digest entries from the JSON body."""
+        payload: dict[str, Any] = json.loads(body)
+        payload["digests"] = [
+            item for item in payload["digests"] if item["kind"] != "artifactDigest"
+        ]
+        return payload
+
+    assert_that(engine_independent(render_markdown(report))).is_equal_to(
+        engine_independent((GOLDEN / "updated.body.md.txt").read_text(encoding="utf-8"))
     )
-    summary = repo_root / "summary.md"
-    status = repin_vendor.main(
+    assert_that(engine_independent_json(render_json(report))).is_equal_to(
+        engine_independent_json(
+            (GOLDEN / "updated.body.json.txt").read_text(encoding="utf-8")
+        )
+    )
+
+
+@pytest.mark.parametrize("revised", [False, True], ids=["same-text", "new-text"])
+def test_license_section_ignores_the_revision_header(
+    offline: Offline, revised: bool
+) -> None:
+    """A bare pin bump is no legal change; a real LICENSE edit still advises patch."""
+    tree = {**BEFORE, "LICENSE": "MIT, revised text\n"} if revised else BEFORE
+    root = offline({OLD_SHA: BEFORE, NEW_SHA: tree}, consumer_document())
+    report = repin_vendor(root=root, vendor_id="example", revision=NEW_SHA)
+    assert_that(report.status).is_equal_to("updated")
+    assert_that(_vendor(root)["sha"]).is_equal_to(NEW_SHA)
+    advice = report.semver
+    level = getattr(advice, "level", None)
+    reasons = getattr(advice, "reasons", ())
+    markdown = render_markdown(report)
+    section = markdown.split("### License and notice\n", 1)[1].split("###", 1)[0]
+    if revised:
+        assert_that(level).is_equal_to("patch")
+        assert_that(reasons).contains("License or notice content changed")
+        assert_that(report.legal).contains(
+            Change(subject="LICENSES/github.com%2Fowner%2Fexample.txt", kind="changed")
+        )
+        assert_that(section).contains("changed `LICENSES/github.com%2Fowner%2Fexample")
+    else:
+        assert_that(level).is_equal_to("none")
+        assert_that(reasons).is_empty()
+        assert_that(report.legal).is_empty()
+        assert_that(report.capabilities).is_empty()
+        assert_that(section.strip()).is_equal_to("None.")
+
+
+def test_unchanged_pin_writes_nothing(offline: Offline) -> None:
+    """Re-pinning to the current revision reports no delta and writes nothing."""
+    root = offline({OLD_SHA: BEFORE}, consumer_document())
+    before = _files(root)
+    report = repin_vendor(root=root, vendor_id="example", revision=OLD_SHA)
+    assert_that(report.status).is_equal_to("unchanged")
+    assert_that(render_markdown(report)).contains("Pin already current")
+    assert_that(_files(root)).is_equal_to(before)
+
+
+@pytest.mark.parametrize(
+    ("tree", "skills", "expected"),
+    [
+        (
+            {**BEFORE, "skills/beta/SKILL.md": None, "moved/beta/SKILL.md": "beta"},
+            ["alpha", "beta"],
+            {"skills": ["alpha"], "extraSkills": ["moved/beta"]},
+        ),
+        (
+            {
+                "pkg/skills/alpha/SKILL.md": skill("alpha", "alpha body"),
+                "pkg/skills/beta/SKILL.md": skill("beta", "beta body"),
+                "LICENSE": "MIT\n",
+            },
+            ["alpha", "beta"],
+            {"skillsRoot": "pkg/skills", "skills": ["alpha", "beta"]},
+        ),
+    ],
+    ids=["skill-move", "root-move"],
+)
+def test_unique_move_is_reconciled_without_changing_ids(
+    offline: Offline,
+    tree: dict[str, str | None],
+    skills: list[str],
+    expected: dict[str, Any],
+) -> None:
+    """Exactly one identical same-name candidate rewrites the mapping path."""
+    moved = {
+        key: (skill("beta", "beta body") if value == "beta" else value)
+        for key, value in tree.items()
+        if value is not None
+    }
+    root = offline({OLD_SHA: BEFORE, NEW_SHA: moved}, consumer_document(skills=skills))
+    ids = _component_ids(root)
+    report = repin_vendor(root=root, vendor_id="example", revision=NEW_SHA)
+    assert_that(report.action_required).is_empty()
+    package = _vendor(root)["mapping"]["packages"][0]
+    for key, value in expected.items():
+        assert_that(package[key]).is_equal_to(value)
+    assert_that(_component_ids(root)).is_equal_to(ids)
+    assert_that([item.status for item in report.drift]).contains("reconciled")
+    assert_that(render_markdown(report)).contains("reconciled `mapping.")
+
+
+@pytest.mark.parametrize(
+    ("extra", "status", "candidates"),
+    [
+        (
+            {"x/beta/SKILL.md": "beta", "y/beta/SKILL.md": "beta"},
+            "ambiguous",
+            ("x/beta", "y/beta"),
+        ),
+        ({}, "missing", ()),
+    ],
+    ids=["ambiguous", "missing"],
+)
+def test_ambiguous_or_missing_move_fails_and_lists_candidates(
+    offline: Offline,
+    extra: dict[str, str],
+    status: str,
+    candidates: tuple[str, ...],
+) -> None:
+    """Zero or several candidates fail closed, list them and write nothing."""
+    tree = {key: value for key, value in BEFORE.items() if "beta" not in key}
+    tree.update({key: skill("beta", "beta body") for key in extra})
+    root = offline(
+        {OLD_SHA: BEFORE, NEW_SHA: tree}, consumer_document(skills=["alpha", "beta"])
+    )
+    before = _files(root)
+    report = repin_vendor(root=root, vendor_id="example", revision=NEW_SHA)
+    assert_that(report.status).is_equal_to("failed")
+    assert_that([(item.status, item.candidates) for item in report.drift]).contains(
+        (status, candidates)
+    )
+    body = render_markdown(report)
+    assert_that(body).contains("### Action required", "'beta'")
+    for candidate in candidates:
+        assert_that(body).contains(candidate)
+    assert_that(_files(root)).is_equal_to(before)
+
+
+def test_dead_selector_fails_and_names_the_selector(offline: Offline) -> None:
+    """An include selector matching nothing at the new revision fails the re-pin."""
+    selector = "example/tools:skill/beta"
+    tree = {key: value for key, value in BEFORE.items() if "beta" not in key}
+    root = offline(
+        {OLD_SHA: BEFORE, NEW_SHA: tree},
+        consumer_document(include=["example/tools:skill/alpha", selector]),
+        legacy=False,
+    )
+    before = _files(root)
+    report = repin_vendor(root=root, vendor_id="example", revision=NEW_SHA)
+    assert_that(report.status).is_equal_to("failed")
+    assert_that("\n".join(report.action_required)).contains(
+        f"Dead selector include: {selector!r}"
+    )
+    assert_that([(item.selector, item.status) for item in report.selectors]).contains(
+        (selector, "dead")
+    )
+    assert_that(_files(root)).is_equal_to(before)
+
+
+def test_declared_rename_rewrites_selectors(offline: Offline) -> None:
+    """A consumer migration renames the mapped selector and include selector."""
+    migration = {"from": "example/tools:skill/beta", "to": "example/tools:skill/gamma"}
+    root = offline(
+        {OLD_SHA: BEFORE, NEW_SHA: AFTER},
+        consumer_document(
+            skills=["alpha", "beta"],
+            include=["example/tools:skill/alpha", "example/tools:skill/beta"],
+            overrides={"migrations": [migration]},
+        ),
+        legacy=False,
+    )
+    report = repin_vendor(root=root, vendor_id="example", revision=NEW_SHA)
+    assert_that(report.action_required).is_empty()
+    vendor = _vendor(root)
+    assert_that(vendor["mapping"]["packages"][0]["skills"]).is_equal_to(
+        ["alpha", "gamma"]
+    )
+    assert_that(vendor["include"]).is_equal_to(
+        ["example/tools:skill/alpha", "example/tools:skill/gamma"]
+    )
+    assert_that(report.capabilities).contains(
+        Change(
+            subject="example/tools:skill/beta",
+            kind="renamed",
+            detail="example/tools:skill/gamma (consumer)",
+        )
+    )
+    assert_that(report.unapplied_moves).is_empty()
+    assert_that({item.status for item in report.selectors}).contains("renamed")
+
+
+def test_undeclared_identical_move_is_reported_never_applied(offline: Offline) -> None:
+    """Identical content under a new name is listed, and its selector fails."""
+    root = offline(
+        {OLD_SHA: BEFORE, NEW_SHA: AFTER}, consumer_document(skills=["alpha", "beta"])
+    )
+    before = _files(root)
+    report = repin_vendor(root=root, vendor_id="example", revision=NEW_SHA)
+    assert_that(report.status).is_equal_to("failed")
+    assert_that(report.unapplied_moves).contains(
+        Change(subject="skills/beta", kind="identical-content", detail="skills/gamma")
+    )
+    assert_that("\n".join(report.action_required)).contains("'beta'")
+    assert_that(render_markdown(report)).contains(
+        "#### Unapplied: identical content at a new ID", "`skills/gamma`"
+    )
+    assert_that(_files(root)).is_equal_to(before)
+
+
+def test_no_manifest_rewrite_turns_reconcile_into_action(offline: Offline) -> None:
+    """Automation that cannot publish the manifest reports the needed edit."""
+    tree = {key: value for key, value in BEFORE.items() if "beta" not in key}
+    tree["moved/beta/SKILL.md"] = skill("beta", "beta body")
+    root = offline(
+        {OLD_SHA: BEFORE, NEW_SHA: tree}, consumer_document(skills=["alpha", "beta"])
+    )
+    before = _files(root)
+    report = repin_vendor(
+        root=root, vendor_id="example", revision=NEW_SHA, rewrite_manifest=False
+    )
+    assert_that(report.status).is_equal_to("failed")
+    assert_that("\n".join(report.action_required)).contains(
+        "Manifest edit required", "moved/beta", "--baseline-ref"
+    )
+    assert_that(_files(root)).is_equal_to(before)
+
+
+def test_pin_write_quotes_parser_divergent_sha(offline: Offline) -> None:
+    """The writer quotes a SHA read differently by YAML 1.1 and YAML 1.2."""
+    root = offline({OLD_SHA: BEFORE, NUMERIC_SHA: BEFORE}, consumer_document())
+    report = repin_vendor(root=root, vendor_id="example", revision=NUMERIC_SHA)
+    assert_that(report.status).is_equal_to("updated")
+    text = (root / "ai-skills.yaml").read_text(encoding="utf-8")
+    assert_that(text).contains(f'sha: "{NUMERIC_SHA}"')
+    assert_that(yaml.safe_load(text)["vendors"][0]["sha"]).is_equal_to(NUMERIC_SHA)
+    assert_that(_vendor(root)["sha"]).is_equal_to(NUMERIC_SHA)
+
+
+@pytest.mark.parametrize("quoted", [False, True], ids=["plain", "quoted"])
+def test_divergent_sha_controls_plain_rejected_quoted_valid(
+    offline: Offline, quoted: bool
+) -> None:
+    """A plain divergent SHA fails before any write; the quoted spelling works."""
+    root = offline({OLD_SHA: BEFORE, NUMERIC_SHA: BEFORE}, consumer_document())
+    manifest = root / "ai-skills.yaml"
+    spelling = f'"{NUMERIC_SHA}"' if quoted else NUMERIC_SHA
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            f"sha: {OLD_SHA}", f"sha: {spelling}"
+        ),
+        encoding="utf-8",
+    )
+    before = _files(root)
+    if quoted:
+        report = repin_vendor(root=root, vendor_id="example", keep_sha=True)
+        assert_that(report.status).is_equal_to("unchanged")
+        assert_that(_files(root)).is_equal_to(before)
+        return
+    with pytest.raises(ValueError, match="unquoted sha") as error:
+        repin_vendor(root=root, vendor_id="example", keep_sha=True)
+    assert_that(str(error.value)).contains(f'sha: "{NUMERIC_SHA}"')
+    assert_that(_files(root)).is_equal_to(before)
+
+
+def test_failure_after_publication_restores_every_file(
+    offline: Offline, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A late compatibility failure restores manifest, lock and generated data."""
+    root = offline({OLD_SHA: BEFORE, NEW_SHA: AFTER}, consumer_document())
+    before = _files(root)
+    real = vendor_indexes.bake
+
+    def failing_bake(*, repo_root: Path) -> None:
+        real(repo_root=repo_root)
+        raise RuntimeError("injected compatibility failure")
+
+    monkeypatch.setattr(vendor_indexes, "bake", failing_bake)
+    with pytest.raises(RuntimeError, match="injected"):
+        repin_vendor(root=root, vendor_id="example", revision=NEW_SHA)
+    assert_that(_files(root)).is_equal_to(before)
+
+
+def _git(root: Path, *args: str) -> str:
+    """Run git with an isolated configuration.
+
+    Args:
+        root: Repository.
+        *args: Git arguments.
+
+    Returns:
+        Standard output.
+    """
+    git = shutil.which("git")
+    assert_that(git).described_as("git executable on PATH").is_not_none()
+    return subprocess.run(  # nosec B603 - resolved local git, fixed argv
+        [
+            str(git),
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            *args,
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": os.environ.get("PATH", os.defpath),
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_NOSYSTEM": "1",
+        },
+    ).stdout
+
+
+def test_cli_keep_sha_baseline_ref_summarizes_base_branch(
+    offline: Offline, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Renovate-style runs diff against the base branch's manifest and lock."""
+    root = offline({OLD_SHA: BEFORE, NEW_SHA: AFTER}, consumer_document())
+    _git(root, "init", "-q")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "base")
+    manifest = root / "ai-skills.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(OLD_SHA, NEW_SHA),
+        encoding="utf-8",
+    )
+    summary = root.parent / "summary.md"
+    status = cli.main(
         [
             "--repo-root",
-            str(repo_root),
+            str(root),
+            "repin",
             "--all",
             "--keep-sha",
+            "--no-manifest-rewrite",
             "--baseline-ref",
-            "base",
+            "HEAD",
             "--summary-path",
             str(summary),
         ]
     )
-    assert_that(status).is_zero()
-    assert_that(summary.read_text()).contains(
-        "`new`",
-        _EXISTING_SHA,
-        "Added skills",
-        "alpha",
-        "beta",
-        "0 → 2",
+    assert_that(status).described_as(capsys.readouterr().err).is_zero()
+    body = summary.read_text(encoding="utf-8")
+    assert_that(body).contains(
+        f"`{OLD_SHA}` → `{NEW_SHA}`",
+        f"compare/{OLD_SHA}...{NEW_SHA}",
+        marker(vendor="example", revision=NEW_SHA),
     )
     assert_that(
-        load_registry(registry_path=repo_root / "vendors.yaml")[0].sha
-    ).is_equal_to(
-        _EXISTING_SHA,
-    )
+        [item.sha for item in read_lock(root / "ai-skills.lock").vendors]
+    ).is_equal_to([NEW_SHA])
+    changed = _git(root, "status", "--porcelain").split()
+    assert_that(changed).contains("ai-skills.lock", "ai-skills.yaml")
 
 
-def test_real_summary_before_refresh_preserves_generated_outputs(
-    repo_root: Path,
-    tree_kind: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
+def test_cli_json_failure_exits_one_with_action_required(
+    offline: Offline, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Real summary and refresh CLIs produce the same bytes as refresh alone."""
-    manage = manage_vendors
-    registry = repo_root / "vendors.yaml"
-    baseline = registry.read_text(encoding="utf-8")
-    manage.refresh(repo_root=repo_root)
-    paths = manage._generated_artifact_paths(repo_root=repo_root)
-    before_files, before_directories = manage._snapshot_artifacts(paths=paths)
-    manage.set_sha(
-        repo_root=repo_root,
-        vendor_id="example-vendor",
-        sha=_NEW_SHA,
+    """``--json`` stays parseable and a failed re-pin exits 1 with a body."""
+    root = offline(
+        {OLD_SHA: BEFORE, NEW_SHA: AFTER}, consumer_document(skills=["alpha", "beta"])
     )
-    selected_registry = registry.read_bytes()
-    tree_kind["kind"] = "after"
-    refresh_args = ["refresh", "--repo-root", str(repo_root)]
-    assert_that(manage.main(refresh_args)).is_zero()
-    expected = manage._snapshot_artifacts(paths=paths)
-    manage._restore_artifacts(
-        paths=paths,
-        snapshot=before_files,
-        directories=before_directories,
+    summary = root.parent / "body.md"
+    capsys.readouterr()
+    status = cli.main(
+        [
+            "--repo-root",
+            str(root),
+            "repin",
+            "--vendor",
+            "example",
+            "--revision",
+            NEW_SHA,
+            "--json",
+            "--summary-path",
+            str(summary),
+        ]
     )
-    monkeypatch.setattr(
-        repin_vendor, "_registry_text_at_ref", lambda **kwargs: baseline
-    )
+    captured = capsys.readouterr()
+    assert_that(status).is_equal_to(1)
+    payload = json.loads(captured.out)
+    assert_that(payload["status"]).is_equal_to("failed")
+    assert_that(payload["actionRequired"]).is_not_empty()
+    assert_that(summary.read_text(encoding="utf-8")).contains("### Action required")
+    assert_that(captured.err).contains("repin: example: Dead selector")
 
-    def no_network(**kwargs: object) -> bytes:
-        del kwargs
-        pytest.fail("Summary/refresh must use only the fixture's local vendor data")
 
-    monkeypatch.setattr(bake_vendor_plugins, "_http_get_bytes", no_network)
-    summary = repo_root / "summary.md"
+def test_cli_rejects_unknown_vendor_and_bad_revision(
+    offline: Offline, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Selection errors fail before any write with a clear message."""
+    root = offline({OLD_SHA: BEFORE}, consumer_document())
+    args = ["--repo-root", str(root), "repin"]
     assert_that(
-        repin_vendor.main(
-            [
-                "--repo-root",
-                str(repo_root),
-                "--all",
-                "--keep-sha",
-                "--baseline-ref",
-                "base",
-                "--summary-path",
-                str(summary),
-            ],
-        ),
-    ).is_zero()
-    assert_that(summary.read_text(encoding="utf-8")).contains(
-        _EXISTING_SHA,
-        _NEW_SHA,
-        "delta",
-        "gamma",
+        cli.main([*args, "--vendor", "missing", "--revision", NEW_SHA])
+    ).is_equal_to(1)
+    assert_that(capsys.readouterr().err).contains("Unknown vendor id: missing")
+    assert_that(
+        cli.main([*args, "--vendor", "example", "--revision", "HEAD"])
+    ).is_equal_to(1)
+    assert_that(capsys.readouterr().out).contains("Revision must be a lowercase")
+    assert_that(repin_cli.list_vendor_ids(repo_root=root)).is_equal_to(("example",))
+
+
+def _upstream_manifest(*, name: str, migrations: list[dict[str, str]]) -> str:
+    """Render a vendor's own manifest publishing one skill.
+
+    Args:
+        name: Capability ID and directory name.
+        migrations: Publisher-local identity migrations.
+
+    Returns:
+        Manifest YAML.
+    """
+    document: dict[str, Any] = {
+        "apiVersion": "ai-skills.dev/v1",
+        "publisher": {"id": "upstream", "repo": "owner/example"},
+        "packages": [
+            {
+                "id": "kit",
+                "capabilities": [{"id": name, "path": f"skills/{name}"}],
+            }
+        ],
+        "exports": ["kit"],
+    }
+    if migrations:
+        document["overrides"] = {"migrations": migrations}
+    return yaml.safe_dump(document, sort_keys=False)
+
+
+def test_upstream_declared_rename_rewrites_consumer_selectors(offline: Offline) -> None:
+    """A publisher-local migration in the upstream manifest renames selectors."""
+    migration = {"from": "upstream/kit:skill/old", "to": "upstream/kit:skill/new"}
+    trees = {
+        OLD_SHA: {
+            "ai-skills.yaml": _upstream_manifest(name="old", migrations=[]),
+            "skills/old/SKILL.md": skill("old", "kit body"),
+            "LICENSE": "MIT\n",
+        },
+        NEW_SHA: {
+            "ai-skills.yaml": _upstream_manifest(name="new", migrations=[migration]),
+            "skills/new/SKILL.md": skill("new", "kit body"),
+            "LICENSE": "MIT\n",
+        },
+    }
+    document = consumer_document(include=["upstream/kit:skill/old"])
+    document["vendors"][0].pop("mapping")
+    document["exports"] = ["git-pr"]
+    root = offline(trees, document, legacy=False)
+    report = repin_vendor(root=root, vendor_id="example", revision=NEW_SHA)
+    assert_that(report.action_required).is_empty()
+    assert_that(_vendor(root)["include"]).is_equal_to(["upstream/kit:skill/new"])
+    assert_that(report.capabilities).contains(
+        Change(
+            subject="upstream/kit:skill/old",
+            kind="renamed",
+            detail="upstream/kit:skill/new (upstream)",
+        )
     )
-    assert_that(manage.main(refresh_args)).is_zero()
-    assert_that(registry.read_bytes()).is_equal_to(selected_registry)
-    assert_that(manage._snapshot_artifacts(paths=paths)).is_equal_to(expected)
+    assert_that(report.unapplied_moves).is_empty()

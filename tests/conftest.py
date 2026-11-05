@@ -16,6 +16,7 @@ import pytest
 
 pytest_plugins = ["provenance_helpers"]
 pytest.register_assert_rewrite("artifact_helpers", "authoring_helpers")
+pytest.register_assert_rewrite("repin_helpers")
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 
