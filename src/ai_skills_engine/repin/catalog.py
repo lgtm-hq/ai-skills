@@ -19,6 +19,7 @@ from ai_skills_engine.inventory.model import Inventory
 from ai_skills_engine.lockmodel.lock import Lock
 from ai_skills_engine.lockmodel.locked_vendor import LockedVendor
 from ai_skills_engine.repin.catalog_side import CatalogSide
+from ai_skills_engine.repin.legal_text import content_digest, is_legal, revision_free
 from ai_skills_engine.selection.load import load_inputs
 from ai_skills_engine.selection.model import SelectionResult
 from ai_skills_engine.source_cache import Fetcher, SourceCache
@@ -108,33 +109,44 @@ def selection_errors(selection: SelectionResult) -> tuple[str, ...]:
     )
 
 
-def _artifact_files(*, destination: Path, packages: list[str]) -> dict[str, str]:
-    """Hash each package's own members from its freshly built tar.
+def _artifact_files(
+    *, destination: Path, packages: list[str]
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Hash each package's own members and legal files from its freshly built tar.
 
     Args:
         destination: Private artifact directory written by this process.
         packages: Package IDs.
 
     Returns:
-        Member path to ``sha256:<hex>:<mode>``; nothing is extracted.
+        Member path to ``sha256:<hex>:<mode>``, and legal path to its
+        revision-free content digest; nothing is extracted.
 
     Raises:
         ValueError: If a regular member has no payload.
     """
     files: dict[str, str] = {}
+    legal: dict[str, list[bytes]] = {}
     for package in packages:
         prefix = f"packages/{package}/"
         data = (destination / artifact_name(package)).read_bytes()
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
             for member in archive:
-                if not member.isfile() or not member.name.startswith(prefix):
+                owned = member.name.startswith(prefix)
+                if not member.isfile() or not (owned or is_legal(member.name)):
                     continue
                 stream = archive.extractfile(member)
                 if stream is None:
                     raise ValueError(f"Missing artifact member payload: {member.name}")
-                digest = hashlib.sha256(stream.read()).hexdigest()
-                files[member.name] = f"sha256:{digest}:{member.mode:o}"
-    return files
+                payload = stream.read()
+                if owned:
+                    digest = hashlib.sha256(payload).hexdigest()
+                    files[member.name] = f"sha256:{digest}:{member.mode:o}"
+                else:
+                    legal.setdefault(member.name, []).append(
+                        revision_free(path=member.name, data=payload)
+                    )
+    return files, {path: content_digest(items) for path, items in legal.items()}
 
 
 def build(
@@ -161,12 +173,14 @@ def build(
         root=root, roots=roots, vendors=vendors, destination=destination, inputs=inputs
     )
     index = json.loads((destination / "index.json").read_text(encoding="utf-8"))
+    files, legal = _artifact_files(
+        destination=destination,
+        packages=[package["id"] for package in index["packages"]],
+    )
     side = CatalogSide(
         index=index,
-        files=_artifact_files(
-            destination=destination,
-            packages=[package["id"] for package in index["packages"]],
-        ),
+        files=files,
         artifact_digests={item.id: item.artifact_digest for item in lock.packages},
+        legal=legal,
     )
     return side, lock

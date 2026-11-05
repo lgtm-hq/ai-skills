@@ -483,7 +483,9 @@ Sections: **Pin** (old → new, `displayRef`, compare link), **SemVer advice**
 identical content at a new ID", **Files** per changed capability (`+`/`-`/`~`,
 capped at 50 lines), **Resources**, **Lineage**, **License and notice**,
 **Coverage**, **Collisions**, **Selectors** with match counts, **Path drift** and
-**Digests** (`treeDigest`, `artifactDigest`). It ends with the marker
+**Digests** (`treeDigest`, `artifactDigest`). License and notice text is compared
+without the `Revision:` header of the generated `LICENSES/` files, so a bare pin
+bump with unchanged text reports no license change. It ends with the marker
 `<!-- ai-skills-repin vendor=<id> revision=<sha> -->`. `--json` mirrors the
 Markdown (an object for `--vendor`, an array for `--all`).
 

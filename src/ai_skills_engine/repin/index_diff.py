@@ -58,6 +58,31 @@ def vendor_index(
     }
 
 
+def revision_free_legal(
+    index: Mapping[str, Any], legal: Mapping[str, str]
+) -> dict[str, Any]:
+    """Replace legal-file digests with their revision-free content digests.
+
+    The generated ``LICENSES/<origin>.txt`` header names the pinned revision, so
+    its raw index digest moves on every pin bump. Both the SemVer advice and the
+    license section compare the digests returned here instead.
+
+    Args:
+        index: Catalog index.
+        legal: Legal path to revision-free content digest of the same build.
+
+    Returns:
+        Index-shaped mapping; paths absent from ``legal`` keep their digest.
+    """
+    return {
+        **index,
+        "legalFiles": [
+            {**item, "digest": legal.get(item["path"], item["digest"])}
+            for item in index.get("legalFiles", ())
+        ],
+    }
+
+
 def capabilities(index: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     """Flatten capability records by qualified ID.
 
@@ -117,6 +142,9 @@ def _stable_lineage(record: Mapping[str, Any]) -> list[Any]:
 
 def stable_index(index: Mapping[str, Any]) -> dict[str, Any]:
     """Drop revision-bound lineage fields so a bare pin bump is not a change.
+
+    Legal digests are expected to be revision-free already
+    (:func:`revision_free_legal`).
 
     Args:
         index: Vendor-scoped index.

@@ -14,9 +14,12 @@ class CatalogSide:
         files: Artifact member path to ``sha256:<hex>:<mode>``.
         artifact_digests: Package ID to the tar ``artifactDigest``.
         diagnostics: Selection errors observed while building, if any.
+        legal: Legal path to its revision-free content digest across every
+            package artifact (see :mod:`ai_skills_engine.repin.legal_text`).
     """
 
     index: Mapping[str, Any]
     files: Mapping[str, str] = field(default_factory=dict)
     artifact_digests: Mapping[str, str] = field(default_factory=dict)
     diagnostics: tuple[str, ...] = ()
+    legal: Mapping[str, str] = field(default_factory=dict)

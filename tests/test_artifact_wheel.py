@@ -152,7 +152,9 @@ def test_actual_wheel_hosted_path_regressions(wheel_site: Path, tmp_path: Path) 
         capture_output=True,
         text=True,
         check=False,
-        timeout=180,
+        # A hang guard only: these seven suites take about a minute alone and
+        # exceeded 180 s beside a loaded `pytest -n 4` full run.
+        timeout=900,
     )  # nosec B603 - fixed isolated interpreter and actual local wheel bytes
     print(result.stdout)
     assert_that(result.returncode).described_as(result.stdout + result.stderr).is_zero()

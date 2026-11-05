@@ -1,8 +1,11 @@
 """Re-pin v2 on the lock/artifact model with local fake upstream revisions."""
 
 import json
+import os
+import shutil
 import subprocess  # nosec B404 - local git fixture with fixed argv
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -16,19 +19,23 @@ from repin_helpers import (
     NEWER_SHA,
     NUMERIC_SHA,
     OLD_SHA,
+    Tree,
     consumer_document,
+    dump_case,
     load_case,
     skill,
 )
 
-from ai_skills_engine import cli
+from ai_skills_engine import artifact, cli
 from ai_skills_engine.bake import vendor_indexes
 from ai_skills_engine.lockfile import read_lock
 from ai_skills_engine.manifest.load import read_document
 from ai_skills_engine.repin import declined as declined_module
+from ai_skills_engine.repin import run as run_module
 from ai_skills_engine.repin.change import Change
-from ai_skills_engine.repin.compare import compare
+from ai_skills_engine.repin.compare import COLLISION_CODES, compare
 from ai_skills_engine.repin.declined import declined_pr, marker, markers
+from ai_skills_engine.repin.legal_text import content_digest, revision_free
 from ai_skills_engine.repin.render import FILE_CAP, render_json, render_markdown
 from ai_skills_engine.repin.report import RepinReport
 from ai_skills_engine.repin.run import repin_vendor
@@ -37,7 +44,23 @@ from ai_skills_engine.vendors import repin as repin_cli
 
 pytest_plugins = ["repin_helpers"]
 GOLDEN = Path(__file__).parent / "fixtures/repin"
+# Regenerate every golden file from the real offline pipeline (never by hand):
+# AI_SKILLS_UPDATE_REPIN_GOLDENS=1 pytest tests/test_repin_vendor.py -k golden
+UPDATE_GOLDENS = os.environ.get("AI_SKILLS_UPDATE_REPIN_GOLDENS") == "1"
 type Offline = Callable[..., Path]
+# beta vanished from skills/ and reappears at two identical candidates.
+AMBIGUOUS: Tree = {
+    **{key: value for key, value in AFTER.items() if "gamma" not in key},
+    "x/beta/SKILL.md": skill("beta", "beta body"),
+    "y/beta/SKILL.md": skill("beta", "beta body"),
+}
+GOLDEN_RUNS: dict[str, tuple[dict[str, Tree], dict[str, Any]]] = {
+    "updated": ({OLD_SHA: BEFORE, NEW_SHA: AFTER}, consumer_document()),
+    "failed": (
+        {OLD_SHA: BEFORE, NEW_SHA: AMBIGUOUS},
+        consumer_document(skills=["alpha", "beta"]),
+    ),
+}
 
 
 def _files(root: Path) -> dict[str, bytes]:
@@ -99,6 +122,49 @@ def test_golden_bodies_are_byte_identical(name: str) -> None:
     )
 
 
+@pytest.mark.parametrize("name", sorted(GOLDEN_RUNS))
+def test_pipeline_reproduces_golden_inputs_and_bodies(
+    name: str, offline: Offline, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real offline run reproduces the golden input, Markdown and JSON bytes.
+
+    This is also the golden generator: ``AI_SKILLS_UPDATE_REPIN_GOLDENS=1``
+    rewrites the three files from the run instead of comparing them.
+    """
+    # Tar digests embed the engine version; pin it like the artifact fixtures.
+    monkeypatch.setattr(artifact, "installed_engine_version", lambda: "0.0.0-fixture")
+    captured: list[dict[str, Any]] = []
+
+    def capture(**arguments: Any) -> RepinReport:
+        """Record the comparison input of the run.
+
+        Args:
+            **arguments: ``compare`` keyword arguments.
+
+        Returns:
+            The real comparison.
+        """
+        captured.append(arguments)
+        return compare(**arguments)
+
+    monkeypatch.setattr(run_module, "compare", capture)
+    trees, document = GOLDEN_RUNS[name]
+    root = offline(trees, document)
+    report = repin_vendor(root=root, vendor_id="example", revision=NEW_SHA)
+    assert_that(captured).is_length(1)
+    outputs = {
+        f"{name}.input.json": dump_case(captured[0]),
+        f"{name}.body.md.txt": render_markdown(report),
+        f"{name}.body.json.txt": render_json(report),
+    }
+    for file, text in outputs.items():
+        if UPDATE_GOLDENS:
+            (GOLDEN / file).write_text(text, encoding="utf-8")
+        assert_that(text).described_as(file).is_equal_to(
+            (GOLDEN / file).read_text(encoding="utf-8")
+        )
+
+
 def test_body_sections_are_in_fixed_order_without_timestamps() -> None:
     """The body uses the documented section order and ends with the marker."""
     body = (GOLDEN / "updated.body.md.txt").read_text(encoding="utf-8")
@@ -134,7 +200,17 @@ def test_body_includes_semver_level_and_every_reason() -> None:
     assert_that(advice).is_not_none()
     level, reasons = getattr(advice, "level", None), getattr(advice, "reasons", ())
     assert_that(level).is_equal_to("major")
-    assert_that(reasons).is_not_empty()
+    # LICENSE is "MIT\n" at both revisions: the revision-only header of the
+    # generated license file is not a license change.
+    assert_that(reasons).is_equal_to(
+        (
+            "Capability added: example/tools:skill/delta",
+            "Capability added: example/tools:skill/gamma",
+            "Capability removed: example/tools:skill/beta",
+            "Content or metadata changed: example/tools:skill/alpha",
+        )
+    )
+    assert_that(report.legal).is_empty()
     markdown = render_markdown(report)
     payload = json.loads(render_json(report))
     assert_that(markdown).contains("Level: **major**")
@@ -169,6 +245,45 @@ def test_files_are_capped_in_markdown_and_json() -> None:
     assert_that(markdown).contains("7 more file change(s) omitted")
     assert_that(payload["files"]).is_length(FILE_CAP)
     assert_that(payload["filesOmitted"]).is_equal_to(7)
+
+
+def test_legal_text_drops_only_the_revision_header() -> None:
+    """Only the generated section header loses its Revision line."""
+    sections = (
+        b"Origin: github.com/a/b\nRevision: %s\nDeclared license: MIT\n"
+        b"\n--- LICENSE ---\nRevision: kept verbatim\n"
+        b"\nOrigin: github.com/a/b\nRevision: %s\nDeclared license: MIT\n"
+    )
+    old = sections % (OLD_SHA.encode(), NEWER_SHA.encode())
+    new = sections % (NEW_SHA.encode(), NEW_SHA.encode())
+    path = "LICENSES/github.com%2Fa%2Fb.txt"
+    stripped = revision_free(path=path, data=new)
+    assert_that(stripped).is_equal_to(revision_free(path=path, data=old))
+    assert_that(stripped.count(b"Revision: ")).is_equal_to(1)
+    assert_that(stripped).contains(b"Revision: kept verbatim\n")
+    assert_that(revision_free(path="NOTICE.md", data=new)).is_equal_to(new)
+    assert_that(content_digest([stripped, stripped])).is_equal_to(
+        content_digest([stripped])
+    )
+    assert_that(content_digest([stripped])).is_not_equal_to(
+        content_digest([stripped.replace(b"verbatim", b"edited")])
+    )
+
+
+def test_collisions_are_selected_by_diagnostic_code() -> None:
+    """A collision is a diagnostic code, not a word in an unrelated message."""
+    case = load_case(GOLDEN / "updated.input.json")
+    collision = "selection.namespace-collision skill/alpha: Reserved destination"
+    unrelated = "selection.other x: message mentions a collision"
+    report = compare(
+        **{
+            **case,
+            "before": replace(case["before"], diagnostics=(unrelated,)),
+            "after": replace(case["after"], diagnostics=(collision, unrelated)),
+        }
+    )
+    assert_that(report.collisions).is_equal_to((Change(subject=collision, kind="new"),))
+    assert_that(COLLISION_CODES).contains("selection.namespace-collision")
 
 
 def test_marker_round_trips() -> None:
@@ -340,9 +455,52 @@ def test_repin_updates_pin_lock_and_reports_delta(offline: Offline) -> None:
         """Drop tar digests, which embed the installed engine version."""
         return [line for line in body.splitlines() if "artifactDigest" not in line]
 
+    def engine_independent_json(body: str) -> dict[str, Any]:
+        """Drop tar digest entries from the JSON body."""
+        payload: dict[str, Any] = json.loads(body)
+        payload["digests"] = [
+            item for item in payload["digests"] if item["kind"] != "artifactDigest"
+        ]
+        return payload
+
     assert_that(engine_independent(render_markdown(report))).is_equal_to(
         engine_independent((GOLDEN / "updated.body.md.txt").read_text(encoding="utf-8"))
     )
+    assert_that(engine_independent_json(render_json(report))).is_equal_to(
+        engine_independent_json(
+            (GOLDEN / "updated.body.json.txt").read_text(encoding="utf-8")
+        )
+    )
+
+
+@pytest.mark.parametrize("revised", [False, True], ids=["same-text", "new-text"])
+def test_license_section_ignores_the_revision_header(
+    offline: Offline, revised: bool
+) -> None:
+    """A bare pin bump is no legal change; a real LICENSE edit still advises patch."""
+    tree = {**BEFORE, "LICENSE": "MIT, revised text\n"} if revised else BEFORE
+    root = offline({OLD_SHA: BEFORE, NEW_SHA: tree}, consumer_document())
+    report = repin_vendor(root=root, vendor_id="example", revision=NEW_SHA)
+    assert_that(report.status).is_equal_to("updated")
+    assert_that(_vendor(root)["sha"]).is_equal_to(NEW_SHA)
+    advice = report.semver
+    level = getattr(advice, "level", None)
+    reasons = getattr(advice, "reasons", ())
+    markdown = render_markdown(report)
+    section = markdown.split("### License and notice\n", 1)[1].split("###", 1)[0]
+    if revised:
+        assert_that(level).is_equal_to("patch")
+        assert_that(reasons).contains("License or notice content changed")
+        assert_that(report.legal).contains(
+            Change(subject="LICENSES/github.com%2Fowner%2Fexample.txt", kind="changed")
+        )
+        assert_that(section).contains("changed `LICENSES/github.com%2Fowner%2Fexample")
+    else:
+        assert_that(level).is_equal_to("none")
+        assert_that(reasons).is_empty()
+        assert_that(report.legal).is_empty()
+        assert_that(report.capabilities).is_empty()
+        assert_that(section.strip()).is_equal_to("None.")
 
 
 def test_unchanged_pin_writes_nothing(offline: Offline) -> None:
@@ -590,9 +748,11 @@ def _git(root: Path, *args: str) -> str:
     Returns:
         Standard output.
     """
-    return subprocess.run(  # nosec B603 B607 - fixed local git argv
+    git = shutil.which("git")
+    assert_that(git).described_as("git executable on PATH").is_not_none()
+    return subprocess.run(  # nosec B603 - resolved local git, fixed argv
         [
-            "git",
+            str(git),
             "-c",
             "user.name=fixture",
             "-c",
@@ -605,7 +765,11 @@ def _git(root: Path, *args: str) -> str:
         check=True,
         capture_output=True,
         text=True,
-        env={"PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null"},
+        env={
+            "PATH": os.environ.get("PATH", os.defpath),
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_NOSYSTEM": "1",
+        },
     ).stdout
 
 

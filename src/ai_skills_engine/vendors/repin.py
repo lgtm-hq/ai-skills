@@ -318,7 +318,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--skip-declined",
         action="store_true",
-        help="Skip a revision declined in a closed, unmerged re-pin PR (uses gh)",
+        help=(
+            "Skip a revision declined in a closed, unmerged re-pin PR (uses gh); "
+            "a no-op with --keep-sha or when the revision equals the current pin"
+        ),
     )
     parser.add_argument(
         "--no-manifest-rewrite",

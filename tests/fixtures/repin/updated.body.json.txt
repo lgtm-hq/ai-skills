@@ -37,7 +37,7 @@
   ],
   "digests": [
     {
-      "detail": "sha256:711cecaa1705e88efcbee1ca57621b3411c3eb0bc132d68d4508679d18095b89 -> sha256:db59861cd7551f8de85a1834816c9f49dd4319cb1be32b4297d6b3c77423c500",
+      "detail": "sha256:cd3a4b897869c48bebab40a42fec44b60d726571c5a131269200cd9fa06edbb5 -> sha256:dea5a6bf5815b5cc6539a9dd83a6e3f695d87fdfecda71bdcd12ea66dfbd7eff",
       "kind": "artifactDigest",
       "subject": "example/tools"
     },
@@ -61,13 +61,7 @@
     }
   ],
   "filesOmitted": 0,
-  "legal": [
-    {
-      "detail": "",
-      "kind": "changed",
-      "subject": "LICENSES/github.com%2Fowner%2Fexample.txt"
-    }
-  ],
+  "legal": [],
   "lineage": [],
   "marker": "<!-- ai-skills-repin vendor=example revision=89abcdef0123456789abcdef0123456789abcdef -->",
   "pin": {
@@ -107,8 +101,7 @@
       "Capability added: example/tools:skill/delta",
       "Capability added: example/tools:skill/gamma",
       "Capability removed: example/tools:skill/beta",
-      "Content or metadata changed: example/tools:skill/alpha",
-      "License or notice content changed"
+      "Content or metadata changed: example/tools:skill/alpha"
     ]
   },
   "status": "updated",

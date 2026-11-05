@@ -2,8 +2,8 @@
   "actionRequired": [],
   "after": {
     "artifactDigests": {
-      "consumer/git-pr": "sha256:4ebcdac72c030a4f9b7db0602e0945e9607ad6032e311586d8b34d4582b53e5f",
-      "example/tools": "sha256:db59861cd7551f8de85a1834816c9f49dd4319cb1be32b4297d6b3c77423c500"
+      "consumer/git-pr": "sha256:059afb038a51bdf06db3a35f621a0c20be157a524727c43ab837c8d18e8674fe",
+      "example/tools": "sha256:dea5a6bf5815b5cc6539a9dd83a6e3f695d87fdfecda71bdcd12ea66dfbd7eff"
     },
     "diagnostics": [],
     "files": {
@@ -295,12 +295,17 @@
         }
       ],
       "rootPackage": null
+    },
+    "legal": {
+      "LICENSES/github.com%2Ffixture%2Fconsumer.txt": "sha256:b8d74559ccf436ff247699fbb89c19a8e9f6ac7ef16f07048eefdb35b9b62835",
+      "LICENSES/github.com%2Fowner%2Fexample.txt": "sha256:cd39c6d30a20f5a46778b3a0eb0e01a3899fb20d53af0f8009b605c089cd29b2",
+      "NOTICE.md": "sha256:aa822bc16a456881cc1dc65a05a463fe375defb9f8b1fcaf070231e9d271801b"
     }
   },
   "before": {
     "artifactDigests": {
-      "consumer/git-pr": "sha256:4ebcdac72c030a4f9b7db0602e0945e9607ad6032e311586d8b34d4582b53e5f",
-      "example/tools": "sha256:711cecaa1705e88efcbee1ca57621b3411c3eb0bc132d68d4508679d18095b89"
+      "consumer/git-pr": "sha256:059afb038a51bdf06db3a35f621a0c20be157a524727c43ab837c8d18e8674fe",
+      "example/tools": "sha256:cd3a4b897869c48bebab40a42fec44b60d726571c5a131269200cd9fa06edbb5"
     },
     "diagnostics": [],
     "files": {
@@ -526,6 +531,11 @@
         }
       ],
       "rootPackage": null
+    },
+    "legal": {
+      "LICENSES/github.com%2Ffixture%2Fconsumer.txt": "sha256:b8d74559ccf436ff247699fbb89c19a8e9f6ac7ef16f07048eefdb35b9b62835",
+      "LICENSES/github.com%2Fowner%2Fexample.txt": "sha256:cd39c6d30a20f5a46778b3a0eb0e01a3899fb20d53af0f8009b605c089cd29b2",
+      "NOTICE.md": "sha256:aa822bc16a456881cc1dc65a05a463fe375defb9f8b1fcaf070231e9d271801b"
     }
   },
   "drift": [],

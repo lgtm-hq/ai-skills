@@ -4,15 +4,24 @@ Nothing here touches the network: sources come from in-memory trees keyed by
 revision, and the vendor-index listing is served from the same trees.
 """
 
+import json
 from collections.abc import Callable, Mapping
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from ai_skills_engine import cli
 from ai_skills_engine.bake import vendor_indexes, vendor_plugins
 from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.registry.vendor import Vendor
+from ai_skills_engine.repin.catalog_side import CatalogSide
+from ai_skills_engine.repin.change import Change
+from ai_skills_engine.repin.drift import Drift
+from ai_skills_engine.repin.selector_status import SelectorStatus
+from ai_skills_engine.repin.vendor_pin import VendorPin
+from ai_skills_engine.vendors import manage
 
 OLD_SHA = "0123456789abcdef0123456789abcdef01234567"
 NEW_SHA = "89abcdef0123456789abcdef0123456789abcdef"
@@ -179,6 +188,18 @@ def write_consumer(*, root: Path, document: dict[str, Any]) -> None:
     )
 
 
+def no_network(**kwargs: object) -> bytes:
+    """Fail on any HTTP request.
+
+    Args:
+        **kwargs: Request description.
+
+    Raises:
+        AssertionError: Always.
+    """
+    raise AssertionError(f"unexpected network request: {kwargs.get('host')}")
+
+
 @pytest.fixture
 def offline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., Path]:
     """Prepare an isolated cache and patch acquisition to a fake upstream.
@@ -190,17 +211,6 @@ def offline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., Pa
     Returns:
         Factory ``(trees, document) -> repository root``.
     """
-
-    def no_network(**kwargs: object) -> bytes:
-        """Fail on any HTTP request.
-
-        Args:
-            **kwargs: Request description.
-
-        Raises:
-            AssertionError: Always.
-        """
-        raise AssertionError(f"unexpected network request: {kwargs.get('host')}")
 
     monkeypatch.setenv("AI_SKILLS_CACHE", str(tmp_path / "cache"))
     monkeypatch.setattr(vendor_plugins, "_http_get_bytes", no_network)
@@ -223,9 +233,6 @@ def offline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., Pa
         monkeypatch.setattr(vendor_indexes, "_fetch_tree_paths", upstream.paths)
         root = tmp_path / "repository"
         write_consumer(root=root, document=document)
-        from ai_skills_engine import cli
-        from ai_skills_engine.vendors import manage
-
         if legacy:
             manage.refresh(repo_root=root)
         if cli.main(["--repo-root", str(root), "lock"]) != 0:
@@ -233,6 +240,24 @@ def offline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., Pa
         return root
 
     return create
+
+
+def _side(value: Mapping[str, Any]) -> CatalogSide:
+    """Rebuild one captured catalog side.
+
+    Args:
+        value: Serialized side.
+
+    Returns:
+        Catalog side.
+    """
+    return CatalogSide(
+        index=value["index"],
+        files=value["files"],
+        artifact_digests=value["artifactDigests"],
+        diagnostics=tuple(value["diagnostics"]),
+        legal=value["legal"],
+    )
 
 
 def load_case(path: Path) -> dict[str, Any]:
@@ -244,28 +269,11 @@ def load_case(path: Path) -> dict[str, Any]:
     Returns:
         Keyword arguments for :func:`ai_skills_engine.repin.compare.compare`.
     """
-    import json
-
-    from ai_skills_engine.repin.catalog_side import CatalogSide
-    from ai_skills_engine.repin.change import Change
-    from ai_skills_engine.repin.drift import Drift
-    from ai_skills_engine.repin.selector_status import SelectorStatus
-    from ai_skills_engine.repin.vendor_pin import VendorPin
-
     case = json.loads(path.read_text(encoding="utf-8"))
-
-    def side(value: dict[str, Any]) -> CatalogSide:
-        return CatalogSide(
-            index=value["index"],
-            files=value["files"],
-            artifact_digests=value["artifactDigests"],
-            diagnostics=tuple(value["diagnostics"]),
-        )
-
     return {
         "pin": VendorPin(**case["pin"]),
-        "before": side(case["before"]),
-        "after": side(case["after"]),
+        "before": _side(case["before"]),
+        "after": _side(case["after"]),
         "migrations": {key: tuple(value) for key, value in case["migrations"].items()},
         "selectors": [SelectorStatus(**item) for item in case["selectors"]],
         "drift": [
@@ -283,3 +291,39 @@ def load_case(path: Path) -> dict[str, Any]:
         "action_required": case["actionRequired"],
         "upstream_moves": case["upstreamMoves"],
     }
+
+
+def dump_case(arguments: Mapping[str, Any]) -> str:
+    """Serialize captured ``compare`` keyword arguments (inverse of load_case).
+
+    Args:
+        arguments: Keyword arguments one pipeline run passed to ``compare``.
+
+    Returns:
+        Canonical ``*.input.json`` text.
+    """
+
+    def side(value: CatalogSide) -> dict[str, Any]:
+        return {
+            "index": value.index,
+            "files": value.files,
+            "artifactDigests": value.artifact_digests,
+            "diagnostics": list(value.diagnostics),
+            "legal": value.legal,
+        }
+
+    case = {
+        "pin": asdict(arguments["pin"]),
+        "before": side(arguments["before"]),
+        "after": side(arguments["after"]),
+        "migrations": {
+            key: list(value) for key, value in arguments["migrations"].items()
+        },
+        "selectors": [item.to_json() for item in sorted(set(arguments["selectors"]))],
+        "drift": [item.to_json() for item in sorted(set(arguments["drift"]))],
+        "moves": [item.to_json() for item in sorted(set(arguments["moves"]))],
+        "skillDirs": [sorted(item) for item in arguments["skill_dirs"]],
+        "actionRequired": list(arguments["action_required"]),
+        "upstreamMoves": arguments["upstream_moves"],
+    }
+    return json.dumps(case, indent=2, sort_keys=True) + "\n"

@@ -13,17 +13,24 @@ from ai_skills_engine.repin.selector_status import SelectorStatus
 from ai_skills_engine.repin.vendor_pin import VendorPin
 from ai_skills_engine.semver_advice import recommend_semver
 
+# Selection diagnostic codes reported in the Collisions section.
+COLLISION_CODES = frozenset(
+    {"selection.namespace-collision", "selection.invalid-collision-override"}
+)
+
 
 def _collisions(side: CatalogSide) -> set[str]:
-    """Select collision diagnostics.
+    """Select collision diagnostics by their code.
 
     Args:
-        side: Built catalog.
+        side: Built catalog whose diagnostics read ``code location: message``.
 
     Returns:
         Collision diagnostic lines.
     """
-    return {line for line in side.diagnostics if "collision" in line}
+    return {
+        line for line in side.diagnostics if line.split(" ", 1)[0] in COLLISION_CODES
+    }
 
 
 def compare(
@@ -78,8 +85,17 @@ def compare(
             drift=tuple(sorted(set(drift))),
         )
     origin = origin_locator(pin.repo)
-    old = index_diff.vendor_index(before.index, publisher=pin.publisher, origin=origin)
-    new = index_diff.vendor_index(after.index, publisher=pin.publisher, origin=origin)
+    # Revision-free legal digests feed both the SemVer advice and legal_changes.
+    old = index_diff.vendor_index(
+        index_diff.revision_free_legal(before.index, before.legal),
+        publisher=pin.publisher,
+        origin=origin,
+    )
+    new = index_diff.vendor_index(
+        index_diff.revision_free_legal(after.index, after.legal),
+        publisher=pin.publisher,
+        origin=origin,
+    )
     capability_lines, applied = index_diff.capability_changes(
         before=old, after=new, renames=migrations
     )
