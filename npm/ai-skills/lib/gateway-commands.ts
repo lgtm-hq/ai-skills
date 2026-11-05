@@ -178,8 +178,15 @@ export async function updateSkills(
           keepGenerations: options.keepGenerations,
           kind: "update",
           next: {
-            artifactDigest: null,
-            fingerprints: { adapters: adapterFingerprints(plans), policy: null },
+            artifactDigest: session.receipt?.artifactDigest ?? null,
+            fingerprints: {
+              // Adapters this transaction did not plan keep their recorded fingerprints.
+              adapters: {
+                ...session.receipt?.fingerprints.adapters,
+                ...adapterFingerprints(plans),
+              },
+              policy: session.receipt?.fingerprints.policy ?? null,
+            },
             plugins,
           },
           ops: planOps(plans),

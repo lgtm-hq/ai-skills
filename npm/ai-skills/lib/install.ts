@@ -975,8 +975,12 @@ export async function install(
         keepGenerations: scopedOptions.keepGenerations,
         kind: "install",
         next: {
-          artifactDigest: null,
-          fingerprints: { adapters: adapterFingerprints(plans), policy: null },
+          artifactDigest: session.receipt?.artifactDigest ?? null,
+          fingerprints: {
+            // Adapters this transaction did not plan keep their recorded fingerprints.
+            adapters: { ...session.receipt?.fingerprints.adapters, ...adapterFingerprints(plans) },
+            policy: session.receipt?.fingerprints.policy ?? null,
+          },
           plugins: mergeLockEntries(lock, entries).plugins,
         },
         ops: planOps(plans),

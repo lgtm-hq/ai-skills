@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { listSkills } from "../lib/gateway-commands.ts";
+import { listSkills, updateSkills } from "../lib/gateway-commands.ts";
 import { JOURNAL_VERSION } from "../lib/journal/journal.ts";
 import {
   readInstallState,
@@ -205,6 +205,34 @@ describe("install receipts", () => {
         '{"phase":"begin","op":0}\nnot json\n{"phase":"done","op":0}\n',
       );
       await expect(recoverState(environment(world))).rejects.toThrow("Corrupt transaction log");
+    });
+  });
+
+  test("a prune-only update keeps the receipt's fingerprints and artifact digest", async () => {
+    await withWorld(async (world) => {
+      await runWorldCommand(world, "install");
+      const path = await receiptPath("project", environment(world));
+      const installed = JSON.parse(await readFile(path, "utf8"));
+      installed.artifactDigest = "sha256:feedface";
+      installed.fingerprints.policy = "sha256:policy";
+      await writeFile(path, `${JSON.stringify(installed, null, 2)}\n`);
+      expect(Object.keys(installed.fingerprints.adapters).length).toBeGreaterThan(0);
+
+      const result = await updateSkills(
+        { agents: [], global: false, project: true, skills: [], yes: true },
+        {
+          isInstalled: async () => false,
+          lockEnvironment: environment(world),
+          warn: () => {},
+        },
+      );
+
+      expect(result).toEqual({ pruned: [WORLD_PLUGIN], updated: [] });
+      const receipt = await readReceipt("project", environment(world));
+      expect(receipt?.generation).toBe(2);
+      expect(receipt?.plugins).toEqual({});
+      expect(receipt?.artifactDigest).toBe("sha256:feedface");
+      expect(receipt?.fingerprints).toEqual(installed.fingerprints);
     });
   });
 

@@ -891,9 +891,7 @@ describe("install", () => {
       expect(warnings).toContain(`skipped identical ${lintDir} (not claiming lint on cursor)`);
       expect(await readFile(join(lintDir, "SKILL.md"), "utf8")).toBe("# lint\n");
       await expect(access(testDir)).rejects.toMatchObject({ code: "ENOENT" });
-      await expect(access(join(cwd, "ai-skills-lock.json"))).rejects.toMatchObject({
-        code: "ENOENT",
-      });
+      expect((await readState("project", { cwd })).plugins).toEqual({});
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
