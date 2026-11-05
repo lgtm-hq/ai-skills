@@ -10,11 +10,7 @@ import { applyPlan } from "../lib/adapters/execute.ts";
 import type { Transaction } from "../lib/adapters/execute.ts";
 import { nodeReadOnlyFs } from "../lib/adapters/fs.ts";
 import { adapterFor } from "../lib/adapters/index.ts";
-import {
-  CLI_BY_AGENT,
-  stripGitTag,
-  uninstallCliPlugin,
-} from "../lib/adapters/shared/native-cli.ts";
+import { CLI_BY_AGENT, uninstallCliPlugin } from "../lib/adapters/shared/native-cli.ts";
 import type { ExecResult } from "../lib/adapters/shared/native-cli.ts";
 import {
   cursorPluginsRoot,
@@ -509,11 +505,12 @@ describe("native CLI projector", () => {
     }
   });
 
-  test("adds Copilot's local marketplace and keeps the tag-strip deviation", async () => {
+  // The tag-strip deviation itself is asserted through the Copilot support
+  // report in adapters-plan.test.ts ("source-tag-stripped").
+  test("adds Copilot's local marketplace", async () => {
     const calls: string[][] = [];
     const { home } = await installThroughPort("copilot", okExec(calls));
     try {
-      expect(stripGitTag("lgtm-hq/ai-skills@v0.23.0")).toBe("lgtm-hq/ai-skills");
       expect(calls).toEqual([
         ["copilot", "plugin", "marketplace", "add", join(home, ".ai-skills/native/copilot")],
         ["copilot", "plugin", "install", "review@ai-skills"],
