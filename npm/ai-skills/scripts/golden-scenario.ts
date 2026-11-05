@@ -36,6 +36,16 @@ const locks: typeof import("../lib/lockfile.ts") = await import(
 );
 const root = await mkdtemp(join(tmpdir(), "566-golden-"));
 const environment = { cwd: root, home: root };
+// Managed installs explode a local artifact (#579); the skills CLI only runs
+// for the explicit --unmanaged handoff below.
+const sourceRoot = await mkdtemp(join(tmpdir(), "579-golden-catalog-"));
+for (const name of ["lint", "test", "greptile", "coderabbit", "lintro-review"]) {
+  await mkdir(join(sourceRoot, "skills", name), { recursive: true });
+  await writeFile(
+    join(sourceRoot, "skills", name, "SKILL.md"),
+    `# ${name}\nfixture catalog output\n`,
+  );
+}
 const calls: string[][] = [];
 const run = async (args: string[]) => {
   calls.push(args);
@@ -56,12 +66,12 @@ const deps = {
     locks.writeLockfile(lock, environment),
   run,
   now,
-  sourceRoot: null,
+  sourceRoot,
 };
 mock.module(`${moduleRoot}/lib/install.${extension}`, () => ({
   ...inst,
   install: (options: Parameters<typeof originalInstall>[0]) =>
-    originalInstall(options, run, now, environment, { sourceRoot: null }),
+    originalInstall(options, run, now, environment, { sourceRoot }),
 }));
 mock.module(`${moduleRoot}/lib/gateway-commands.${extension}`, () => ({
   ...gateway,
@@ -112,6 +122,8 @@ try {
     ["update", "-y", "--project", "-a", "codex"],
     ["remove", "-y", "--project", "-a", "codex", "--skill", "review"],
     ["list", "--project"],
+    ["install", "-y", "--project", "-a", "codex", "--bundle", "review", "--unmanaged"],
+    ["list", "--project"],
     ["--bad-flag"],
   ]) {
     if (args[0] === "update") {
@@ -144,5 +156,8 @@ try {
   console.log = originalLog;
   console.warn = originalWarn;
   await rm(root, { force: true, recursive: true });
+  await rm(sourceRoot, { force: true, recursive: true });
 }
-console.log(JSON.stringify(results, null, 2).replaceAll(root, "<HOME>"));
+console.log(
+  JSON.stringify(results, null, 2).replaceAll(sourceRoot, "<CATALOG>").replaceAll(root, "<HOME>"),
+);

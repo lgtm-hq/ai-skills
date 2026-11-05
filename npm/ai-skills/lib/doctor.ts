@@ -15,11 +15,17 @@ import {
   readLockfile,
   skillNamesFromFiles,
 } from "./lockfile.ts";
+import {
+  hostIds,
+  hostPluginsRoot,
+  isKnownHost,
+  nativeRoute,
+  treeHostIds,
+} from "./adapters/hosts.ts";
+import { removeCursorPlugin } from "./adapters/cursor/drop.ts";
+import { spawnExec, uninstallCliPlugin } from "./adapters/shared/native-cli.ts";
+import { removeExplodedFiles } from "./adapters/shared/skill-explode.ts";
 import { resolveScope } from "./options.ts";
-import { CLI_BY_AGENT, spawnExec, uninstallCliPlugin } from "./projectors/native-cli.ts";
-import { NATIVE_PROJECTOR_AGENTS } from "./projectors/defaults.ts";
-import { removeExplodedFiles } from "./projectors/explode.ts";
-import { cursorPluginsRoot, removeCursorPlugin } from "./projectors/native-cursor.ts";
 
 export const DOCTOR_CACHE_SCHEMA = 1;
 
@@ -79,8 +85,9 @@ export async function writeDoctorCache(
 /**
  * Probe one host's plugin capability and current version.
  *
- * Claude Code / Copilot: the host CLI responds to ``plugin``. Cursor: a
- * ``plugins/local`` directory exists. Codex is always explode.
+ * The host definition picks the probe: CLI routes ask the host CLI for
+ * ``plugin``; tree routes check that the local plugins directory exists;
+ * hosts without a native route are always explode.
  */
 export async function probeHost(
   agent: string,
@@ -93,18 +100,18 @@ export async function probeHost(
     version?: string;
   } = {},
 ): Promise<{ capability: "native" | "explode" | "ambiguous"; version: string }> {
-  if (!NATIVE_PROJECTOR_AGENTS.has(agent)) {
+  const route = nativeRoute(agent);
+  if (!route) {
     return { capability: PROJECTOR_EXPLODE, version: environment.version ?? "n/a" };
   }
   const version = environment.version ?? (await hostVersion(agent, environment));
-  if (agent === "cursor") {
-    const capable = await cursorPluginsLocalExists(environment);
+  if (route.kind === "tree") {
+    const capable = await pluginsLocalExists(agent, environment);
     return { capability: capable ? PROJECTOR_NATIVE : PROJECTOR_EXPLODE, version };
   }
-  const cli = CLI_BY_AGENT[agent];
   const exec = environment.exec ?? spawnExec;
   try {
-    const result = await exec(cli!, ["plugin"]);
+    const result = await exec(route.binary, ["plugin"]);
     return { capability: classifyCliPluginProbe(result), version };
   } catch (error) {
     if (isMissingExecutable(error)) {
@@ -223,7 +230,7 @@ export async function runDoctor(
   if (options.repair && options.migrate) {
     throw new Error("Choose only one doctor action: --repair or --migrate");
   }
-  if (options.migrate && !Object.hasOwn(AGENT_SKILL_PATHS, options.migrate)) {
+  if (options.migrate && !isKnownHost(options.migrate)) {
     throw new Error(`Unknown agent: ${options.migrate}`);
   }
   const log = dependencies.log ?? ((line) => console.log(line));
@@ -304,19 +311,20 @@ function doctorHosts(agents: string[]): string[] {
   if (agents.length > 0) {
     return [...new Set(agents)];
   }
-  return [...NATIVE_PROJECTOR_AGENTS, "codex"].sort();
+  return hostIds().sort();
 }
 
 async function hostVersion(
   agent: string,
   environment: Parameters<typeof probeHost>[1] = {},
 ): Promise<string> {
-  if (agent === "cursor") {
-    const capable = await cursorPluginsLocalExists(environment);
+  const route = nativeRoute(agent);
+  if (route?.kind === "tree") {
+    const capable = await pluginsLocalExists(agent, environment);
     const scope = environment.scope ?? "global";
     const exec = environment.exec ?? spawnExec;
     try {
-      const result = await exec("cursor", ["--version"]);
+      const result = await exec(route.versionBinary, ["--version"]);
       const text = (result.stdout || result.stderr).trim().split("\n")[0] ?? "";
       if (text) {
         return `${scope}:${capable ? "present" : "absent"}:${text.slice(0, 80)}`;
@@ -326,13 +334,12 @@ async function hostVersion(
     }
     return `${scope}:${capable ? "present" : "absent"}:nocli`;
   }
-  const cli = CLI_BY_AGENT[agent];
-  if (!cli) {
+  if (!route) {
     return "n/a";
   }
   const exec = environment.exec ?? spawnExec;
   try {
-    const result = await exec(cli, ["--version"]);
+    const result = await exec(route.binary, ["--version"]);
     const text = (result.stdout || result.stderr).trim().split("\n")[0] ?? "";
     return text ? text.slice(0, 80) : "unknown";
   } catch (error) {
@@ -343,14 +350,15 @@ async function hostVersion(
   }
 }
 
-async function cursorPluginsLocalExists(
+async function pluginsLocalExists(
+  agent: string,
   environment: Parameters<typeof probeHost>[1] = {},
 ): Promise<boolean> {
   const home = environment.home ?? homedir();
   const cwd = environment.cwd ?? process.cwd();
-  const candidates = [join(home, ".cursor", "plugins", "local")];
+  const candidates = [hostPluginsRoot(agent, { cwd, home, scope: "global" })!];
   if (environment.scope === "project") {
-    candidates.push(join(cwd, ".cursor", "plugins", "local"));
+    candidates.push(hostPluginsRoot(agent, { cwd, home, scope: "project" })!);
   }
   const access =
     environment.access ??
@@ -417,7 +425,7 @@ async function listOrphanSkillDirs(
   environment: { cwd?: string; home?: string },
 ): Promise<Array<{ agent: string; path: string }>> {
   const explodeTracked: Map<string, Set<string>> = new Map();
-  const nativeCursorIds = new Set<string>();
+  const nativeTreeIds: Map<string, Set<string>> = new Map();
   for (const plugin of plugins) {
     for (const agent of plugin.agentNames) {
       const projector = agentProjector(plugin, agent);
@@ -428,8 +436,10 @@ async function listOrphanSkillDirs(
           names.add(name);
         }
         explodeTracked.set(agent, names);
-      } else if (agent === "cursor") {
-        nativeCursorIds.add(plugin.name);
+      } else if (nativeRoute(agent)?.kind === "tree") {
+        const ids = nativeTreeIds.get(agent) ?? new Set<string>();
+        ids.add(plugin.name);
+        nativeTreeIds.set(agent, ids);
       }
     }
   }
@@ -442,8 +452,12 @@ async function listOrphanSkillDirs(
     const root = join(base, relative);
     orphans.push(...(await orphanEntries(agent, root, explodeTracked.get(agent) ?? new Set())));
   }
-  const nativeRoot = cursorPluginsRoot({ cwd, home, scope });
-  orphans.push(...(await orphanEntries("cursor", nativeRoot, nativeCursorIds)));
+  for (const agent of treeHostIds()) {
+    const nativeRoot = hostPluginsRoot(agent, { cwd, home, scope })!;
+    orphans.push(
+      ...(await orphanEntries(agent, nativeRoot, nativeTreeIds.get(agent) ?? new Set())),
+    );
+  }
   return orphans.sort((left, right) => left.path.localeCompare(right.path));
 }
 
@@ -553,7 +567,7 @@ async function migrateHost(
   environment: Parameters<typeof ensureHostCapability>[1],
   dependencies: Parameters<typeof runDoctor>[1] = {},
 ): Promise<string[]> {
-  if (!Object.hasOwn(AGENT_SKILL_PATHS, host)) {
+  if (!isKnownHost(host)) {
     throw new Error(`Unknown agent: ${host}`);
   }
   const target = await ensureHostCapability(host, environment);
@@ -731,7 +745,7 @@ export async function removeLockedAgentProjection(
     });
     return;
   }
-  if (agent === "cursor") {
+  if (nativeRoute(agent)?.kind === "tree") {
     await removeCursorPlugin({
       destRoot: dirname(install.root),
       pluginId,

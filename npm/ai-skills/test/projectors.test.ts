@@ -5,19 +5,20 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import { PROJECTOR_EXPLODE, PROJECTOR_NATIVE } from "../lib/lockfile.ts";
-import { assertProjectorSupported, resolveProjector } from "../lib/projectors/defaults.ts";
-import {
-  CLI_BY_AGENT,
-  installCliPlugin,
-  uninstallCliPlugin,
-} from "../lib/projectors/native-cli.ts";
+import { assertProjectorSupported, resolveProjector } from "../lib/adapters/defaults.ts";
+import { applyPlan } from "../lib/adapters/execute.ts";
+import type { Transaction } from "../lib/adapters/execute.ts";
+import { nodeReadOnlyFs } from "../lib/adapters/fs.ts";
+import { adapterFor } from "../lib/adapters/index.ts";
+import { CLI_BY_AGENT, uninstallCliPlugin } from "../lib/adapters/shared/native-cli.ts";
+import type { ExecResult } from "../lib/adapters/shared/native-cli.ts";
 import {
   cursorPluginsRoot,
   findCatalogSourceRoot,
   installCursorPlugin,
   removeCursorPlugin,
   restoreCursorPluginInstall,
-} from "../lib/projectors/native-cursor.ts";
+} from "../lib/adapters/cursor/drop.ts";
 
 describe("resolveProjector", () => {
   test("defaults native for Cursor, Claude, and Copilot", () => {
@@ -448,135 +449,124 @@ describe("native Cursor projector", () => {
 });
 
 describe("native CLI projector", () => {
-  test("adds the marketplace then installs through the host CLI", async () => {
-    const calls: string[][] = [];
-    const result = await installCliPlugin({
-      agent: "claude-code",
-      exec: async (command, args) => {
-        calls.push([command, ...args]);
-        return { status: 0, stderr: "", stdout: "ok" };
+  /**
+   * Install `review` through a CLI port: plan the local envelope, then apply it
+   * with the executor. The returned transaction carries the port's recovery.
+   */
+  async function installThroughPort(
+    agent: "claude-code" | "copilot",
+    exec: (command: string, args: string[]) => Promise<ExecResult>,
+  ): Promise<{ home: string; transaction: Transaction }> {
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-cli-port-"));
+    await mkdir(join(home, "catalog/review"), { recursive: true });
+    await writeFile(join(home, "catalog/review/SKILL.md"), "# review\n");
+    const plan = await adapterFor(agent, PROJECTOR_NATIVE).plan({
+      env: { cwd: home, home },
+      fs: nodeReadOnlyFs,
+      host: agent,
+      kept: {
+        description: "Review",
+        pluginId: "review",
+        skills: [{ name: "review", source: join(home, "catalog/review") }],
+        version: "0.23.0",
       },
-      pluginId: "review",
-      source: "lgtm-hq/ai-skills@v0.23.0",
+      mode: PROJECTOR_NATIVE,
+      owned: [],
+      role: "skill",
+      scope: "global",
     });
-    expect(result).toEqual({ alreadyPresent: false });
-    expect(CLI_BY_AGENT["claude-code"]).toBe("claude");
-    expect(calls).toEqual([
-      ["claude", "plugin", "marketplace", "add", "lgtm-hq/ai-skills@v0.23.0"],
-      ["claude", "plugin", "install", "review@ai-skills"],
-    ]);
+    try {
+      return { home, transaction: await applyPlan(plan, { exec }) };
+    } catch (error) {
+      await rm(home, { force: true, recursive: true });
+      throw error;
+    }
+  }
+
+  const okExec = (calls: string[][]) => async (command: string, args: string[]) => {
+    calls.splice(calls.length, 0, [command, ...args]);
+    return { status: 0, stderr: "", stdout: "ok" };
+  };
+
+  test("adds the local marketplace then installs through the host CLI", async () => {
+    const calls: string[][] = [];
+    const { home, transaction } = await installThroughPort("claude-code", okExec(calls));
+    try {
+      expect(CLI_BY_AGENT["claude-code"]).toBe("claude");
+      expect(calls).toEqual([
+        ["claude", "plugin", "marketplace", "add", join(home, ".ai-skills/native/claude-code")],
+        ["claude", "plugin", "install", "review@ai-skills"],
+      ]);
+      // A plugin this run created is compensated on rollback.
+      await transaction.rollback();
+      expect(calls.at(-1)).toEqual(["claude", "plugin", "uninstall", "review@ai-skills"]);
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
   });
 
-  test("adds Copilot marketplace sources without a git tag", async () => {
+  // The tag-strip deviation itself is asserted through the Copilot support
+  // report in adapters-plan.test.ts ("source-tag-stripped").
+  test("adds Copilot's local marketplace", async () => {
     const calls: string[][] = [];
-    await installCliPlugin({
-      agent: "copilot",
-      exec: async (command, args) => {
-        calls.push([command, ...args]);
-        return { status: 0, stderr: "", stdout: "ok" };
-      },
-      pluginId: "review",
-      source: "lgtm-hq/ai-skills@v0.23.0",
-    });
-    expect(calls).toEqual([
-      ["copilot", "plugin", "marketplace", "add", "lgtm-hq/ai-skills"],
-      ["copilot", "plugin", "install", "review@ai-skills"],
-    ]);
+    const { home } = await installThroughPort("copilot", okExec(calls));
+    try {
+      expect(calls).toEqual([
+        ["copilot", "plugin", "marketplace", "add", join(home, ".ai-skills/native/copilot")],
+        ["copilot", "plugin", "install", "review@ai-skills"],
+      ]);
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
   });
 
   test("treats already-present marketplace add as success", async () => {
     const calls: string[][] = [];
-    await installCliPlugin({
-      agent: "copilot",
-      exec: async (command, args) => {
-        calls.push([command, ...args]);
-        if (args.includes("add")) {
-          return { status: 1, stderr: "already exists", stdout: "" };
-        }
-        return { status: 0, stderr: "", stdout: "ok" };
-      },
-      pluginId: "review",
-      source: "lgtm-hq/ai-skills@v0.23.0",
+    const { home } = await installThroughPort("copilot", async (command, args) => {
+      calls.splice(calls.length, 0, [command, ...args]);
+      if (args.includes("add")) {
+        return { status: 1, stderr: "already exists", stdout: "" };
+      }
+      return { status: 0, stderr: "", stdout: "ok" };
     });
-    expect(calls).toEqual([
-      ["copilot", "plugin", "marketplace", "add", "lgtm-hq/ai-skills"],
-      ["copilot", "plugin", "install", "review@ai-skills"],
-    ]);
+    try {
+      expect(calls).toEqual([
+        ["copilot", "plugin", "marketplace", "add", join(home, ".ai-skills/native/copilot")],
+        ["copilot", "plugin", "install", "review@ai-skills"],
+      ]);
+      // The local marketplace is the only source: no owner/repo slug reaches the CLI.
+      expect(calls.flat().some((argument) => /^[\w-]+\/[\w.-]+(@.+)?$/.test(argument))).toBe(false);
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
   });
 
   test("treats status-zero already-installed as already present", async () => {
-    const result = await installCliPlugin({
-      agent: "claude-code",
-      exec: async () => ({ status: 0, stderr: "", stdout: "already installed" }),
-      pluginId: "review",
-      source: "lgtm-hq/ai-skills@v0.23.0",
+    const calls: string[][] = [];
+    const { home, transaction } = await installThroughPort("claude-code", async (command, args) => {
+      calls.splice(calls.length, 0, [command, ...args]);
+      return { status: 0, stderr: "", stdout: "already installed" };
     });
-    expect(result).toEqual({ alreadyPresent: true });
+    try {
+      await transaction.rollback();
+      expect(calls.some((argv) => argv.includes("uninstall"))).toBe(false);
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
   });
 
-  test("does not treat does not exist as already present", async () => {
-    await expect(
-      installCliPlugin({
-        agent: "claude-code",
-        exec: async (_command, args) => {
-          if (args.includes("install")) {
-            return { status: 1, stderr: "plugin does not exist", stdout: "" };
-          }
-          return { status: 0, stderr: "", stdout: "" };
-        },
-        pluginId: "review",
-        source: "lgtm-hq/ai-skills@v0.23.0",
-      }),
-    ).rejects.toThrow("claude plugin install failed: plugin does not exist");
-  });
-
-  test("does not treat no plugin exists as already present", async () => {
-    await expect(
-      installCliPlugin({
-        agent: "claude-code",
-        exec: async (_command, args) => {
-          if (args.includes("install")) {
-            return { status: 1, stderr: "no plugin exists", stdout: "" };
-          }
-          return { status: 0, stderr: "", stdout: "" };
-        },
-        pluginId: "review",
-        source: "lgtm-hq/ai-skills@v0.23.0",
-      }),
-    ).rejects.toThrow("claude plugin install failed: no plugin exists");
-  });
-
-  test("does not treat a missing plugin as a successful install", async () => {
-    await expect(
-      installCliPlugin({
-        agent: "claude-code",
-        exec: async (_command, args) => {
-          if (args.includes("install")) {
-            return { status: 1, stderr: "plugin not found", stdout: "" };
-          }
-          return { status: 0, stderr: "", stdout: "" };
-        },
-        pluginId: "review",
-        source: "lgtm-hq/ai-skills@v0.23.0",
-      }),
-    ).rejects.toThrow("claude plugin install failed: plugin not found");
-  });
-
-  test("surfaces a failed install instead of swallowing it", async () => {
-    await expect(
-      installCliPlugin({
-        agent: "claude-code",
-        exec: async (_command, args) => {
-          if (args.includes("install")) {
-            return { status: 1, stderr: "boom", stdout: "" };
-          }
-          return { status: 0, stderr: "", stdout: "" };
-        },
-        pluginId: "review",
-        source: "lgtm-hq/ai-skills@v0.23.0",
-      }),
-    ).rejects.toThrow("claude plugin install failed: boom");
-  });
+  test.each([["plugin does not exist"], ["no plugin exists"], ["plugin not found"], ["boom"]])(
+    "surfaces a failed install (%s) instead of treating it as present",
+    async (stderr) => {
+      await expect(
+        installThroughPort("claude-code", async (_command, args) =>
+          args.includes("install")
+            ? { status: 1, stderr, stdout: "" }
+            : { status: 0, stderr: "", stdout: "" },
+        ),
+      ).rejects.toThrow(`claude plugin install failed: ${stderr}`);
+    },
+  );
 
   test("treats uninstall of an already-missing plugin as success", async () => {
     await uninstallCliPlugin({

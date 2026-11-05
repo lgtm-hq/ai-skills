@@ -87,6 +87,14 @@ bunx --package=@lgtm-hq/ai-skills@0.31.0 sk install -y --global \
   -a cursor --bundle review
 ```
 
+> [!NOTE]
+> The published package does not ship the first-party catalog. Until #386
+> ships installable artifacts, managed first-party installs such as the
+> examples above need an ai-skills checkout (run `sk` from the repository);
+> elsewhere they fail closed. Baked vendor plugins install anywhere. Add
+> `--unmanaged` to hand the install to the upstream skills CLI instead, which
+> writes no gateway lock.
+
 Unattended installs need an explicit scope and agent. `--bundle` and
 `--skill` take a plugin id from the table below (`git-pr`, `review`,
 `standards`, …) or a baked vendor plugin id (`document-skills`,
@@ -99,10 +107,20 @@ subcommand, and Cursor for `~/.cursor/plugins/local/`. Ambiguous Claude
 Code / Copilot probes ask once; `-y` fails closed without writing the
 cache. Locked agents keep their projector until `--migrate` or
 `--projector`. Codex stays exploded.
-Vendor installs stay exploded. Cursor native still needs a catalog checkout
-(`skills/` + `.claude-plugin/`). Published npm / `bunx` installs fall back
-to explode only when native is implicit; `--projector native` without a
-checkout fails closed.
+Vendor installs stay exploded. Native delivery installs only a locally
+rendered, filtered copy of the plugin: Cursor gets a tree under
+`plugins/local/`, and Claude Code / Copilot register a local marketplace
+under `~/.ai-skills/native/<host>/` instead of the remote repository. Both
+need a catalog checkout (`skills/` + `.claude-plugin/`). Without one, implicit
+native falls back to explode, and `--projector native` fails closed.
+Managed installs never hand off to the upstream `skills` CLI: a first-party
+install with no local catalog fails closed. `--unmanaged` runs that CLI as an
+explicit, labeled handoff that writes no gateway lock, so `sk` cannot verify,
+update, remove or roll it back. `sk install --dry-run -a <host> …` prints the
+composed destination plan (adapter, recovery guarantee, recorded deviations
+and every file, link and host CLI operation) without writing anything.
+With `--unmanaged`, `--dry-run` prints the skills CLI command the handoff
+would run and runs nothing.
 `sk doctor` prints capability, lock↔disk drift, and orphans;
 `--repair` restores missing files; `--migrate <host>` cutovers locked
 first-party plugins on that host (native migrate skips vendor plugins).

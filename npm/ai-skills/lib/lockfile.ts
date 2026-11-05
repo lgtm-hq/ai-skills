@@ -12,6 +12,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+import { hostSkillPaths } from "./adapters/hosts.ts";
 import { getPackageVersion } from "./package-version.ts";
 
 export const LOCKFILE_VERSION = 2;
@@ -29,12 +30,10 @@ export function isSafePluginId(pluginId: unknown): boolean {
   return typeof pluginId === "string" && PLUGIN_ID_RE.test(pluginId);
 }
 
-export const AGENT_SKILL_PATHS: Record<string, string> = {
-  "claude-code": ".claude/skills",
-  copilot: ".copilot/skills",
-  cursor: ".cursor/skills",
-  codex: ".codex/skills",
-};
+/**
+ * Exploded skills directory per host, read from the adapter host table.
+ */
+export const AGENT_SKILL_PATHS: Record<string, string> = hostSkillPaths();
 
 /**
  * Resolve the gateway lockfile path for an installation scope.
@@ -326,7 +325,7 @@ export function pluginSkillNames(entry: PluginLockEntry): string[] {
 /**
  * Skill directory names implied by a tracked file map.
  *
- * Exploded installs use ``<skill>/SKILL.md``. Cursor native trees use
+ * Exploded installs use ``<skill>/SKILL.md``. Native plugin trees use
  * ``skills/<skill>/...`` plus ``.claude-plugin/plugin.json`` (ignored).
  */
 export function skillNamesFromFiles(files: Record<string, string>): Set<string> {
@@ -357,8 +356,8 @@ export function agentProjector(entry: PluginLockEntry, agent: string): "native" 
 /**
  * Whether a native install is CLI-owned (host plugin, no hashed tree).
  *
- * Claude Code and Copilot native installs record ``root: "cli:<agent>"``.
- * Cursor native trees hash ``plugin.json`` and copied skill files under a
+ * CLI-delivered native installs record ``root: "cli:<agent>"``. Tree-drop
+ * native installs hash ``plugin.json`` and copied skill files under a
  * filesystem root; an empty file map there is missing, not CLI-owned.
  */
 export function isCliOwnedNativeInstall(
@@ -379,34 +378,27 @@ export function isCliOwnedNativeInstall(
 export async function hashTree(
   root: string,
   hash: (path: string) => Promise<string> = hashFile,
+  fs: TreeReader = nodeTreeReader,
 ): Promise<Record<string, string>> {
   const files: Record<string, string> = {};
-  await walkHashTree(root, "", files, hash);
+  await walkHashTree(root, "", files, hash, fs);
   return files;
 }
 
-/**
- * Keep only gateway-owned Cursor plugin paths so untracked dest files stay
- * out of the lock (and therefore out of hash-verified remove).
- */
-export function ownedCursorTreeFiles(
-  files: Record<string, string>,
-  skillNames: string[],
-): Record<string, string> {
-  const names = new Set(skillNames);
-  const owned: Record<string, string> = {};
-  for (const [relative, digest] of Object.entries(files)) {
-    if (relative === ".claude-plugin/plugin.json") {
-      owned[relative] = digest;
-      continue;
-    }
-    const match = /^skills\/([^/]+)\//.exec(relative);
-    if (match && names.has(match[1]!)) {
-      owned[relative] = digest;
-    }
-  }
-  return owned;
+/** Directory reads ``hashTree`` needs; adapters pass a read-only view. */
+export interface TreeReader {
+  readdir(
+    path: string,
+  ): Promise<
+    Array<{ name: string; isDirectory(): boolean; isFile(): boolean; isSymbolicLink(): boolean }>
+  >;
+  readlink(path: string): Promise<string>;
 }
+
+const nodeTreeReader: TreeReader = {
+  readdir: (path) => readdir(path, { withFileTypes: true }),
+  readlink: (path) => readlink(path),
+};
 
 /**
  * Create an empty version-two lockfile.
@@ -656,10 +648,11 @@ async function walkHashTree(
   prefix: string,
   files: Record<string, string>,
   hash: (path: string) => Promise<string>,
+  fs: TreeReader,
 ): Promise<void> {
   let entries;
   try {
-    entries = await readdir(dir, { withFileTypes: true });
+    entries = await fs.readdir(dir);
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
       return;
@@ -670,9 +663,9 @@ async function walkHashTree(
     const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
     const absolute = join(dir, entry.name);
     if (entry.isDirectory()) {
-      await walkHashTree(absolute, relative, files, hash);
+      await walkHashTree(absolute, relative, files, hash, fs);
     } else if (entry.isSymbolicLink()) {
-      const target = await readlink(absolute);
+      const target = await fs.readlink(absolute);
       files[relative] = createHash("sha256").update(`symlink:${target}`).digest("hex");
     } else if (entry.isFile()) {
       files[relative] = await hash(absolute);

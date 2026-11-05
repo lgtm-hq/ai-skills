@@ -1,12 +1,15 @@
 import { spawn } from "node:child_process";
 
+import { HOST_DEFINITIONS } from "../hosts.ts";
+
 /**
- * Host CLI binary for native plugin install/uninstall.
+ * Host CLI binary for native plugin install/uninstall, read from host definitions.
  */
-export const CLI_BY_AGENT: Record<string, string> = {
-  "claude-code": "claude",
-  copilot: "copilot",
-};
+export const CLI_BY_AGENT: Readonly<Record<string, string>> = Object.fromEntries(
+  HOST_DEFINITIONS.flatMap((host) =>
+    host.native?.kind === "cli" ? [[host.id, host.native.binary]] : [],
+  ),
+);
 
 /**
  * Marketplace source name first-party plugins install from.
@@ -37,34 +40,6 @@ export function spawnExec(command: string, args: string[]): Promise<ExecResult> 
 }
 
 /**
- * Native CLI installs are user-scoped by the host. The gateway lock still
- * records `--global` / `--project`; host CLIs do not take a gateway scope flag.
- */
-export async function installCliPlugin(args: {
-  agent: string;
-  pluginId: string;
-  source: string;
-  marketplace?: string;
-  exec?: (command: string, cliArgs: string[]) => Promise<ExecResult>;
-}): Promise<{ alreadyPresent: boolean }> {
-  const cli = cliForAgent(args.agent);
-  const exec = args.exec ?? spawnExec;
-  const marketplace = args.marketplace ?? FIRST_PARTY_MARKETPLACE;
-  const marketplaceSource = args.agent === "copilot" ? stripGitTag(args.source) : args.source;
-  const added = await exec(cli, ["plugin", "marketplace", "add", marketplaceSource]);
-  if (added.status !== 0 && !isAlreadyPresent(added)) {
-    throw new Error(`${cli} plugin marketplace add failed: ${detail(added)}`);
-  }
-  const installed = await exec(cli, ["plugin", "install", `${args.pluginId}@${marketplace}`]);
-  if (installed.status !== 0 && !isAlreadyPresent(installed)) {
-    throw new Error(`${cli} plugin install failed: ${detail(installed)}`);
-  }
-  return {
-    alreadyPresent: isAlreadyPresent(installed),
-  };
-}
-
-/**
  * Uninstall one plugin through a host CLI.
  */
 export async function uninstallCliPlugin(args: {
@@ -90,12 +65,12 @@ function cliForAgent(agent: string): string {
   return cli;
 }
 
-function isAlreadyPresent(result: ExecResult): boolean {
+export function isAlreadyPresent(result: ExecResult): boolean {
   const text = `${result.stdout} ${result.stderr}`.toLowerCase();
   return /\balready (exists|installed|added|present)\b/.test(text);
 }
 
-function isAlreadyAbsent(result: ExecResult): boolean {
+export function isAlreadyAbsent(result: ExecResult): boolean {
   const text = `${result.stdout} ${result.stderr}`.toLowerCase();
   if (/\balready (uninstalled|removed|absent)\b/.test(text)) {
     return true;
@@ -109,14 +84,14 @@ function isAlreadyAbsent(result: ExecResult): boolean {
   );
 }
 
-function detail(result: ExecResult): string {
+export function detail(result: ExecResult): string {
   return (result.stderr || result.stdout || `exit ${result.status}`).trim();
 }
 
 /**
- * Copilot `plugin marketplace add` takes OWNER/REPO without a git tag.
+ * Drop a trailing git tag: the recorded Copilot deviation (#584).
  */
-function stripGitTag(source: string): string {
+export function stripGitTag(source: string): string {
   return source.replace(/@[^/]+$/, "");
 }
 

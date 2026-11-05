@@ -3,6 +3,43 @@ import { spawn } from "node:child_process";
 import { MINIMUM_SKILLS_VERSION } from "./options.ts";
 
 /**
+ * Printed before every skills-CLI run: the handoff is not a managed install.
+ *
+ * The upstream CLI does not meet the destination adapter contract (ADR 0010),
+ * so the gateway writes no lock entry for it and claims no ownership.
+ */
+export const UNMANAGED_HANDOFF_LABEL =
+  "unmanaged handoff: the upstream skills CLI installs this without a gateway lock entry; " +
+  "ownership, verification and recovery guarantees are unavailable";
+
+/**
+ * Hand an install to the upstream skills CLI as an explicit unmanaged handoff.
+ *
+ * Writes no gateway lock and reports nothing as installed by the gateway.
+ */
+export async function handOffUnmanaged(
+  options: Parameters<typeof buildSkillsArguments>[0],
+  source: string,
+  run: (args: string[]) => Promise<void> = runSkills,
+  warn: (message: string) => void = (message) => console.warn(message),
+): Promise<{ alreadyPresent: number; installed: number; repaired: number }> {
+  warn(UNMANAGED_HANDOFF_LABEL);
+  await run(buildSkillsArguments(options, source));
+  return { alreadyPresent: 0, installed: 0, repaired: 0 };
+}
+
+/**
+ * Why a managed install without a local artifact refuses instead of falling back.
+ */
+export function unmanagedRequiredMessage(pluginId: string): string {
+  return (
+    `No local artifact for "${pluginId}": managed installs never fall back to the ` +
+    "upstream skills CLI. Run from an ai-skills checkout, or pass --unmanaged for an " +
+    "unmanaged handoff (no gateway lock, ownership or recovery)."
+  );
+}
+
+/**
  * Build arguments for the upstream skills CLI.
  */
 export function buildSkillsArguments(

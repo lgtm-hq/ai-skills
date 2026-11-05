@@ -2,9 +2,10 @@ import { existsSync } from "node:fs";
 import { cp, mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { CHECKOUT_ROOT } from "../paths.ts";
+import { CHECKOUT_ROOT } from "../../paths.ts";
 
-import { isSafePluginId } from "../lockfile.ts";
+import { isSafePluginId } from "../../lockfile.ts";
+import { CURSOR_HOST } from "./host.ts";
 
 /**
  * Whether a Cursor plugin destination has any regular files.
@@ -48,8 +49,38 @@ export function cursorPluginsRoot(environment: {
   const home = environment.home ?? homedir();
   const cwd = environment.cwd ?? process.cwd();
   const base = environment.scope === "project" ? cwd : home;
-  return join(base, ".cursor", "plugins", "local");
+  const route = CURSOR_HOST.native;
+  if (route?.kind !== "tree") {
+    throw new Error("Cursor host definition has no tree route");
+  }
+  return join(base, route.pluginsDir);
 }
+
+/**
+ * Keep only gateway-owned plugin-tree paths so untracked dest files stay
+ * out of the lock (and therefore out of hash-verified remove).
+ */
+export function ownedPluginTreeFiles(
+  files: Record<string, string>,
+  skillNames: string[],
+): Record<string, string> {
+  const names = new Set(skillNames);
+  const owned: Record<string, string> = {};
+  for (const [relative, digest] of Object.entries(files)) {
+    if (relative === PLUGIN_MANIFEST) {
+      owned[relative] = digest;
+      continue;
+    }
+    const match = /^skills\/([^/]+)\//.exec(relative);
+    if (match && names.has(match[1]!)) {
+      owned[relative] = digest;
+    }
+  }
+  return owned;
+}
+
+/** Plugin manifest path inside a dropped tree. */
+export const PLUGIN_MANIFEST = ".claude-plugin/plugin.json";
 
 /**
  * Catalog root that contains ``skills/`` and the Claude marketplace adapter.
@@ -86,7 +117,7 @@ export function assertSafePluginId(pluginId: string): void {
  *
  * @throws {Error} When the name is not kebab-case.
  */
-function assertSafeSkillName(name: string): void {
+export function assertSafeSkillName(name: string): void {
   if (!isSafePluginId(name)) {
     throw new Error(`Refusing skill name ${JSON.stringify(name)}: must be kebab-case`);
   }
@@ -263,7 +294,7 @@ function cursorPluginPaths(
 /**
  * @throws {Error} When `candidate` escapes `root`.
  */
-function assertInsideRoot(root: string, candidate: string): void {
+export function assertInsideRoot(root: string, candidate: string): void {
   const resolvedRoot = resolve(root);
   const resolvedCandidate = resolve(candidate);
   const prefix = resolvedRoot.endsWith(sep) ? resolvedRoot : `${resolvedRoot}${sep}`;
