@@ -10,7 +10,6 @@ from assertpy import assert_that
 
 from ai_skills_engine import cli
 from ai_skills_engine.artifact import artifact_name
-from ai_skills_engine.artifacts.drift import check_inputs
 from ai_skills_engine.manifest.edit import dump_document
 from ai_skills_engine.manifest.legacy import legacy_documents
 from ai_skills_engine.manifest.load import read_document
@@ -121,17 +120,19 @@ def _package(document: dict[str, Any]) -> dict[str, Any]:
     return dict(document["vendors"][0]["mapping"]["packages"][0])
 
 
-def _args(root: Path, roots: dict[str, Path]) -> list[str]:
+def _args(root: Path, roots: dict[str, Path], command: str = "lock") -> list[str]:
     """Build public CLI arguments for explicit offline inputs.
 
     Args:
         root: Catalog root.
         roots: Declared vendor snapshots.
+        command: ``lock`` or the explicit-input ``artifacts`` writer.
 
     Returns:
-        Public build arguments without acquisition.
+        Public arguments that seed snapshots without acquisition.
     """
-    return ["--repo-root", str(root), "build"] + [
+    prefix = ["bake", "artifacts"] if command == "artifacts" else [command]
+    return ["--repo-root", str(root), *prefix] + [
         value
         for name, path in roots.items()
         for value in ("--vendor-tree", f"{name}={path}")
@@ -153,8 +154,9 @@ def test_complete_projection_rewrites_and_preserves_legacy_contract(
     else:
         before["vendors"][0]["mapping"]["packages"][0] = package
     assert_that(legacy_documents(document)).is_equal_to(legacy_documents(before))
-    assert_that(cli.main([*_args(root, roots), "--write-digests"])).is_zero()
-    assert_that(cli.main([*_args(root, roots), "--check"])).is_zero()
+    assert_that(cli.main(_args(root, roots))).is_zero()
+    for command in (["lock", "--check"], ["build"]):
+        assert_that(cli.main(["--repo-root", str(root), *command])).is_zero()
     inventory, selection = load_inputs(root, vendor_roots=roots)
     assert_that(selection.valid).is_true()
     assert_that(inventory.resources).is_length(4)
@@ -173,13 +175,10 @@ def test_complete_projection_rewrites_and_preserves_legacy_contract(
         "[Cycle](readme.md)"
     )
     if source == root:
-        assert_that(
-            check_inputs(root=root, path=root / "artifact-digests.json")
-        ).is_true()
+        offline = ["--repo-root", str(root), "lock", "--check", "--inputs-only"]
+        assert_that(cli.main(offline)).is_zero()
         (source / "shared/data/input.txt").write_text("Changed transitive input.\n")
-        assert_that(
-            check_inputs(root=root, path=root / "artifact-digests.json")
-        ).is_false()
+        assert_that(cli.main(offline)).is_equal_to(1)
 
 
 @pytest.mark.parametrize(
@@ -206,11 +205,12 @@ def test_incomplete_projection_fails_before_replacing_artifacts(
 ) -> None:
     """No transitive omission, forged field or unsafe target can publish."""
     root, source, roots = projection_repo
-    assert_that(cli.main([*_args(root, roots), "--write-digests"])).is_zero()
+    assert_that(cli.main(_args(root, roots))).is_zero()
+    assert_that(cli.main(["--repo-root", str(root), "build"])).is_zero()
     capsys.readouterr()
     output = root / "dist/artifacts"
     before = {path.name: path.read_bytes() for path in output.iterdir()}
-    commitment = (root / "artifact-digests.json").read_bytes()
+    commitment = (root / "ai-skills.lock").read_bytes()
     path = root / "ai-skills.yaml"
     document = read_document(path)
     package = _package(document)
@@ -252,9 +252,20 @@ def test_incomplete_projection_fails_before_replacing_artifacts(
     else:
         document["vendors"][0]["mapping"]["packages"][0] = package
     path.write_text(dump_document(document))
-    assert_that(cli.main([*_args(root, roots), "--write-digests"])).is_equal_to(1)
+    # The explicit writer reports the projection failure itself; lock and
+    # build must also fail without replacing the lock or published artifacts.
+    assert_that(cli.main(_args(root, roots, "artifacts"))).is_equal_to(1)
+    assert_that(capsys.readouterr().err).contains("artifacts: ")
+    assert_that(cli.main(_args(root, roots))).is_equal_to(1)
     assert_that(capsys.readouterr().err).is_not_empty()
+    # Mutating vendor bytes behind an unchanged pin cannot reach the frozen
+    # build: it rebuilds the reviewed cached source and republishes identical
+    # bytes. Every other control fails the offline build closed.
+    vendor_only = source != root and control in {"scalar-target", "escape", "symlink"}
+    assert_that(cli.main(["--repo-root", str(root), "build"])).is_equal_to(
+        int(not vendor_only)
+    )
     assert_that(
         {path.name: path.read_bytes() for path in output.iterdir()}
     ).is_equal_to(before)
-    assert_that((root / "artifact-digests.json").read_bytes()).is_equal_to(commitment)
+    assert_that((root / "ai-skills.lock").read_bytes()).is_equal_to(commitment)

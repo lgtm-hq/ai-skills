@@ -68,6 +68,7 @@ from ai_skills_engine.registry.vendor_plugin import (
     PLUGIN_ROOT_RESERVED_NAMES,
     VendorPlugin,
 )
+from ai_skills_engine.source_cache import SourceCache, materialize
 
 PLUGINS_BAKED_DIRNAME = "plugins-baked"
 COVERAGE_FILENAME = "COVERAGE.md"
@@ -438,7 +439,10 @@ def _materialize_vendor_tree(
     temporary_root: Path,
     prune_content_free_symlinks: bool = True,
 ) -> Path:
-    """Return an unpacked vendor tree, fetching the pin when needed.
+    """Return an unpacked vendor tree from the source cache, fetching on a miss.
+
+    Pinned sources are read through the content-addressed source cache, which
+    re-verifies each entry's digest. Only a cache miss reaches the network.
 
     Args:
         vendor: Registry record.
@@ -452,12 +456,19 @@ def _materialize_vendor_tree(
 
     Raises:
         ValueError: If a provided local tree is unsafe.
-        RuntimeError: If GitHub cannot return the pinned tarball.
+        RuntimeError: If GitHub cannot return the pinned tarball or a cache
+            entry is corrupted.
     """
     dest = trees.get(vendor.id)
     if dest is None:
         dest = temporary_root / f"vendor-{vendor.id}"
-        _fetch_vendor_tree(vendor=vendor, dest=dest)
+        materialize(
+            cache=SourceCache.default(),
+            vendor=vendor,
+            dest=dest,
+            # Resolve at call time so the module-level fetcher stays patchable.
+            fetcher=lambda **kwargs: _fetch_vendor_tree(**kwargs),
+        )
     validate_input_tree(root=dest, vendor=vendor.id, limits=vendor.ingest_limits)
     if prune_content_free_symlinks:
         _drop_content_free_symlinks(vendor=vendor, root=dest)

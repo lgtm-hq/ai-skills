@@ -141,6 +141,26 @@ deliver these dependencies**. Ordinary `resources`, `extraFiles` and `requires`
 retain their existing legacy representability checks. This is a separate
 publication contract, not permission to discard ordinary dependencies.
 
+## Amendment: resolution lock v1 (2026-11-04)
+
+Issue #574 implements `ai-skills.lock` as `lockVersion: 1`. Besides `builder`
+(`engineVersion`, `artifactFormat`), `vendors` (`id`, `repo`, `sha`,
+`sourceDigest`, `filters`) and `packages` (`id`, `version`, `artifactDigest`,
+`treeDigest`, `capabilities` with `closure` and `lineage`), it records:
+
+- `manifest.digest` over the canonical parsed manifest, so key order and
+  formatting never change the lock, and `manifest.inputsDigest`, the offline
+  author-input fingerprint previously committed by `artifact-digests.json`.
+- Package `resources` with their index lineage, so standalone and artifact-only
+  resources keep authoritative lineage. Closures and lineage are copied from the
+  built index and never inferred from equal bytes.
+
+`sourceDigest` hashes a canonical tar of the extracted tree, not the forge
+archive. Unknown versions, unknown keys and duplicate keys fail. The source cache,
+`lock`/`build` contracts and CI gates are described in
+[the artifact contract](../artifacts.md#resolution-lock-and-source-cache) and the
+[ADR 0007](./0007-publish-time-vendor-bake.md) amendment.
+
 ## Consequences
 
 - Publication and consumption share a reproducible contract without inheriting

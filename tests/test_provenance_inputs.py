@@ -43,7 +43,8 @@ def test_alias_policy_at_inventory_and_artifact_boundaries(
     document["policy"] = {"provenance": {"mode": "strict"}}
     (root / "ai-skills.yaml").write_text(dump_document(document))
     args = ["--repo-root", str(root), "--vendor-root", f"vendor={vendor}"]
-    assert_that(cli.main(["build", *args, "--write-digests"])).is_zero()
+    assert_that(cli.main(["lock", *args])).is_zero()
+    assert_that(cli.main(["build", "--repo-root", str(root)])).is_zero()
     capsys.readouterr()
     before = {
         path.name: path.read_bytes() for path in (root / "dist/artifacts").iterdir()
@@ -86,7 +87,12 @@ def test_alias_policy_at_inventory_and_artifact_boundaries(
         (root / "ai-skills.yaml").write_text(dump_document(document))
     link.symlink_to(target)
     expected = 0 if control in {"safe", "nested-safe"} else 1
-    for command in (["inventory", "--json"], ["build", "--check"]):
+    rebuilt = root / "rebuilt"
+    commands = (
+        ["inventory", "--json"],
+        ["bake", "artifacts", "--output", str(rebuilt)],
+    )
+    for command in commands:
         assert_that(cli.main([*command, *args])).is_equal_to(expected)
         output = capsys.readouterr()
         if expected:
@@ -101,6 +107,11 @@ def test_alias_policy_at_inventory_and_artifact_boundaries(
     assert_that(
         {path.name: path.read_bytes() for path in (root / "dist/artifacts").iterdir()}
     ).is_equal_to(before)
+    if not expected:
+        # Safe unrelated aliases preserve the reviewed tar identity exactly.
+        assert_that(
+            {path.name: path.read_bytes() for path in rebuilt.iterdir()}
+        ).is_equal_to(before)
 
 
 @pytest.mark.parametrize("empty", [False, True], ids=["ordinary", "empty"])

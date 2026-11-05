@@ -301,14 +301,7 @@ def test_release_hook_records_bumped_builder_commitment(
     if failure == "sync":
         assert_that(events).is_length(2)
     else:
-        assert_that(events[2:]).is_equal_to(
-            [
-                (
-                    "uv run --locked ai-skills-engine build "
-                    "--fetch-vendors --write-digests"
-                )
-            ]
-        )
+        assert_that(events[2:]).is_equal_to(["uv run --locked ai-skills-engine lock"])
     assert_that(list((installer_repo / "temp").iterdir())).is_empty()
 
 
