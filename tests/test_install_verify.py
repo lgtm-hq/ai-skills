@@ -425,5 +425,6 @@ def test_frozen_installs_only_the_pinned_digest(
     status, _, err = run(
         capsys, "install", "--artifacts", str(golden), "--frozen", "--deny-origin", "x"
     )
+    assert_that(status).is_equal_to(1)
     assert_that(err).contains("--frozen restores recorded pins and selection")
     assert_that(path.read_bytes()).is_equal_to(recorded)
