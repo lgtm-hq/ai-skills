@@ -133,6 +133,20 @@ def lint_terminology(repo_root: Path, data: dict[str, Any]) -> list[Diagnostic]:
         findings.extend(
             lint_text(document, location=path.relative_to(repo_root).as_posix())
         )
+    findings.extend(lint_descriptions(data))
+    return findings
+
+
+def lint_descriptions(data: Any) -> list[Diagnostic]:
+    """Lint manifest descriptions, never entering extension payloads.
+
+    Args:
+        data: Manifest mapping or a nested value.
+
+    Returns:
+        Vocabulary diagnostics at JSON-pointer locations.
+    """
+    findings: list[Diagnostic] = []
 
     def descriptions(value: Any, location: str = "") -> None:
         """Walk named fields, never entering extension payloads."""

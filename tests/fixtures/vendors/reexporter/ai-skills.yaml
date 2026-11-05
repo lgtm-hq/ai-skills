@@ -1,0 +1,41 @@
+---
+# Generic fixture re-exporter: imports the manifest and manifestless fixture
+# vendors and explicitly re-exports only part of what it imports.
+apiVersion: ai-skills.dev/v1
+publisher:
+  id: fixture-reexporter
+  repo: fixture-org/reexporter
+packages:
+  - id: tools
+    name: Tools
+    description: The re-exporter's own fixture skill.
+    capabilities:
+      - id: zeta
+        path: skills/zeta
+vendors:
+  - id: upstream
+    repo: fixture-org/manifest
+    sha: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"
+    license: MIT
+    include:
+      - fixture-vendor/core
+      - fixture-vendor/crew
+  - id: mapped
+    repo: fixture-org/manifestless
+    sha: "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c"
+    license: MIT
+    mapping:
+      skillRoots: [skills]
+      packages:
+        - id: mapped-skills
+          description: Consumer-asserted mapping of the manifestless fixture.
+          skillsRoot: skills
+          skills: '*'
+          agents: [helper]
+exports:
+  - tools
+  - fixture-vendor/core
+  - mapped/mapped-skills
+policy:
+  provenance:
+    mode: strict

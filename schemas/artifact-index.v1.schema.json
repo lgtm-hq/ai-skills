@@ -289,6 +289,10 @@
         },
         "executionSurface": {
           "type": "object"
+        },
+        "identity": {
+          "description": "Present only when a consumer mapping, not the upstream publisher, asserted this identity.",
+          "const": "consumer-asserted"
         }
       }
     },
@@ -320,6 +324,10 @@
           },
           "minItems": 1,
           "uniqueItems": true
+        },
+        "identity": {
+          "description": "Present only when a consumer mapping, not the upstream publisher, asserted this identity.",
+          "const": "consumer-asserted"
         }
       }
     }

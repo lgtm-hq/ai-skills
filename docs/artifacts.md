@@ -49,6 +49,9 @@ contains its source and output tree digests, direct `requires` and `related`,
 precomputed sorted closure membership, SCC units, host attributes and names,
 resource copies, complete lineage, legal obligations and portability losses.
 Closure includes the capability itself. Singleton SCCs are also explicit units.
+A capability or standalone resource whose origin publication has no manifest
+records `"identity": "consumer-asserted"`: a consumer mapping, not the upstream,
+asserted that identity.
 Soft edges never expand selection. Consumer exclusions, origin denies, roles,
 identity migrations and collision decisions retain the selection engine's rules.
 

@@ -7,11 +7,11 @@
   "manifest": {
     "apiVersion": "ai-skills.dev/v1",
     "digest": "sha256:5a22b4803b09672154cf5a4c1e72ed08cf86945578ed7edde8e07fb36bed07f3",
-    "inputsDigest": "sha256:88ec4c87866ea4070239a229ba7d2b5bea4147ff6234afcfd7b4244cce942c4a"
+    "inputsDigest": "sha256:a3114c4aba49935d37e8d093118bfee3ff64fa96fadf65f9db05e06e1eefa95a"
   },
   "packages": [
     {
-      "artifactDigest": "sha256:5876d28e1e177e5723f813a7235757a6c9e98cafaf56d25b3a8c7819288d70cc",
+      "artifactDigest": "sha256:f03b45660bed359aec81e07f488f583580c89c6b831f05130acb55084551d6bc",
       "capabilities": [
         {
           "closure": [
@@ -58,7 +58,7 @@
       "version": "ab9b2cf"
     },
     {
-      "artifactDigest": "sha256:82c84071fae230cce8f2f4f39270c33e4f98fe7e570a666e3bb0b65cd8f380e0",
+      "artifactDigest": "sha256:b71740e3265e9f05028e96f30cde9922e84b334acfdbab4b7a1a7d7d86139612",
       "capabilities": [
         {
           "closure": [
@@ -101,7 +101,7 @@
       "version": "ab9b2cf"
     },
     {
-      "artifactDigest": "sha256:9d1cba7bc208b8d85a3fcd1481aff3beb43530f975286e16a80ee6f15e477bb6",
+      "artifactDigest": "sha256:9e8b6b92bc3d7ad4faf18d831d81c2176981dca186754900924e8d0947a5a6d9",
       "capabilities": [
         {
           "closure": [
@@ -144,7 +144,7 @@
       "version": "ab9b2cf"
     },
     {
-      "artifactDigest": "sha256:f1c4660a1bdff6f4257315ccc1537363d24846f7dd61d0316ff076727deaba9c",
+      "artifactDigest": "sha256:1f7c39da14da7952d139cc105bed16b1fca82f1944ece00a8825421989766bb8",
       "capabilities": [
         {
           "closure": [
@@ -391,7 +391,7 @@
       "version": "ab9b2cf"
     },
     {
-      "artifactDigest": "sha256:001e894c6740f1e3b7f9aabcb49ec1f21311a0273560e122328b761aaef6808f",
+      "artifactDigest": "sha256:159d1c484ae0a19ac5633cf6634299ba69e3070703436850238c2f9787c99da1",
       "capabilities": [
         {
           "closure": [
@@ -434,7 +434,7 @@
       "version": "ca45fc4"
     },
     {
-      "artifactDigest": "sha256:a146564fc65d15c0c81e13d0acb58cc7ed5016b2660da15b49c67ccbd75936ad",
+      "artifactDigest": "sha256:4edcb7063cfd938ffc59773dd6243e39288d5c47085e02699fe0274cb4dadbda",
       "capabilities": [
         {
           "closure": [
@@ -579,7 +579,7 @@
       "version": "ca45fc4"
     },
     {
-      "artifactDigest": "sha256:99f1eddf02f974df8a4be48ff999b0d624491bff94bf013e371c7c824a7ee9ec",
+      "artifactDigest": "sha256:c676b366785eb3a523464b8a94e4c798d60cf71c6fbce90d42a463abb10c1737",
       "capabilities": [
         {
           "closure": [
@@ -996,7 +996,7 @@
       "version": "ca45fc4"
     },
     {
-      "artifactDigest": "sha256:93e73c0c6645f46dc62548de337cc93278015c10e749db0c6f8335945b2a5f28",
+      "artifactDigest": "sha256:051d2058ad15dd3e9a83af7a698090699694dafc48d542aa6975f1797b682ce3",
       "capabilities": [
         {
           "closure": [
@@ -2558,7 +2558,7 @@
       "version": "15581d1"
     },
     {
-      "artifactDigest": "sha256:81531e8f9aeebcca49fc67c6ab520c5c335063d16af0404b3cb2038ab14b3c0e",
+      "artifactDigest": "sha256:1b45635b87e4a3c570a17cb3080f9795806c91e442d2fb9383d05a86fc815a37",
       "capabilities": [
         {
           "closure": [
@@ -5748,7 +5748,7 @@
       "version": "0.30.9"
     },
     {
-      "artifactDigest": "sha256:8bd881a7b32132629c427a42e98efc41b2d022cc47053b9a99ebf48ffbee0f87",
+      "artifactDigest": "sha256:898eaf96f5a4eb859b09532c191362ed53bc12e6bc0d8ede69df6e06634c694c",
       "capabilities": [
         {
           "closure": [

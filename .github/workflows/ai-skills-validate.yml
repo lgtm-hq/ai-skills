@@ -1,0 +1,88 @@
+---
+name: ai-skills validate
+# Reusable workflow: validates a caller repository's ai-skills.yaml with the
+# ai-skills engine pinned to a full commit SHA. Generate a caller with
+# `ai-skills-engine init`. All logic lives in scripts/ci/ai_skills_validate.sh.
+
+'on':
+  workflow_call:
+    inputs:
+      engine-ref:
+        description: Full 40-hex lgtm-hq/ai-skills commit providing the engine.
+        required: true
+        type: string
+      manifest-path:
+        description: Caller-relative path to ai-skills.yaml.
+        required: false
+        type: string
+        default: ai-skills.yaml
+      strict:
+        description: Fail on missing lineage (validate --strict).
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate ai-skills manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          # Checkouts, uv/PyPI and pinned vendor source tarballs (lock --fetch).
+          allowed-endpoints: >-
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            pipelines.actions.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            releases.astral.sh:443
+
+      - name: Checkout caller repository
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: caller
+          persist-credentials: false
+
+      - name: Checkout pinned ai-skills engine
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: lgtm-hq/ai-skills
+          ref: ${{ inputs.engine-ref }}
+          path: ai-skills-engine
+          persist-credentials: false
+
+      - name: Set up Python
+        # yamllint disable-line rule:line-length
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+
+      - name: Set up uv
+        # yamllint disable-line rule:line-length
+        uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+
+      - name: Validate manifest
+        env:
+          ENGINE_REF: ${{ inputs.engine-ref }}
+          MANIFEST_PATH: ${{ inputs.manifest-path }}
+          STRICT: ${{ inputs.strict }}
+          ENGINE_DIR: ${{ github.workspace }}/ai-skills-engine
+          CALLER_DIR: ${{ github.workspace }}/caller
+        run: bash "$ENGINE_DIR/scripts/ci/ai_skills_validate.sh"
