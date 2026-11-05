@@ -7,7 +7,7 @@
   "manifest": {
     "apiVersion": "ai-skills.dev/v1",
     "digest": "sha256:5a22b4803b09672154cf5a4c1e72ed08cf86945578ed7edde8e07fb36bed07f3",
-    "inputsDigest": "sha256:8ec8781baa111a67e76e86371c69d9e635b3e46c6e9ac4a5631987010ca7c327"
+    "inputsDigest": "sha256:57adb983327f860aa0c2423618d341b946be858c84811c764a3472aca0af88a8"
   },
   "packages": [
     {

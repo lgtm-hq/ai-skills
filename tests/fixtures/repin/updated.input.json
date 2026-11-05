@@ -1,0 +1,578 @@
+{
+  "actionRequired": [],
+  "after": {
+    "artifactDigests": {
+      "consumer/git-pr": "sha256:4ebcdac72c030a4f9b7db0602e0945e9607ad6032e311586d8b34d4582b53e5f",
+      "example/tools": "sha256:db59861cd7551f8de85a1834816c9f49dd4319cb1be32b4297d6b3c77423c500"
+    },
+    "diagnostics": [],
+    "files": {
+      "packages/consumer/git-pr/skill/branch/SKILL.md": "sha256:cb478722db17b553cb22beecc05ffc225095a187359da9b9509b2aba43c483f5:644",
+      "packages/example/tools/skill/alpha/SKILL.md": "sha256:5f07b990f111721a84a37b4cff3a8e3251032edb9b1ab80a7b7f221f2361ae21:644",
+      "packages/example/tools/skill/alpha/reference.md": "sha256:43205ee4ad5cbedd1c7226781f3705caef0ff05b3ec949a67b7a3681a645deea:644",
+      "packages/example/tools/skill/delta/SKILL.md": "sha256:5e288d06b7daa586e8e934f0e0dcea6fb11f688df89f37a27e58863cf76710f2:644",
+      "packages/example/tools/skill/gamma/SKILL.md": "sha256:42413e172c8d89d2e8fa2a4ac12ec99ef76aed21f3ca9cab4efb55d516eec2f3:644"
+    },
+    "index": {
+      "apiVersion": "ai-skills.dev/v1",
+      "artifactFormat": 1,
+      "engineVersion": "0.0.0-fixture",
+      "legalFiles": [
+        {
+          "digest": "sha256:bbf6ad2e5cb79c4dc68f3da86527e327af00a5cf3d19533404b1db42aa6e5c67",
+          "path": "LICENSES/github.com%2Ffixture%2Fconsumer.txt"
+        },
+        {
+          "digest": "sha256:93d15bf5353df1bac1723f8758cb44c2432606efde1f0d6a70aac363df8641d0",
+          "path": "LICENSES/github.com%2Fowner%2Fexample.txt"
+        },
+        {
+          "digest": "sha256:a13f1f9c5309744da386fa52085be6c7045e6cbb8dc898ddf2fc24e3273f662d",
+          "path": "NOTICE.md"
+        }
+      ],
+      "packages": [
+        {
+          "capabilities": [
+            {
+              "aliases": [],
+              "closure": {
+                "capabilities": [
+                  "consumer/git-pr:skill/branch"
+                ],
+                "resources": [],
+                "units": [
+                  [
+                    "consumer/git-pr:skill/branch"
+                  ]
+                ]
+              },
+              "dialect": "agent-skills",
+              "executionSurface": {},
+              "hostAttributes": [],
+              "id": "consumer/git-pr:skill/branch",
+              "license": "NOASSERTION",
+              "lineage": [
+                {
+                  "attestations": [],
+                  "id": "consumer/git-pr:skill/branch",
+                  "lineage": [
+                    {
+                      "id": "consumer/git-pr:skill/branch",
+                      "origin": "github.com/fixture/consumer",
+                      "path": "skills/branch",
+                      "publisher": "consumer",
+                      "renamedFrom": null,
+                      "rev": null,
+                      "transforms": [],
+                      "treeDigest": "sha256:e1219493d98ad1709cda423e18d8dfbd51b91bc3a26f9e13596155681f51bcc7"
+                    }
+                  ]
+                }
+              ],
+              "names": [
+                "branch"
+              ],
+              "notices": [
+                "LICENSES/github.com%2Ffixture%2Fconsumer.txt",
+                "NOTICE.md"
+              ],
+              "package": "consumer/git-pr",
+              "path": "packages/consumer/git-pr/skill/branch",
+              "portability": [],
+              "related": [],
+              "requires": [],
+              "resources": [],
+              "role": "skill",
+              "sourceTreeDigest": "sha256:e1219493d98ad1709cda423e18d8dfbd51b91bc3a26f9e13596155681f51bcc7",
+              "treeDigest": "sha256:e1219493d98ad1709cda423e18d8dfbd51b91bc3a26f9e13596155681f51bcc7"
+            }
+          ],
+          "id": "consumer/git-pr",
+          "resources": [],
+          "treeDigest": "sha256:de9de90233d55b92b83548a9a67919015d7c224ffd8f7592706ddcbce28588e7",
+          "version": "0.0.0-local"
+        },
+        {
+          "capabilities": [
+            {
+              "aliases": [],
+              "closure": {
+                "capabilities": [
+                  "example/tools:skill/alpha"
+                ],
+                "resources": [],
+                "units": [
+                  [
+                    "example/tools:skill/alpha"
+                  ]
+                ]
+              },
+              "dialect": "agent-skills",
+              "executionSurface": {},
+              "hostAttributes": [],
+              "id": "example/tools:skill/alpha",
+              "license": "MIT",
+              "lineage": [
+                {
+                  "attestations": [],
+                  "id": "example/tools:skill/alpha",
+                  "lineage": [
+                    {
+                      "id": "example/tools:skill/alpha",
+                      "origin": "github.com/owner/example",
+                      "path": "skills/alpha",
+                      "publisher": "example",
+                      "renamedFrom": null,
+                      "rev": "89abcdef0123456789abcdef0123456789abcdef",
+                      "transforms": [],
+                      "treeDigest": "sha256:87c7ddb147962251d2e73f4188f64f6cbcf4d4ccafa8b927a43d1177221b96c9"
+                    },
+                    {
+                      "id": "example/tools:skill/alpha",
+                      "origin": "github.com/fixture/consumer",
+                      "path": "skills/alpha",
+                      "publisher": "consumer",
+                      "renamedFrom": null,
+                      "rev": null,
+                      "transforms": [],
+                      "treeDigest": "sha256:87c7ddb147962251d2e73f4188f64f6cbcf4d4ccafa8b927a43d1177221b96c9"
+                    }
+                  ]
+                }
+              ],
+              "names": [
+                "alpha"
+              ],
+              "notices": [
+                "LICENSES/github.com%2Ffixture%2Fconsumer.txt",
+                "LICENSES/github.com%2Fowner%2Fexample.txt",
+                "NOTICE.md"
+              ],
+              "package": "example/tools",
+              "path": "packages/example/tools/skill/alpha",
+              "portability": [],
+              "related": [],
+              "requires": [],
+              "resources": [],
+              "role": "skill",
+              "sourceTreeDigest": "sha256:87c7ddb147962251d2e73f4188f64f6cbcf4d4ccafa8b927a43d1177221b96c9",
+              "treeDigest": "sha256:87c7ddb147962251d2e73f4188f64f6cbcf4d4ccafa8b927a43d1177221b96c9"
+            },
+            {
+              "aliases": [],
+              "closure": {
+                "capabilities": [
+                  "example/tools:skill/delta"
+                ],
+                "resources": [],
+                "units": [
+                  [
+                    "example/tools:skill/delta"
+                  ]
+                ]
+              },
+              "dialect": "agent-skills",
+              "executionSurface": {},
+              "hostAttributes": [],
+              "id": "example/tools:skill/delta",
+              "license": "MIT",
+              "lineage": [
+                {
+                  "attestations": [],
+                  "id": "example/tools:skill/delta",
+                  "lineage": [
+                    {
+                      "id": "example/tools:skill/delta",
+                      "origin": "github.com/owner/example",
+                      "path": "skills/delta",
+                      "publisher": "example",
+                      "renamedFrom": null,
+                      "rev": "89abcdef0123456789abcdef0123456789abcdef",
+                      "transforms": [],
+                      "treeDigest": "sha256:a55f55d8bcfd7c4836a2328f493cf0f7802337318d8b2a0375489d0f738eb6a0"
+                    },
+                    {
+                      "id": "example/tools:skill/delta",
+                      "origin": "github.com/fixture/consumer",
+                      "path": "skills/delta",
+                      "publisher": "consumer",
+                      "renamedFrom": null,
+                      "rev": null,
+                      "transforms": [],
+                      "treeDigest": "sha256:a55f55d8bcfd7c4836a2328f493cf0f7802337318d8b2a0375489d0f738eb6a0"
+                    }
+                  ]
+                }
+              ],
+              "names": [
+                "delta"
+              ],
+              "notices": [
+                "LICENSES/github.com%2Ffixture%2Fconsumer.txt",
+                "LICENSES/github.com%2Fowner%2Fexample.txt",
+                "NOTICE.md"
+              ],
+              "package": "example/tools",
+              "path": "packages/example/tools/skill/delta",
+              "portability": [],
+              "related": [],
+              "requires": [],
+              "resources": [],
+              "role": "skill",
+              "sourceTreeDigest": "sha256:a55f55d8bcfd7c4836a2328f493cf0f7802337318d8b2a0375489d0f738eb6a0",
+              "treeDigest": "sha256:a55f55d8bcfd7c4836a2328f493cf0f7802337318d8b2a0375489d0f738eb6a0"
+            },
+            {
+              "aliases": [],
+              "closure": {
+                "capabilities": [
+                  "example/tools:skill/gamma"
+                ],
+                "resources": [],
+                "units": [
+                  [
+                    "example/tools:skill/gamma"
+                  ]
+                ]
+              },
+              "dialect": "agent-skills",
+              "executionSurface": {},
+              "hostAttributes": [],
+              "id": "example/tools:skill/gamma",
+              "license": "MIT",
+              "lineage": [
+                {
+                  "attestations": [],
+                  "id": "example/tools:skill/gamma",
+                  "lineage": [
+                    {
+                      "id": "example/tools:skill/gamma",
+                      "origin": "github.com/owner/example",
+                      "path": "skills/gamma",
+                      "publisher": "example",
+                      "renamedFrom": null,
+                      "rev": "89abcdef0123456789abcdef0123456789abcdef",
+                      "transforms": [],
+                      "treeDigest": "sha256:c4a1a374be5c6c714fc90490a3bc8a04cd758786535834610c898455ba468823"
+                    },
+                    {
+                      "id": "example/tools:skill/gamma",
+                      "origin": "github.com/fixture/consumer",
+                      "path": "skills/gamma",
+                      "publisher": "consumer",
+                      "renamedFrom": null,
+                      "rev": null,
+                      "transforms": [],
+                      "treeDigest": "sha256:c4a1a374be5c6c714fc90490a3bc8a04cd758786535834610c898455ba468823"
+                    }
+                  ]
+                }
+              ],
+              "names": [
+                "beta"
+              ],
+              "notices": [
+                "LICENSES/github.com%2Ffixture%2Fconsumer.txt",
+                "LICENSES/github.com%2Fowner%2Fexample.txt",
+                "NOTICE.md"
+              ],
+              "package": "example/tools",
+              "path": "packages/example/tools/skill/gamma",
+              "portability": [],
+              "related": [],
+              "requires": [],
+              "resources": [],
+              "role": "skill",
+              "sourceTreeDigest": "sha256:c4a1a374be5c6c714fc90490a3bc8a04cd758786535834610c898455ba468823",
+              "treeDigest": "sha256:c4a1a374be5c6c714fc90490a3bc8a04cd758786535834610c898455ba468823"
+            }
+          ],
+          "id": "example/tools",
+          "resources": [],
+          "treeDigest": "sha256:afcfe398c1aa35a2c6ddf592298040dc09209130d20848ec0d37043ca5560522",
+          "version": "89abcde"
+        }
+      ],
+      "rootPackage": null
+    }
+  },
+  "before": {
+    "artifactDigests": {
+      "consumer/git-pr": "sha256:4ebcdac72c030a4f9b7db0602e0945e9607ad6032e311586d8b34d4582b53e5f",
+      "example/tools": "sha256:711cecaa1705e88efcbee1ca57621b3411c3eb0bc132d68d4508679d18095b89"
+    },
+    "diagnostics": [],
+    "files": {
+      "packages/consumer/git-pr/skill/branch/SKILL.md": "sha256:cb478722db17b553cb22beecc05ffc225095a187359da9b9509b2aba43c483f5:644",
+      "packages/example/tools/skill/alpha/SKILL.md": "sha256:6f4015487f5ca7881abe4fcc9a5b771e9f3d555f5587880e5ad2f5de360129bf:644",
+      "packages/example/tools/skill/beta/SKILL.md": "sha256:42413e172c8d89d2e8fa2a4ac12ec99ef76aed21f3ca9cab4efb55d516eec2f3:644"
+    },
+    "index": {
+      "apiVersion": "ai-skills.dev/v1",
+      "artifactFormat": 1,
+      "engineVersion": "0.0.0-fixture",
+      "legalFiles": [
+        {
+          "digest": "sha256:bbf6ad2e5cb79c4dc68f3da86527e327af00a5cf3d19533404b1db42aa6e5c67",
+          "path": "LICENSES/github.com%2Ffixture%2Fconsumer.txt"
+        },
+        {
+          "digest": "sha256:fa6e2c9f06fcd105286f6c565b7650fd9e9ff4ebae0239ed76a6e06c45384b3a",
+          "path": "LICENSES/github.com%2Fowner%2Fexample.txt"
+        },
+        {
+          "digest": "sha256:a13f1f9c5309744da386fa52085be6c7045e6cbb8dc898ddf2fc24e3273f662d",
+          "path": "NOTICE.md"
+        }
+      ],
+      "packages": [
+        {
+          "capabilities": [
+            {
+              "aliases": [],
+              "closure": {
+                "capabilities": [
+                  "consumer/git-pr:skill/branch"
+                ],
+                "resources": [],
+                "units": [
+                  [
+                    "consumer/git-pr:skill/branch"
+                  ]
+                ]
+              },
+              "dialect": "agent-skills",
+              "executionSurface": {},
+              "hostAttributes": [],
+              "id": "consumer/git-pr:skill/branch",
+              "license": "NOASSERTION",
+              "lineage": [
+                {
+                  "attestations": [],
+                  "id": "consumer/git-pr:skill/branch",
+                  "lineage": [
+                    {
+                      "id": "consumer/git-pr:skill/branch",
+                      "origin": "github.com/fixture/consumer",
+                      "path": "skills/branch",
+                      "publisher": "consumer",
+                      "renamedFrom": null,
+                      "rev": null,
+                      "transforms": [],
+                      "treeDigest": "sha256:e1219493d98ad1709cda423e18d8dfbd51b91bc3a26f9e13596155681f51bcc7"
+                    }
+                  ]
+                }
+              ],
+              "names": [
+                "branch"
+              ],
+              "notices": [
+                "LICENSES/github.com%2Ffixture%2Fconsumer.txt",
+                "NOTICE.md"
+              ],
+              "package": "consumer/git-pr",
+              "path": "packages/consumer/git-pr/skill/branch",
+              "portability": [],
+              "related": [],
+              "requires": [],
+              "resources": [],
+              "role": "skill",
+              "sourceTreeDigest": "sha256:e1219493d98ad1709cda423e18d8dfbd51b91bc3a26f9e13596155681f51bcc7",
+              "treeDigest": "sha256:e1219493d98ad1709cda423e18d8dfbd51b91bc3a26f9e13596155681f51bcc7"
+            }
+          ],
+          "id": "consumer/git-pr",
+          "resources": [],
+          "treeDigest": "sha256:de9de90233d55b92b83548a9a67919015d7c224ffd8f7592706ddcbce28588e7",
+          "version": "0.0.0-local"
+        },
+        {
+          "capabilities": [
+            {
+              "aliases": [],
+              "closure": {
+                "capabilities": [
+                  "example/tools:skill/alpha"
+                ],
+                "resources": [],
+                "units": [
+                  [
+                    "example/tools:skill/alpha"
+                  ]
+                ]
+              },
+              "dialect": "agent-skills",
+              "executionSurface": {},
+              "hostAttributes": [],
+              "id": "example/tools:skill/alpha",
+              "license": "MIT",
+              "lineage": [
+                {
+                  "attestations": [],
+                  "id": "example/tools:skill/alpha",
+                  "lineage": [
+                    {
+                      "id": "example/tools:skill/alpha",
+                      "origin": "github.com/owner/example",
+                      "path": "skills/alpha",
+                      "publisher": "example",
+                      "renamedFrom": null,
+                      "rev": "0123456789abcdef0123456789abcdef01234567",
+                      "transforms": [],
+                      "treeDigest": "sha256:87bf338214ac3140719c00c42e60661777ad8aec93c9fa256f5d69594740799f"
+                    },
+                    {
+                      "id": "example/tools:skill/alpha",
+                      "origin": "github.com/fixture/consumer",
+                      "path": "skills/alpha",
+                      "publisher": "consumer",
+                      "renamedFrom": null,
+                      "rev": null,
+                      "transforms": [],
+                      "treeDigest": "sha256:87bf338214ac3140719c00c42e60661777ad8aec93c9fa256f5d69594740799f"
+                    }
+                  ]
+                }
+              ],
+              "names": [
+                "alpha"
+              ],
+              "notices": [
+                "LICENSES/github.com%2Ffixture%2Fconsumer.txt",
+                "LICENSES/github.com%2Fowner%2Fexample.txt",
+                "NOTICE.md"
+              ],
+              "package": "example/tools",
+              "path": "packages/example/tools/skill/alpha",
+              "portability": [],
+              "related": [],
+              "requires": [],
+              "resources": [],
+              "role": "skill",
+              "sourceTreeDigest": "sha256:87bf338214ac3140719c00c42e60661777ad8aec93c9fa256f5d69594740799f",
+              "treeDigest": "sha256:87bf338214ac3140719c00c42e60661777ad8aec93c9fa256f5d69594740799f"
+            },
+            {
+              "aliases": [],
+              "closure": {
+                "capabilities": [
+                  "example/tools:skill/beta"
+                ],
+                "resources": [],
+                "units": [
+                  [
+                    "example/tools:skill/beta"
+                  ]
+                ]
+              },
+              "dialect": "agent-skills",
+              "executionSurface": {},
+              "hostAttributes": [],
+              "id": "example/tools:skill/beta",
+              "license": "MIT",
+              "lineage": [
+                {
+                  "attestations": [],
+                  "id": "example/tools:skill/beta",
+                  "lineage": [
+                    {
+                      "id": "example/tools:skill/beta",
+                      "origin": "github.com/owner/example",
+                      "path": "skills/beta",
+                      "publisher": "example",
+                      "renamedFrom": null,
+                      "rev": "0123456789abcdef0123456789abcdef01234567",
+                      "transforms": [],
+                      "treeDigest": "sha256:c4a1a374be5c6c714fc90490a3bc8a04cd758786535834610c898455ba468823"
+                    },
+                    {
+                      "id": "example/tools:skill/beta",
+                      "origin": "github.com/fixture/consumer",
+                      "path": "skills/beta",
+                      "publisher": "consumer",
+                      "renamedFrom": null,
+                      "rev": null,
+                      "transforms": [],
+                      "treeDigest": "sha256:c4a1a374be5c6c714fc90490a3bc8a04cd758786535834610c898455ba468823"
+                    }
+                  ]
+                }
+              ],
+              "names": [
+                "beta"
+              ],
+              "notices": [
+                "LICENSES/github.com%2Ffixture%2Fconsumer.txt",
+                "LICENSES/github.com%2Fowner%2Fexample.txt",
+                "NOTICE.md"
+              ],
+              "package": "example/tools",
+              "path": "packages/example/tools/skill/beta",
+              "portability": [],
+              "related": [],
+              "requires": [],
+              "resources": [],
+              "role": "skill",
+              "sourceTreeDigest": "sha256:c4a1a374be5c6c714fc90490a3bc8a04cd758786535834610c898455ba468823",
+              "treeDigest": "sha256:c4a1a374be5c6c714fc90490a3bc8a04cd758786535834610c898455ba468823"
+            }
+          ],
+          "id": "example/tools",
+          "resources": [],
+          "treeDigest": "sha256:47b81e2c1f880c9a4067218eb5e8a4fbfe4f39a78e8752b37a8e828d661dd47e",
+          "version": "0123456"
+        }
+      ],
+      "rootPackage": null
+    }
+  },
+  "drift": [],
+  "migrations": {},
+  "moves": [],
+  "pin": {
+    "display_ref": "latest",
+    "id": "example",
+    "new_sha": "89abcdef0123456789abcdef0123456789abcdef",
+    "old_sha": "0123456789abcdef0123456789abcdef01234567",
+    "publisher": "example",
+    "repo": "owner/example"
+  },
+  "selectors": [
+    {
+      "detail": "",
+      "location": "mapping.packages[tools].skills",
+      "matches": 3,
+      "selector": "*",
+      "status": "ok"
+    },
+    {
+      "detail": "",
+      "location": "mapping.packages[tools].skillsRoot",
+      "matches": 1,
+      "selector": "skills",
+      "status": "ok"
+    },
+    {
+      "detail": "",
+      "location": "mapping.skillRoots",
+      "matches": 3,
+      "selector": "skills",
+      "status": "ok"
+    }
+  ],
+  "skillDirs": [
+    [
+      "skills/alpha",
+      "skills/beta",
+      "template/placeholder"
+    ],
+    [
+      "skills/alpha",
+      "skills/delta",
+      "skills/gamma"
+    ]
+  ],
+  "upstreamMoves": false
+}

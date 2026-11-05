@@ -1,0 +1,123 @@
+{
+  "actionRequired": [],
+  "capabilities": [
+    {
+      "detail": "skill: sourceTreeDigest, treeDigest",
+      "kind": "changed",
+      "subject": "example/tools:skill/alpha"
+    },
+    {
+      "detail": "skill",
+      "kind": "removed",
+      "subject": "example/tools:skill/beta"
+    },
+    {
+      "detail": "skill",
+      "kind": "added",
+      "subject": "example/tools:skill/delta"
+    },
+    {
+      "detail": "skill",
+      "kind": "added",
+      "subject": "example/tools:skill/gamma"
+    }
+  ],
+  "collisions": [],
+  "coverage": [
+    {
+      "detail": "2 -> 3",
+      "kind": "count",
+      "subject": "capabilities"
+    },
+    {
+      "detail": "",
+      "kind": "no longer uncovered",
+      "subject": "template/placeholder"
+    }
+  ],
+  "digests": [
+    {
+      "detail": "sha256:711cecaa1705e88efcbee1ca57621b3411c3eb0bc132d68d4508679d18095b89 -> sha256:db59861cd7551f8de85a1834816c9f49dd4319cb1be32b4297d6b3c77423c500",
+      "kind": "artifactDigest",
+      "subject": "example/tools"
+    },
+    {
+      "detail": "sha256:47b81e2c1f880c9a4067218eb5e8a4fbfe4f39a78e8752b37a8e828d661dd47e -> sha256:afcfe398c1aa35a2c6ddf592298040dc09209130d20848ec0d37043ca5560522",
+      "kind": "treeDigest",
+      "subject": "example/tools"
+    }
+  ],
+  "drift": [],
+  "files": [
+    {
+      "detail": "reference.md",
+      "kind": "+",
+      "subject": "example/tools:skill/alpha"
+    },
+    {
+      "detail": "SKILL.md",
+      "kind": "~",
+      "subject": "example/tools:skill/alpha"
+    }
+  ],
+  "filesOmitted": 0,
+  "legal": [
+    {
+      "detail": "",
+      "kind": "changed",
+      "subject": "LICENSES/github.com%2Fowner%2Fexample.txt"
+    }
+  ],
+  "lineage": [],
+  "marker": "<!-- ai-skills-repin vendor=example revision=89abcdef0123456789abcdef0123456789abcdef -->",
+  "pin": {
+    "compare": "https://github.com/owner/example/compare/0123456789abcdef0123456789abcdef01234567...89abcdef0123456789abcdef0123456789abcdef",
+    "displayRef": "latest",
+    "new": "89abcdef0123456789abcdef0123456789abcdef",
+    "old": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "repo": "owner/example",
+  "resources": [],
+  "selectors": [
+    {
+      "detail": "",
+      "location": "mapping.packages[tools].skills",
+      "matches": 3,
+      "selector": "*",
+      "status": "ok"
+    },
+    {
+      "detail": "",
+      "location": "mapping.packages[tools].skillsRoot",
+      "matches": 1,
+      "selector": "skills",
+      "status": "ok"
+    },
+    {
+      "detail": "",
+      "location": "mapping.skillRoots",
+      "matches": 3,
+      "selector": "skills",
+      "status": "ok"
+    }
+  ],
+  "semver": {
+    "level": "major",
+    "reasons": [
+      "Capability added: example/tools:skill/delta",
+      "Capability added: example/tools:skill/gamma",
+      "Capability removed: example/tools:skill/beta",
+      "Content or metadata changed: example/tools:skill/alpha",
+      "License or notice content changed"
+    ]
+  },
+  "status": "updated",
+  "unappliedMoves": [
+    {
+      "detail": "example/tools:skill/gamma",
+      "kind": "identical-content",
+      "subject": "example/tools:skill/beta"
+    }
+  ],
+  "vendor": "example"
+}

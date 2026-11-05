@@ -168,7 +168,8 @@ compatibility vendor bake and `inventory --fetch-vendors` read pinned trees
 through the same cache.
 
 - `lock` re-resolves only manifest entries whose repository, SHA or filters
-  changed and never moves an existing pin; `repin` moves pins. Unchanged pins
+  changed and never moves an existing pin; `repin` moves pins (see
+  [Vendor re-pin](../CONTRIBUTING.md#vendor-re-pin)). Unchanged pins
   must reproduce their locked `sourceDigest`. It fetches missing sources (or
   seeds the cache from `--vendor-tree ID=PATH` snapshots), rebuilds all packages
   in private scratch and rewrites the lock only when its bytes change.

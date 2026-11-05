@@ -926,41 +926,32 @@ def test_installed_cli_restores_independent_snapshots(
             assert_that(report["output"]).contains("cleanup", blocked)
 
 
-@pytest.mark.parametrize(
-    ("mode", "boundary", "blocked", "operation"),
-    [
-        ("new", "none", "none", "write"),
-        ("noop", "none", "none", "write"),
-        ("keep", "none", "none", "write"),
-        ("baseline", "none", "none", "write"),
-        ("new", "index", "none", "write"),
-        ("new", "sync", "none", "write"),
-        ("new", "index", "ai-skills.yaml", "write"),
-        ("new", "index", "vendors.yaml", "write"),
-        ("new", "index", "ai-skills.yaml", "mode"),
-        ("new", "index", "vendors.yaml", "mode"),
-        ("baseline", "sync", "ai-skills.yaml", "write"),
-        ("baseline", "sync", "vendors.yaml", "write"),
-        ("new", "sync", "NOTICE.md", "write"),
-        ("new", "sync", "NOTICE.md", "mode"),
-        ("new", "sync", "npm/ai-skills/NOTICE.md", "unlink"),
-    ],
-)
-def test_installed_repin_restores_after_actual_bakes(
+@pytest.mark.parametrize("mode", ["updated", "failed", "rollback"])
+def test_installed_repin_outside_checkout(
     installed_command: Path,
     tmp_path: Path,
     mode: str,
-    boundary: str,
-    blocked: str,
-    operation: str,
 ) -> None:
-    """The installed management command runs real repin, bake, sync and rollback."""
-    helpers = runpy.run_path(str(ROOT / "tests/test_repin_vendor.py"))
-    root, trees = tmp_path / "repository", tmp_path / "trees"
-    root.mkdir()
-    helpers["_write_registry"](repo_root=root)
-    helpers["_write_before_tree"](dest=trees / "before")
-    helpers["_write_after_tree"](dest=trees / "after")
+    """The installed console script re-pins, fails closed and rolls back."""
+    helpers = runpy.run_path(str(ROOT / "tests/repin_helpers.py"))
+    root = tmp_path / "repository"
+    skills = ["alpha", "beta"] if mode == "failed" else "*"
+    helpers["write_consumer"](
+        root=root, document=helpers["consumer_document"](skills=skills)
+    )
+    spec = tmp_path / "revisions.json"
+    spec.write_text(
+        json.dumps(
+            {
+                "new": helpers["NEW_SHA"],
+                "trees": {
+                    helpers["OLD_SHA"]: helpers["BEFORE"],
+                    helpers["NEW_SHA"]: helpers["AFTER"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     result = _run(
         args=[
             str(_venv_executable(installed_command.parent.parent, "python")),
@@ -968,11 +959,8 @@ def test_installed_repin_restores_after_actual_bakes(
             str(ROOT / "tests/fixtures/manifest/repin-cli.py"),
             str(installed_command),
             str(root),
-            str(trees),
+            str(spec),
             mode,
-            boundary,
-            blocked,
-            operation,
         ],
         cwd=tmp_path,
     )
@@ -980,103 +968,30 @@ def test_installed_repin_restores_after_actual_bakes(
     assert_that(
         Path(report["module"]).is_relative_to(installed_command.parent.parent)
     ).is_true()
-    if boundary == "none":
-        assert_that(report["status"]).is_zero()
-        assert_that(report["sha"]).is_equal_to(
-            helpers["_EXISTING_SHA"]
-            if mode in {"noop", "keep"}
-            else helpers["_NEW_SHA"]
+    assert_that(Path(report["module"]).is_relative_to(ROOT)).is_false()
+    if mode == "updated":
+        assert_that(report["status"]).described_as(report["stderr"]).is_in(0, None)
+        assert_that(report["report"]["status"]).is_equal_to("updated")
+        assert_that(report["sha"]).is_equal_to(helpers["NEW_SHA"])
+        assert_that(report["locked"]).is_equal_to([helpers["NEW_SHA"]])
+        assert_that(report["changed"]).contains(
+            "ai-skills.yaml", "ai-skills.lock", "vendors.yaml"
         )
-        if mode in {"noop", "keep"}:
-            assert_that(report["changed"]).is_empty()
-            assert_that(report["events"]).is_empty()
-        else:
-            assert_that(report["events"]).is_equal_to(["index", "sync"])
-            assert_that(report["output"]).contains("delta", "gamma")
-        if mode == "baseline":
-            assert_that(report["output"]).contains(helpers["_BASELINE_SHA"])
-    else:
-        assert_that(report["status"]).is_equal_to(1)
-        assert_that(report["output"]).contains("primary installed repin failure")
-        assert_that(report["events"]).contains("index")
-        if boundary == "sync":
-            assert_that(report["events"]).contains("sync")
-        assert_that(report["changed"]).is_equal_to(
-            [blocked] if blocked not in {"none", "npm/ai-skills/NOTICE.md"} else []
+        assert_that(report["summary"]).contains(
+            "### SemVer advice (advisory)",
+            "<!-- ai-skills-repin vendor=example revision=",
         )
-        assert_that(report["absent_exists"]).is_equal_to(operation == "unlink")
-        assert_that(report["changed_artifacts"]).is_equal_to(
-            [blocked] if blocked in {"NOTICE.md", "npm/ai-skills/NOTICE.md"} else []
-        )
-        if blocked != "none":
-            assert_that(report["events"]).contains(f"cleanup:{blocked}:{operation}")
-            assert_that(report["output"]).contains("cleanup", blocked)
-            assert_that("\n".join(report["notes"])).contains(blocked)
-        else:
-            assert_that(report["notes"]).is_empty()
-
-
-@pytest.mark.parametrize("state", ["current", "stale", "absent"])
-@pytest.mark.parametrize(
-    ("entry", "mode", "boundary", "blocked", "operation"),
-    [
-        (entry, *case)
-        for entry in ("api", "installed-cli")
-        for case in runpy.run_path(str(ROOT / "tests/test_repin_vendor.py"))[
-            "_PREPUBLICATION_CASES"
-        ]
-    ]
-    + [
-        ("installed-cli", mode, "none", "none", "write")
-        for mode in ("list", "all", "all-unchanged")
-    ],
-)
-def test_installed_repin_prepublication_transaction(
-    installed_command: Path,
-    tmp_path: Path,
-    state: str,
-    entry: str,
-    mode: str,
-    boundary: str,
-    blocked: str,
-    operation: str,
-) -> None:
-    """Bind public API and console-script rollback to actual built wheel bytes."""
-    helpers = runpy.run_path(str(ROOT / "tests/test_repin_vendor.py"))
-    root, trees = tmp_path / "repository", tmp_path / "trees"
-    root.mkdir()
-    helpers["_write_registry"](repo_root=root)
-    helpers["_write_before_tree"](dest=trees / "before")
-    helpers["_write_after_tree"](dest=trees / "after")
-    result = _run(
-        args=[
-            str(_venv_executable(installed_command.parent.parent, "python")),
-            "-I",
-            str(ROOT / "tests/fixtures/manifest/repin-cli.py"),
-            str(installed_command),
-            str(root),
-            str(trees),
-            mode,
-            boundary,
-            blocked,
-            operation,
-            state,
-            entry,
-        ],
-        cwd=tmp_path,
+        return
+    assert_that(report["status"]).is_equal_to(1)
+    assert_that(report["changed"]).is_empty()
+    assert_that(report["sha"]).is_equal_to(helpers["OLD_SHA"])
+    assert_that(report["locked"]).is_equal_to([helpers["OLD_SHA"]])
+    assert_that(report["report"]["status"]).is_equal_to("failed")
+    assert_that(report["summary"]).contains("### Action required")
+    expected = (
+        "Dead selector" if mode == "failed" else "injected installed compatibility"
     )
-    report = json.loads(result.stdout)
-    assert_that(
-        Path(report["module"]).is_relative_to(installed_command.parent.parent)
-    ).is_true()
-    helpers["_assert_prepublication_report"](
-        report=report,
-        state=state,
-        entry=entry,
-        mode=mode,
-        boundary=boundary,
-        blocked=blocked,
-    )
+    assert_that(report["stderr"]).contains(expected)
 
 
 @pytest.mark.parametrize(
