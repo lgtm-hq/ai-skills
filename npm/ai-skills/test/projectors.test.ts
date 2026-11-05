@@ -476,7 +476,10 @@ describe("native CLI projector", () => {
       scope: "global",
     });
     try {
-      return { home, transaction: await applyPlan(plan, { exec }) };
+      return {
+        home,
+        transaction: await applyPlan(plan, { exec, journalRoot: join(home, "journal") }),
+      };
     } catch (error) {
       await rm(home, { force: true, recursive: true });
       throw error;

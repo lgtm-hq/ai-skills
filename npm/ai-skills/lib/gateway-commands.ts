@@ -8,7 +8,6 @@ import {
   allAgentSkillRoots,
   hashFile,
   hashLockEntryPath,
-  hashTree,
   isCliOwnedNativeInstall,
   LOCKFILE_VERSION,
   otherPluginSkillNames,
@@ -17,434 +16,374 @@ import {
   PROJECTOR_EXPLODE,
   PROJECTOR_NATIVE,
   pruneMissingLockEntries,
-  readLockfile,
   reconcileLock,
   skillNamesFromFiles,
-  writeLockfile,
 } from "./lockfile.ts";
 import { resolveScope } from "./options.ts";
 import { getPackageVersion } from "./package-version.ts";
-import { hostPluginsRoot, nativeRoute } from "./adapters/hosts.ts";
-import {
-  discardCursorPluginBackup,
-  findCatalogSourceRoot,
-  installCursorPlugin,
-  ownedPluginTreeFiles,
-  restoreCursorPluginInstall,
-} from "./adapters/cursor/drop.ts";
-import { uninstallCliPlugin } from "./adapters/shared/native-cli.ts";
+import { nativeRoute } from "./adapters/hosts.ts";
+import { findCatalogSourceRoot, ownedPluginTreeFiles } from "./adapters/cursor/drop.ts";
+import { assertPlansInsideRoots, PlanApplyError, planOps } from "./adapters/execute.ts";
+import { cliUninstallOp } from "./adapters/shared/native-cli.ts";
 import {
   defaultStoreRoot,
   destSkillIsSymlink,
-  destUsesCopyMaterialization,
-  discardExplodeBackups,
-  explodePlugin,
   pruneEmptyAncestors,
   pruneEmptyDirTrees,
   removeExplodedFiles,
   resolveExplodeSourceSkills,
   resolveTrackedPath,
-  restoreExplodeInstall,
-  snapshotDestPath,
   unlinkDestSkillSymlink,
-  warnSkippedExplodeDests,
 } from "./adapters/shared/skill-explode.ts";
-import { applyCliLane, finishTransactions, undoTransactions } from "./install-plan.ts";
+import type { AdapterPlan } from "./adapters/types.ts";
+import { adapterFingerprints, composeInstallPlans, irreversibleEffects } from "./install-plan.ts";
+import { readInstallState } from "./journal/receipts.ts";
+import { withStateSession } from "./journal/recover.ts";
+import type { DynamicOps, JournalHooks } from "./journal/recover.ts";
 import { runSkills, unmanagedRequiredMessage } from "./skills-runner.ts";
 
 /**
  * Refresh lock-managed plugins using the current package tag or vendor registry pins.
  *
- * Entries absent from every tracked agent directory are pruned instead of reinstalled.
+ * Entries absent from every tracked agent directory are pruned instead of
+ * reinstalled. Every lane is re-planned through its adapter and applied in one
+ * journaled transaction; skills that left the catalog are removed (hash
+ * verified) in the same transaction, and the receipt commits it.
  */
 export async function updateSkills(
-  options: { agents: string[]; global: boolean; project: boolean; skills: string[]; yes: boolean },
+  options: {
+    agents: string[];
+    global: boolean;
+    project: boolean;
+    skills: string[];
+    yes: boolean;
+    keepGenerations?: number | null;
+  },
   dependencies: {
     exec?: (
       command: string,
       args: string[],
     ) => Promise<{ status: number; stderr: string; stdout: string }>;
-    explode?: typeof explodePlugin;
     hash?: typeof import("./lockfile.ts").hashFile;
     isInstalled?: Parameters<typeof pruneMissingLockEntries>[1];
+    journal?: JournalHooks;
     lockEnvironment?: Parameters<typeof reconcileLock>[1];
-    move?: typeof import("node:fs/promises").rename;
-    remove?: typeof import("node:fs/promises").rm;
     now?: () => Date;
-    readLock?: typeof readLockfile;
-    rmdir?: typeof rmdir;
     run?: typeof runSkills;
     sourceRoot?: string | null;
     sourceSkills?: Record<string, string>;
     storeRoot?: string;
-    unlink?: typeof unlink;
     warn?: (message: string) => void;
-    writeLock?: typeof writeLockfile;
   } = {},
 ): Promise<{ pruned: string[]; updated: string[] }> {
   const scope = resolveScope(options);
-  const readLock = dependencies.readLock ?? readLockfile;
-  const writeLock = dependencies.writeLock ?? writeLockfile;
   const now = dependencies.now ?? (() => new Date());
-  const lock = await readLock(scope);
-  const { lock: prunedLock, pruned } = await pruneMissingLockEntries(
-    lock,
-    dependencies.isInstalled,
-  );
-  const selected = selectPlugins(prunedLock.plugins, options.skills);
-  const { vendors } = await loadVendors();
-  const updated = [];
-  for (const [pluginId, entry] of Object.entries(selected)) {
-    if (await pluginNeedsRefresh(pluginId, entry, prunedLock.scope, vendors, dependencies)) {
-      updated.push(pluginId);
-    }
-  }
-  const catalogSkills: Record<string, string[]> = {};
-
-  const explodeClaimsByPlugin: Record<string, Record<string, Record<string, string>>> = {};
   const hash = dependencies.hash ?? hashFile;
-  const removeFile = dependencies.unlink ?? unlink;
-  const removeDir = dependencies.rmdir ?? rmdir;
   const warn = dependencies.warn ?? ((message) => console.warn(message));
-  const treeBackups = [];
-  const cliTransactions: import("./adapters/execute.ts").Transaction[] = [];
-
-  const explodeBackups: import("./adapters/shared/skill-explode.ts").ExplodeResult[] = [];
-
-  const staleDestBackups: Array<{ backup: string; dest: string }> = [];
-  let lockCommitted = false;
-  try {
-    for (const pluginId of updated) {
-      const entry = selected[pluginId]!;
-      const skills = await currentPluginSkills(pluginId, entry);
-      catalogSkills[pluginId] = skills;
-      if (entry.vendor !== "lgtm-hq") {
-        // Fails closed when the vendor left the registry.
-        resolveVendorSource(entry, vendors);
-      }
-      const lanes = partitionLockedLanes(entry);
-      if (lanes.explode.length > 0) {
-        const baked = await loadBakedPlugin(pluginId);
-        const explodeSources = resolveExplodeSourceSkills(
-          skills,
-          dependencies,
-          baked
-            ? baked.pluginRoot
-            : entry.vendor === "lgtm-hq"
-              ? dependencies.sourceRoot !== undefined
-                ? dependencies.sourceRoot
-                : findCatalogSourceRoot(dependencies.lockEnvironment?.cwd ?? process.cwd())
-              : null,
-        );
-        if (explodeSources) {
-          const explode = dependencies.explode ?? explodePlugin;
-          const exploded = await explode({
-            agents: await Promise.all(
-              lanes.explode.map(async (agent) => {
-                const root = entry.agents[agent]!.root;
-                const files = entry.agents[agent]?.files ?? {};
-                return {
-                  id: agent,
-                  copy: await destUsesCopyMaterialization(root, [
-                    ...new Set([...skills, ...skillNamesFromFiles(files)]),
-                  ]),
-                  replace: new Set(skillNamesFromFiles(files)),
-                  root,
-                };
-              }),
-            ),
-            copy: false,
-            hash,
-            keepBackups: true,
-            skills,
-            sourceSkills: explodeSources,
-            destRoots: allAgentSkillRoots(scope, dependencies.lockEnvironment, prunedLock),
-            retainStoreSkills: otherPluginSkillNames(prunedLock, pluginId),
-            storeRoot:
-              dependencies.storeRoot ?? defaultStoreRoot(scope, dependencies.lockEnvironment),
-          });
-          explodeClaimsByPlugin[pluginId] = exploded.claimed;
-          explodeBackups.push(exploded);
-          warnSkippedExplodeDests(exploded.skipped, warn);
-        } else {
-          // Managed updates never hand off to the unmanaged skills CLI.
-          throw new Error(unmanagedRequiredMessage(pluginId));
+  const environment = dependencies.lockEnvironment ?? {};
+  return withStateSession(
+    {
+      env: environment,
+      hooks: dependencies.exec ? { exec: dependencies.exec } : {},
+      report: warn,
+      scope,
+      ...(dependencies.journal?.lockWaitMs === undefined
+        ? {}
+        : { lockWaitMs: dependencies.journal.lockWaitMs }),
+    },
+    async (session) => {
+      const { lock: prunedLock, pruned } = await pruneMissingLockEntries(
+        session.view,
+        dependencies.isInstalled,
+      );
+      const selected = selectPlugins(prunedLock.plugins, options.skills);
+      const { vendors } = await loadVendors();
+      const updated = [];
+      for (const [pluginId, entry] of Object.entries(selected)) {
+        if (await pluginNeedsRefresh(pluginId, entry, prunedLock.scope, vendors, dependencies)) {
+          updated.push(pluginId);
         }
       }
-      for (const agent of lanes.treeNative) {
-        const treeProgress: { swapped: boolean; destRoot?: string } = { swapped: false };
-        try {
-          treeBackups.push(
-            await rematerializePluginTree(
-              agent,
-              pluginId,
-              entry,
-              skills,
-              dependencies,
-              prunedLock.scope,
-              treeProgress,
-            ),
-          );
-        } catch (error) {
-          if (treeProgress.swapped && treeProgress.destRoot) {
-            treeBackups.push({
-              destRoot: treeProgress.destRoot,
-              pluginId,
-              swapped: true,
-            });
-          }
-          throw error;
-        }
+      if (updated.length === 0 && pruned.length === 0) {
+        return { pruned, updated };
       }
-      if (lanes.cliNative.length > 0) {
-        const composition = await cliComposition(pluginId, entry, skills, lanes, {
+      const catalogSkills: Record<string, string[]> = {};
+      const owned: Record<
+        string,
+        Record<string, { root: string; files: Record<string, string> }>
+      > = {};
+      const plans: AdapterPlan[] = [];
+      for (const pluginId of updated) {
+        const entry = selected[pluginId]!;
+        const skills = await currentPluginSkills(pluginId, entry);
+        catalogSkills[pluginId] = skills;
+        if (entry.vendor !== "lgtm-hq") {
+          // Fails closed when the vendor left the registry.
+          resolveVendorSource(entry, vendors);
+        }
+        const composition = await updateComposition(pluginId, entry, skills, {
           dependencies,
+          lock: prunedLock,
           scope: prunedLock.scope,
         });
-        for (const agent of lanes.cliNative) {
-          cliTransactions.push(await applyCliLane(composition, agent, { exec: dependencies.exec }));
-        }
-      }
-    }
-    const installedAt = now().toISOString();
-    const plugins: Record<string, import("./lockfile.ts").PluginLockEntry> = {};
-    for (const [pluginId, entry] of Object.entries(prunedLock.plugins)) {
-      if (!updated.includes(pluginId)) {
-        plugins[pluginId] = entry;
-        continue;
-      }
-      const hashed = await rematerializePluginFiles(
-        entry,
-        catalogSkills[pluginId] ?? pluginSkillNames(entry),
-        hash,
-        explodeClaimsByPlugin[pluginId],
-      );
-      if (Object.keys(hashed.agents).length === 0) {
-        continue;
-      }
-      plugins[pluginId] = {
-        ...hashed,
-        installedAt,
-        skills: catalogSkills[pluginId] ?? pluginSkillNames(entry),
-        sha: sourceSha(entry.vendor, entry.sha, vendors),
-        version:
-          entry.vendor === "lgtm-hq"
-            ? getPackageVersion()
-            : ((await loadBakedPlugin(pluginId))?.version ??
-              sourceSha(entry.vendor, entry.sha, vendors)),
-      };
-    }
-    for (const pluginId of updated) {
-      const entry = selected[pluginId]!;
-      await removeStalePluginSkills(pluginId, entry, catalogSkills[pluginId] ?? [], {
-        catalogSkills,
-        hash,
-        lock: prunedLock,
-        pluginId,
-        removeDir,
-        removeFile,
-        staleDestBackups,
-        warn,
-      });
-    }
-    await writeLock({
-      ...prunedLock,
-      gatewayVersion: getPackageVersion(),
-      plugins,
-    });
-    lockCommitted = true;
-    for (const item of explodeBackups) {
-      try {
-        await discardExplodeBackups(item);
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        warn(`Warning: could not discard explode backups after update (${detail})`);
-      }
-    }
-    for (const item of treeBackups) {
-      try {
-        await discardCursorPluginBackup(item);
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        warn(`Warning: could not discard Cursor plugin backup after update (${detail})`);
-      }
-    }
-    await finishTransactions(cliTransactions, warn);
-    try {
-      await discardExplodeBackups({ swappedDests: staleDestBackups });
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      warn(`Warning: could not discard stale dest backups after update (${detail})`);
-    }
-    return { pruned, updated };
-  } catch (error) {
-    const restoreErrors = [];
-    if (!lockCommitted) {
-      try {
-        await restoreExplodeInstall(
-          { swappedDests: staleDestBackups },
-          {
-            move: dependencies.move,
-            remove: dependencies.remove,
-          },
+        const pluginPlans = await composeInstallPlans(composition);
+        plans.push(...pluginPlans);
+        owned[pluginId] = Object.fromEntries(
+          pluginPlans.flatMap((plan) => (plan.owns ? [[plan.host, plan.owns]] : [])),
         );
-      } catch (restoreError) {
-        restoreErrors.push(restoreError);
       }
-      for (const item of explodeBackups) {
-        try {
-          await restoreExplodeInstall(item, {
-            move: dependencies.move,
-            remove: dependencies.remove,
-          });
-        } catch (restoreError) {
-          restoreErrors.push(restoreError);
+      await assertPlansInsideRoots(plans);
+      for (const note of plans.flatMap((plan) => plan.notes)) {
+        warn(note);
+      }
+      for (const effect of irreversibleEffects(plans)) {
+        warn(`note: ${effect} is not undone by rollback`);
+      }
+      const installedAt = now().toISOString();
+      const plugins: Record<string, import("./lockfile.ts").PluginLockEntry> = {};
+      for (const [pluginId, entry] of Object.entries(prunedLock.plugins)) {
+        if (!updated.includes(pluginId)) {
+          plugins[pluginId] = entry;
+          continue;
         }
-      }
-      for (const item of treeBackups) {
-        try {
-          await restoreCursorPluginInstall({
-            ...item,
-            created: !item.swapped,
-            move: dependencies.move,
-          });
-        } catch (restoreError) {
-          restoreErrors.push(restoreError);
+        const hashed = await rematerializePluginFiles(
+          entry,
+          catalogSkills[pluginId] ?? pluginSkillNames(entry),
+          hash,
+          owned[pluginId] ?? {},
+        );
+        if (Object.keys(hashed.agents).length === 0) {
+          continue;
         }
+        plugins[pluginId] = {
+          ...hashed,
+          installedAt,
+          skills: catalogSkills[pluginId] ?? pluginSkillNames(entry),
+          sha: sourceSha(entry.vendor, entry.sha, vendors),
+          version:
+            entry.vendor === "lgtm-hq"
+              ? getPackageVersion()
+              : ((await loadBakedPlugin(pluginId))?.version ??
+                sourceSha(entry.vendor, entry.sha, vendors)),
+        };
       }
-      restoreErrors.push(...(await undoTransactions(cliTransactions)));
-      if (restoreErrors.length > 0) {
-        const original = error instanceof Error ? error.message : String(error);
-        const restore = restoreErrors
-          .map((item) => (item instanceof Error ? item.message : String(item)))
-          .join("; ");
-        throw new Error(`${original} (update restore also failed: ${restore})`);
+      const stale = updated.filter((pluginId) =>
+        pluginSkillNames(selected[pluginId]!).some(
+          (name) => !(catalogSkills[pluginId] ?? []).includes(name),
+        ),
+      );
+      try {
+        await session.transact({
+          hooks: dependencies.journal,
+          keepGenerations: options.keepGenerations,
+          kind: "update",
+          next: {
+            artifactDigest: null,
+            fingerprints: { adapters: adapterFingerprints(plans), policy: null },
+            plugins,
+          },
+          ops: planOps(plans),
+          ...(stale.length === 0
+            ? {}
+            : {
+                dynamic: async (ops: DynamicOps) => {
+                  for (const pluginId of stale) {
+                    await removeStalePluginSkills(
+                      pluginId,
+                      selected[pluginId]!,
+                      catalogSkills[pluginId] ?? [],
+                      {
+                        catalogSkills,
+                        hash,
+                        lock: prunedLock,
+                        pluginId,
+                        removeDir: (path) => ops.removeDir(String(path)),
+                        removeFile: (path) => ops.removeFile(String(path)),
+                        warn,
+                      },
+                    );
+                  }
+                },
+                dynamicOrigin: {
+                  origin: { adapter: "gateway", host: "", owner: "" },
+                  roots: stale.flatMap((pluginId) => installRoots(selected[pluginId]!)),
+                },
+              }),
+        });
+      } catch (error) {
+        if (error instanceof PlanApplyError) {
+          throw new Error(`Update rolled back: ${error.message}`);
+        }
+        throw error;
       }
-    }
-    throw error;
-  }
+      return { pruned, updated };
+    },
+  );
 }
 
 /**
- * Remove selected lock-managed plugins, persist the lock removal, then uninstall host CLIs.
+ * Remove selected lock-managed plugins in one journaled transaction.
+ *
+ * Owned files are removed only when their hash still matches (modified ones
+ * are kept and reported), CLI-native hosts are uninstalled inside the same
+ * transaction, and the receipt drops the plugins at commit. A failure undoes
+ * every removal from the journal's preimages.
  */
 export async function removeSkills(
-  options: { agents: string[]; global: boolean; project: boolean; skills: string[]; yes: boolean },
+  options: {
+    agents: string[];
+    global: boolean;
+    project: boolean;
+    skills: string[];
+    yes: boolean;
+    keepGenerations?: number | null;
+  },
   dependencies: {
     exec?: (
       command: string,
       args: string[],
     ) => Promise<{ status: number; stderr: string; stdout: string }>;
     hash?: typeof hashFile;
+    journal?: JournalHooks;
     lockEnvironment?: Parameters<typeof reconcileLock>[1];
-    readLock?: typeof readLockfile;
-    rmdir?: typeof rmdir;
     run?: typeof runSkills;
-    unlink?: typeof unlink;
     warn?: (message: string) => void;
-    writeLock?: typeof writeLockfile;
   } = {},
 ): Promise<string[]> {
   const scope = resolveScope(options);
-  const readLock = dependencies.readLock ?? readLockfile;
-  const writeLock = dependencies.writeLock ?? writeLockfile;
   const hash = dependencies.hash ?? hashFile;
-  const removeFile = dependencies.unlink ?? unlink;
-  const removeDir = dependencies.rmdir ?? rmdir;
   const warn = dependencies.warn ?? ((message) => console.warn(message));
-  const lock = await readLock(scope);
-  const selected = Object.keys(selectPlugins(lock.plugins, options.skills));
-  if (selected.length === 0) {
-    return [];
-  }
+  const environment = dependencies.lockEnvironment ?? {};
+  return withStateSession(
+    {
+      env: environment,
+      hooks: dependencies.exec ? { exec: dependencies.exec } : {},
+      report: warn,
+      scope,
+      ...(dependencies.journal?.lockWaitMs === undefined
+        ? {}
+        : { lockWaitMs: dependencies.journal.lockWaitMs }),
+    },
+    async (session) => {
+      const lock = session.view;
+      const selected = Object.keys(selectPlugins(lock.plugins, options.skills));
+      if (selected.length === 0) {
+        return [];
+      }
+      const plugins = { ...lock.plugins };
+      selected.forEach((pluginId) => delete plugins[pluginId]);
+      try {
+        await session.transact({
+          dynamic: async (ops) => {
+            for (const pluginId of selected) {
+              await removePlugin(pluginId, lock.plugins[pluginId]!, ops, {
+                environment,
+                hash,
+                scope,
+                warn,
+              });
+            }
+          },
+          dynamicOrigin: {
+            origin: { adapter: "gateway", host: "", owner: "" },
+            roots: selected.flatMap((pluginId) => installRoots(lock.plugins[pluginId]!)),
+          },
+          hooks: dependencies.journal,
+          keepGenerations: options.keepGenerations,
+          kind: "remove",
+          next: {
+            artifactDigest: session.receipt?.artifactDigest ?? null,
+            fingerprints: { adapters: {}, policy: session.receipt?.fingerprints.policy ?? null },
+            plugins,
+          },
+          ops: [],
+        });
+      } catch (error) {
+        if (error instanceof PlanApplyError) {
+          throw new Error(`Remove rolled back: ${error.message}`);
+        }
+        throw error;
+      }
+      return selected;
+    },
+  );
+}
 
-  const pendingCliUninstall: Array<{ agent: string; pluginId: string }> = [];
-  for (const pluginId of selected) {
-    const entry = lock.plugins[pluginId]!;
-    const explodeFiles = explodeTrackedFiles(entry);
-    if (explodeFiles.length > 0) {
-      await removeExplodedFiles({
-        files: explodeFiles,
-        hash,
-        pluginId,
-        removeDir,
-        removeFile,
-        warn,
-      });
-    }
-    const classified = await classifyPluginFiles(pluginId, entry, { hash, warn });
-    const lanes = partitionLockedLanes(entry);
-    await deleteVerifiedFiles(classified.verified, {
-      modifiedSkills: classified.modifiedSkills,
+/**
+ * Journaled removal of one plugin: hash-verified deletes, then host uninstall.
+ */
+async function removePlugin(
+  pluginId: string,
+  entry: import("./lockfile.ts").PluginLockEntry,
+  ops: DynamicOps,
+  context: {
+    environment: Parameters<typeof reconcileLock>[1];
+    hash: typeof hashFile;
+    scope: "global" | "project";
+    warn: (message: string) => void;
+  },
+): Promise<void> {
+  const removeFile = (path: unknown) => ops.removeFile(String(path));
+  const removeDir = (path: unknown) => ops.removeDir(String(path));
+  const explodeFiles = explodeTrackedFiles(entry);
+  if (explodeFiles.length > 0) {
+    await removeExplodedFiles({
+      files: explodeFiles,
+      hash: context.hash,
+      pluginId,
       removeDir,
       removeFile,
+      warn: context.warn,
     });
-    for (const agent of lanes.treeNative) {
-      const pluginDir = entry.agents[agent]?.root;
-      if (!pluginDir) {
-        continue;
-      }
-      try {
-        await removeDir(pluginDir);
-      } catch {
-        // Untracked files remain; keep the folder.
-      }
-    }
-    for (const agent of lanes.cliNative) {
-      if (
-        await siblingLockHasCliNative(
-          pluginId,
-          agent,
-          scope,
-          readLock,
-          dependencies.lockEnvironment,
-        )
-      ) {
-        continue;
-      }
-      pendingCliUninstall.push({ agent, pluginId });
-    }
   }
-  const plugins = { ...lock.plugins };
-  selected.forEach((pluginId) => delete plugins[pluginId]);
-  await writeLock({
-    ...lock,
-    plugins,
+  const classified = await classifyPluginFiles(pluginId, entry, {
+    hash: context.hash,
+    warn: context.warn,
   });
-
-  const remainingAgents: Map<string, Set<string>> = new Map();
-  for (const item of pendingCliUninstall) {
-    const agents = remainingAgents.get(item.pluginId) ?? new Set();
-    agents.add(item.agent);
-    remainingAgents.set(item.pluginId, agents);
-  }
-  try {
-    for (const item of pendingCliUninstall) {
-      await uninstallCliPlugin({
-        agent: item.agent,
-        exec: dependencies.exec,
-        pluginId: item.pluginId,
-      });
-      const agents = remainingAgents.get(item.pluginId);
-      if (!agents) {
-        continue;
-      }
-      agents.delete(item.agent);
-      if (agents.size === 0) {
-        remainingAgents.delete(item.pluginId);
-      }
+  const lanes = partitionLockedLanes(entry);
+  await deleteVerifiedFiles(classified.verified, {
+    modifiedSkills: classified.modifiedSkills,
+    removeDir,
+    removeFile,
+  });
+  for (const agent of lanes.treeNative) {
+    const pluginDir = entry.agents[agent]?.root;
+    if (!pluginDir) {
+      continue;
     }
-  } catch (error) {
-    await restoreLockAfterCliUninstallFailure({
-      lock,
-      plugins,
-      remainingAgents,
-      warn,
-      writeLock,
-    });
-    throw error;
+    try {
+      await removeDir(pluginDir);
+    } catch {
+      // Untracked files remain; keep the folder.
+    }
   }
-  return selected;
+  for (const agent of lanes.cliNative) {
+    if (
+      await siblingLockHasCliNative(
+        pluginId,
+        agent,
+        context.scope,
+        readInstallState,
+        context.environment,
+      )
+    ) {
+      continue;
+    }
+    await ops.exec(cliUninstallOp(agent, pluginId), {
+      adapter: "gateway",
+      host: agent,
+      owner: pluginId,
+    });
+  }
+}
+
+/**
+ * Filesystem roots a plugin record owns paths under (CLI records own none).
+ */
+function installRoots(entry: import("./lockfile.ts").PluginLockEntry): string[] {
+  return Object.values(entry.agents).flatMap((install) =>
+    typeof install.root === "string" && !install.root.startsWith("cli:") ? [install.root] : [],
+  );
 }
 
 /**
@@ -454,7 +393,7 @@ export async function listSkills(
   options: { global: boolean; project: boolean },
   dependencies: {
     lockEnvironment?: Parameters<typeof reconcileLock>[1];
-    readLock?: typeof readLockfile;
+    readLock?: typeof readInstallState;
   } = {},
 ): Promise<
   Array<
@@ -467,7 +406,7 @@ export async function listSkills(
     } & import("./lockfile.ts").PluginLockEntry
   >
 > {
-  const readLock = dependencies.readLock ?? readLockfile;
+  const readLock = dependencies.readLock ?? readInstallState;
   const lock = await readLock(resolveScope(options), dependencies.lockEnvironment);
   const reconciliation = await reconcileLock(lock, dependencies.lockEnvironment);
   const statusByPlugin = pluginReconcileStatus(reconciliation);
@@ -552,10 +491,10 @@ function resolveVendorSource(
 }
 
 /**
- * Hash-verified delete of skills that left the catalog since the last lock write.
+ * Hash-verified delete of skills that left the catalog since the last commit.
  *
- * Existing dest skill directories are snapshotted first so a later lock-write
- * failure can restore paths the previous lock still claims.
+ * Runs inside the update transaction with journaled `removeFile`/`removeDir`,
+ * so a later failure restores every removed path from its preimage.
  */
 async function removeStalePluginSkills(
   pluginId: string,
@@ -568,7 +507,6 @@ async function removeStalePluginSkills(
     lock?: import("./lockfile.ts").GatewayLock;
     removeDir: typeof rmdir;
     removeFile: typeof unlink;
-    staleDestBackups?: Array<{ backup: string; dest: string }>;
     warn: (message: string) => void;
   },
 ): Promise<void> {
@@ -589,9 +527,6 @@ async function removeStalePluginSkills(
         io.catalogSkills ?? {},
       ),
     );
-  if (io.staleDestBackups) {
-    await snapshotStaleSkillDests(entry, staleNames, io.staleDestBackups, keepDest);
-  }
   const stale = {
     ...entry,
     skills: staleNames,
@@ -666,16 +601,15 @@ async function rematerializePluginFiles(
   entry: import("./lockfile.ts").PluginLockEntry,
   skillNames: string[],
   hash: typeof hashFile,
-  explodeClaims?: Record<string, Record<string, string>>,
+  owned: Record<string, { root: string; files: Record<string, string> }>,
 ): Promise<import("./lockfile.ts").PluginLockEntry> {
   const current = new Set(skillNames);
   const agents: Record<string, import("./lockfile.ts").AgentInstall> = {};
   for (const [agent, install] of Object.entries(entry.agents)) {
     const projector = agentProjector(entry, agent);
     if (projector === PROJECTOR_EXPLODE) {
-      // Managed updates always run the explode engine for explode lanes, so
-      // ownership comes from its claims; skipped dests keep prior ownership.
-      const claimed = explodeClaims?.[agent];
+      // Ownership comes from the plan's claims; skipped dests keep prior ownership.
+      const claimed = owned[agent]?.files;
       if (claimed && Object.keys(claimed).length > 0) {
         agents[agent] = { ...install, files: claimed };
         continue;
@@ -694,7 +628,8 @@ async function rematerializePluginFiles(
     if (projector === PROJECTOR_NATIVE && nativeRoute(agent)?.kind === "tree") {
       agents[agent] = {
         ...install,
-        files: ownedPluginTreeFiles(await hashTree(install.root, hash), skillNames),
+        files: ownedPluginTreeFiles(owned[agent]?.files ?? {}, skillNames),
+        root: owned[agent]?.root ?? install.root,
       };
       continue;
     }
@@ -751,40 +686,6 @@ function sourceSha(
     return `v${getPackageVersion()}`;
   }
   return vendors.find((candidate) => candidate.id === vendor)?.sha ?? currentSha;
-}
-
-/**
- * Snapshot catalog-retired skill dests before hash-verified unlink.
- *
- * Dest skill directories are copied (symlink-preserving) so a later lock-write
- * failure can restore paths the previous lock still claims.
- */
-async function snapshotStaleSkillDests(
-  entry: import("./lockfile.ts").PluginLockEntry,
-  staleNames: string[],
-  backups: Array<{ backup: string; dest: string }>,
-  keepDest: (dest: string | null, relative: string) => boolean = () => false,
-): Promise<void> {
-  const seen = new Set();
-  for (const install of Object.values(entry.agents)) {
-    if (isCliOwnedNativeInstall(install, entry.projector)) {
-      continue;
-    }
-    for (const relative of Object.keys(install.files)) {
-      if (!skillNamesBelongTo(relative, staleNames)) {
-        continue;
-      }
-      const dest = staleSkillDestPath(install.root, relative);
-      if (!dest || seen.has(dest) || keepDest(dest, relative)) {
-        continue;
-      }
-      seen.add(dest);
-      const snapshot = await snapshotDestPath(dest);
-      if (snapshot) {
-        backups.push(snapshot);
-      }
-    }
-  }
 }
 
 /**
@@ -1063,8 +964,8 @@ async function siblingLockHasCliNative(
   pluginId: string,
   agent: string,
   scope: "global" | "project",
-  readLock: typeof readLockfile,
-  lockEnvironment?: Parameters<typeof readLockfile>[1],
+  readLock: typeof readInstallState,
+  lockEnvironment?: Parameters<typeof readInstallState>[1],
 ): Promise<boolean> {
   const siblingScope = scope === "global" ? "project" : "global";
   const sibling = await readLock(siblingScope, lockEnvironment);
@@ -1076,116 +977,6 @@ async function siblingLockHasCliNative(
     return false;
   }
   return partitionLockedLanes(entry).cliNative.includes(agent);
-}
-
-/**
- * Put plugins back in the lock when host CLI uninstall fails after the write.
- *
- * Lock removal is persisted before uninstall so a write failure cannot drop a
- * still-tracked host plugin. If uninstall then fails, restore only unfinished
- * CLI agents. Tree-native and explode lanes are already deleted before the
- * lock write; restamping them would report MISSING and rematerialize on update.
- */
-async function restoreLockAfterCliUninstallFailure(args: {
-  lock: import("./lockfile.ts").GatewayLock;
-  plugins: import("./lockfile.ts").GatewayLock["plugins"];
-  remainingAgents: Map<string, Set<string>>;
-  warn: (message: string) => void;
-  writeLock: typeof writeLockfile;
-}): Promise<void> {
-  if (args.remainingAgents.size === 0) {
-    return;
-  }
-  const restoredPlugins = { ...args.plugins };
-  for (const [pluginId, remaining] of args.remainingAgents) {
-    const original = args.lock.plugins[pluginId]!;
-
-    const restoredAgents: import("./lockfile.ts").PluginLockEntry["agents"] = {};
-    for (const agent of remaining) {
-      const install = original.agents[agent];
-      if (install) {
-        restoredAgents[agent] = install;
-      }
-    }
-    if (Object.keys(restoredAgents).length === 0) {
-      continue;
-    }
-    const restoredEntry = {
-      ...original,
-      agents: restoredAgents,
-    };
-    const projectorValues = Object.keys(restoredAgents).map((agent) =>
-      agentProjector(restoredEntry, agent),
-    );
-    restoredPlugins[pluginId] = {
-      ...restoredEntry,
-      projector: projectorValues.every((value) => value === PROJECTOR_NATIVE)
-        ? PROJECTOR_NATIVE
-        : PROJECTOR_EXPLODE,
-    };
-  }
-  try {
-    await args.writeLock({
-      ...args.lock,
-      plugins: restoredPlugins,
-    });
-  } catch (restoreError) {
-    const detail = restoreError instanceof Error ? restoreError.message : String(restoreError);
-    args.warn(`Warning: could not restore lock after CLI uninstall failure (${detail})`);
-  }
-}
-
-/**
- * Re-assemble a host's local plugin tree from the current catalog membership.
- */
-async function rematerializePluginTree(
-  agent: string,
-  pluginId: string,
-  entry: import("./lockfile.ts").PluginLockEntry,
-  skills: string[],
-  dependencies: {
-    lockEnvironment?: Parameters<typeof reconcileLock>[1];
-    move?: typeof import("node:fs/promises").rename;
-    remove?: typeof import("node:fs/promises").rm;
-    sourceRoot?: string | null;
-  },
-  scope: "global" | "project",
-  progress: { destRoot?: string; swapped?: boolean } = {},
-): Promise<{ destRoot: string; pluginId: string; swapped: boolean }> {
-  if (entry.vendor !== "lgtm-hq") {
-    throw new Error("Native Cursor projector is first-party only");
-  }
-  const sourceRoot =
-    dependencies.sourceRoot !== undefined
-      ? dependencies.sourceRoot
-      : findCatalogSourceRoot(dependencies.lockEnvironment?.cwd ?? process.cwd());
-  if (!sourceRoot) {
-    throw new Error(
-      "Native Cursor projector requires a catalog checkout (skills/ + " +
-        ".claude-plugin/marketplace.json). Run update from the ai-skills " +
-        "repository, or remove and reinstall with --projector explode.",
-    );
-  }
-  const destRoot = hostPluginsRoot(agent, {
-    cwd: dependencies.lockEnvironment?.cwd ?? process.cwd(),
-    home: dependencies.lockEnvironment?.home ?? homedir(),
-    scope,
-  })!;
-  progress.destRoot = destRoot;
-  const bundles = await loadBundles();
-  await installCursorPlugin({
-    commit: false,
-    description: bundles.groups[pluginId]?.description ?? pluginId,
-    destRoot,
-    move: dependencies.move,
-    pluginId,
-    progress,
-    replace: true,
-    skills,
-    sourceRoot,
-    version: getPackageVersion(),
-  });
-  return { destRoot, pluginId, swapped: Boolean(progress.swapped) };
 }
 
 /**
@@ -1202,16 +993,18 @@ function skillNamesBelongTo(relative: string, names: string[]): boolean {
 }
 
 /**
- * Composition for re-delivering a locked plugin to its CLI-native hosts.
+ * Composition for re-delivering a locked plugin to every host it records.
  *
- * @throws {Error} When no local catalog source exists: native delivery never
- *   falls back to a remote marketplace.
+ * Explode lanes take the baked vendor tree or the catalog checkout; native
+ * lanes need the catalog checkout (first-party only) and never fall back to a
+ * remote marketplace.
+ *
+ * @throws {Error} When a lane has no local source.
  */
-async function cliComposition(
+async function updateComposition(
   pluginId: string,
   entry: import("./lockfile.ts").PluginLockEntry,
   skills: string[],
-  lanes: ReturnType<typeof partitionLockedLanes>,
   context: {
     dependencies: {
       lockEnvironment?: Parameters<typeof reconcileLock>[1];
@@ -1219,42 +1012,68 @@ async function cliComposition(
       sourceSkills?: Record<string, string>;
       storeRoot?: string;
     };
+    lock: import("./lockfile.ts").GatewayLock;
     scope: "global" | "project";
   },
 ): Promise<import("./install-plan.ts").InstallComposition> {
   const { dependencies, scope } = context;
+  const lanes = partitionLockedLanes(entry);
+  const environment = dependencies.lockEnvironment ?? {};
   const catalogRoot =
     dependencies.sourceRoot !== undefined
       ? dependencies.sourceRoot
-      : findCatalogSourceRoot(dependencies.lockEnvironment?.cwd ?? process.cwd());
-  const native =
-    entry.vendor === "lgtm-hq"
-      ? resolveExplodeSourceSkills(skills, dependencies, catalogRoot)
-      : null;
-  if (!native) {
-    throw new Error(
-      `Native ${lanes.cliNative.join(", ")} update of ${pluginId} requires a locally ` +
-        "rendered artifact (a catalog checkout with skills/); the remote marketplace is " +
-        "never used. Run update from the ai-skills repository.",
-    );
+      : findCatalogSourceRoot(environment.cwd ?? process.cwd());
+  const baked = entry.vendor === "lgtm-hq" ? null : await loadBakedPlugin(pluginId);
+  const explode =
+    lanes.explode.length === 0
+      ? null
+      : resolveExplodeSourceSkills(
+          skills,
+          dependencies,
+          baked ? baked.pluginRoot : entry.vendor === "lgtm-hq" ? catalogRoot : null,
+        );
+  if (lanes.explode.length > 0 && !explode) {
+    // Managed updates never hand off to the unmanaged skills CLI.
+    throw new Error(unmanagedRequiredMessage(pluginId));
+  }
+  let native: Record<string, string> | null = null;
+  if (lanes.treeNative.length > 0 || lanes.cliNative.length > 0) {
+    if (entry.vendor !== "lgtm-hq") {
+      throw new Error("Native delivery is first-party only");
+    }
+    native = resolveExplodeSourceSkills(skills, dependencies, catalogRoot);
+    if (!native && lanes.treeNative.length > 0) {
+      throw new Error(
+        "Native Cursor projector requires a catalog checkout (skills/ + " +
+          ".claude-plugin/marketplace.json). Run update from the ai-skills " +
+          "repository, or remove and reinstall with --projector explode.",
+      );
+    }
+    if (!native) {
+      throw new Error(
+        `Native ${lanes.cliNative.join(", ")} update of ${pluginId} requires a locally ` +
+          "rendered artifact (a catalog checkout with skills/); the remote marketplace is " +
+          "never used. Run update from the ai-skills repository.",
+      );
+    }
   }
   const bundles = await loadBundles();
   return {
     copy: false,
-    description: bundles.groups[pluginId]?.description ?? pluginId,
-    destRoots: [],
+    description: baked?.description ?? bundles.groups[pluginId]?.description ?? pluginId,
+    destRoots: allAgentSkillRoots(scope, environment, context.lock),
     env: {
-      cwd: dependencies.lockEnvironment?.cwd ?? process.cwd(),
-      home: dependencies.lockEnvironment?.home ?? homedir(),
+      cwd: environment.cwd ?? process.cwd(),
+      home: environment.home ?? homedir(),
     },
     existing: entry,
     lanes,
     pluginId,
-    retainStoreSkills: [],
+    retainStoreSkills: [...otherPluginSkillNames(context.lock, pluginId)],
     scope,
     skills,
-    sources: { explode: null, native },
-    storeRoot: dependencies.storeRoot ?? defaultStoreRoot(scope, dependencies.lockEnvironment),
-    version: getPackageVersion(),
+    sources: { explode, native },
+    storeRoot: dependencies.storeRoot ?? defaultStoreRoot(scope, environment),
+    version: entry.vendor === "lgtm-hq" ? getPackageVersion() : (baked?.version ?? entry.sha),
   };
 }

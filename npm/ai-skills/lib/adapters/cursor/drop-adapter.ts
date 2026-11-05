@@ -1,7 +1,14 @@
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 
 import { verifyPlanOps } from "../execute.ts";
-import { copyTreeOps, jsonBytes, ownedPathHash, sha256, walkTree } from "../fs.ts";
+import {
+  assertSkillSource,
+  copyTreeOps,
+  jsonBytes,
+  ownedPathHash,
+  sha256,
+  walkTree,
+} from "../fs.ts";
 import { hostPluginsRoot } from "../hosts.ts";
 import { routeGate, supportReport } from "../support.ts";
 import type {
@@ -84,6 +91,7 @@ export const cursorDropAdapter: DestinationAdapter = {
       // Same checks the engine applies before copying, so a plan never composes
       // a path outside the plugin's skills directory.
       assertSafeSkillName(skill.name);
+      await assertSkillSource(input.fs, skill.name, skill.source);
       const dest = join(pluginDir, "skills", skill.name);
       assertInsideRoot(join(pluginDir, "skills"), dest);
       content.push(...(await copyTreeOps(input.fs, skill.source, dest)));
@@ -130,9 +138,25 @@ export const cursorDropAdapter: DestinationAdapter = {
       ops: [...removals, ...content],
       support,
       notes: [],
+      owns: { files: ownedFiles(pluginDir, content), root: pluginDir },
     };
   },
   verify(plan, env) {
     return verifyPlanOps(plan, env.fs);
   },
 };
+
+/**
+ * Files a drop plan leaves under the plugin directory, keyed like `hashTree`.
+ */
+function ownedFiles(pluginDir: string, ops: Op[]): Record<string, string> {
+  const files: Record<string, string> = {};
+  for (const op of ops) {
+    if (op.kind === "write-file") {
+      files[relative(pluginDir, op.path).split(sep).join("/")] = op.hash;
+    } else if (op.kind === "symlink") {
+      files[relative(pluginDir, op.path).split(sep).join("/")] = sha256(`symlink:${op.target}`);
+    }
+  }
+  return files;
+}

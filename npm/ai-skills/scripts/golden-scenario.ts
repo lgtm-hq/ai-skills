@@ -31,8 +31,8 @@ const originalInstall = inst.install,
   originalUpdate = gateway.updateSkills,
   originalRemove = gateway.removeSkills,
   originalDoctor = doctor.runDoctor;
-const locks: typeof import("../lib/lockfile.ts") = await import(
-  `${moduleRoot}/lib/lockfile.${extension}`
+const receipts: typeof import("../lib/journal/receipts.ts") = await import(
+  `${moduleRoot}/lib/journal/receipts.${extension}`
 );
 const root = await mkdtemp(join(tmpdir(), "566-golden-"));
 const environment = { cwd: root, home: root };
@@ -61,9 +61,6 @@ const run = async (args: string[]) => {
 const now = () => new Date("2026-07-10T17:00:00.000Z");
 const deps = {
   lockEnvironment: environment,
-  readLock: (scope: "global" | "project") => locks.readLockfile(scope, environment),
-  writeLock: (lock: import("../lib/lockfile.ts").GatewayLock) =>
-    locks.writeLockfile(lock, environment),
   run,
   now,
   sourceRoot,
@@ -96,12 +93,27 @@ mock.module(`${moduleRoot}/lib/doctor.${extension}`, () => ({
 const { runCli }: typeof import("../lib/cli.ts") = await import(
   `${moduleRoot}/lib/cli.${extension}`
 );
+// Machine-local state (#580) holds transaction ids and timestamps; the golden
+// records the committed plugin records instead of the raw files.
+const STATE = ".ai-skills/state";
 async function tree(dir: string, prefix = ""): Promise<Record<string, string>> {
   const output: Record<string, string> = {};
+  if (prefix === "") {
+    const receipt = await receipts.readReceipt("project", environment);
+    if (receipt) {
+      output["<receipt>"] = JSON.stringify({
+        generation: receipt.generation,
+        plugins: receipt.plugins,
+      });
+    }
+  }
   for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) =>
     a.name.localeCompare(b.name),
   )) {
     const key = prefix + entry.name;
+    if (key === STATE) {
+      continue;
+    }
     if (entry.isDirectory()) Object.assign(output, await tree(join(dir, entry.name), key + "/"));
     else
       output[key] = entry.isSymbolicLink()
@@ -127,10 +139,11 @@ try {
     ["--bad-flag"],
   ]) {
     if (args[0] === "update") {
-      const lock = await locks.readLockfile("project", environment);
-      lock.plugins.review!.sha = "outdated";
-      lock.plugins.review!.version = "outdated";
-      await locks.writeLockfile(lock, environment);
+      const path = await receipts.receiptPath("project", environment);
+      const receipt = JSON.parse(await readFile(path, "utf8"));
+      receipt.plugins.review.sha = "outdated";
+      receipt.plugins.review.version = "outdated";
+      await writeFile(path, `${JSON.stringify(receipt, null, 2)}\n`);
     }
     const stdout: string[] = [],
       stderr: string[] = [];

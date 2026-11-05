@@ -11,7 +11,11 @@ import {
   runDoctor,
   writeDoctorCache,
 } from "../lib/doctor.ts";
-import { writeLockfile } from "../lib/lockfile.ts";
+import bundleCatalog from "../data/bundles.json" with { type: "json" };
+import { readState, skillSources, writeLegacyLock } from "./fixtures/state.ts";
+
+/** Local sources for every skill of the `review` bundle. */
+const reviewSources = await skillSources(bundleCatalog.groups.review.skills);
 
 describe("probeHost", () => {
   test("treats a missing Claude CLI as explode", async () => {
@@ -417,7 +421,7 @@ describe("runDoctor", () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-report-"));
     const lines: string[] = [];
     try {
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -482,7 +486,7 @@ describe("runDoctor", () => {
       await mkdir(join(cwd, ".cursor/skills/jira"), { recursive: true });
       await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
       await writeFile(healthyFile, "# jira keep\n");
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -551,7 +555,7 @@ describe("runDoctor", () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-repair-fail-"));
     const warnings: string[] = [];
     try {
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -591,10 +595,14 @@ describe("runDoctor", () => {
             exec: async () => ({ status: 1, stderr: "", stdout: "" }),
             home: cwd,
             installExtras: {
-              explode: async () => {
-                throw new Error("catalog boom");
+              journal: {
+                afterOp: () => {
+                  throw new Error("catalog boom");
+                },
               },
               sourceRoot: cwd,
+              sourceSkills: reviewSources,
+              warn: () => {},
             },
             lockEnvironment: {
               cwd,
@@ -617,7 +625,7 @@ describe("runDoctor", () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-report-only-"));
     const installs: string[] = [];
     try {
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -655,11 +663,14 @@ describe("runDoctor", () => {
           exec: async () => ({ status: 1, stderr: "", stdout: "" }),
           home: cwd,
           installExtras: {
-            explode: async () => {
-              installs.push("explode");
-              throw new Error("report-only must not rematerialize");
+            journal: {
+              afterOp: () => {
+                installs.push("op");
+                throw new Error("report-only must not rematerialize");
+              },
             },
             sourceRoot: cwd,
+            sourceSkills: reviewSources,
           },
           lockEnvironment: {
             cwd,
@@ -681,7 +692,7 @@ describe("runDoctor", () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-migrate-"));
     try {
       await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -739,7 +750,7 @@ describe("runDoctor", () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-status-"));
     const lines: string[] = [];
     try {
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -804,7 +815,7 @@ describe("runDoctor", () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-mixed-repair-"));
     const warnings: string[] = [];
     try {
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -863,7 +874,7 @@ describe("runDoctor", () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-orphans-"));
     const lines: string[] = [];
     try {
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -935,7 +946,7 @@ describe("runDoctor", () => {
       await mkdir(join(cwd, ".cursor/skills/jira"), { recursive: true });
       await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
       await writeFile(explodeFile, "# jira\n");
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -992,7 +1003,7 @@ describe("runDoctor", () => {
       ).rejects.toThrow("Migrate failed for jira");
       expect(warnings.some((message) => message.includes("catalog checkout"))).toBe(true);
       expect(await readFile(explodeFile, "utf8")).toBe("# jira\n");
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd, home: cwd });
       expect(lock.plugins.jira.agents.cursor.projector).toBe("explode");
       expect(lock.plugins.jira.agents.cursor.root).toBe(join(cwd, ".cursor/skills"));
     } finally {
@@ -1010,7 +1021,7 @@ describe("runDoctor", () => {
       await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
       await writeFile(explodeFile, "# jira\n");
       await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -1068,7 +1079,7 @@ describe("runDoctor", () => {
       expect(
         await readFile(join(cwd, ".cursor/plugins/local/jira/skills/jira/SKILL.md"), "utf8"),
       ).toBe("# jira\n");
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd, home: cwd });
       expect(lock.plugins.jira.agents.cursor.projector).toBe("native");
       expect(lock.plugins.jira.agents.cursor.root).toBe(join(cwd, ".cursor/plugins/local/jira"));
     } finally {
@@ -1087,7 +1098,7 @@ describe("runDoctor", () => {
       await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
       await writeFile(explodeFile, "# jira\n");
       await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -1205,7 +1216,7 @@ describe("runDoctor", () => {
       await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
       await writeFile(explodeFile, "# edited locally\n");
       await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -1264,7 +1275,7 @@ describe("runDoctor", () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-orphan-files-"));
     const lines: string[] = [];
     try {
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -1333,7 +1344,7 @@ describe("runDoctor", () => {
       await mkdir(join(sourceRoot, "skills/raycast"), { recursive: true });
       await writeFile(explodeFile, "# raycast\n");
       await writeFile(join(sourceRoot, "skills/raycast/SKILL.md"), "# raycast\n");
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -1405,7 +1416,7 @@ describe("runDoctor", () => {
       await mkdir(join(sourceRoot, "skills/pr-raycast"), { recursive: true });
       await writeFile(join(sourceRoot, "skills/raycast/SKILL.md"), "# raycast\n");
       await writeFile(join(sourceRoot, "skills/pr-raycast/SKILL.md"), "# pr-raycast\n");
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -1475,7 +1486,7 @@ describe("runDoctor", () => {
       await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
       await writeFile(explodeFile, "# jira\n");
       await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -1538,7 +1549,7 @@ describe("runDoctor", () => {
         ),
       ).rejects.toThrow("Migrate failed for jira");
       expect(warnings.some((message) => message.includes("rm boom"))).toBe(true);
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd, home: cwd });
       expect(lock.plugins.jira.agents.cursor.projector).toBe("native");
       expect(await readFile(explodeFile, "utf8")).toBe("# jira\n");
       const lines: string[] = [];
@@ -1576,7 +1587,7 @@ describe("runDoctor", () => {
     const installCalls: Array<{ bundle: string | null; vendor: string | null; skills: string[] }> =
       [];
     try {
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -1642,7 +1653,7 @@ describe("runDoctor", () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-doctor-legacy-vendor-"));
     const warnings: string[] = [];
     try {
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -1700,7 +1711,7 @@ describe("runDoctor", () => {
       await mkdir(join(cwd, ".cursor/skills/foo"), { recursive: true });
       await mkdir(join(cwd, ".cursor/plugins/local"), { recursive: true });
       await writeFile(explodeFile, "# foo\n");
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -1780,7 +1791,7 @@ describe("runDoctor", () => {
         vendor: "lgtm-hq",
         version: "0.0.0-dev",
       };
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: { review: entry },
@@ -1821,14 +1832,8 @@ describe("runDoctor", () => {
           },
           home,
           installExtras: {
-            explode: async () => ({
-              claimed: { "claude-code": { "lint/SKILL.md": "abc" } },
-              skipped: [],
-              swappedDests: [],
-              swappedStores: [],
-              createdStores: [],
-              createdDests: [],
-            }),
+            sourceSkills: reviewSources,
+            warn: () => {},
             exec: async (command, args) => {
               execCalls.push([command, ...args]);
               const error: NodeJS.ErrnoException = new Error("not found");
@@ -1850,7 +1855,7 @@ describe("runDoctor", () => {
       expect(result.migrated).toEqual(["review"]);
       expect(execCalls.some((call) => call.includes("uninstall"))).toBe(false);
       expect(warnings.some((message) => message.includes("sibling"))).toBe(true);
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd, home });
       expect(lock.plugins.review.agents["claude-code"].projector).toBe("explode");
       expect(lock.plugins.review.agents["claude-code"].root).toBe(join(cwd, ".claude/skills"));
     } finally {

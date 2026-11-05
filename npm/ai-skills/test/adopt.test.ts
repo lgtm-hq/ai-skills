@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,6 +11,7 @@ import {
   scanInstalledSkills,
 } from "../lib/adopt.ts";
 import { parseArguments, validateUnattendedCommandOptions } from "../lib/options.ts";
+import { readState } from "./fixtures/state.ts";
 
 const vendors = [
   { id: "anthropics", repo: "anthropics/skills" },
@@ -415,24 +416,15 @@ describe("adoptSkills", () => {
           loadVendors: async () => ({ vendors }),
           now: () => new Date("2026-07-10T21:00:00.000Z"),
           pathEnvironment: { cwd },
-          readLock: async () => ({
-            gatewayVersion: "0.0.0-dev",
-            plugins: {},
-            scope: "project" as const,
-            version: 2,
-          }),
           readSkillsLock: async () => readSkillsLock("project", { cwd }),
           scanInstalled: async () => scanInstalledSkills("project", { cwd }),
-          writeLock: async (lock) => {
-            await writeFile(join(cwd, "ai-skills-lock.json"), `${JSON.stringify(lock, null, 2)}\n`);
-          },
           write: (line) => lines.push(line),
         },
       );
 
       expect(result.wrote).toBe(true);
       expect(result.adopted).toEqual(["anthropics"]);
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.plugins.anthropics).toMatchObject({
         projector: "explode" as const,
         repo: "anthropics/skills",
@@ -486,7 +478,7 @@ describe("adoptSkills", () => {
       );
 
       expect(result.wrote).toBe(true);
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.plugins.anthropics.vendor).toBe("anthropics");
     } finally {
       await rm(cwd, { force: true, recursive: true });
@@ -503,17 +495,8 @@ describe("adoptSkills", () => {
       },
       {
         loadVendors: async () => ({ vendors }),
-        readLock: async () => ({
-          gatewayVersion: "0.0.0-dev",
-          plugins: {},
-          scope: "project" as const,
-          version: 2,
-        }),
         readSkillsLock: async () => ({ version: 1, skills: {} }),
         scanInstalled: async () => ({ mystery: ["cursor"] }),
-        writeLock: async () => {
-          throw new Error("should not write");
-        },
         write: () => {},
       },
     );

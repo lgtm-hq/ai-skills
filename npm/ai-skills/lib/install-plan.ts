@@ -1,10 +1,18 @@
+import { resolve, sep } from "node:path";
+
 import { readDoctorCache } from "./doctor.ts";
-import { adapterFor, assertBuiltinPlan } from "./adapters/index.ts";
-import { applyPlan } from "./adapters/execute.ts";
-import type { ExecuteOptions, Transaction } from "./adapters/execute.ts";
-import { nodeReadOnlyFs } from "./adapters/fs.ts";
+import { ADAPTERS, adapterFor, assertBuiltinPlan } from "./adapters/index.ts";
+import { nodeReadOnlyFs, sha256 } from "./adapters/fs.ts";
 import { destUsesCopyMaterialization } from "./adapters/shared/skill-explode.ts";
-import type { AdapterPlan, KeptSet, Mode, Op, PlanInput, ReadOnlyFs } from "./adapters/types.ts";
+import type {
+  AdapterId,
+  AdapterPlan,
+  KeptSet,
+  Mode,
+  Op,
+  PlanInput,
+  ReadOnlyFs,
+} from "./adapters/types.ts";
 import {
   agentProjector,
   agentSkillsRoot,
@@ -45,20 +53,42 @@ export async function composeInstallPlans(
   fs: ReadOnlyFs = nodeReadOnlyFs,
 ): Promise<AdapterPlan[]> {
   const plans: AdapterPlan[] = [];
+  const explodeRoots = composition.lanes.explode.map((agent) =>
+    resolve(agentSkillsRoot(composition.scope, agent, composition.env)),
+  );
+  // The shared store is written once per transaction, by the first lane that
+  // plans it, as the explode engine does for all of its agents at once.
+  const storeRoot = resolve(composition.storeRoot);
+  const plannedStores = new Set<string>();
   for (const agent of composition.lanes.explode) {
     const root = agentSkillsRoot(composition.scope, agent, composition.env);
     const owned = ownedSkills(composition.existing, agent);
     const copy =
       composition.copy ||
       (await destUsesCopyMaterialization(root, [...new Set([...composition.skills, ...owned])]));
-    plans.push(
-      await planLane(composition, agent, PROJECTOR_EXPLODE, fs, {
-        copy,
-        destRoots: composition.destRoots,
-        retainStoreSkills: composition.retainStoreSkills,
-        storeRoot: composition.storeRoot,
-      }),
-    );
+    const plan = await planLane(composition, agent, PROJECTOR_EXPLODE, fs, {
+      copy,
+      // Dests of this transaction's other explode lanes are relinked with it.
+      destRoots: composition.destRoots.filter(
+        (candidate) =>
+          resolve(candidate) === resolve(root) || !explodeRoots.includes(resolve(candidate)),
+      ),
+      retainStoreSkills: composition.retainStoreSkills,
+      storeRoot: composition.storeRoot,
+    });
+    const touched = new Set<string>();
+    plan.ops = plan.ops.filter((op) => {
+      const store = op.kind === "host-exec" ? null : storeSkillDir(storeRoot, op.path);
+      if (store === null) {
+        return true;
+      }
+      touched.add(store);
+      return !plannedStores.has(store);
+    });
+    for (const store of touched) {
+      plannedStores.add(store);
+    }
+    plans.push(plan);
   }
   for (const agent of [...composition.lanes.treeNative, ...composition.lanes.cliNative]) {
     plans.push(
@@ -71,50 +101,53 @@ export async function composeInstallPlans(
 }
 
 /**
- * Plan and apply one CLI-native lane through the executor.
- *
- * The returned transaction keeps its undo log until the caller commits it
- * (after the gateway lock write) or rolls it back.
+ * Fingerprint of each adapter's declared contract, for receipts.
  */
-export async function applyCliLane(
-  composition: InstallComposition,
-  agent: string,
-  options: Pick<ExecuteOptions, "exec">,
-): Promise<Transaction> {
-  const plan = await planLane(composition, agent, PROJECTOR_NATIVE, nodeReadOnlyFs, {});
-  return applyPlan(plan, { exec: options.exec });
+export function adapterFingerprints(plans: AdapterPlan[]): Partial<Record<AdapterId, string>> {
+  const fingerprints: Partial<Record<AdapterId, string>> = {};
+  for (const plan of plans) {
+    const adapter = ADAPTERS.get(plan.adapter);
+    if (!adapter) {
+      continue;
+    }
+    fingerprints[plan.adapter] = sha256(
+      JSON.stringify({
+        hostExec: adapter.hostExec,
+        hosts: adapter.hosts,
+        id: adapter.id,
+        mode: adapter.mode,
+        opKinds: adapter.opKinds,
+        recovery: adapter.recovery,
+      }),
+    );
+  }
+  return fingerprints;
 }
 
 /**
- * Commit applied transactions after ownership is recorded; warn, never throw.
+ * Host effects a plan cannot undo, disclosed before anything is applied.
  */
-export async function finishTransactions(
-  transactions: Transaction[],
-  warn: (message: string) => void,
-): Promise<void> {
-  for (const transaction of transactions) {
-    try {
-      await transaction.commit();
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      warn(`Warning: could not discard native envelope backups (${detail})`);
-    }
-  }
+export function irreversibleEffects(plans: AdapterPlan[]): string[] {
+  return plans.flatMap((plan) =>
+    plan.ops.flatMap((op) =>
+      op.kind === "host-exec" && op.compensate === null
+        ? [`${op.argv.join(" ")} (${plan.adapter}: ${op.step})`]
+        : [],
+    ),
+  );
 }
 
 /**
- * Roll back applied transactions newest first, returning undo failures.
+ * Store skill directory an op path falls in, or null outside the store.
  */
-export async function undoTransactions(transactions: Transaction[]): Promise<unknown[]> {
-  const failures: unknown[] = [];
-  for (const transaction of [...transactions].reverse()) {
-    try {
-      await transaction.rollback();
-    } catch (error) {
-      failures.push(error);
-    }
+function storeSkillDir(storeRoot: string, path: string): string | null {
+  const resolved = resolve(path);
+  const prefix = storeRoot.endsWith(sep) ? storeRoot : `${storeRoot}${sep}`;
+  if (!resolved.startsWith(prefix)) {
+    return null;
   }
-  return failures;
+  const [skill] = resolved.slice(prefix.length).split(sep);
+  return skill ? `${prefix}${skill}` : null;
 }
 
 /**

@@ -13,10 +13,10 @@ import {
   pluginAgentNames,
   pluginSkillNames,
   PROJECTOR_EXPLODE,
-  readLockfile,
   refreshPluginFileHashes,
-  writeLockfile,
 } from "./lockfile.ts";
+import { withStateSession } from "./journal/recover.ts";
+import type { JournalHooks } from "./journal/recover.ts";
 import { resolveScope } from "./options.ts";
 
 /**
@@ -236,11 +236,10 @@ export async function adoptSkills(
     pathEnvironment?: { cwd?: string; home?: string };
     hash?: typeof hashFile;
     loadVendors?: () => Promise<{ vendors: { id: string; repo: string }[] }>;
+    journal?: JournalHooks;
     now?: () => Date;
-    readLock?: typeof readLockfile;
     readSkillsLock?: typeof readSkillsLock;
     scanInstalled?: typeof scanInstalledSkills;
-    writeLock?: typeof writeLockfile;
     write?: (line: string) => void;
   } = {},
 ): Promise<AdoptResult> {
@@ -249,8 +248,6 @@ export async function adoptSkills(
   }
   const scope = resolveScope(options);
   const pathEnv = dependencies.pathEnvironment ?? {};
-  const readLock = dependencies.readLock ?? ((target) => readLockfile(target, pathEnv));
-  const writeLock = dependencies.writeLock ?? ((next) => writeLockfile(next, pathEnv));
   const readStock = dependencies.readSkillsLock ?? ((target) => readSkillsLock(target, pathEnv));
   const scanInstalled =
     dependencies.scanInstalled ?? ((target) => scanInstalledSkills(target, pathEnv));
@@ -263,7 +260,7 @@ export async function adoptSkills(
       const prompt = createInterface({ input: stdin, output: stdout });
       try {
         write(summary);
-        const answer = (await prompt.question("Write gateway lock updates? [y/N] "))
+        const answer = (await prompt.question("Record these installs? [y/N] "))
           .trim()
           .toLowerCase();
         return answer === "y" || answer === "yes";
@@ -272,50 +269,64 @@ export async function adoptSkills(
       }
     });
 
-  const lock = await readLock(scope);
-  const stock = await readStock(scope);
-  const installed = await scanInstalled(scope);
-  const filteredInstalled = filterAgents(installed, options.agents);
-  const { vendors } = await loadVendorCatalog();
-  const plan = planAdopt(lock, filteredInstalled, stock.skills, vendors, now, pathEnv);
-  const summary = formatAdoptSummary(plan);
-
-  if (Object.keys(plan.adopt).length === 0) {
-    write(summary);
-    return {
-      adopted: [],
-      alreadyTracked: plan.alreadyTracked,
-      ambiguous: plan.ambiguous,
-      skippedMissingLock: plan.skippedMissingLock,
-      wrote: false,
-    };
-  }
-
-  if (!options.yes) {
-    const accepted = await confirm(summary);
-    if (!accepted) {
-      write("Adopt cancelled; gateway lock unchanged.");
-      return {
+  return withStateSession(
+    {
+      env: pathEnv,
+      report: write,
+      scope,
+      ...(dependencies.journal?.lockWaitMs === undefined
+        ? {}
+        : { lockWaitMs: dependencies.journal.lockWaitMs }),
+    },
+    async (session) => {
+      const lock = session.view;
+      const stock = await readStock(scope);
+      const installed = await scanInstalled(scope);
+      const filteredInstalled = filterAgents(installed, options.agents);
+      const { vendors } = await loadVendorCatalog();
+      const plan = planAdopt(lock, filteredInstalled, stock.skills, vendors, now, pathEnv);
+      const summary = formatAdoptSummary(plan);
+      const unchanged = {
         adopted: [],
         alreadyTracked: plan.alreadyTracked,
         ambiguous: plan.ambiguous,
         skippedMissingLock: plan.skippedMissingLock,
         wrote: false,
       };
-    }
-  } else {
-    write(summary);
-  }
-
-  const next = mergeLockEntries(lock, await hashAdoptedEntries(plan.adopt, dependencies.hash));
-  await writeLock(next);
-  return {
-    adopted: Object.keys(plan.adopt).sort(),
-    alreadyTracked: plan.alreadyTracked,
-    ambiguous: plan.ambiguous,
-    skippedMissingLock: plan.skippedMissingLock,
-    wrote: true,
-  };
+      if (Object.keys(plan.adopt).length === 0) {
+        write(summary);
+        return unchanged;
+      }
+      if (!options.yes) {
+        const accepted = await confirm(summary);
+        if (!accepted) {
+          write("Adopt cancelled; installed state unchanged.");
+          return unchanged;
+        }
+      } else {
+        write(summary);
+      }
+      const next = mergeLockEntries(lock, await hashAdoptedEntries(plan.adopt, dependencies.hash));
+      // Adopt records ownership only: a transaction with no ops, committed by the receipt.
+      await session.transact({
+        hooks: dependencies.journal,
+        kind: "adopt",
+        next: {
+          artifactDigest: session.receipt?.artifactDigest ?? null,
+          fingerprints: { adapters: {}, policy: session.receipt?.fingerprints.policy ?? null },
+          plugins: next.plugins,
+        },
+        ops: [],
+      });
+      return {
+        adopted: Object.keys(plan.adopt).sort(),
+        alreadyTracked: plan.alreadyTracked,
+        ambiguous: plan.ambiguous,
+        skippedMissingLock: plan.skippedMissingLock,
+        wrote: true,
+      };
+    },
+  );
 }
 
 /**

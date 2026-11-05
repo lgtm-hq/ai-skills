@@ -1,6 +1,8 @@
 [
   {
-    "args": ["vendors"],
+    "args": [
+      "vendors"
+    ],
     "stdout": "mattpocock\tmattpocock/skills\t3cca18b368ae95cdbdebbff572ccafa662551015\tMIT\nanthropics\tanthropics/skills\tca45fc496a3436251f191354091d557da31c15b5\tApache-2.0\nanthropics-claude-code\tanthropics/claude-code\tab9b2cf7bb9e4f98ff264c07a22e46d83c29c558\tCommercial\ncaveman\tJuliusBrussee/caveman\t15581d14007fd01fb3f132016741962f34936ca2\tMIT\ndavidondrej\tdavidondrej/skills\t7201ee3854ada65e1863f68690800aa483e6d085\tMIT\n",
     "stderr": "",
     "status": 0,
@@ -8,12 +10,21 @@
     "tree": {}
   },
   {
-    "args": ["install", "-y", "--project", "-a", "codex", "--bundle", "review"],
+    "args": [
+      "install",
+      "-y",
+      "--project",
+      "-a",
+      "codex",
+      "--bundle",
+      "review"
+    ],
     "stdout": "1 installed · 0 already present · 0 repaired\n",
     "stderr": "",
     "status": 0,
     "calls": [],
     "tree": {
+      "<receipt>": "{\"generation\":1,\"plugins\":{\"review\":{\"agents\":{\"codex\":{\"files\":{\"lint/SKILL.md\":\"173468c3ef3a7b479886b73225abc51fb65a558eeab1013e9cd5bfd8acfd71b4\",\"test/SKILL.md\":\"57f40e5a292b94055f89d8c036fbe523997f2b8613fa05dc810e36c8ed46741a\",\"greptile/SKILL.md\":\"caecc19ca3c444f29e7fab8e21bd7ada323edabe3b6c98b1e46b1874b607f74f\",\"coderabbit/SKILL.md\":\"0dd5611b06212df37dbad1993ad458331a7844dfa1490d28fbc3e25b65b37f82\",\"lintro-review/SKILL.md\":\"f17c2383d3cf0692d656f3480c56b5b9c86289680eee61a86044119402c4e29e\"},\"projector\":\"explode\",\"root\":\"<HOME>/.codex/skills\"}},\"installedAt\":\"2026-07-10T17:00:00.000Z\",\"projector\":\"explode\",\"repo\":\"lgtm-hq/ai-skills\",\"sha\":\"v0.0.0-dev\",\"skills\":[\"lint\",\"test\",\"greptile\",\"coderabbit\",\"lintro-review\"],\"vendor\":\"lgtm-hq\",\"version\":\"0.0.0-dev\"}}}",
       ".agents/skills/coderabbit/SKILL.md": "# coderabbit\nfixture catalog output\n",
       ".agents/skills/greptile/SKILL.md": "# greptile\nfixture catalog output\n",
       ".agents/skills/lint/SKILL.md": "# lint\nfixture catalog output\n",
@@ -24,17 +35,20 @@
       ".codex/skills/greptile": "symlink:<HOME>/.agents/skills/greptile",
       ".codex/skills/lint": "symlink:<HOME>/.agents/skills/lint",
       ".codex/skills/lintro-review": "symlink:<HOME>/.agents/skills/lintro-review",
-      ".codex/skills/test": "symlink:<HOME>/.agents/skills/test",
-      "ai-skills-lock.json": "{\n  \"gatewayVersion\": \"0.0.0-dev\",\n  \"plugins\": {\n    \"review\": {\n      \"agents\": {\n        \"codex\": {\n          \"files\": {\n            \"lint/SKILL.md\": \"173468c3ef3a7b479886b73225abc51fb65a558eeab1013e9cd5bfd8acfd71b4\",\n            \"test/SKILL.md\": \"57f40e5a292b94055f89d8c036fbe523997f2b8613fa05dc810e36c8ed46741a\",\n            \"greptile/SKILL.md\": \"caecc19ca3c444f29e7fab8e21bd7ada323edabe3b6c98b1e46b1874b607f74f\",\n            \"coderabbit/SKILL.md\": \"0dd5611b06212df37dbad1993ad458331a7844dfa1490d28fbc3e25b65b37f82\",\n            \"lintro-review/SKILL.md\": \"f17c2383d3cf0692d656f3480c56b5b9c86289680eee61a86044119402c4e29e\"\n          },\n          \"projector\": \"explode\",\n          \"root\": \"<HOME>/.codex/skills\"\n        }\n      },\n      \"installedAt\": \"2026-07-10T17:00:00.000Z\",\n      \"projector\": \"explode\",\n      \"repo\": \"lgtm-hq/ai-skills\",\n      \"sha\": \"v0.0.0-dev\",\n      \"skills\": [\n        \"lint\",\n        \"test\",\n        \"greptile\",\n        \"coderabbit\",\n        \"lintro-review\"\n      ],\n      \"vendor\": \"lgtm-hq\",\n      \"version\": \"0.0.0-dev\"\n    }\n  },\n  \"scope\": \"project\",\n  \"version\": 2\n}\n"
+      ".codex/skills/test": "symlink:<HOME>/.agents/skills/test"
     }
   },
   {
-    "args": ["list", "--project"],
+    "args": [
+      "list",
+      "--project"
+    ],
     "stdout": "review\tlgtm-hq\tlgtm-hq/ai-skills\tv0.0.0-dev\tcodex\tcoderabbit,greptile,lint,lintro-review,test\n",
     "stderr": "",
     "status": 0,
     "calls": [],
     "tree": {
+      "<receipt>": "{\"generation\":1,\"plugins\":{\"review\":{\"agents\":{\"codex\":{\"files\":{\"lint/SKILL.md\":\"173468c3ef3a7b479886b73225abc51fb65a558eeab1013e9cd5bfd8acfd71b4\",\"test/SKILL.md\":\"57f40e5a292b94055f89d8c036fbe523997f2b8613fa05dc810e36c8ed46741a\",\"greptile/SKILL.md\":\"caecc19ca3c444f29e7fab8e21bd7ada323edabe3b6c98b1e46b1874b607f74f\",\"coderabbit/SKILL.md\":\"0dd5611b06212df37dbad1993ad458331a7844dfa1490d28fbc3e25b65b37f82\",\"lintro-review/SKILL.md\":\"f17c2383d3cf0692d656f3480c56b5b9c86289680eee61a86044119402c4e29e\"},\"projector\":\"explode\",\"root\":\"<HOME>/.codex/skills\"}},\"installedAt\":\"2026-07-10T17:00:00.000Z\",\"projector\":\"explode\",\"repo\":\"lgtm-hq/ai-skills\",\"sha\":\"v0.0.0-dev\",\"skills\":[\"lint\",\"test\",\"greptile\",\"coderabbit\",\"lintro-review\"],\"vendor\":\"lgtm-hq\",\"version\":\"0.0.0-dev\"}}}",
       ".agents/skills/coderabbit/SKILL.md": "# coderabbit\nfixture catalog output\n",
       ".agents/skills/greptile/SKILL.md": "# greptile\nfixture catalog output\n",
       ".agents/skills/lint/SKILL.md": "# lint\nfixture catalog output\n",
@@ -45,17 +59,23 @@
       ".codex/skills/greptile": "symlink:<HOME>/.agents/skills/greptile",
       ".codex/skills/lint": "symlink:<HOME>/.agents/skills/lint",
       ".codex/skills/lintro-review": "symlink:<HOME>/.agents/skills/lintro-review",
-      ".codex/skills/test": "symlink:<HOME>/.agents/skills/test",
-      "ai-skills-lock.json": "{\n  \"gatewayVersion\": \"0.0.0-dev\",\n  \"plugins\": {\n    \"review\": {\n      \"agents\": {\n        \"codex\": {\n          \"files\": {\n            \"lint/SKILL.md\": \"173468c3ef3a7b479886b73225abc51fb65a558eeab1013e9cd5bfd8acfd71b4\",\n            \"test/SKILL.md\": \"57f40e5a292b94055f89d8c036fbe523997f2b8613fa05dc810e36c8ed46741a\",\n            \"greptile/SKILL.md\": \"caecc19ca3c444f29e7fab8e21bd7ada323edabe3b6c98b1e46b1874b607f74f\",\n            \"coderabbit/SKILL.md\": \"0dd5611b06212df37dbad1993ad458331a7844dfa1490d28fbc3e25b65b37f82\",\n            \"lintro-review/SKILL.md\": \"f17c2383d3cf0692d656f3480c56b5b9c86289680eee61a86044119402c4e29e\"\n          },\n          \"projector\": \"explode\",\n          \"root\": \"<HOME>/.codex/skills\"\n        }\n      },\n      \"installedAt\": \"2026-07-10T17:00:00.000Z\",\n      \"projector\": \"explode\",\n      \"repo\": \"lgtm-hq/ai-skills\",\n      \"sha\": \"v0.0.0-dev\",\n      \"skills\": [\n        \"lint\",\n        \"test\",\n        \"greptile\",\n        \"coderabbit\",\n        \"lintro-review\"\n      ],\n      \"vendor\": \"lgtm-hq\",\n      \"version\": \"0.0.0-dev\"\n    }\n  },\n  \"scope\": \"project\",\n  \"version\": 2\n}\n"
+      ".codex/skills/test": "symlink:<HOME>/.agents/skills/test"
     }
   },
   {
-    "args": ["doctor", "-y", "--project", "-a", "codex"],
+    "args": [
+      "doctor",
+      "-y",
+      "--project",
+      "-a",
+      "codex"
+    ],
     "stdout": "host\tcodex\texplode\tprobe\tn/a\nplugin\treview\tcodex\texplode\t\n",
     "stderr": "",
     "status": 0,
     "calls": [],
     "tree": {
+      "<receipt>": "{\"generation\":1,\"plugins\":{\"review\":{\"agents\":{\"codex\":{\"files\":{\"lint/SKILL.md\":\"173468c3ef3a7b479886b73225abc51fb65a558eeab1013e9cd5bfd8acfd71b4\",\"test/SKILL.md\":\"57f40e5a292b94055f89d8c036fbe523997f2b8613fa05dc810e36c8ed46741a\",\"greptile/SKILL.md\":\"caecc19ca3c444f29e7fab8e21bd7ada323edabe3b6c98b1e46b1874b607f74f\",\"coderabbit/SKILL.md\":\"0dd5611b06212df37dbad1993ad458331a7844dfa1490d28fbc3e25b65b37f82\",\"lintro-review/SKILL.md\":\"f17c2383d3cf0692d656f3480c56b5b9c86289680eee61a86044119402c4e29e\"},\"projector\":\"explode\",\"root\":\"<HOME>/.codex/skills\"}},\"installedAt\":\"2026-07-10T17:00:00.000Z\",\"projector\":\"explode\",\"repo\":\"lgtm-hq/ai-skills\",\"sha\":\"v0.0.0-dev\",\"skills\":[\"lint\",\"test\",\"greptile\",\"coderabbit\",\"lintro-review\"],\"vendor\":\"lgtm-hq\",\"version\":\"0.0.0-dev\"}}}",
       ".agents/skills/coderabbit/SKILL.md": "# coderabbit\nfixture catalog output\n",
       ".agents/skills/greptile/SKILL.md": "# greptile\nfixture catalog output\n",
       ".agents/skills/lint/SKILL.md": "# lint\nfixture catalog output\n",
@@ -66,17 +86,23 @@
       ".codex/skills/greptile": "symlink:<HOME>/.agents/skills/greptile",
       ".codex/skills/lint": "symlink:<HOME>/.agents/skills/lint",
       ".codex/skills/lintro-review": "symlink:<HOME>/.agents/skills/lintro-review",
-      ".codex/skills/test": "symlink:<HOME>/.agents/skills/test",
-      "ai-skills-lock.json": "{\n  \"gatewayVersion\": \"0.0.0-dev\",\n  \"plugins\": {\n    \"review\": {\n      \"agents\": {\n        \"codex\": {\n          \"files\": {\n            \"lint/SKILL.md\": \"173468c3ef3a7b479886b73225abc51fb65a558eeab1013e9cd5bfd8acfd71b4\",\n            \"test/SKILL.md\": \"57f40e5a292b94055f89d8c036fbe523997f2b8613fa05dc810e36c8ed46741a\",\n            \"greptile/SKILL.md\": \"caecc19ca3c444f29e7fab8e21bd7ada323edabe3b6c98b1e46b1874b607f74f\",\n            \"coderabbit/SKILL.md\": \"0dd5611b06212df37dbad1993ad458331a7844dfa1490d28fbc3e25b65b37f82\",\n            \"lintro-review/SKILL.md\": \"f17c2383d3cf0692d656f3480c56b5b9c86289680eee61a86044119402c4e29e\"\n          },\n          \"projector\": \"explode\",\n          \"root\": \"<HOME>/.codex/skills\"\n        }\n      },\n      \"installedAt\": \"2026-07-10T17:00:00.000Z\",\n      \"projector\": \"explode\",\n      \"repo\": \"lgtm-hq/ai-skills\",\n      \"sha\": \"v0.0.0-dev\",\n      \"skills\": [\n        \"lint\",\n        \"test\",\n        \"greptile\",\n        \"coderabbit\",\n        \"lintro-review\"\n      ],\n      \"vendor\": \"lgtm-hq\",\n      \"version\": \"0.0.0-dev\"\n    }\n  },\n  \"scope\": \"project\",\n  \"version\": 2\n}\n"
+      ".codex/skills/test": "symlink:<HOME>/.agents/skills/test"
     }
   },
   {
-    "args": ["update", "-y", "--project", "-a", "codex"],
+    "args": [
+      "update",
+      "-y",
+      "--project",
+      "-a",
+      "codex"
+    ],
     "stdout": "",
     "stderr": "",
     "status": 0,
     "calls": [],
     "tree": {
+      "<receipt>": "{\"generation\":2,\"plugins\":{\"review\":{\"agents\":{\"codex\":{\"files\":{\"lint/SKILL.md\":\"173468c3ef3a7b479886b73225abc51fb65a558eeab1013e9cd5bfd8acfd71b4\",\"test/SKILL.md\":\"57f40e5a292b94055f89d8c036fbe523997f2b8613fa05dc810e36c8ed46741a\",\"greptile/SKILL.md\":\"caecc19ca3c444f29e7fab8e21bd7ada323edabe3b6c98b1e46b1874b607f74f\",\"coderabbit/SKILL.md\":\"0dd5611b06212df37dbad1993ad458331a7844dfa1490d28fbc3e25b65b37f82\",\"lintro-review/SKILL.md\":\"f17c2383d3cf0692d656f3480c56b5b9c86289680eee61a86044119402c4e29e\"},\"projector\":\"explode\",\"root\":\"<HOME>/.codex/skills\"}},\"installedAt\":\"2026-07-10T17:00:00.000Z\",\"projector\":\"explode\",\"repo\":\"lgtm-hq/ai-skills\",\"sha\":\"v0.0.0-dev\",\"skills\":[\"lint\",\"test\",\"greptile\",\"coderabbit\",\"lintro-review\"],\"vendor\":\"lgtm-hq\",\"version\":\"0.0.0-dev\"}}}",
       ".agents/skills/coderabbit/SKILL.md": "# coderabbit\nfixture catalog output\n",
       ".agents/skills/greptile/SKILL.md": "# greptile\nfixture catalog output\n",
       ".agents/skills/lint/SKILL.md": "# lint\nfixture catalog output\n",
@@ -87,40 +113,50 @@
       ".codex/skills/greptile": "symlink:<HOME>/.agents/skills/greptile",
       ".codex/skills/lint": "symlink:<HOME>/.agents/skills/lint",
       ".codex/skills/lintro-review": "symlink:<HOME>/.agents/skills/lintro-review",
-      ".codex/skills/test": "symlink:<HOME>/.agents/skills/test",
-      "ai-skills-lock.json": "{\n  \"gatewayVersion\": \"0.0.0-dev\",\n  \"plugins\": {\n    \"review\": {\n      \"agents\": {\n        \"codex\": {\n          \"files\": {\n            \"lint/SKILL.md\": \"173468c3ef3a7b479886b73225abc51fb65a558eeab1013e9cd5bfd8acfd71b4\",\n            \"test/SKILL.md\": \"57f40e5a292b94055f89d8c036fbe523997f2b8613fa05dc810e36c8ed46741a\",\n            \"greptile/SKILL.md\": \"caecc19ca3c444f29e7fab8e21bd7ada323edabe3b6c98b1e46b1874b607f74f\",\n            \"coderabbit/SKILL.md\": \"0dd5611b06212df37dbad1993ad458331a7844dfa1490d28fbc3e25b65b37f82\",\n            \"lintro-review/SKILL.md\": \"f17c2383d3cf0692d656f3480c56b5b9c86289680eee61a86044119402c4e29e\"\n          },\n          \"projector\": \"explode\",\n          \"root\": \"<HOME>/.codex/skills\"\n        }\n      },\n      \"installedAt\": \"2026-07-10T17:00:00.000Z\",\n      \"projector\": \"explode\",\n      \"repo\": \"lgtm-hq/ai-skills\",\n      \"sha\": \"v0.0.0-dev\",\n      \"skills\": [\n        \"lint\",\n        \"test\",\n        \"greptile\",\n        \"coderabbit\",\n        \"lintro-review\"\n      ],\n      \"vendor\": \"lgtm-hq\",\n      \"version\": \"0.0.0-dev\"\n    }\n  },\n  \"scope\": \"project\",\n  \"version\": 2\n}\n"
+      ".codex/skills/test": "symlink:<HOME>/.agents/skills/test"
     }
   },
   {
-    "args": ["remove", "-y", "--project", "-a", "codex", "--skill", "review"],
+    "args": [
+      "remove",
+      "-y",
+      "--project",
+      "-a",
+      "codex",
+      "--skill",
+      "review"
+    ],
     "stdout": "",
     "stderr": "",
     "status": 0,
     "calls": [],
     "tree": {
+      "<receipt>": "{\"generation\":3,\"plugins\":{}}",
       ".agents/skills/coderabbit/SKILL.md": "# coderabbit\nfixture catalog output\n",
       ".agents/skills/greptile/SKILL.md": "# greptile\nfixture catalog output\n",
       ".agents/skills/lint/SKILL.md": "# lint\nfixture catalog output\n",
       ".agents/skills/lintro-review/SKILL.md": "# lintro-review\nfixture catalog output\n",
       ".agents/skills/test/SKILL.md": "# test\nfixture catalog output\n",
-      ".ai-skills/doctor.json": "{\n  \"hosts\": {\n    \"codex\": {\n      \"capability\": \"explode\",\n      \"source\": \"probe\",\n      \"version\": \"n/a\"\n    }\n  },\n  \"schemaVersion\": 1\n}\n",
-      "ai-skills-lock.json": "{\n  \"gatewayVersion\": \"0.0.0-dev\",\n  \"plugins\": {},\n  \"scope\": \"project\",\n  \"version\": 2\n}\n"
+      ".ai-skills/doctor.json": "{\n  \"hosts\": {\n    \"codex\": {\n      \"capability\": \"explode\",\n      \"source\": \"probe\",\n      \"version\": \"n/a\"\n    }\n  },\n  \"schemaVersion\": 1\n}\n"
     }
   },
   {
-    "args": ["list", "--project"],
+    "args": [
+      "list",
+      "--project"
+    ],
     "stdout": "",
     "stderr": "",
     "status": 0,
     "calls": [],
     "tree": {
+      "<receipt>": "{\"generation\":3,\"plugins\":{}}",
       ".agents/skills/coderabbit/SKILL.md": "# coderabbit\nfixture catalog output\n",
       ".agents/skills/greptile/SKILL.md": "# greptile\nfixture catalog output\n",
       ".agents/skills/lint/SKILL.md": "# lint\nfixture catalog output\n",
       ".agents/skills/lintro-review/SKILL.md": "# lintro-review\nfixture catalog output\n",
       ".agents/skills/test/SKILL.md": "# test\nfixture catalog output\n",
-      ".ai-skills/doctor.json": "{\n  \"hosts\": {\n    \"codex\": {\n      \"capability\": \"explode\",\n      \"source\": \"probe\",\n      \"version\": \"n/a\"\n    }\n  },\n  \"schemaVersion\": 1\n}\n",
-      "ai-skills-lock.json": "{\n  \"gatewayVersion\": \"0.0.0-dev\",\n  \"plugins\": {},\n  \"scope\": \"project\",\n  \"version\": 2\n}\n"
+      ".ai-skills/doctor.json": "{\n  \"hosts\": {\n    \"codex\": {\n      \"capability\": \"explode\",\n      \"source\": \"probe\",\n      \"version\": \"n/a\"\n    }\n  },\n  \"schemaVersion\": 1\n}\n"
     }
   },
   {
@@ -154,6 +190,7 @@
       ]
     ],
     "tree": {
+      "<receipt>": "{\"generation\":3,\"plugins\":{}}",
       ".agents/skills/coderabbit/SKILL.md": "# coderabbit\nfixture catalog output\n",
       ".agents/skills/greptile/SKILL.md": "# greptile\nfixture catalog output\n",
       ".agents/skills/lint/SKILL.md": "# lint\nfixture catalog output\n",
@@ -164,17 +201,20 @@
       ".codex/skills/greptile/SKILL.md": "# greptile\nfixture upstream output\n",
       ".codex/skills/lint/SKILL.md": "# lint\nfixture upstream output\n",
       ".codex/skills/lintro-review/SKILL.md": "# lintro-review\nfixture upstream output\n",
-      ".codex/skills/test/SKILL.md": "# test\nfixture upstream output\n",
-      "ai-skills-lock.json": "{\n  \"gatewayVersion\": \"0.0.0-dev\",\n  \"plugins\": {},\n  \"scope\": \"project\",\n  \"version\": 2\n}\n"
+      ".codex/skills/test/SKILL.md": "# test\nfixture upstream output\n"
     }
   },
   {
-    "args": ["list", "--project"],
+    "args": [
+      "list",
+      "--project"
+    ],
     "stdout": "",
     "stderr": "",
     "status": 0,
     "calls": [],
     "tree": {
+      "<receipt>": "{\"generation\":3,\"plugins\":{}}",
       ".agents/skills/coderabbit/SKILL.md": "# coderabbit\nfixture catalog output\n",
       ".agents/skills/greptile/SKILL.md": "# greptile\nfixture catalog output\n",
       ".agents/skills/lint/SKILL.md": "# lint\nfixture catalog output\n",
@@ -185,17 +225,19 @@
       ".codex/skills/greptile/SKILL.md": "# greptile\nfixture upstream output\n",
       ".codex/skills/lint/SKILL.md": "# lint\nfixture upstream output\n",
       ".codex/skills/lintro-review/SKILL.md": "# lintro-review\nfixture upstream output\n",
-      ".codex/skills/test/SKILL.md": "# test\nfixture upstream output\n",
-      "ai-skills-lock.json": "{\n  \"gatewayVersion\": \"0.0.0-dev\",\n  \"plugins\": {},\n  \"scope\": \"project\",\n  \"version\": 2\n}\n"
+      ".codex/skills/test/SKILL.md": "# test\nfixture upstream output\n"
     }
   },
   {
-    "args": ["--bad-flag"],
+    "args": [
+      "--bad-flag"
+    ],
     "stdout": "",
     "stderr": "Unknown option: --bad-flag\n",
     "status": 1,
     "calls": [],
     "tree": {
+      "<receipt>": "{\"generation\":3,\"plugins\":{}}",
       ".agents/skills/coderabbit/SKILL.md": "# coderabbit\nfixture catalog output\n",
       ".agents/skills/greptile/SKILL.md": "# greptile\nfixture catalog output\n",
       ".agents/skills/lint/SKILL.md": "# lint\nfixture catalog output\n",
@@ -206,8 +248,7 @@
       ".codex/skills/greptile/SKILL.md": "# greptile\nfixture upstream output\n",
       ".codex/skills/lint/SKILL.md": "# lint\nfixture upstream output\n",
       ".codex/skills/lintro-review/SKILL.md": "# lintro-review\nfixture upstream output\n",
-      ".codex/skills/test/SKILL.md": "# test\nfixture upstream output\n",
-      "ai-skills-lock.json": "{\n  \"gatewayVersion\": \"0.0.0-dev\",\n  \"plugins\": {},\n  \"scope\": \"project\",\n  \"version\": 2\n}\n"
+      ".codex/skills/test/SKILL.md": "# test\nfixture upstream output\n"
     }
   }
 ]

@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import {
   access,
   lstat,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   readlink,
-  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -17,10 +18,10 @@ import { loadVendorIndex } from "../lib/catalog.ts";
 import { writeDoctorCache, runDoctor } from "../lib/doctor.ts";
 import { batchesFromCliOptions, install } from "../lib/install.ts";
 import { removeSkills, updateSkills } from "../lib/gateway-commands.ts";
-import { readLockfile, writeLockfile } from "../lib/lockfile.ts";
 import { MINIMUM_SKILLS_VERSION } from "../lib/options.ts";
 import { buildSkillsArguments, UNMANAGED_HANDOFF_LABEL } from "../lib/skills-runner.ts";
 import vendorCatalog from "../data/vendors.json" with { type: "json" };
+import { editState, readState, skillSources, writeLegacyLock } from "./fixtures/state.ts";
 
 const claudeCode = vendorCatalog.vendors.find((vendor) => vendor.id === "anthropics-claude-code");
 
@@ -39,44 +40,11 @@ const unattendedOptions = {
   yes: true,
 };
 
-type ExplodeArgs = Parameters<
-  typeof import("../lib/adapters/shared/skill-explode.ts").explodePlugin
->[0];
+/** Real one-file sources (`# <name>`) for the explode lane. */
+const stubSources = await skillSources(["lint", "test", "greptile", "coderabbit", "lintro-review"]);
 
-/**
- * Explode engine stand-in for managed installs: runs `effect`, then claims
- * `<skill>/SKILL.md` per agent. Managed installs no longer hand off to the
- * skills CLI (#579), so lane-agnostic tests drive the explode lane instead.
- */
-function explodeLike(
-  effect: (args: ExplodeArgs) => Promise<void> = async () => {},
-  digest = "",
-): (args: ExplodeArgs) => Promise<import("../lib/adapters/shared/skill-explode.ts").ExplodeResult> {
-  return async (args) => {
-    await effect(args);
-    return {
-      claimed: Object.fromEntries(
-        args.agents.map((agent) => [
-          agent.id,
-          Object.fromEntries(args.skills.map((skill) => [`${skill}/SKILL.md`, digest])),
-        ]),
-      ),
-      createdDests: [],
-      createdStores: [],
-      skipped: [],
-      swappedDests: [],
-      swappedStores: [],
-    };
-  };
-}
-
-/** Local sources for the explode lane; the stand-in never reads them. */
-const stubSources = Object.fromEntries(
-  ["lint", "test", "greptile", "coderabbit", "lintro-review"].map((name) => [
-    name,
-    `/catalog/${name}`,
-  ]),
-);
+/** Hex sha256 of a stub source's `SKILL.md`. */
+const stubDigest = (name: string) => createHash("sha256").update(`# ${name}\n`).digest("hex");
 
 const skillsCliForbidden = async () => {
   throw new Error("managed installs must not call the skills CLI");
@@ -158,7 +126,6 @@ describe("install", () => {
   });
 
   test("expands an unattended first-party bundle", async () => {
-    let received: string[] = [];
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-install-"));
     try {
       await install(
@@ -171,16 +138,10 @@ describe("install", () => {
         skillsCliForbidden,
         () => new Date("2026-07-10T16:00:00.000Z"),
         { cwd },
-        {
-          explode: explodeLike(async (args) => {
-            received = args.skills;
-          }),
-          sourceSkills: stubSources,
-        },
+        { sourceSkills: stubSources },
       );
 
-      expect(received).toContain("lint");
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.version).toBe(2);
       expect(lock.plugins.review).toMatchObject({
         projector: "explode" as const,
@@ -189,8 +150,13 @@ describe("install", () => {
       });
       expect(lock.plugins.review.installedAt).toBe("2026-07-10T16:00:00.000Z");
       expect(lock.plugins.review.agents.cursor.files).toMatchObject({
-        "lint/SKILL.md": "",
-        "test/SKILL.md": "",
+        "lint/SKILL.md": stubDigest("lint"),
+        "test/SKILL.md": stubDigest("test"),
+      });
+      expect(lock.plugins.review.skills).toContain("lint");
+      // The lock file is never written into the repository any more.
+      await expect(access(join(cwd, "ai-skills-lock.json"))).rejects.toMatchObject({
+        code: "ENOENT",
       });
     } finally {
       await rm(cwd, { force: true, recursive: true });
@@ -248,7 +214,7 @@ describe("install", () => {
       );
 
       expect(ran).toBe(false);
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.plugins.hookify).toMatchObject({
         projector: "explode" as const,
         repo: "anthropics/claude-code",
@@ -282,9 +248,7 @@ describe("install", () => {
         () => new Date("2026-07-10T16:00:00.000Z"),
         { cwd },
       );
-      const lockPath = join(cwd, "ai-skills-lock.json");
-      const before = JSON.parse(await readFile(lockPath, "utf8"));
-      let exploded = false;
+      const before = await readState("project", { cwd });
       const result = await updateSkills(
         {
           agents: ["cursor"],
@@ -294,29 +258,15 @@ describe("install", () => {
           yes: true,
         },
         {
-          explode: async () => {
-            exploded = true;
-            return {
-              claimed: {},
-              skipped: [],
-              swappedDests: [],
-              swappedStores: [],
-              createdDests: [],
-              createdStores: [],
-            };
-          },
           isInstalled: async () => true,
           lockEnvironment: { cwd },
           now: () => new Date("2026-07-10T17:00:00.000Z"),
-          readLock: (scope) => readLockfile(scope, { cwd }),
           run: async () => {
             throw new Error("skills CLI must not run for baked plugins");
           },
-          writeLock: (next) => writeLockfile(next, { cwd }),
         },
       );
-      const after = JSON.parse(await readFile(lockPath, "utf8"));
-      expect(exploded).toBe(false);
+      const after = await readState("project", { cwd });
       expect(result).toEqual({ pruned: [], updated: [] });
       expect(after.plugins.hookify.installedAt).toBe(before.plugins.hookify.installedAt);
       expect(after.plugins.hookify.version).toBe(claudeCode!.sha.slice(0, 7));
@@ -365,7 +315,7 @@ describe("install", () => {
       );
 
       expect(ran).toBe(false);
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.plugins["claude-code-frontend-design"]).toMatchObject({
         projector: "explode" as const,
         repo: "anthropics/claude-code",
@@ -413,7 +363,6 @@ describe("install", () => {
   });
 
   test("defaults unset scope to global for both destinations and lock", async () => {
-    let roots: string[] = [];
     const home = await mkdtemp(join(tmpdir(), "ai-skills-home-"));
     try {
       await install(
@@ -427,16 +376,13 @@ describe("install", () => {
         skillsCliForbidden,
         () => new Date("2026-07-10T16:00:00.000Z"),
         { home },
-        {
-          explode: explodeLike(async (args) => {
-            roots = [...args.agents.map((agent) => agent.root), args.storeRoot!];
-          }),
-          sourceSkills: stubSources,
-        },
+        { sourceSkills: stubSources },
       );
 
-      expect(roots).toEqual([join(home, ".cursor/skills"), join(home, ".agents/skills")]);
-      const lock = JSON.parse(await readFile(join(home, ".ai-skills", "lock.json"), "utf8"));
+      expect(await readlink(join(home, ".cursor/skills/lint"))).toBe(
+        join(home, ".agents/skills/lint"),
+      );
+      const lock = await readState("global", { home });
       expect(lock.scope).toBe("global");
       expect(lock.version).toBe(2);
       expect(lock.plugins.lint.vendor).toBe("lgtm-hq");
@@ -474,7 +420,6 @@ describe("install", () => {
 
   test("repairs a stale lock whose tracked files are absent", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-repair-"));
-    let received: string[] = [];
     try {
       await Bun.write(
         join(cwd, "ai-skills-lock.json"),
@@ -495,16 +440,11 @@ describe("install", () => {
           exists: async () => false,
           hash: async () => "",
         },
-        {
-          explode: explodeLike(async (args) => {
-            received = args.skills;
-          }),
-          sourceSkills: stubSources,
-        },
+        { sourceSkills: stubSources },
       );
 
-      expect(received).toEqual(["lint"]);
       expect(result).toEqual({ alreadyPresent: 0, installed: 0, repaired: 1 });
+      expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -512,7 +452,6 @@ describe("install", () => {
 
   test("repairs a lock whose tracked hashes no longer match disk", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-modified-"));
-    let received: string[] = [];
     try {
       await Bun.write(
         join(cwd, "ai-skills-lock.json"),
@@ -533,18 +472,12 @@ describe("install", () => {
           exists: async () => true,
           hash: async () => "new",
         },
-        {
-          explode: explodeLike(async (args) => {
-            received = args.skills;
-          }, "new"),
-          sourceSkills: stubSources,
-        },
+        { sourceSkills: stubSources },
       );
 
-      expect(received).toEqual(["lint"]);
       expect(result).toEqual({ alreadyPresent: 0, installed: 0, repaired: 1 });
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.plugins.lint.agents.cursor.files["lint/SKILL.md"]).toBe("new");
+      const lock = await readState("project", { cwd });
+      expect(lock.plugins.lint.agents.cursor.files["lint/SKILL.md"]).toBe(stubDigest("lint"));
       expect(lock.plugins.lint.installedAt).toBe("2026-07-10T17:00:00.000Z");
     } finally {
       await rm(cwd, { force: true, recursive: true });
@@ -587,7 +520,6 @@ describe("install", () => {
 
   test("repairs only the agent whose tracked files are missing", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-partial-"));
-    let received: string[] = [];
     try {
       await Bun.write(
         join(cwd, "ai-skills-lock.json"),
@@ -614,16 +546,19 @@ describe("install", () => {
           exists: async (path) => String(path).startsWith(cursorRoot),
           hash: async () => "abc",
         },
-        {
-          explode: explodeLike(async (args) => {
-            received = args.agents.map((agent) => agent.id);
-          }, "abc"),
-          sourceSkills: stubSources,
-        },
+        { sourceSkills: stubSources },
       );
 
-      expect(received).toEqual(["claude-code"]);
       expect(result).toEqual({ alreadyPresent: 1, installed: 0, repaired: 1 });
+      await access(join(cwd, ".claude/skills/lint/SKILL.md"));
+      await expect(access(join(cwd, ".cursor/skills/lint"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      const lock = await readState("project", { cwd });
+      expect(lock.plugins.lint.agents.cursor.files["lint/SKILL.md"]).toBe("abc");
+      expect(lock.plugins.lint.agents["claude-code"].files["lint/SKILL.md"]).toBe(
+        stubDigest("lint"),
+      );
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -732,7 +667,6 @@ describe("install", () => {
 
   test("treats a v1 lock as empty and installs instead of skipping", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-v1-"));
-    let ran = false;
     try {
       await Bun.write(
         join(cwd, "ai-skills-lock.json"),
@@ -767,17 +701,12 @@ describe("install", () => {
         skillsCliForbidden,
         () => new Date("2026-07-10T17:00:00.000Z"),
         { cwd },
-        {
-          explode: explodeLike(async () => {
-            ran = true;
-          }),
-          sourceSkills: stubSources,
-        },
+        { sourceSkills: stubSources },
       );
 
-      expect(ran).toBe(true);
       expect(result).toEqual({ alreadyPresent: 0, installed: 1, repaired: 0 });
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      await access(join(cwd, ".cursor/skills/lint/SKILL.md"));
+      const lock = await readState("project", { cwd });
       expect(lock.version).toBe(2);
       expect(lock.plugins.lint.vendor).toBe("lgtm-hq");
       expect(lock.skills).toBeUndefined();
@@ -836,7 +765,7 @@ describe("install", () => {
 
       expect(ran).toBe(false);
       expect(result).toEqual({ alreadyPresent: 0, installed: 1, repaired: 0 });
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       const files = Object.keys(lock.plugins["document-skills"].agents.cursor.files);
       expect(files).toContain("pdf/SKILL.md");
       expect(files).toContain("xlsx/SKILL.md");
@@ -865,7 +794,7 @@ describe("install", () => {
         () => new Date("2026-07-10T16:00:00.000Z"),
         env,
       );
-      const first = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const first = await readState("project", { cwd });
       expect(first.plugins["writing-rules"]).toBeUndefined();
       expect(first.plugins.hookify.agents.cursor.files["writing-rules/SKILL.md"]).toBeTruthy();
 
@@ -885,54 +814,53 @@ describe("install", () => {
         env,
       );
 
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.plugins.hookify.agents.cursor.files["writing-rules/SKILL.md"]).toBeTruthy();
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
   });
 
-  test("rolls back a targeted install that wrote only some plugin skills", async () => {
+  test("rolls back a targeted install when an op fails part way", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-partial-plugin-"));
     const lintDir = join(cwd, ".cursor/skills/lint");
     const testDir = join(cwd, ".cursor/skills/test");
     try {
-      await expect(
-        install(
-          {
-            ...unattendedOptions,
-            bundle: null,
-            global: false,
-            project: true,
-            skills: ["lint", "test"],
-          },
-          skillsCliForbidden,
-          () => new Date("2026-07-10T16:00:00.000Z"),
-          { cwd },
-          {
-            explode: explodeLike(async () => {
-              await mkdir(lintDir, { recursive: true });
-              await writeFile(join(lintDir, "SKILL.md"), "partial\n");
-            }),
-            sourceSkills: stubSources,
-          },
-        ),
-      ).rejects.toThrow("Plugin install incomplete");
+      for (const failBeforeOp of [2, 5]) {
+        await expect(
+          install(
+            {
+              ...unattendedOptions,
+              bundle: null,
+              global: false,
+              project: true,
+              skills: ["lint", "test"],
+            },
+            skillsCliForbidden,
+            () => new Date("2026-07-10T16:00:00.000Z"),
+            { cwd },
+            { journal: { failBeforeOp }, sourceSkills: stubSources },
+          ),
+        ).rejects.toThrow(`Install rolled back: injected failure before op ${failBeforeOp}`);
 
-      await expect(access(lintDir)).rejects.toMatchObject({ code: "ENOENT" });
-      await expect(access(testDir)).rejects.toMatchObject({ code: "ENOENT" });
+        await expect(access(lintDir)).rejects.toMatchObject({ code: "ENOENT" });
+        await expect(access(testDir)).rejects.toMatchObject({ code: "ENOENT" });
+        await expect(access(join(cwd, ".agents"))).rejects.toMatchObject({ code: "ENOENT" });
+        expect((await readState("project", { cwd })).plugins).toEqual({});
+      }
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
   });
 
-  test("rolls back newly written skill directories when the explode lane fails", async () => {
+  test("rolls back newly written skill directories and keeps identical existing ones", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-atomic-cli-"));
     const lintDir = join(cwd, ".cursor/skills/lint");
     const testDir = join(cwd, ".cursor/skills/test");
     try {
       await mkdir(lintDir, { recursive: true });
-      await writeFile(join(lintDir, "SKILL.md"), "keep\n");
+      await writeFile(join(lintDir, "SKILL.md"), "# lint\n");
+      const warnings: string[] = [];
       await expect(
         install(
           {
@@ -946,17 +874,22 @@ describe("install", () => {
           () => new Date("2026-07-10T16:00:00.000Z"),
           { cwd },
           {
-            explode: explodeLike(async () => {
-              await mkdir(testDir, { recursive: true });
-              await writeFile(join(testDir, "SKILL.md"), "partial\n");
-              throw new Error("explode failed");
-            }),
+            journal: {
+              // An existing real dest selects copy mode: mkdir then write per skill.
+              afterOp: (index) => {
+                if (index === 1) {
+                  throw new Error("explode failed");
+                }
+              },
+            },
             sourceSkills: stubSources,
+            warn: (message) => warnings.push(message),
           },
         ),
       ).rejects.toThrow("explode failed");
 
-      expect(await readFile(join(lintDir, "SKILL.md"), "utf8")).toBe("keep\n");
+      expect(warnings).toContain(`skipped identical ${lintDir} (not claiming lint on cursor)`);
+      expect(await readFile(join(lintDir, "SKILL.md"), "utf8")).toBe("# lint\n");
       await expect(access(testDir)).rejects.toMatchObject({ code: "ENOENT" });
       await expect(access(join(cwd, "ai-skills-lock.json"))).rejects.toMatchObject({
         code: "ENOENT",
@@ -966,7 +899,7 @@ describe("install", () => {
     }
   });
 
-  test("rolls back newly written skill directories when lock update fails", async () => {
+  test("rolls back newly written skill directories when the commit fails", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-atomic-lock-"));
     const lintDir = join(cwd, ".cursor/skills/lint");
     try {
@@ -981,63 +914,79 @@ describe("install", () => {
           },
           skillsCliForbidden,
           () => new Date("2026-07-10T16:00:00.000Z"),
-          {
-            cwd,
-            write: async () => {
-              throw new Error("disk full");
-            },
-          },
-          {
-            explode: explodeLike(async () => {
-              await mkdir(lintDir, { recursive: true });
-              await writeFile(join(lintDir, "SKILL.md"), "partial\n");
-            }),
-            sourceSkills: stubSources,
-          },
+          { cwd },
+          { journal: { failBeforeCommit: true }, sourceSkills: stubSources },
         ),
-      ).rejects.toThrow("gateway lock update failed");
+      ).rejects.toThrow("Install rolled back: injected failure before commit");
 
       await expect(access(lintDir)).rejects.toMatchObject({ code: "ENOENT" });
+      expect((await readState("project", { cwd })).plugins).toEqual({});
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
   });
 
-  test("keeps the original install error when rollback also fails", async () => {
+  test("keeps the original install error and the journal when rollback also fails", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-rollback-fail-"));
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-rollback-home-"));
     const lintDir = join(cwd, ".cursor/skills/lint");
     try {
-      await expect(
-        install(
-          {
-            ...unattendedOptions,
-            bundle: null,
-            global: false,
-            project: true,
-            skills: ["lint"],
-          },
-          skillsCliForbidden,
-          () => new Date("2026-07-10T16:00:00.000Z"),
-          {
-            cwd,
-            rm: async () => {
-              throw new Error("rm denied");
+      const error = await install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["lint"],
+        },
+        skillsCliForbidden,
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd, home },
+        {
+          journal: {
+            afterOp: (index) => {
+              if (index === 1) {
+                throw new Error("explode failed");
+              }
+            },
+            io: {
+              rm: async () => {
+                throw new Error("rm denied");
+              },
             },
           },
-          {
-            explode: explodeLike(async () => {
-              await mkdir(lintDir, { recursive: true });
-              await writeFile(join(lintDir, "SKILL.md"), "partial\n");
-              throw new Error("explode failed");
-            }),
-            sourceSkills: stubSources,
-          },
-        ),
-      ).rejects.toThrow("explode failed (rollback also failed: rm denied)");
+          sourceSkills: stubSources,
+        },
+      ).then(
+        () => new Error("install unexpectedly succeeded"),
+        (caught: unknown) => caught as Error,
+      );
 
-      expect(await readFile(join(lintDir, "SKILL.md"), "utf8")).toBe("partial\n");
+      expect(error.message).toStartWith(
+        "Install rolled back: explode failed (rollback also failed: ",
+      );
+      expect(error.message).toContain("rm denied");
+      expect(error.message).toContain("the next command retries recovery");
+      expect(await readFile(join(cwd, ".agents/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      // The next command finishes the rollback from the kept journal.
+      const result = await install(
+        {
+          ...unattendedOptions,
+          bundle: null,
+          global: false,
+          project: true,
+          skills: ["lint"],
+        },
+        skillsCliForbidden,
+        () => new Date("2026-07-10T16:00:00.000Z"),
+        { cwd, home },
+        { sourceSkills: stubSources, warn: () => {} },
+      );
+      expect(result).toEqual({ alreadyPresent: 0, installed: 1, repaired: 0 });
+      expect(await readlink(lintDir)).toBe(join(cwd, ".agents/skills/lint"));
     } finally {
       await rm(cwd, { force: true, recursive: true });
+      await rm(home, { force: true, recursive: true });
     }
   });
 
@@ -1060,7 +1009,7 @@ describe("install", () => {
         undefined,
         { sourceRoot: catalog },
       );
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.plugins.lint.agents.cursor.files["lint/SKILL.md"]).toMatch(/^[a-f0-9]{64}$/);
     } finally {
       process.chdir(previous);
@@ -1087,7 +1036,7 @@ describe("install", () => {
         null,
         { sourceRoot: catalog },
       );
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.plugins.lint.agents.cursor.files["lint/SKILL.md"]).toMatch(/^[a-f0-9]{64}$/);
     } finally {
       process.chdir(previous);
@@ -1136,7 +1085,7 @@ describe("native projectors", () => {
       expect(ran).toBe(false);
       const pluginDir = join(cwd, ".cursor/plugins/local/review");
       expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.plugins.review.projector).toBe("native");
       expect(lock.plugins.review.agents.cursor.projector).toBe("native");
       expect(lock.plugins.review.agents.cursor.root).toBe(pluginDir);
@@ -1185,8 +1134,6 @@ describe("native projectors", () => {
         },
         {
           lockEnvironment: { cwd },
-          readLock: (scope) => readLockfile(scope, { cwd }),
-          writeLock: (lock) => writeLockfile(lock, { cwd }),
         },
       );
       await expect(access(pluginDir)).rejects.toMatchObject({ code: "ENOENT" });
@@ -1239,7 +1186,7 @@ describe("native projectors", () => {
         { cwd },
         { sourceRoot },
       );
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.plugins.review.agents.cursor.files["USER-DATA.txt"]).toBeUndefined();
       expect(lock.plugins.review.agents.cursor.files[".claude-plugin/plugin.json"]).toMatch(
         /^[a-f0-9]{64}$/,
@@ -1252,11 +1199,7 @@ describe("native projectors", () => {
           skills: [],
           yes: true,
         },
-        {
-          lockEnvironment: { cwd },
-          readLock: async () => lock,
-          writeLock: async () => {},
-        },
+        { lockEnvironment: { cwd } },
       );
       expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
     } finally {
@@ -1307,7 +1250,7 @@ describe("native projectors", () => {
         ["claude", "plugin", "marketplace", "add", join(cwd, ".ai-skills/native/claude-code")],
         ["claude", "plugin", "install", "review@ai-skills"],
       ]);
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd, home: cwd });
       expect(lock.plugins.review.projector).toBe("native");
       expect(lock.plugins.review.agents["claude-code"]).toMatchObject({
         projector: "native" as const,
@@ -1446,7 +1389,7 @@ describe("native projectors", () => {
       );
       expect(received).toEqual([]);
       expect(await readFile(join(cwd, ".codex/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd, home: cwd });
       expect(lock.plugins.review.agents.cursor.projector).toBe("native");
       expect(lock.plugins.review.agents.codex.projector).toBe("explode");
       expect(lock.plugins.review.projector).toBe("explode");
@@ -1481,7 +1424,7 @@ describe("native projectors", () => {
       );
       expect(received).toEqual([]);
       expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd, home: cwd });
       expect(lock.plugins.review.agents.cursor.projector).toBe("explode");
       await expect(access(join(cwd, ".cursor/plugins/local/review"))).rejects.toMatchObject({
         code: "ENOENT",
@@ -1537,7 +1480,7 @@ describe("native projectors", () => {
       );
       expect(received).toEqual([]);
       expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd, home: cwd });
       expect(lock.plugins.review.agents.cursor.projector).toBe("explode");
       await expect(access(join(cwd, ".cursor/plugins/local/review"))).rejects.toMatchObject({
         code: "ENOENT",
@@ -1550,7 +1493,6 @@ describe("native projectors", () => {
   test("falls back Cursor to explode when native is implicit and catalog is absent", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-implicit-explode-"));
     try {
-      let received: string[] = [];
       await install(
         {
           ...unattendedOptions,
@@ -1562,16 +1504,15 @@ describe("native projectors", () => {
         () => new Date("2026-07-10T16:00:00.000Z"),
         { cwd, home: cwd },
         {
-          explode: explodeLike(async (args) => {
-            received = args.agents.map((agent) => agent.id);
-          }),
           hostCapabilities: { cursor: "native" },
           sourceRoot: null,
           sourceSkills: stubSources,
         },
       );
-      expect(received).toEqual(["cursor"]);
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      expect(await readlink(join(cwd, ".cursor/skills/lint"))).toBe(
+        join(cwd, ".agents/skills/lint"),
+      );
+      const lock = await readState("project", { cwd, home: cwd });
       expect(lock.plugins.review.projector).toBe("explode");
       expect(lock.plugins.review.agents.cursor.projector).toBe("explode");
       expect(lock.plugins.review.agents.cursor.root).toBe(join(cwd, ".cursor/skills"));
@@ -1590,7 +1531,7 @@ describe("native projectors", () => {
       await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
       await writeFile(explodeFile, "# jira\n");
       await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -1652,7 +1593,7 @@ describe("native projectors", () => {
       await mkdir(join(sourceRoot, "skills/jira"), { recursive: true });
       await writeFile(explodeFile, "# jira\n");
       await writeFile(join(sourceRoot, "skills/jira/SKILL.md"), "# jira\n");
-      await writeLockfile(
+      await writeLegacyLock(
         {
           gatewayVersion: "0.0.0-dev",
           plugins: {
@@ -1703,7 +1644,7 @@ describe("native projectors", () => {
         ),
       ).rejects.toThrow("rm boom");
       expect(warnings.some((message) => message.includes("could not remove"))).toBe(true);
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd, home: cwd });
       expect(lock.plugins.jira.agents.cursor.projector).toBe("native");
       expect(await readFile(explodeFile, "utf8")).toBe("# jira\n");
       const lines: string[] = [];
@@ -1788,7 +1729,7 @@ describe("native projectors", () => {
           { sourceRoot: null },
         ),
       ).rejects.toThrow("requires a catalog checkout");
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.plugins.review.agents.cursor.projector).toBe("native");
       expect(lock.plugins.review.agents.cursor.root).toBe(pluginDir);
     } finally {
@@ -1832,10 +1773,12 @@ describe("native projectors", () => {
       await expect(access(join(cwd, ".cursor/plugins/local/lint"))).rejects.toMatchObject({
         code: "ENOENT",
       });
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(lock.plugins.lint.agents.cursor.projector).toBe("explode");
       expect(lock.plugins.lint.agents.cursor.root).toBe(join(cwd, ".cursor/skills"));
-      expect(lock.plugins.lint.agents.cursor.files).toEqual({ "lint/SKILL.md": "" });
+      expect(lock.plugins.lint.agents.cursor.files).toEqual({
+        "lint/SKILL.md": stubDigest("lint"),
+      });
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -1858,14 +1801,9 @@ describe("native projectors", () => {
             throw new Error("explode runner must not run");
           },
           () => new Date("2026-07-10T16:00:00.000Z"),
+          { cwd, home: cwd },
           {
-            cwd,
-            home: cwd,
-            write: async () => {
-              throw new Error("EACCES");
-            },
-          },
-          {
+            journal: { failBeforeCommit: true },
             exec: async (command, args) => {
               calls.push([command, ...args]);
               return { status: 0, stderr: "", stdout: "ok" };
@@ -1900,14 +1838,9 @@ describe("native projectors", () => {
             throw new Error("explode runner must not run");
           },
           () => new Date("2026-07-10T16:00:00.000Z"),
+          { cwd, home: cwd },
           {
-            cwd,
-            home: cwd,
-            write: async () => {
-              throw new Error("EACCES");
-            },
-          },
-          {
+            journal: { failBeforeCommit: true },
             exec: async (command, args) => {
               calls.push([command, ...args]);
               return { status: 1, stderr: "already installed", stdout: "" };
@@ -1938,14 +1871,9 @@ describe("native projectors", () => {
             throw new Error("explode runner must not run");
           },
           () => new Date("2026-07-10T16:00:00.000Z"),
+          { cwd, home: cwd },
           {
-            cwd,
-            home: cwd,
-            write: async () => {
-              throw new Error("EACCES");
-            },
-          },
-          {
+            journal: { failBeforeCommit: true },
             exec: async (command, args) => {
               calls.push([command, ...args]);
               return { status: 0, stderr: "", stdout: "already installed" };
@@ -2045,15 +1973,10 @@ describe("native projectors", () => {
           },
           async () => {},
           () => new Date("2026-07-10T16:00:00.000Z"),
-          {
-            cwd,
-            write: async () => {
-              throw new Error("EACCES");
-            },
-          },
-          { sourceRoot },
+          { cwd },
+          { journal: { failBeforeCommit: true }, sourceRoot },
         ),
-      ).rejects.toThrow("rolled back");
+      ).rejects.toThrow("Install rolled back: injected failure before commit");
       expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
       await expect(readFile(join(pluginDir, "skills/lint/SKILL.md"))).rejects.toMatchObject({
         code: "ENOENT",
@@ -2063,8 +1986,8 @@ describe("native projectors", () => {
     }
   });
 
-  test("restores a prior native Cursor tree when promote and inner restore fail", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cursor-swap-fail-restore-"));
+  test("keeps a prior Cursor tree's user files when a write fails mid-install", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cursor-write-fail-"));
     try {
       const sourceRoot = join(cwd, "catalog");
       await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
@@ -2104,7 +2027,7 @@ describe("native projectors", () => {
           2,
         )}\n`,
       );
-      let moves = 0;
+      let writes = 0;
       await expect(
         install(
           {
@@ -2117,30 +2040,31 @@ describe("native projectors", () => {
           () => new Date("2026-07-10T16:00:00.000Z"),
           { cwd },
           {
-            move: async (from, to) => {
-              moves += 1;
-              if (moves === 2) {
-                throw new Error("staging promote failed");
-              }
-              if (moves === 3) {
-                throw new Error("inner restore failed");
-              }
-              return rename(from, to);
+            journal: {
+              io: {
+                writeFile: (async (...args: Parameters<typeof writeFile>) => {
+                  writes += 1;
+                  if (writes === 2) {
+                    throw new Error("ENOSPC: disk full");
+                  }
+                  return writeFile(...args);
+                }) as typeof writeFile,
+              },
             },
             sourceRoot,
           },
         ),
-      ).rejects.toThrow(
-        "staging promote failed (Cursor restore also failed: inner restore failed)",
-      );
+      ).rejects.toThrow("Install rolled back: ENOSPC: disk full");
       expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
+      await expect(access(join(pluginDir, "skills"))).rejects.toMatchObject({ code: "ENOENT" });
+      expect((await readState("project", { cwd })).plugins.review?.version).toBe("0.0.0-old");
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
   });
 
-  test("keeps the new Cursor tree when backup discard fails after lock write", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cursor-discard-warn-"));
+  test("replaces a Cursor tree without leaving backup trees beside it", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cursor-no-backup-"));
     try {
       const sourceRoot = join(cwd, "catalog");
       await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
@@ -2180,7 +2104,6 @@ describe("native projectors", () => {
           2,
         )}\n`,
       );
-      const warnings: string[] = [];
       await install(
         {
           ...unattendedOptions,
@@ -2191,25 +2114,18 @@ describe("native projectors", () => {
         async () => {},
         () => new Date("2026-07-10T16:00:00.000Z"),
         { cwd },
-        {
-          remove: async () => {
-            throw new Error("EACCES bak");
-          },
-          sourceRoot,
-          warn: (message) => warnings.push(message),
-        },
+        { sourceRoot, warn: () => {} },
       );
       expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
       expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
-      expect(warnings.some((message) => message.includes("discard Cursor plugin backup"))).toBe(
-        true,
-      );
+      const siblings = await readdir(join(cwd, ".cursor/plugins/local"));
+      expect(siblings).toEqual(["review"]);
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
   });
 
-  test("does not restore a leftover Cursor backup when install fails before swap", async () => {
+  test("does not touch a leftover Cursor backup when a kept skill has no source", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cursor-preswap-bak-"));
     try {
       const sourceRoot = join(cwd, "catalog");
@@ -2262,7 +2178,7 @@ describe("native projectors", () => {
           { cwd },
           { sourceRoot },
         ),
-      ).rejects.toThrow();
+      ).rejects.toThrow("has no source directory");
       expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("fresh\n");
       expect(await readFile(join(`${pluginDir}.bak`, "USER-DATA.txt"), "utf8")).toBe("stale\n");
     } finally {
@@ -2297,7 +2213,7 @@ describe("native projectors", () => {
         { cwd },
         { sourceRoot },
       );
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(Object.keys(lock.plugins.lint.agents.cursor.files)).toEqual(["test/SKILL.md"]);
       await removeSkills(
         {
@@ -2309,8 +2225,6 @@ describe("native projectors", () => {
         },
         {
           lockEnvironment: { cwd },
-          readLock: (scope) => readLockfile(scope, { cwd }),
-          writeLock: (next) => writeLockfile(next, { cwd }),
         },
       );
       expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
@@ -2361,7 +2275,7 @@ describe("native projectors", () => {
         environment,
         extras,
       );
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(Object.keys(lock.plugins.lint.agents.cursor.files).sort()).toEqual(["test/SKILL.md"]);
       expect(await readFile(join(cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
     } finally {
@@ -2405,8 +2319,6 @@ describe("native projectors", () => {
         },
         {
           lockEnvironment: { cwd },
-          readLock: (scope) => readLockfile(scope, { cwd }),
-          writeLock: (next) => writeLockfile(next, { cwd }),
         },
       );
       await expect(lstat(dest)).rejects.toMatchObject({ code: "ENOENT" });
@@ -2437,15 +2349,10 @@ describe("native projectors", () => {
             throw new Error("skills CLI must not run when catalog sources resolve");
           },
           () => new Date("2026-07-10T16:00:00.000Z"),
-          {
-            cwd,
-            write: async () => {
-              throw new Error("disk full");
-            },
-          },
-          { sourceRoot },
+          { cwd },
+          { journal: { failBeforeCommit: true }, sourceRoot },
         ),
-      ).rejects.toThrow("gateway lock update failed");
+      ).rejects.toThrow("Install rolled back: injected failure before commit");
       await expect(lstat(join(cwd, ".cursor/skills/test"))).rejects.toMatchObject({
         code: "ENOENT",
       });
@@ -2523,7 +2430,9 @@ describe("native projectors", () => {
           },
         },
       );
-      expect(warnings.some((item) => item.includes("skipped identical explode dest"))).toBe(true);
+      expect(warnings).toContain(
+        `skipped identical ${join(cwd, ".cursor/skills/lint")} (not claiming lint on cursor)`,
+      );
     } finally {
       await rm(cwd, { force: true, recursive: true });
     }
@@ -2552,7 +2461,7 @@ describe("native projectors", () => {
         { cwd },
         { sourceSkills: { lint: source } },
       );
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const lock = await readState("project", { cwd });
       expect(Object.keys(lock.plugins.lint.agents.cursor.files).sort()).toEqual([
         "lint/SKILL.md",
         "lint/notes.md",
@@ -2567,11 +2476,9 @@ describe("native projectors", () => {
         },
         {
           lockEnvironment: { cwd },
-          readLock: (scope) => readLockfile(scope, { cwd }),
           run: async () => {
             throw new Error("skills CLI must not run for explode remove");
           },
-          writeLock: (next) => writeLockfile(next, { cwd }),
         },
       );
       await expect(readFile(join(dest, "notes.md"), "utf8")).rejects.toMatchObject({
@@ -2608,11 +2515,10 @@ describe("native projectors", () => {
       );
       expect((await lstat(join(cwd, ".cursor/skills/test"))).isDirectory()).toBe(true);
       await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test v2\n");
-      const lockPath = join(cwd, "ai-skills-lock.json");
-      const lock = JSON.parse(await readFile(lockPath, "utf8"));
-      lock.plugins.test.sha = "v0.0.0-old";
-      lock.plugins.test.version = "0.0.0-old";
-      await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+      await editState("project", { cwd }, (plugins) => {
+        plugins.test!.sha = "v0.0.0-old";
+        plugins.test!.version = "0.0.0-old";
+      });
       await updateSkills(
         {
           agents: ["cursor"],
@@ -2624,12 +2530,10 @@ describe("native projectors", () => {
         {
           isInstalled: async () => true,
           lockEnvironment: { cwd },
-          readLock: (scope) => readLockfile(scope, { cwd }),
           run: async () => {
             throw new Error("skills CLI must not run when catalog sources resolve");
           },
           sourceRoot,
-          writeLock: (next) => writeLockfile(next, { cwd }),
         },
       );
       expect((await lstat(join(cwd, ".cursor/skills/test"))).isDirectory()).toBe(true);
@@ -2728,8 +2632,6 @@ describe("native projectors", () => {
         },
         {
           lockEnvironment: { cwd },
-          readLock: (scope) => readLockfile(scope, { cwd }),
-          writeLock: (next) => writeLockfile(next, { cwd }),
         },
       );
       await expect(lstat(dest)).rejects.toMatchObject({ code: "ENOENT" });
@@ -2792,8 +2694,6 @@ describe("native projectors", () => {
         },
         {
           lockEnvironment: { cwd },
-          readLock: (scope) => readLockfile(scope, { cwd }),
-          writeLock: (next) => writeLockfile(next, { cwd }),
         },
       );
       await writeFile(join(sourceRoot, "skills/test/SKILL.md"), "# test v2\n");

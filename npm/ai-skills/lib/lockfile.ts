@@ -1,16 +1,7 @@
 import { createHash } from "node:crypto";
-import {
-  access,
-  lstat,
-  mkdir,
-  readdir,
-  readFile,
-  readlink,
-  rename,
-  writeFile,
-} from "node:fs/promises";
+import { access, lstat, readdir, readFile, readlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { hostSkillPaths } from "./adapters/hosts.ts";
 import { getPackageVersion } from "./package-version.ts";
@@ -53,6 +44,9 @@ export function getLockfilePath(
  * Read a gateway lockfile, returning an empty v2 lock when it does not exist
  * or when a v1 lock is encountered (wipe-and-reinstall).
  *
+ * Lock v2 is read-only input now: installs commit machine-local receipts
+ * (`lib/journal/receipts.ts`) and never write this file; #586 converts it.
+ *
  * @throws {Error} When a present v2 lockfile is malformed or mismatched to its scope.
  */
 export async function readLockfile(
@@ -79,29 +73,6 @@ export async function readLockfile(
     }
     throw error;
   }
-}
-
-/**
- * Write a gateway lockfile atomically.
- */
-export async function writeLockfile(
-  lock: GatewayLock,
-  environment: {
-    cwd?: string;
-    home?: string;
-    mkdir?: typeof mkdir;
-    rename?: typeof rename;
-    write?: typeof writeFile;
-  } = {},
-): Promise<void> {
-  const path = getLockfilePath(lock.scope, environment);
-  const makeDirectory = environment.mkdir ?? mkdir;
-  const move = environment.rename ?? rename;
-  const write = environment.write ?? writeFile;
-  await makeDirectory(dirname(path), { recursive: true });
-  const temporaryPath = `${path}.tmp`;
-  await write(temporaryPath, `${JSON.stringify(lock, null, 2)}\n`, "utf8");
-  await move(temporaryPath, path);
 }
 
 /**
@@ -433,6 +404,15 @@ function isValidV2Lock(lock: Record<string, unknown>, scope: "global" | "project
 }
 
 /**
+ * Whether every entry of a plugin map is a well-formed record under a safe id.
+ */
+export function arePluginEntriesValid(plugins: Record<string, unknown>): boolean {
+  return Object.entries(plugins).every(
+    ([pluginId, entry]) => isSafePluginId(pluginId) && isValidPluginEntry(entry),
+  );
+}
+
+/**
  * Whether a plugin record has the v2 agent map, projector, and string provenance.
  */
 function isValidPluginEntry(entry: unknown): boolean {
@@ -716,10 +696,6 @@ export interface LockEnvironment {
   cwd?: string;
   home?: string;
   read?: (path: string, encoding: "utf8") => Promise<string>;
-  write?: typeof writeFile;
-  mkdir?: typeof mkdir;
-  rename?: typeof rename;
   exists?: (path: string) => Promise<boolean>;
   hash?: (path: string) => Promise<string>;
-  rm?: typeof import("node:fs/promises").rm;
 }

@@ -1,18 +1,36 @@
 import { describe, expect, test } from "bun:test";
 
-import { access, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import {
+  access,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  readlink,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { listSkills, removeSkills, updateSkills } from "../lib/gateway-commands.ts";
-import { hashFile, readLockfile, writeLockfile } from "../lib/lockfile.ts";
+import { readReceipt } from "../lib/journal/receipts.ts";
+import { hashFile } from "../lib/lockfile.ts";
 import { getPackageVersion } from "../lib/package-version.ts";
 import bundleCatalog from "../data/bundles.json" with { type: "json" };
 import vendorCatalog from "../data/vendors.json" with { type: "json" };
+import { readState, skillSources, writeLegacyLock } from "./fixtures/state.ts";
 
 // These integration tests project the current catalog, not historical vendor pins.
 const anthropics = vendorCatalog.vendors.find((vendor) => vendor.id === "anthropics");
 const reviewSkills = bundleCatalog.groups.review.skills;
+const gitPrSkills = bundleCatalog.groups["git-pr"].skills;
+
+/** Placeholder project root in fixtures; rebased onto a temp project per test. */
+const FIXTURE_ROOT = "/tmp/project";
 
 const pluginEntry = (
   overrides: Partial<import("../lib/lockfile.ts").PluginLockEntry>,
@@ -20,7 +38,7 @@ const pluginEntry = (
   agents: {
     cursor: {
       files: { "pdf/SKILL.md": "abc" },
-      root: "/tmp/project/.cursor/skills",
+      root: `${FIXTURE_ROOT}/.cursor/skills`,
     },
   },
   installedAt: "2026-07-10T16:00:00.000Z",
@@ -39,7 +57,7 @@ const lock = {
       agents: {
         cursor: {
           files: { "lint/SKILL.md": "abc" },
-          root: "/tmp/project/.cursor/skills",
+          root: `${FIXTURE_ROOT}/.cursor/skills`,
         },
       },
       repo: "lgtm-hq/ai-skills",
@@ -61,124 +79,127 @@ const options = {
   yes: true,
 };
 
-/**
- * Explode engine stand-in: records each call and claims `<skill>/SKILL.md`
- * for every agent, as a managed explode would. Managed updates no longer
- * hand off to the skills CLI (#579), so fixtures drive the explode lane.
- */
-function recordingExplode(
-  calls: Array<{ agents: string[]; skills: string[] }>,
-  digest = "refreshed",
-): (
-  args: Parameters<typeof import("../lib/adapters/shared/skill-explode.ts").explodePlugin>[0],
-) => Promise<import("../lib/adapters/shared/skill-explode.ts").ExplodeResult> {
-  return async (args) => {
-    calls.push({ agents: args.agents.map((agent) => agent.id), skills: [...args.skills] });
-    return {
-      claimed: Object.fromEntries(
-        args.agents.map((agent) => [
-          agent.id,
-          Object.fromEntries(args.skills.map((skill) => [`${skill}/SKILL.md`, digest])),
-        ]),
-      ),
-      createdDests: [],
-      createdStores: [],
-      skipped: [],
-      swappedDests: [],
-      swappedStores: [],
-    };
-  };
+/** Real one-file sources (`# <name>`) for every skill these tests explode. */
+const stubSources = await skillSources([
+  ...new Set([...reviewSkills, ...gitPrSkills, "lint", "test", "pdf", "retired"]),
+]);
+
+const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+
+/** Hex sha256 of a stub source's `SKILL.md`. */
+const stubDigest = (name: string) => sha(`# ${name}\n`);
+
+/** A temporary project and home with a legacy lock v2 seeded (roots rebased). */
+interface Project {
+  cwd: string;
+  home: string;
+  env: { cwd: string; home: string };
 }
 
-/** Local source map for the explode lane (paths are never read by the stand-in). */
-const stubSources = Object.fromEntries(
-  [...reviewSkills, "lint", "test", "pdf", "retired"].map((name) => [name, `/catalog/${name}`]),
-);
+async function withProject(
+  seed: object | null,
+  run: (project: Project) => Promise<void>,
+  files: Record<string, string> = {},
+): Promise<void> {
+  const base = await mkdtemp(join(tmpdir(), "ai-skills-gateway-"));
+  const cwd = join(base, "project");
+  const home = join(base, "home");
+  await mkdir(cwd, { recursive: true });
+  await mkdir(home, { recursive: true });
+  try {
+    for (const [relative, content] of Object.entries(files)) {
+      await mkdir(dirname(join(cwd, relative)), { recursive: true });
+      await writeFile(join(cwd, relative), content);
+    }
+    if (seed) {
+      await writeLegacyLock(JSON.parse(JSON.stringify(seed).replaceAll(FIXTURE_ROOT, cwd)), {
+        cwd,
+        home,
+      });
+    }
+    await run({ cwd, env: { cwd, home }, home });
+  } finally {
+    await rm(base, { force: true, recursive: true });
+  }
+}
+
+/** The legacy lock file stays byte-identical and no receipt is committed. */
+async function expectUncommitted(project: Project): Promise<void> {
+  expect(await readReceipt("project", project.env)).toBeNull();
+}
+
+const forbidSkillsCli = async () => {
+  throw new Error("managed commands must not call the skills CLI");
+};
 
 describe("gateway maintenance commands", () => {
   test("updates surviving lock entries through the explode lane", async () => {
-    const calls: Array<{ agents: string[]; skills: string[] }> = [];
-    let written;
-    const result = await updateSkills(options, {
-      explode: recordingExplode(calls),
-      hash: async () => "refreshed",
-      isInstalled: async (name) => name === "pdf",
-      now: () => new Date("2026-07-10T17:00:00.000Z"),
-      readLock: async () => lock,
-      run: async () => {
-        throw new Error("managed updates must not call the skills CLI");
-      },
-      sourceSkills: stubSources,
-      writeLock: async (next) => {
-        written = next;
-      },
-    });
+    await withProject(lock, async (project) => {
+      const result = await updateSkills(options, {
+        isInstalled: async (name) => name === "pdf",
+        lockEnvironment: project.env,
+        now: () => new Date("2026-07-10T17:00:00.000Z"),
+        run: forbidSkillsCli,
+        sourceSkills: stubSources,
+        warn: () => {},
+      });
 
-    expect(result).toEqual({
-      pruned: ["lint"],
-      updated: ["pdf"],
+      expect(result).toEqual({ pruned: ["lint"], updated: ["pdf"] });
+      const written = await readState("project", project.env);
+      expect(written.plugins.pdf).toMatchObject({
+        installedAt: "2026-07-10T17:00:00.000Z",
+        sha: anthropics!.sha,
+      });
+      expect(written.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toBe(stubDigest("pdf"));
+      expect(written.plugins.lint).toBeUndefined();
+      expect(await readFile(join(project.cwd, ".cursor/skills/pdf/SKILL.md"), "utf8")).toBe(
+        "# pdf\n",
+      );
     });
-    expect(calls).toEqual([{ agents: ["cursor"], skills: ["pdf"] }]);
-    expect(written!.plugins.pdf).toMatchObject({
-      installedAt: "2026-07-10T17:00:00.000Z",
-      sha: anthropics!.sha,
-    });
-    expect(written!.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toBe("refreshed");
-    expect(written!.plugins.lint).toBeUndefined();
-    expect(written!.skills).toBeUndefined();
   });
 
   test("refuses a managed update without a local artifact instead of calling the skills CLI", async () => {
-    let ran = false;
-    let written;
-    await expect(
-      updateSkills(options, {
-        hash: async () => "refreshed",
-        isInstalled: async (name) => name === "pdf",
-        readLock: async () => lock,
-        run: async () => {
-          ran = true;
-        },
-        writeLock: async (next) => {
-          written = next;
-        },
-      }),
-    ).rejects.toThrow("managed installs never fall back to the upstream skills CLI");
-    expect(ran).toBe(false);
-    expect(written).toBeUndefined();
+    await withProject(lock, async (project) => {
+      let ran = false;
+      await expect(
+        updateSkills(options, {
+          isInstalled: async (name) => name === "pdf",
+          lockEnvironment: project.env,
+          run: async () => {
+            ran = true;
+          },
+          warn: () => {},
+        }),
+      ).rejects.toThrow("managed installs never fall back to the upstream skills CLI");
+      expect(ran).toBe(false);
+      await expectUncommitted(project);
+    });
   });
 
   test("skips update when the pin is current and files match", async () => {
-    const calls: string[][] = [];
     const current = {
       ...lock,
       plugins: {
-        anthropics: pluginEntry({
-          sha: anthropics!.sha,
-          version: anthropics!.sha,
-        }),
+        anthropics: pluginEntry({ sha: anthropics!.sha, version: anthropics!.sha }),
       },
     };
-    const result = await updateSkills(options, {
-      isInstalled: async () => true,
-      lockEnvironment: {
-        exists: async () => true,
-        hash: async () => "abc",
-      },
-      readLock: async () => current,
-      run: async (args) => {
-        calls.push(args);
-      },
-      writeLock: async () => {},
-    });
+    await withProject(current, async (project) => {
+      const calls: string[][] = [];
+      const result = await updateSkills(options, {
+        isInstalled: async () => true,
+        lockEnvironment: { ...project.env, exists: async () => true, hash: async () => "abc" },
+        run: async (args) => {
+          calls.push(args);
+        },
+      });
 
-    expect(calls).toEqual([]);
-    expect(result).toEqual({ pruned: [], updated: [] });
+      expect(calls).toEqual([]);
+      expect(result).toEqual({ pruned: [], updated: [] });
+      await expectUncommitted(project);
+    });
   });
 
   test("skips update when a baked plugin pin and short version match", async () => {
-    const calls: string[][] = [];
-    let exploded = false;
     const current = {
       ...lock,
       plugins: {
@@ -191,7 +212,7 @@ describe("gateway maintenance commands", () => {
                 "pptx/SKILL.md": "abc",
                 "xlsx/SKILL.md": "abc",
               },
-              root: "/tmp/project/.cursor/skills",
+              root: `${FIXTURE_ROOT}/.cursor/skills`,
             },
           },
           installedAt: "2026-07-10T16:00:00.000Z",
@@ -204,38 +225,22 @@ describe("gateway maintenance commands", () => {
         },
       },
     };
-    const result = await updateSkills(options, {
-      explode: async () => {
-        exploded = true;
-        return {
-          claimed: {},
-          skipped: [],
-          swappedDests: [],
-          swappedStores: [],
-          createdDests: [],
-          createdStores: [],
-        };
-      },
-      isInstalled: async () => true,
-      lockEnvironment: {
-        exists: async () => true,
-        hash: async () => "abc",
-      },
-      readLock: async () => current,
-      run: async (args) => {
-        calls.push(args);
-      },
-      writeLock: async () => {},
-    });
+    await withProject(current, async (project) => {
+      const result = await updateSkills(options, {
+        isInstalled: async () => true,
+        lockEnvironment: { ...project.env, exists: async () => true, hash: async () => "abc" },
+        run: forbidSkillsCli,
+      });
 
-    expect(calls).toEqual([]);
-    expect(exploded).toBe(false);
-    expect(result).toEqual({ pruned: [], updated: [] });
+      expect(result).toEqual({ pruned: [], updated: [] });
+      await expect(access(join(project.cwd, ".cursor"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expectUncommitted(project);
+    });
   });
 
   test("updates every tracked agent on a plugin even when -a is a subset", async () => {
-    const calls: Array<{ agents: string[]; skills: string[] }> = [];
-    let written;
     const multiAgentLock = {
       ...lock,
       plugins: {
@@ -243,39 +248,39 @@ describe("gateway maintenance commands", () => {
           agents: {
             "claude-code": {
               files: { "pdf/SKILL.md": "abc" },
-              root: "/tmp/project/.claude/skills",
+              root: `${FIXTURE_ROOT}/.claude/skills`,
             },
             cursor: {
               files: { "pdf/SKILL.md": "abc" },
-              root: "/tmp/project/.cursor/skills",
+              root: `${FIXTURE_ROOT}/.cursor/skills`,
             },
           },
         }),
       },
     };
-
-    await updateSkills(
-      { ...options, agents: ["cursor"] },
-      {
-        explode: recordingExplode(calls),
-        hash: async () => "refreshed",
-        isInstalled: async () => true,
-        now: () => new Date("2026-07-10T17:00:00.000Z"),
-        readLock: async () => multiAgentLock,
-        sourceSkills: stubSources,
-        writeLock: async (next) => {
-          written = next;
+    await withProject(multiAgentLock, async (project) => {
+      await updateSkills(
+        { ...options, agents: ["cursor"] },
+        {
+          isInstalled: async () => true,
+          lockEnvironment: project.env,
+          now: () => new Date("2026-07-10T17:00:00.000Z"),
+          sourceSkills: stubSources,
+          warn: () => {},
         },
-      },
-    );
+      );
 
-    expect(calls).toEqual([{ agents: ["claude-code", "cursor"], skills: ["pdf"] }]);
-    expect(written!.plugins.pdf.agents["claude-code"].files["pdf/SKILL.md"]).toBe("refreshed");
-    expect(written!.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toBe("refreshed");
+      const written = await readState("project", project.env);
+      expect(written.plugins.pdf.agents["claude-code"].files["pdf/SKILL.md"]).toBe(
+        stubDigest("pdf"),
+      );
+      expect(written.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toBe(stubDigest("pdf"));
+      await access(join(project.cwd, ".claude/skills/pdf/SKILL.md"));
+      await access(join(project.cwd, ".cursor/skills/pdf/SKILL.md"));
+    });
   });
 
   test("updates same-source plugins against only their own tracked agents", async () => {
-    const calls: Array<{ agents: string[]; skills: string[] }> = [];
     const mixed = {
       ...lock,
       plugins: {
@@ -283,224 +288,262 @@ describe("gateway maintenance commands", () => {
           agents: {
             cursor: {
               files: { "lint/SKILL.md": "abc" },
-              root: "/tmp/project/.cursor/skills",
+              root: `${FIXTURE_ROOT}/.cursor/skills`,
             },
           },
           repo: "lgtm-hq/ai-skills",
-          sha: "v0.0.0-dev",
+          sha: "v0.0.0-old",
           vendor: "lgtm-hq",
-          version: "0.0.0-dev",
+          version: "0.0.0-old",
         }),
         test: pluginEntry({
           agents: {
             "claude-code": {
               files: { "test/SKILL.md": "abc" },
-              root: "/tmp/project/.claude/skills",
+              root: `${FIXTURE_ROOT}/.claude/skills`,
             },
           },
           repo: "lgtm-hq/ai-skills",
-          sha: "v0.0.0-dev",
+          sha: "v0.0.0-old",
           vendor: "lgtm-hq",
-          version: "0.0.0-dev",
+          version: "0.0.0-old",
         }),
       },
     };
+    await withProject(mixed, async (project) => {
+      await updateSkills(options, {
+        isInstalled: async () => true,
+        lockEnvironment: project.env,
+        now: () => new Date("2026-07-10T17:00:00.000Z"),
+        sourceSkills: stubSources,
+        warn: () => {},
+      });
 
-    await updateSkills(options, {
-      explode: recordingExplode(calls),
-      hash: async () => "refreshed",
-      isInstalled: async () => true,
-      now: () => new Date("2026-07-10T17:00:00.000Z"),
-      readLock: async () => mixed,
-      sourceSkills: stubSources,
-      writeLock: async () => {},
+      const written = await readState("project", project.env);
+      expect(Object.keys(written.plugins.lint.agents)).toEqual(["cursor"]);
+      expect(Object.keys(written.plugins.test.agents)).toEqual(["claude-code"]);
+      await access(join(project.cwd, ".cursor/skills/lint/SKILL.md"));
+      await access(join(project.cwd, ".claude/skills/test/SKILL.md"));
+      await expect(access(join(project.cwd, ".claude/skills/lint"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expect(access(join(project.cwd, ".cursor/skills/test"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     });
-
-    expect(calls).toEqual([
-      { agents: ["cursor"], skills: ["lint"] },
-      { agents: ["claude-code"], skills: ["test"] },
-    ]);
   });
 
   test("removes explode lock selections without calling the skills CLI", async () => {
-    const calls: string[][] = [];
-    let written;
-    const removed = await removeSkills(
-      {
-        ...options,
-        skills: ["pdf"],
-      },
-      {
-        readLock: async () => lock,
-        run: async (args) => {
-          calls.push(args);
-        },
-        writeLock: async (next) => {
-          written = next;
-        },
-      },
-    );
+    await withProject(lock, async (project) => {
+      const removed = await removeSkills(
+        { ...options, skills: ["pdf"] },
+        { lockEnvironment: project.env, run: forbidSkillsCli },
+      );
 
-    expect(removed).toEqual(["pdf"]);
-    expect(calls).toEqual([]);
-    expect(written!.plugins).toEqual({
-      lint: lock.plugins.lint,
+      expect(removed).toEqual(["pdf"]);
+      const written = await readState("project", project.env);
+      expect(written.plugins).toEqual({
+        lint: JSON.parse(JSON.stringify(lock.plugins.lint).replaceAll(FIXTURE_ROOT, project.cwd)),
+      });
     });
   });
 
   test("leaves locally modified files with a warning during remove", async () => {
-    const warnings: string[] = [];
-    const unlinked: string[] = [];
-    const calls: string[][] = [];
-    await removeSkills(
-      { ...options, skills: ["pdf"] },
-      {
-        hash: async () => "changed",
-        readLock: async () => lock,
-        run: async (args) => {
-          calls.push(args);
-        },
-        unlink: async (path) => {
-          unlinked.push(String(path));
-        },
-        warn: (message) => {
-          warnings.push(message);
-        },
-        writeLock: async () => {},
-      },
-    );
+    await withProject(
+      lock,
+      async (project) => {
+        const warnings: string[] = [];
+        await removeSkills(
+          { ...options, skills: ["pdf"] },
+          {
+            lockEnvironment: project.env,
+            run: forbidSkillsCli,
+            warn: (message) => {
+              warnings.push(message);
+            },
+          },
+        );
 
-    expect(calls).toEqual([]);
-    expect(unlinked).toEqual([]);
-    expect(warnings).toEqual(["left modified pdf file pdf/SKILL.md"]);
+        expect(warnings).toEqual(["left modified pdf file pdf/SKILL.md"]);
+        expect(await readFile(join(project.cwd, ".cursor/skills/pdf/SKILL.md"), "utf8")).toBe(
+          "changed\n",
+        );
+        expect((await readState("project", project.env)).plugins.pdf).toBeUndefined();
+      },
+      { ".cursor/skills/pdf/SKILL.md": "changed\n" },
+    );
   });
 
   test("does not treat native skills/ prefix as a modified skill name", async () => {
-    const calls: string[][] = [];
-    const warnings: string[] = [];
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-modified-skill-"));
-    try {
-      const pluginDir = join(cwd, ".cursor/plugins/local/lint");
+    await withProject(null, async (project) => {
+      const warnings: string[] = [];
+      const pluginDir = join(project.cwd, ".cursor/plugins/local/lint");
       await mkdir(join(pluginDir, "skills/lint"), { recursive: true });
       await writeFile(join(pluginDir, "skills/lint/SKILL.md"), "# dirty\n");
+      await writeLegacyLock(
+        {
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            lint: pluginEntry({
+              agents: {
+                cursor: {
+                  files: { "skills/lint/SKILL.md": "abc" },
+                  projector: "native" as const,
+                  root: pluginDir,
+                },
+                codex: {
+                  files: { "lint/SKILL.md": "abc" },
+                  projector: "explode" as const,
+                  root: join(project.cwd, ".codex/skills"),
+                },
+              },
+              projector: "explode" as const,
+              repo: "lgtm-hq/ai-skills",
+              skills: ["lint"],
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            }),
+          },
+          scope: "project" as const,
+          version: 2,
+        },
+        project.env,
+      );
       await removeSkills(
         { ...options, agents: ["cursor", "codex"], skills: ["lint"] },
         {
           hash: async (path) =>
             path === join(pluginDir, "skills/lint/SKILL.md") ? "changed" : "abc",
-          readLock: async () => ({
-            gatewayVersion: "0.0.0-dev",
-            plugins: {
-              lint: pluginEntry({
-                agents: {
-                  cursor: {
-                    files: { "skills/lint/SKILL.md": "abc" },
-                    projector: "native" as const,
-                    root: pluginDir,
-                  },
-                  codex: {
-                    files: { "lint/SKILL.md": "abc" },
-                    projector: "explode" as const,
-                    root: join(cwd, ".codex/skills"),
-                  },
-                },
-                projector: "explode" as const,
-                repo: "lgtm-hq/ai-skills",
-                skills: ["lint"],
-                vendor: "lgtm-hq",
-                version: "0.0.0-dev",
-              }),
-            },
-            scope: "project" as const,
-            version: 2,
-          }),
-          run: async (args) => {
-            calls.push(args);
-          },
+          lockEnvironment: project.env,
+          run: forbidSkillsCli,
           warn: (message) => {
             warnings.push(message);
           },
-          writeLock: async () => {},
         },
       );
       expect(warnings).toEqual(["left modified lint file skills/lint/SKILL.md"]);
-      expect(calls).toEqual([]);
       expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# dirty\n");
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
+    });
   });
 
   test("keeps the lock when a verified unlink fails", async () => {
-    let written;
-    const denied = Object.assign(new Error("EPERM"), { code: "EPERM" });
-    await expect(
-      removeSkills(
-        { ...options, skills: ["pdf"] },
-        {
-          hash: async () => "abc",
-          readLock: async () => lock,
-          run: async () => {},
-          unlink: async () => {
-            throw denied;
+    const owned = {
+      ...lock,
+      plugins: {
+        pdf: pluginEntry({
+          agents: {
+            cursor: {
+              files: { "pdf/SKILL.md": sha("# pdf\n") },
+              root: `${FIXTURE_ROOT}/.cursor/skills`,
+            },
           },
-          writeLock: async (next) => {
-            written = next;
-          },
-        },
-      ),
-    ).rejects.toThrow("EPERM");
-    expect(written).toBeUndefined();
+        }),
+      },
+    };
+    await withProject(
+      owned,
+      async (project) => {
+        const denied = Object.assign(new Error("EPERM: operation not permitted"), {
+          code: "EPERM",
+        });
+        await expect(
+          removeSkills(
+            { ...options, skills: ["pdf"] },
+            {
+              journal: {
+                io: {
+                  rename: (async (from: string, to: string) => {
+                    if (String(from).endsWith("pdf/SKILL.md")) {
+                      throw denied;
+                    }
+                    return rename(from, to);
+                  }) as typeof rename,
+                },
+              },
+              lockEnvironment: project.env,
+              run: forbidSkillsCli,
+            },
+          ),
+        ).rejects.toThrow("Remove rolled back: EPERM");
+        await expectUncommitted(project);
+        expect(await readFile(join(project.cwd, ".cursor/skills/pdf/SKILL.md"), "utf8")).toBe(
+          "# pdf\n",
+        );
+      },
+      { ".cursor/skills/pdf/SKILL.md": "# pdf\n" },
+    );
   });
 
   test("keeps the lock when a tracked file cannot be hashed", async () => {
-    let written;
-    const denied = Object.assign(new Error("EACCES"), { code: "EACCES" });
-    await expect(
-      removeSkills(
-        { ...options, skills: ["pdf"] },
-        {
-          hash: async () => {
-            throw denied;
-          },
-          readLock: async () => lock,
-          run: async () => {},
-          writeLock: async (next) => {
-            written = next;
-          },
-        },
-      ),
-    ).rejects.toThrow("EACCES");
-    expect(written).toBeUndefined();
+    await withProject(
+      lock,
+      async (project) => {
+        const denied = Object.assign(new Error("EACCES"), { code: "EACCES" });
+        await expect(
+          removeSkills(
+            { ...options, skills: ["pdf"] },
+            {
+              hash: async () => {
+                throw denied;
+              },
+              lockEnvironment: project.env,
+              run: forbidSkillsCli,
+            },
+          ),
+        ).rejects.toThrow("EACCES");
+        await expectUncommitted(project);
+      },
+      { ".cursor/skills/pdf/SKILL.md": "# pdf\n" },
+    );
   });
 
-  test("does not write the lock when update hashing fails", async () => {
-    let written;
-    const denied = Object.assign(new Error("EACCES"), { code: "EACCES" });
-    const catalog = await mkdtemp(join(tmpdir(), "ai-skills-hash-fail-"));
-    try {
-      await mkdir(join(catalog, "pdf"), { recursive: true });
-      await writeFile(join(catalog, "pdf/SKILL.md"), "# pdf\n");
-      await expect(
-        updateSkills(options, {
-          hash: async () => {
-            throw denied;
+  test("does not commit an update when stale cleanup cannot hash", async () => {
+    const stale = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: {
+            cursor: {
+              files: { "lint/SKILL.md": sha("# lint\n"), "retired/SKILL.md": sha("# retired\n") },
+              projector: "explode" as const,
+              root: `${FIXTURE_ROOT}/.cursor/skills`,
+            },
           },
-          isInstalled: async () => true,
-          readLock: async () => ({
-            ...lock,
-            plugins: { pdf: lock.plugins.pdf },
-          }),
-          sourceSkills: { pdf: join(catalog, "pdf") },
-          writeLock: async (next) => {
-            written = next;
-          },
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.21.0",
+          vendor: "lgtm-hq",
+          version: "0.21.0",
         }),
-      ).rejects.toThrow("EACCES");
-      expect(written).toBeUndefined();
-    } finally {
-      await rm(catalog, { force: true, recursive: true });
-    }
+      },
+    };
+    await withProject(
+      stale,
+      async (project) => {
+        const denied = Object.assign(new Error("EACCES"), { code: "EACCES" });
+        await expect(
+          updateSkills(options, {
+            hash: async () => {
+              throw denied;
+            },
+            isInstalled: async () => true,
+            lockEnvironment: project.env,
+            sourceSkills: stubSources,
+            warn: () => {},
+          }),
+        ).rejects.toThrow("EACCES");
+        await expectUncommitted(project);
+        expect(await readFile(join(project.cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe(
+          "# lint\n",
+        );
+        await expect(access(join(project.cwd, ".cursor/skills/test"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+      },
+      {
+        ".cursor/skills/lint/SKILL.md": "# lint\n",
+        ".cursor/skills/retired/SKILL.md": "# retired\n",
+      },
+    );
   });
 
   test("refuses to delete lock paths that escape the agent root", async () => {
@@ -511,112 +554,80 @@ describe("gateway maintenance commands", () => {
           agents: {
             cursor: {
               files: { "../../etc/passwd": "abc" },
-              root: "/tmp/project/.cursor/skills",
+              root: `${FIXTURE_ROOT}/.cursor/skills`,
             },
           },
         }),
       },
     };
-
-    await expect(
-      removeSkills(
-        { ...options, skills: ["pdf"] },
-        {
-          hash: async () => "abc",
-          readLock: async () => evil,
-          run: async () => {},
-          writeLock: async () => {},
-        },
-      ),
-    ).rejects.toThrow("outside explode root");
+    await withProject(evil, async (project) => {
+      await expect(
+        removeSkills(
+          { ...options, skills: ["pdf"] },
+          { hash: async () => "abc", lockEnvironment: project.env, run: forbidSkillsCli },
+        ),
+      ).rejects.toThrow("outside explode root");
+      await expectUncommitted(project);
+    });
   });
 
   test("keeps a locally modified skill file on a real filesystem remove", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-remove-mod-"));
-    const skillDir = join(cwd, ".cursor/skills/pdf");
-    const skillFile = join(skillDir, "SKILL.md");
-    const warnings: string[] = [];
-    const calls: string[][] = [];
-    try {
-      await mkdir(skillDir, { recursive: true });
-      await writeFile(skillFile, "local edit\n");
-      const onDisk = {
-        ...lock,
-        plugins: {
-          pdf: pluginEntry({
-            agents: {
-              cursor: {
-                files: { "pdf/SKILL.md": "abc" },
-                root: join(cwd, ".cursor/skills"),
-              },
+    await withProject(
+      lock,
+      async (project) => {
+        const warnings: string[] = [];
+        await removeSkills(
+          { ...options, skills: ["pdf"] },
+          {
+            lockEnvironment: project.env,
+            run: forbidSkillsCli,
+            warn: (message) => {
+              warnings.push(message);
             },
-          }),
-        },
-      };
-
-      await removeSkills(
-        { ...options, skills: ["pdf"] },
-        {
-          readLock: async () => onDisk,
-          run: async (args) => {
-            calls.push(args);
           },
-          warn: (message) => {
-            warnings.push(message);
-          },
-          writeLock: async () => {},
-        },
-      );
+        );
 
-      expect(calls).toEqual([]);
-      expect(warnings).toEqual(["left modified pdf file pdf/SKILL.md"]);
-      expect(await readFile(skillFile, "utf8")).toBe("local edit\n");
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
+        expect(warnings).toEqual(["left modified pdf file pdf/SKILL.md"]);
+        expect(await readFile(join(project.cwd, ".cursor/skills/pdf/SKILL.md"), "utf8")).toBe(
+          "local edit\n",
+        );
+      },
+      { ".cursor/skills/pdf/SKILL.md": "local edit\n" },
+    );
   });
 
   test("prunes nested empty directories after a verified remove", async () => {
-    const removed: string[] = [];
     const nested = {
       ...lock,
       plugins: {
         pdf: pluginEntry({
           agents: {
             cursor: {
-              files: { "pdf/docs/guide.md": "abc" },
-              root: "/tmp/project/.cursor/skills",
+              files: { "pdf/docs/guide.md": sha("guide\n") },
+              root: `${FIXTURE_ROOT}/.cursor/skills`,
             },
           },
         }),
       },
     };
-    await removeSkills(
-      { ...options, skills: ["pdf"] },
-      {
-        hash: async () => "abc",
-        readLock: async () => nested,
-        rmdir: async (path) => {
-          removed.push(`dir:${path}`);
-        },
-        run: async () => {},
-        unlink: async (path) => {
-          removed.push(`file:${path}`);
-        },
-        writeLock: async () => {},
-      },
-    );
+    await withProject(
+      nested,
+      async (project) => {
+        await removeSkills(
+          { ...options, skills: ["pdf"] },
+          { lockEnvironment: project.env, run: forbidSkillsCli },
+        );
 
-    expect(removed).toEqual([
-      "file:/tmp/project/.cursor/skills/pdf/docs/guide.md",
-      "dir:/tmp/project/.cursor/skills/pdf/docs",
-      "dir:/tmp/project/.cursor/skills/pdf",
-    ]);
+        await expect(access(join(project.cwd, ".cursor/skills/pdf"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        expect(await readdir(join(project.cwd, ".cursor/skills"))).toEqual([]);
+      },
+      { ".cursor/skills/pdf/docs/guide.md": "guide\n" },
+    );
   });
 
   test("rematerializes current first-party plugin skills on update", async () => {
-    const calls: Array<{ agents: string[]; skills: string[] }> = [];
-    let written;
     const stale = {
       ...lock,
       plugins: {
@@ -624,7 +635,7 @@ describe("gateway maintenance commands", () => {
           agents: {
             cursor: {
               files: { "lint/SKILL.md": "abc" },
-              root: "/tmp/project/.cursor/skills",
+              root: `${FIXTURE_ROOT}/.cursor/skills`,
             },
           },
           repo: "lgtm-hq/ai-skills",
@@ -634,29 +645,28 @@ describe("gateway maintenance commands", () => {
         }),
       },
     };
+    await withProject(stale, async (project) => {
+      await updateSkills(options, {
+        isInstalled: async () => true,
+        lockEnvironment: project.env,
+        now: () => new Date("2026-07-10T17:00:00.000Z"),
+        sourceSkills: stubSources,
+        warn: () => {},
+      });
 
-    await updateSkills(options, {
-      hash: async () => "refreshed",
-      isInstalled: async () => true,
-      now: () => new Date("2026-07-10T17:00:00.000Z"),
-      readLock: async () => stale,
-      explode: recordingExplode(calls),
-      sourceSkills: stubSources,
-      writeLock: async (next) => {
-        written = next;
-      },
+      const written = await readState("project", project.env);
+      expect(Object.keys(written.plugins.review.agents.cursor.files).sort()).toEqual(
+        reviewSkills.map((skill) => `${skill}/SKILL.md`).sort(),
+      );
+      for (const skill of reviewSkills) {
+        await access(join(project.cwd, ".cursor/skills", skill, "SKILL.md"));
+      }
     });
-
-    expect(calls).toEqual([{ agents: ["cursor"], skills: reviewSkills }]);
-    expect(Object.keys(written!.plugins.review.agents.cursor.files).sort()).toEqual(
-      reviewSkills.map((skill) => `${skill}/SKILL.md`).sort(),
-    );
   });
 
   test("keeps nested tracked files for remaining skills on update", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-update-nested-"));
-    try {
-      const dest = join(cwd, ".cursor/skills");
+    await withProject(null, async (project) => {
+      const dest = join(project.cwd, ".cursor/skills");
       await mkdir(join(dest, "lint/docs"), { recursive: true });
       await mkdir(join(dest, "retired/docs"), { recursive: true });
       await writeFile(join(dest, "lint/SKILL.md"), "# lint\n");
@@ -665,12 +675,12 @@ describe("gateway maintenance commands", () => {
       const lintHash = await hashFile(join(dest, "lint/SKILL.md"));
       const guideHash = await hashFile(join(dest, "lint/docs/guide.md"));
       const retiredHash = await hashFile(join(dest, "retired/docs/old.md"));
-      let written;
-      await updateSkills(options, {
-        hash: hashFile,
-        isInstalled: async () => true,
-        now: () => new Date("2026-07-10T17:00:00.000Z"),
-        readLock: async () => ({
+      const sources = { ...stubSources, lint: join(project.cwd, "catalog/lint") };
+      await mkdir(join(sources.lint, "docs"), { recursive: true });
+      await writeFile(join(sources.lint, "SKILL.md"), "# lint\n");
+      await writeFile(join(sources.lint, "docs/guide.md"), "guide\n");
+      await writeLegacyLock(
+        {
           ...lock,
           plugins: {
             review: pluginEntry({
@@ -692,60 +702,38 @@ describe("gateway maintenance commands", () => {
               version: "0.21.0",
             }),
           },
-        }),
-        explode: async (args) => ({
-          claimed: {
-            cursor: {
-              "lint/SKILL.md": lintHash,
-              "lint/docs/guide.md": guideHash,
-              ...Object.fromEntries(
-                args.skills
-                  .filter((skill) => skill !== "lint")
-                  .map((skill) => [`${skill}/SKILL.md`, "refreshed"]),
-              ),
-            },
-          },
-          createdDests: [],
-          createdStores: [],
-          skipped: [],
-          swappedDests: [],
-          swappedStores: [],
-        }),
-        rmdir: async () => {},
-        sourceSkills: stubSources,
-        unlink: async () => {},
-        warn: () => {},
-        writeLock: async (next) => {
-          written = next;
         },
+        project.env,
+      );
+      await updateSkills(options, {
+        hash: hashFile,
+        isInstalled: async () => true,
+        lockEnvironment: project.env,
+        now: () => new Date("2026-07-10T17:00:00.000Z"),
+        sourceSkills: sources,
+        warn: () => {},
       });
-      expect(written!.plugins.review.agents.cursor.files).toMatchObject({
+      const written = await readState("project", project.env);
+      expect(written.plugins.review.agents.cursor.files).toMatchObject({
         "lint/SKILL.md": lintHash,
         "lint/docs/guide.md": guideHash,
       });
-      expect(Object.keys(written!.plugins.review.agents.cursor.files)).not.toContain(
+      expect(Object.keys(written.plugins.review.agents.cursor.files)).not.toContain(
         "retired/docs/old.md",
       );
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
+      await expect(access(join(dest, "retired"))).rejects.toMatchObject({ code: "ENOENT" });
+    });
   });
 
   test("hash-verifies and drops skills removed from the catalog on update", async () => {
-    const calls: Array<{ agents: string[]; skills: string[] }> = [];
-    const unlinked: string[] = [];
-    let written;
     const stale = {
       ...lock,
       plugins: {
         review: pluginEntry({
           agents: {
             cursor: {
-              files: {
-                "lint/SKILL.md": "abc",
-                "retired/SKILL.md": "abc",
-              },
-              root: "/tmp/project/.cursor/skills",
+              files: { "lint/SKILL.md": sha("# lint\n"), "retired/SKILL.md": sha("# retired\n") },
+              root: `${FIXTURE_ROOT}/.cursor/skills`,
             },
           },
           repo: "lgtm-hq/ai-skills",
@@ -755,43 +743,41 @@ describe("gateway maintenance commands", () => {
         }),
       },
     };
+    await withProject(
+      stale,
+      async (project) => {
+        await updateSkills(options, {
+          isInstalled: async () => true,
+          lockEnvironment: project.env,
+          now: () => new Date("2026-07-10T17:00:00.000Z"),
+          sourceSkills: stubSources,
+          warn: () => {},
+        });
 
-    await updateSkills(options, {
-      hash: async () => "abc",
-      isInstalled: async () => true,
-      now: () => new Date("2026-07-10T17:00:00.000Z"),
-      readLock: async () => stale,
-      explode: recordingExplode(calls, "abc"),
-      sourceSkills: stubSources,
-      unlink: async (path) => {
-        unlinked.push(String(path));
+        await expect(access(join(project.cwd, ".cursor/skills/retired"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        const written = await readState("project", project.env);
+        expect(Object.keys(written.plugins.review.agents.cursor.files).sort()).toEqual(
+          reviewSkills.map((skill) => `${skill}/SKILL.md`).sort(),
+        );
       },
-      writeLock: async (next) => {
-        written = next;
+      {
+        ".cursor/skills/lint/SKILL.md": "# lint\n",
+        ".cursor/skills/retired/SKILL.md": "# retired\n",
       },
-    });
-
-    expect(calls).toEqual([{ agents: ["cursor"], skills: reviewSkills }]);
-    expect(unlinked).toEqual(["/tmp/project/.cursor/skills/retired/SKILL.md"]);
-    expect(Object.keys(written!.plugins.review.agents.cursor.files).sort()).toEqual(
-      reviewSkills.map((skill) => `${skill}/SKILL.md`).sort(),
     );
   });
 
-  test("does not write the lock when stale cleanup cannot unlink", async () => {
-    const warnings: string[] = [];
-    let written;
+  test("does not commit when stale cleanup cannot remove a file", async () => {
     const stale = {
       ...lock,
       plugins: {
         review: pluginEntry({
           agents: {
             cursor: {
-              files: {
-                "lint/SKILL.md": "abc",
-                "retired/SKILL.md": "abc",
-              },
-              root: "/tmp/project/.cursor/skills",
+              files: { "lint/SKILL.md": sha("# lint\n"), "retired/SKILL.md": sha("# retired\n") },
+              root: `${FIXTURE_ROOT}/.cursor/skills`,
             },
           },
           repo: "lgtm-hq/ai-skills",
@@ -801,272 +787,226 @@ describe("gateway maintenance commands", () => {
         }),
       },
     };
-
-    await expect(
-      updateSkills(options, {
-        hash: async () => "abc",
-        isInstalled: async () => true,
-        now: () => new Date("2026-07-10T17:00:00.000Z"),
-        readLock: async () => stale,
-        explode: recordingExplode([], "abc"),
-        sourceSkills: stubSources,
-        unlink: async () => {
-          const error: NodeJS.ErrnoException = new Error("EACCES: permission denied");
-          error.code = "EACCES";
-          throw error;
-        },
-        warn: (message) => warnings.push(message),
-        writeLock: async (next) => {
-          written = next;
-        },
-      }),
-    ).rejects.toThrow("EACCES");
-    expect(written).toBeUndefined();
-    expect(warnings).toEqual([]);
+    await withProject(
+      stale,
+      async (project) => {
+        const warnings: string[] = [];
+        await expect(
+          updateSkills(options, {
+            isInstalled: async () => true,
+            journal: {
+              io: {
+                rename: (async (from: string, to: string) => {
+                  if (String(from).endsWith("retired/SKILL.md")) {
+                    throw Object.assign(new Error("EACCES: permission denied"), {
+                      code: "EACCES",
+                    });
+                  }
+                  return rename(from, to);
+                }) as typeof rename,
+              },
+            },
+            lockEnvironment: project.env,
+            now: () => new Date("2026-07-10T17:00:00.000Z"),
+            sourceSkills: stubSources,
+            warn: (message) => warnings.push(message),
+          }),
+        ).rejects.toThrow("Update rolled back: EACCES");
+        await expectUncommitted(project);
+        expect(warnings).toEqual([]);
+        expect(await readFile(join(project.cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe(
+          "# lint\n",
+        );
+      },
+      {
+        ".cursor/skills/lint/SKILL.md": "# lint\n",
+        ".cursor/skills/retired/SKILL.md": "# retired\n",
+      },
+    );
   });
 
-  test("restores stale dests when the lock write fails after cleanup", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-stale-lock-fail-"));
-    try {
-      const dest = join(cwd, ".cursor/skills");
+  test("restores stale dests when the commit fails after cleanup", async () => {
+    await withProject(null, async (project) => {
+      const dest = join(project.cwd, ".cursor/skills");
       await mkdir(join(dest, "lint"), { recursive: true });
       await mkdir(join(dest, "retired"), { recursive: true });
       await writeFile(join(dest, "lint/SKILL.md"), "# lint\n");
       await writeFile(join(dest, "retired/SKILL.md"), "# retired\n");
-      const lintHash = await hashFile(join(dest, "lint/SKILL.md"));
-      const retiredHash = await hashFile(join(dest, "retired/SKILL.md"));
+      await writeLegacyLock(
+        {
+          ...lock,
+          plugins: {
+            review: pluginEntry({
+              agents: {
+                cursor: {
+                  files: {
+                    "lint/SKILL.md": await hashFile(join(dest, "lint/SKILL.md")),
+                    "retired/SKILL.md": await hashFile(join(dest, "retired/SKILL.md")),
+                  },
+                  projector: "explode" as const,
+                  root: dest,
+                },
+              },
+              projector: "explode" as const,
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.21.0",
+              skills: ["lint", "retired"],
+              vendor: "lgtm-hq",
+              version: "0.21.0",
+            }),
+          },
+        },
+        project.env,
+      );
 
       await expect(
         updateSkills(options, {
           hash: hashFile,
           isInstalled: async () => true,
+          journal: { failBeforeCommit: true },
+          lockEnvironment: project.env,
           now: () => new Date("2026-07-10T17:00:00.000Z"),
-          readLock: async () => ({
-            ...lock,
-            plugins: {
-              review: pluginEntry({
-                agents: {
-                  cursor: {
-                    files: {
-                      "lint/SKILL.md": lintHash,
-                      "retired/SKILL.md": retiredHash,
-                    },
-                    projector: "explode" as const,
-                    root: dest,
-                  },
-                },
-                projector: "explode" as const,
-                repo: "lgtm-hq/ai-skills",
-                sha: "v0.21.0",
-                skills: ["lint", "retired"],
-                vendor: "lgtm-hq",
-                version: "0.21.0",
-              }),
-            },
-          }),
-          explode: recordingExplode([]),
           sourceSkills: stubSources,
-          writeLock: async () => {
-            throw new Error("ENOSPC: lock write failed");
-          },
+          warn: () => {},
         }),
-      ).rejects.toThrow("ENOSPC");
+      ).rejects.toThrow("Update rolled back: injected failure before commit");
 
       expect(await readFile(join(dest, "retired/SKILL.md"), "utf8")).toBe("# retired\n");
       expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
-      const { readdir } = await import("node:fs/promises");
-      const names = await readdir(dest);
-      expect(names.filter((name) => name.includes(".bak."))).toEqual([]);
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
+      expect((await readdir(dest)).sort()).toEqual(["lint", "retired"]);
+      await expectUncommitted(project);
+    });
   });
 
   test("stale cleanup does not unlink a dest another plugin still catalogs", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-stale-keep-sibling-"));
-    try {
-      const destRoot = join(cwd, ".cursor/skills");
+    await withProject(null, async (project) => {
+      const destRoot = join(project.cwd, ".cursor/skills");
       await mkdir(join(destRoot, "lint"), { recursive: true });
       await writeFile(join(destRoot, "lint/SKILL.md"), "# lint\n");
       const lintHash = await hashFile(join(destRoot, "lint/SKILL.md"));
-      await updateSkills(
+      await writeLegacyLock(
         {
-          agents: ["cursor"],
-          global: false,
-          project: true,
-          skills: [],
-          yes: true,
+          gatewayVersion: "0.0.0-dev",
+          plugins: {
+            review: pluginEntry({
+              agents: {
+                cursor: {
+                  files: { "test/SKILL.md": "keep" },
+                  projector: "explode" as const,
+                  root: destRoot,
+                },
+              },
+              projector: "explode" as const,
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.21.0",
+              vendor: "lgtm-hq",
+              version: "0.21.0",
+            }),
+            "git-pr": pluginEntry({
+              agents: {
+                cursor: {
+                  files: { "branch/SKILL.md": "keep", "lint/SKILL.md": lintHash },
+                  projector: "explode" as const,
+                  root: destRoot,
+                },
+              },
+              projector: "explode" as const,
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.21.0",
+              vendor: "lgtm-hq",
+              version: "0.21.0",
+            }),
+          },
+          scope: "project" as const,
+          version: 2,
         },
+        project.env,
+      );
+      await updateSkills(
+        { agents: ["cursor"], global: false, project: true, skills: [], yes: true },
         {
-          explode: async (
-            args,
-          ): Promise<import("../lib/adapters/shared/skill-explode.ts").ExplodeResult> => ({
-            claimed: args.skills.includes("lint")
-              ? { cursor: { "test/SKILL.md": "keep" } }
-              : { cursor: { "branch/SKILL.md": "keep" } },
-            createdDests: [],
-            createdStores: [],
-            skipped: args.skills.includes("lint")
-              ? [{ agent: "cursor", dest: join(destRoot, "lint"), skill: "lint" }]
-              : [],
-            swappedDests: [],
-            swappedStores: [],
-          }),
           hash: hashFile,
           isInstalled: async () => true,
+          lockEnvironment: project.env,
           now: () => new Date("2026-07-10T17:00:00.000Z"),
-          readLock: async () => ({
-            gatewayVersion: "0.0.0-dev",
-            plugins: {
-              review: pluginEntry({
-                agents: {
-                  cursor: {
-                    files: { "test/SKILL.md": "keep" },
-                    projector: "explode" as const,
-                    root: destRoot,
-                  },
-                },
-                projector: "explode" as const,
-                repo: "lgtm-hq/ai-skills",
-                sha: "v0.21.0",
-                vendor: "lgtm-hq",
-                version: "0.21.0",
-              }),
-              "git-pr": pluginEntry({
-                agents: {
-                  cursor: {
-                    files: {
-                      "branch/SKILL.md": "keep",
-                      "lint/SKILL.md": lintHash,
-                    },
-                    projector: "explode" as const,
-                    root: destRoot,
-                  },
-                },
-                projector: "explode" as const,
-                repo: "lgtm-hq/ai-skills",
-                sha: "v0.21.0",
-                vendor: "lgtm-hq",
-                version: "0.21.0",
-              }),
-            },
-            scope: "project" as const,
-            version: 2,
-          }),
-          sourceSkills: {},
-          writeLock: async () => {},
+          sourceSkills: stubSources,
+          warn: () => {},
         },
       );
       expect(await readFile(join(destRoot, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
+    });
   });
 
   test("explode update records nested dest files so remove deletes them", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cli-update-nested-"));
-    try {
-      const dest = join(cwd, ".cursor/skills");
+    await withProject(null, async (project) => {
+      const dest = join(project.cwd, ".cursor/skills");
       await mkdir(join(dest, "lint"), { recursive: true });
       await writeFile(join(dest, "lint/SKILL.md"), "# lint\n");
-      const source = join(cwd, "catalog/lint");
+      const source = join(project.cwd, "catalog/lint");
       await mkdir(source, { recursive: true });
       await writeFile(join(source, "SKILL.md"), "# lint\n");
       await writeFile(join(source, "notes.md"), "notes\n");
       const lintHash = await hashFile(join(dest, "lint/SKILL.md"));
-      const lockEnvironment = { cwd };
-      await writeFile(
-        join(cwd, "ai-skills-lock.json"),
-        `${JSON.stringify(
-          {
-            gatewayVersion: "0.0.0-old",
-            plugins: {
-              leftover: {
-                agents: {
-                  cursor: {
-                    files: { "lint/SKILL.md": lintHash },
-                    projector: "explode" as const,
-                    root: dest,
-                  },
+      await writeLegacyLock(
+        {
+          gatewayVersion: "0.0.0-old",
+          plugins: {
+            leftover: {
+              agents: {
+                cursor: {
+                  files: { "lint/SKILL.md": lintHash },
+                  projector: "explode" as const,
+                  root: dest,
                 },
-                installedAt: "2026-07-10T16:00:00.000Z",
-                projector: "explode" as const,
-                repo: "lgtm-hq/ai-skills",
-                sha: "v0.0.0-old",
-                skills: ["lint"],
-                vendor: "lgtm-hq",
-                version: "0.0.0-old",
               },
+              installedAt: "2026-07-10T16:00:00.000Z",
+              projector: "explode" as const,
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-old",
+              skills: ["lint"],
+              vendor: "lgtm-hq",
+              version: "0.0.0-old",
             },
-            scope: "project" as const,
-            version: 2,
           },
-          null,
-          2,
-        )}\n`,
+          scope: "project" as const,
+          version: 2,
+        },
+        project.env,
       );
       await updateSkills(
-        {
-          agents: ["cursor"],
-          global: false,
-          project: true,
-          skills: ["leftover"],
-          yes: true,
-        },
+        { agents: ["cursor"], global: false, project: true, skills: ["leftover"], yes: true },
         {
           isInstalled: async () => true,
-          lockEnvironment,
-          readLock: (scope) => readLockfile(scope, lockEnvironment),
+          lockEnvironment: project.env,
           sourceSkills: { lint: source },
-          writeLock: (next) => writeLockfile(next, lockEnvironment),
+          warn: () => {},
         },
       );
-      const updated = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
+      const updated = await readState("project", project.env);
       expect(Object.keys(updated.plugins.leftover.agents.cursor.files).sort()).toEqual([
         "lint/SKILL.md",
         "lint/notes.md",
       ]);
       await removeSkills(
-        {
-          agents: ["cursor"],
-          global: false,
-          project: true,
-          skills: ["leftover"],
-          yes: true,
-        },
-        {
-          lockEnvironment,
-          readLock: (scope) => readLockfile(scope, lockEnvironment),
-          run: async () => {
-            throw new Error("skills CLI must not run for explode remove");
-          },
-          writeLock: (next) => writeLockfile(next, lockEnvironment),
-        },
+        { agents: ["cursor"], global: false, project: true, skills: ["leftover"], yes: true },
+        { lockEnvironment: project.env, run: forbidSkillsCli },
       );
       await expect(readFile(join(dest, "lint/notes.md"), "utf8")).rejects.toMatchObject({
         code: "ENOENT",
       });
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
+    });
   });
 
   test("drops only catalog-removed skills when the lock lists a v2 skills array", async () => {
-    const calls: string[][] = [];
-    const unlinked: string[] = [];
-    const home = await mkdtemp(join(tmpdir(), "ai-skills-v2-array-home-"));
     const stale = {
       ...lock,
       plugins: {
         review: pluginEntry({
           agents: {
             cursor: {
-              files: {
-                "lint/SKILL.md": "abc",
-                "retired/SKILL.md": "abc",
-              },
+              files: { "lint/SKILL.md": sha("# lint\n"), "retired/SKILL.md": sha("# retired\n") },
               projector: "explode" as const,
-              root: "/tmp/project/.cursor/skills",
+              root: `${FIXTURE_ROOT}/.cursor/skills`,
             },
             "claude-code": {
               files: { "lint/SKILL.md": "", "retired/SKILL.md": "" },
@@ -1083,36 +1023,40 @@ describe("gateway maintenance commands", () => {
         }),
       },
     };
+    await withProject(
+      stale,
+      async (project) => {
+        const calls: string[][] = [];
+        await updateSkills(options, {
+          exec: async (command, args) => {
+            calls.push([command, ...args]);
+            return { status: 0, stderr: "", stdout: "" };
+          },
+          isInstalled: async () => true,
+          lockEnvironment: project.env,
+          now: () => new Date("2026-07-10T17:00:00.000Z"),
+          sourceSkills: stubSources,
+          warn: () => {},
+        });
 
-    try {
-      await updateSkills(options, {
-        exec: async (command, args) => {
-          calls.push([command, ...args]);
-          return { status: 0, stderr: "", stdout: "" };
-        },
-        explode: recordingExplode([], "abc"),
-        hash: async () => "abc",
-        isInstalled: async () => true,
-        lockEnvironment: { home },
-        now: () => new Date("2026-07-10T17:00:00.000Z"),
-        readLock: async () => stale,
-        sourceSkills: stubSources,
-        unlink: async (path) => {
-          unlinked.push(String(path));
-        },
-        writeLock: async () => {},
-      });
-    } finally {
-      await rm(home, { force: true, recursive: true });
-    }
-
-    expect(calls.find((args) => args.includes("remove"))).toBeUndefined();
-    expect(unlinked).toEqual(["/tmp/project/.cursor/skills/retired/SKILL.md"]);
+        expect(calls.find((args) => args.includes("remove"))).toBeUndefined();
+        expect(calls.find((args) => args.includes("uninstall"))).toBeUndefined();
+        await expect(access(join(project.cwd, ".cursor/skills/retired"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        expect(await readFile(join(project.cwd, ".cursor/skills/lint/SKILL.md"), "utf8")).toBe(
+          "# lint\n",
+        );
+      },
+      {
+        ".cursor/skills/lint/SKILL.md": "# lint\n",
+        ".cursor/skills/retired/SKILL.md": "# retired\n",
+      },
+    );
   });
 
   test("skips first-party update when the package pin is current and files match", async () => {
     const version = getPackageVersion();
-    const calls: string[][] = [];
     const current = {
       ...lock,
       plugins: {
@@ -1120,7 +1064,7 @@ describe("gateway maintenance commands", () => {
           agents: {
             cursor: {
               files: { "lint/SKILL.md": "abc" },
-              root: "/tmp/project/.cursor/skills",
+              root: `${FIXTURE_ROOT}/.cursor/skills`,
             },
           },
           repo: "lgtm-hq/ai-skills",
@@ -1130,22 +1074,16 @@ describe("gateway maintenance commands", () => {
         }),
       },
     };
+    await withProject(current, async (project) => {
+      const result = await updateSkills(options, {
+        isInstalled: async () => true,
+        lockEnvironment: { ...project.env, exists: async () => true, hash: async () => "abc" },
+        run: forbidSkillsCli,
+      });
 
-    const result = await updateSkills(options, {
-      isInstalled: async () => true,
-      lockEnvironment: {
-        exists: async () => true,
-        hash: async () => "abc",
-      },
-      readLock: async () => current,
-      run: async (args) => {
-        calls.push(args);
-      },
-      writeLock: async () => {},
+      expect(result).toEqual({ pruned: [], updated: [] });
+      await expectUncommitted(project);
     });
-
-    expect(calls).toEqual([]);
-    expect(result).toEqual({ pruned: [], updated: [] });
   });
 
   test("lists lock-managed installs in name order", async () => {
@@ -1190,8 +1128,6 @@ describe("gateway maintenance commands", () => {
   });
 
   test("updates a native CLI plugin through the host CLI instead of skills add", async () => {
-    const calls: string[][] = [];
-    const execCalls: string[][] = [];
     const nativeLock = {
       ...lock,
       plugins: {
@@ -1211,26 +1147,21 @@ describe("gateway maintenance commands", () => {
         }),
       },
     };
-    const home = await mkdtemp(join(tmpdir(), "ai-skills-native-update-home-"));
-    try {
+    await withProject(nativeLock, async (project) => {
+      const execCalls: string[][] = [];
       await updateSkills(options, {
         exec: async (command, args) => {
           execCalls.push([command, ...args]);
           return { status: 0, stderr: "", stdout: "" };
         },
-        hash: async () => "",
         isInstalled: async () => true,
-        lockEnvironment: { home },
+        lockEnvironment: project.env,
         now: () => new Date("2026-07-10T17:00:00.000Z"),
-        readLock: async () => nativeLock,
-        run: async (args) => {
-          calls.push(args);
-        },
-        writeLock: async () => {},
+        run: forbidSkillsCli,
+        warn: () => {},
       });
-      expect(calls).toEqual([]);
       // Native delivery registers the locally rendered envelope, never a remote repo.
-      const envelope = join(home, ".ai-skills/native/claude-code");
+      const envelope = join(project.home, ".ai-skills/native/claude-code");
       expect(execCalls).toEqual([
         ["claude", "plugin", "marketplace", "add", envelope],
         ["claude", "plugin", "install", "review@ai-skills"],
@@ -1244,14 +1175,15 @@ describe("gateway maintenance commands", () => {
       await expect(
         readFile(join(envelope, "review/skills/lint/SKILL.md"), "utf8"),
       ).resolves.toContain("name:");
-    } finally {
-      await rm(home, { force: true, recursive: true });
-    }
+      const receipt = await readReceipt("project", project.env);
+      expect(receipt?.registrations.map((item) => item.argv.slice(0, 3))).toEqual([
+        ["claude", "plugin", "marketplace"],
+        ["claude", "plugin", "install"],
+      ]);
+    });
   });
 
   test("removes a native CLI plugin through the host CLI", async () => {
-    const calls: string[][] = [];
-    const execCalls: string[][] = [];
     const nativeLock = {
       ...lock,
       plugins: {
@@ -1271,25 +1203,23 @@ describe("gateway maintenance commands", () => {
         }),
       },
     };
-    const removed = await removeSkills(options, {
-      exec: async (command, args) => {
-        execCalls.push([command, ...args]);
-        return { status: 0, stderr: "", stdout: "" };
-      },
-      readLock: async () => nativeLock,
-      run: async (args) => {
-        calls.push(args);
-      },
-      writeLock: async () => {},
+    await withProject(nativeLock, async (project) => {
+      const execCalls: string[][] = [];
+      const removed = await removeSkills(options, {
+        exec: async (command, args) => {
+          execCalls.push([command, ...args]);
+          return { status: 0, stderr: "", stdout: "" };
+        },
+        lockEnvironment: project.env,
+        run: forbidSkillsCli,
+      });
+      expect(removed).toEqual(["review"]);
+      expect(execCalls).toEqual([["claude", "plugin", "uninstall", "review@ai-skills"]]);
+      expect((await readState("project", project.env)).plugins).toEqual({});
     });
-    expect(removed).toEqual(["review"]);
-    expect(calls).toEqual([]);
-    expect(execCalls).toEqual([["claude", "plugin", "uninstall", "review@ai-skills"]]);
   });
 
-  test("restores the lock when CLI uninstall fails after lock write", async () => {
-    const execCalls: string[][] = [];
-    const writes: import("../lib/lockfile.ts").GatewayLock[] = [];
+  test("rolls back a remove when the host uninstall fails", async () => {
     const nativeLock = {
       ...lock,
       plugins: {
@@ -1309,101 +1239,134 @@ describe("gateway maintenance commands", () => {
         }),
       },
     };
-    await expect(
-      removeSkills(options, {
-        exec: async (command, args) => {
-          execCalls.push([command, ...args]);
-          return { status: 1, stderr: "permission denied", stdout: "" };
-        },
-        readLock: async () => nativeLock,
-        run: async () => {},
-        writeLock: async (next) => {
-          writes.push(next);
-        },
-      }),
-    ).rejects.toThrow("claude plugin uninstall failed: permission denied");
-    expect(execCalls).toEqual([["claude", "plugin", "uninstall", "review@ai-skills"]]);
-    expect(writes).toHaveLength(2);
-    expect(writes[0]!.plugins.review).toBeUndefined();
-    expect(writes[1]!.plugins.review).toEqual(nativeLock.plugins.review);
-  });
-
-  test("does not restore a CLI agent that already uninstalled when a sibling fails", async () => {
-    const writes: import("../lib/lockfile.ts").GatewayLock[] = [];
-    const claude = {
-      files: { "lint/SKILL.md": "" },
-      projector: "native" as const,
-      root: "cli:claude-code",
-    };
-    const copilot = {
-      files: { "lint/SKILL.md": "" },
-      projector: "native" as const,
-      root: "cli:copilot",
-    };
-    const nativeLock = {
-      ...lock,
-      plugins: {
-        review: pluginEntry({
-          agents: {
-            "claude-code": claude,
-            copilot,
-          },
-          projector: "native" as const,
-          repo: "lgtm-hq/ai-skills",
-          sha: "v0.0.0-dev",
-          vendor: "lgtm-hq",
-          version: "0.0.0-dev",
-        }),
-      },
-    };
-    await expect(
-      removeSkills(options, {
-        exec: async (_command, args) => {
-          if (args.includes("uninstall") && args.some((arg) => String(arg).startsWith("review@"))) {
-            if (_command === "claude") {
-              return { status: 0, stderr: "", stdout: "" };
-            }
+    await withProject(nativeLock, async (project) => {
+      const execCalls: string[][] = [];
+      await expect(
+        removeSkills(options, {
+          exec: async (command, args) => {
+            execCalls.push([command, ...args]);
             return { status: 1, stderr: "permission denied", stdout: "" };
-          }
-          return { status: 0, stderr: "", stdout: "" };
-        },
-        readLock: async () => nativeLock,
-        run: async () => {},
-        writeLock: async (next) => {
-          writes.push(next);
-        },
-      }),
-    ).rejects.toThrow("copilot plugin uninstall failed: permission denied");
-    expect(writes).toHaveLength(2);
-    expect(writes[1]!.plugins.review!.agents).toEqual({ copilot });
-    expect(writes[1]!.plugins.review!.agents["claude-code"]).toBeUndefined();
+          },
+          lockEnvironment: project.env,
+          run: forbidSkillsCli,
+        }),
+      ).rejects.toThrow("Remove rolled back: claude plugin uninstall failed: permission denied");
+      expect(execCalls).toEqual([["claude", "plugin", "uninstall", "review@ai-skills"]]);
+      await expectUncommitted(project);
+      expect(Object.keys((await readState("project", project.env)).plugins)).toEqual(["review"]);
+    });
   });
 
-  test("does not restore deleted Cursor or explode agents after CLI uninstall fails", async () => {
-    const writes: import("../lib/lockfile.ts").GatewayLock[] = [];
-    const claude = {
+  test("reinstalls a CLI plugin it uninstalled when a sibling uninstall fails", async () => {
+    const native = (root: string) => ({
       files: { "lint/SKILL.md": "" },
       projector: "native" as const,
-      root: "cli:claude-code",
-    };
-    const mixedLock = {
+      root,
+    });
+    const nativeLock = {
       ...lock,
       plugins: {
         review: pluginEntry({
-          agents: {
-            "claude-code": claude,
-            cursor: {
-              files: { "lint/SKILL.md": "abc" },
-              projector: "native" as const,
-              root: "/tmp/project/.cursor/plugins/local/review",
-            },
-            codex: {
-              files: { "lint/SKILL.md": "abc" },
+          agents: { "claude-code": native("cli:claude-code"), copilot: native("cli:copilot") },
+          projector: "native" as const,
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.0.0-dev",
+          vendor: "lgtm-hq",
+          version: "0.0.0-dev",
+        }),
+      },
+    };
+    await withProject(nativeLock, async (project) => {
+      const execCalls: string[][] = [];
+      await expect(
+        removeSkills(options, {
+          exec: async (command, args) => {
+            execCalls.push([command, ...args]);
+            if (command === "copilot" && args.includes("uninstall")) {
+              return { status: 1, stderr: "permission denied", stdout: "" };
+            }
+            return { status: 0, stderr: "", stdout: "" };
+          },
+          lockEnvironment: project.env,
+          run: forbidSkillsCli,
+        }),
+      ).rejects.toThrow("copilot plugin uninstall failed: permission denied");
+      expect(execCalls).toEqual([
+        ["claude", "plugin", "uninstall", "review@ai-skills"],
+        ["copilot", "plugin", "uninstall", "review@ai-skills"],
+        ["claude", "plugin", "install", "review@ai-skills"],
+      ]);
+      await expectUncommitted(project);
+    });
+  });
+
+  test("restores removed files when a later host uninstall fails", async () => {
+    await withProject(null, async (project) => {
+      const pluginDir = join(project.cwd, ".cursor/plugins/local/review");
+      await mkdir(join(pluginDir, "skills/lint"), { recursive: true });
+      await writeFile(join(pluginDir, "skills/lint/SKILL.md"), "# lint\n");
+      await mkdir(join(project.cwd, ".codex/skills/lint"), { recursive: true });
+      await writeFile(join(project.cwd, ".codex/skills/lint/SKILL.md"), "# lint\n");
+      const lintHash = sha("# lint\n");
+      await writeLegacyLock(
+        {
+          ...lock,
+          plugins: {
+            review: pluginEntry({
+              agents: {
+                "claude-code": {
+                  files: { "lint/SKILL.md": "" },
+                  projector: "native" as const,
+                  root: "cli:claude-code",
+                },
+                cursor: {
+                  files: { "skills/lint/SKILL.md": lintHash },
+                  projector: "native" as const,
+                  root: pluginDir,
+                },
+                codex: {
+                  files: { "lint/SKILL.md": lintHash },
+                  projector: "explode" as const,
+                  root: join(project.cwd, ".codex/skills"),
+                },
+              },
               projector: "explode" as const,
-              root: "/tmp/project/.codex/skills",
-            },
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+              vendor: "lgtm-hq",
+              version: "0.0.0-dev",
+            }),
           },
-          projector: "explode" as const,
+        },
+        project.env,
+      );
+      await expect(
+        removeSkills(options, {
+          exec: async () => ({ status: 1, stderr: "permission denied", stdout: "" }),
+          lockEnvironment: project.env,
+          run: forbidSkillsCli,
+        }),
+      ).rejects.toThrow("claude plugin uninstall failed: permission denied");
+      expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      expect(await readFile(join(project.cwd, ".codex/skills/lint/SKILL.md"), "utf8")).toBe(
+        "# lint\n",
+      );
+      await expectUncommitted(project);
+    });
+  });
+
+  test("keeps the uninstall error and the journal when compensation also fails", async () => {
+    const native = (root: string) => ({
+      files: { "lint/SKILL.md": "" },
+      projector: "native" as const,
+      root,
+    });
+    const nativeLock = {
+      ...lock,
+      plugins: {
+        review: pluginEntry({
+          agents: { "claude-code": native("cli:claude-code"), copilot: native("cli:copilot") },
+          projector: "native" as const,
           repo: "lgtm-hq/ai-skills",
           sha: "v0.0.0-dev",
           vendor: "lgtm-hq",
@@ -1411,30 +1374,29 @@ describe("gateway maintenance commands", () => {
         }),
       },
     };
-    await expect(
-      removeSkills(options, {
-        exec: async () => ({ status: 1, stderr: "permission denied", stdout: "" }),
-        hash: async () => {
-          const error: NodeJS.ErrnoException = new Error("ENOENT");
-          error.code = "ENOENT";
-          throw error;
-        },
-        readLock: async () => mixedLock,
-        run: async () => {},
-        writeLock: async (next) => {
-          writes.push(next);
-        },
-      }),
-    ).rejects.toThrow("claude plugin uninstall failed: permission denied");
-    expect(writes).toHaveLength(2);
-    expect(writes[1]!.plugins.review!.agents).toEqual({ "claude-code": claude });
-    expect(writes[1]!.plugins.review!.agents.cursor).toBeUndefined();
-    expect(writes[1]!.plugins.review!.agents.codex).toBeUndefined();
-    expect(writes[1]!.plugins.review!.projector).toBe("native");
+    await withProject(nativeLock, async (project) => {
+      const error = await removeSkills(options, {
+        exec: async (command, args) =>
+          command === "claude" && args.includes("uninstall")
+            ? { status: 0, stderr: "", stdout: "" }
+            : { status: 1, stderr: "permission denied", stdout: "" },
+        lockEnvironment: project.env,
+        run: forbidSkillsCli,
+      }).then(
+        () => new Error("remove unexpectedly succeeded"),
+        (caught: unknown) => caught as Error,
+      );
+      expect(error.message).toContain("copilot plugin uninstall failed: permission denied");
+      expect(error.message).toContain(
+        "rollback also failed: host-exec claude plugin uninstall review@ai-skills: " +
+          "claude plugin install failed: permission denied",
+      );
+      expect(error.message).toContain(join(project.home, ".ai-skills/state/journal"));
+      await expectUncommitted(project);
+    });
   });
 
-  test("keeps the uninstall error when lock restore fails", async () => {
-    const warnings: string[] = [];
+  test("reinstalls a CLI plugin when the remove cannot commit", async () => {
     const nativeLock = {
       ...lock,
       plugins: {
@@ -1454,67 +1416,28 @@ describe("gateway maintenance commands", () => {
         }),
       },
     };
-    let writes = 0;
-    await expect(
-      removeSkills(options, {
-        exec: async () => ({ status: 1, stderr: "permission denied", stdout: "" }),
-        readLock: async () => nativeLock,
-        run: async () => {},
-        warn: (message) => {
-          warnings.push(message);
-        },
-        writeLock: async () => {
-          writes += 1;
-          if (writes > 1) {
-            throw new Error("EACCES");
-          }
-        },
-      }),
-    ).rejects.toThrow("claude plugin uninstall failed: permission denied");
-    expect(warnings).toEqual([
-      "Warning: could not restore lock after CLI uninstall failure (EACCES)",
-    ]);
-  });
-
-  test("does not uninstall a CLI plugin when lock write fails", async () => {
-    const execCalls: string[][] = [];
-    const nativeLock = {
-      ...lock,
-      plugins: {
-        review: pluginEntry({
-          agents: {
-            "claude-code": {
-              files: { "lint/SKILL.md": "" },
-              projector: "native" as const,
-              root: "cli:claude-code",
-            },
+    await withProject(nativeLock, async (project) => {
+      const execCalls: string[][] = [];
+      await expect(
+        removeSkills(options, {
+          exec: async (command, args) => {
+            execCalls.push([command, ...args]);
+            return { status: 0, stderr: "", stdout: "" };
           },
-          projector: "native" as const,
-          repo: "lgtm-hq/ai-skills",
-          sha: "v0.0.0-dev",
-          vendor: "lgtm-hq",
-          version: "0.0.0-dev",
+          journal: { failBeforeCommit: true },
+          lockEnvironment: project.env,
+          run: forbidSkillsCli,
         }),
-      },
-    };
-    await expect(
-      removeSkills(options, {
-        exec: async (command, args) => {
-          execCalls.push([command, ...args]);
-          return { status: 0, stderr: "", stdout: "" };
-        },
-        readLock: async () => nativeLock,
-        run: async () => {},
-        writeLock: async () => {
-          throw new Error("EACCES");
-        },
-      }),
-    ).rejects.toThrow("EACCES");
-    expect(execCalls).toEqual([]);
+      ).rejects.toThrow("Remove rolled back: injected failure before commit");
+      expect(execCalls).toEqual([
+        ["claude", "plugin", "uninstall", "review@ai-skills"],
+        ["claude", "plugin", "install", "review@ai-skills"],
+      ]);
+      await expectUncommitted(project);
+    });
   });
 
   test("keeps a user-scoped CLI plugin when the sibling lock still owns it", async () => {
-    const execCalls: string[][] = [];
     const projectLock = {
       ...lock,
       plugins: {
@@ -1535,403 +1458,284 @@ describe("gateway maintenance commands", () => {
       },
       scope: "project" as const,
     };
-    const globalLock = { ...projectLock, scope: "global" as const };
-    const removed = await removeSkills(options, {
-      exec: async (command, args) => {
-        execCalls.push([command, ...args]);
-        return { status: 0, stderr: "", stdout: "" };
-      },
-      readLock: async (scope) => (scope === "global" ? globalLock : projectLock),
-      run: async () => {},
-      writeLock: async () => {},
+    await withProject(projectLock, async (project) => {
+      await writeLegacyLock({ ...projectLock, scope: "global" as const }, project.env);
+      const execCalls: string[][] = [];
+      const removed = await removeSkills(options, {
+        exec: async (command, args) => {
+          execCalls.push([command, ...args]);
+          return { status: 0, stderr: "", stdout: "" };
+        },
+        lockEnvironment: project.env,
+        run: forbidSkillsCli,
+      });
+      expect(removed).toEqual(["review"]);
+      expect(execCalls).toEqual([]);
     });
-    expect(removed).toEqual(["review"]);
-    expect(execCalls).toEqual([]);
   });
 
   test("skips host uninstall on global remove when the cwd project lock still owns it", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-sibling-project-"));
-    const home = await mkdtemp(join(tmpdir(), "ai-skills-sibling-home-"));
-    try {
-      const entry = pluginEntry({
-        agents: {
-          "claude-code": {
-            files: { "lint/SKILL.md": "" },
-            projector: "native" as const,
-            root: "cli:claude-code",
-          },
+    const entry = pluginEntry({
+      agents: {
+        "claude-code": {
+          files: { "lint/SKILL.md": "" },
+          projector: "native" as const,
+          root: "cli:claude-code",
         },
-        projector: "native" as const,
-        repo: "lgtm-hq/ai-skills",
-        sha: "v0.0.0-dev",
-        vendor: "lgtm-hq",
-        version: "0.0.0-dev",
-      });
-      const projectLock = {
-        gatewayVersion: "0.0.0-dev",
-        plugins: { review: entry },
-        scope: "project" as const,
-        version: 2,
-      };
-      const globalLock = { ...projectLock, scope: "global" as const };
-      await mkdir(join(home, ".ai-skills"), { recursive: true });
-      await writeFile(
-        join(cwd, "ai-skills-lock.json"),
-        `${JSON.stringify(projectLock, null, 2)}\n`,
-      );
-      await writeFile(
-        join(home, ".ai-skills/lock.json"),
-        `${JSON.stringify(globalLock, null, 2)}\n`,
-      );
+      },
+      projector: "native" as const,
+      repo: "lgtm-hq/ai-skills",
+      sha: "v0.0.0-dev",
+      vendor: "lgtm-hq",
+      version: "0.0.0-dev",
+    });
+    const projectLock = {
+      gatewayVersion: "0.0.0-dev",
+      plugins: { review: entry },
+      scope: "project" as const,
+      version: 2,
+    };
+    await withProject(projectLock, async (project) => {
+      await writeLegacyLock({ ...projectLock, scope: "global" as const }, project.env);
       const execCalls: string[][] = [];
-      const lockEnvironment = { cwd, home };
       const removed = await removeSkills(
-        {
-          agents: ["claude-code"],
-          global: true,
-          project: false,
-          skills: [],
-          yes: true,
-        },
+        { agents: ["claude-code"], global: true, project: false, skills: [], yes: true },
         {
           exec: async (command, args) => {
             execCalls.push([command, ...args]);
             return { status: 0, stderr: "", stdout: "" };
           },
-          lockEnvironment,
-          readLock: async (scope) => readLockfile(scope, lockEnvironment),
-          run: async () => {},
-          writeLock: async (next) => writeLockfile(next, lockEnvironment),
+          lockEnvironment: project.env,
+          run: forbidSkillsCli,
         },
       );
       expect(removed).toEqual(["review"]);
       expect(execCalls).toEqual([]);
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-      await rm(home, { force: true, recursive: true });
-    }
+    });
   });
 
   test("does not tell update to pass --projector explode when catalog is missing", async () => {
-    let message = "";
-    try {
-      await updateSkills(options, {
-        isInstalled: async () => true,
-        lockEnvironment: { cwd: "/tmp/ai-skills-no-catalog-update" },
-        readLock: async () => ({
-          gatewayVersion: "0.0.0-dev",
-          plugins: {
-            lint: pluginEntry({
-              agents: {
-                cursor: {
-                  files: { ".claude-plugin/plugin.json": "old" },
-                  projector: "native" as const,
-                  root: "/tmp/ai-skills-no-catalog-update/.cursor/plugins/local/lint",
-                },
-              },
+    const nativeLock = {
+      gatewayVersion: "0.0.0-dev",
+      plugins: {
+        lint: pluginEntry({
+          agents: {
+            cursor: {
+              files: { ".claude-plugin/plugin.json": "old" },
               projector: "native" as const,
-              repo: "lgtm-hq/ai-skills",
-              sha: "v0.0.0-old",
-              skills: ["lint"],
-              vendor: "lgtm-hq",
-              version: "0.0.0-old",
-            }),
+              root: `${FIXTURE_ROOT}/.cursor/plugins/local/lint`,
+            },
           },
-          scope: "project" as const,
-          version: 2,
+          projector: "native" as const,
+          repo: "lgtm-hq/ai-skills",
+          sha: "v0.0.0-old",
+          skills: ["lint"],
+          vendor: "lgtm-hq",
+          version: "0.0.0-old",
         }),
-        run: async () => {
-          throw new Error("explode runner must not run");
-        },
-        sourceRoot: null,
-        writeLock: async () => {},
-      });
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
-    }
-    expect(message).toContain("requires a catalog checkout");
-    expect(message).toContain("Run update from the ai-skills repository");
-    expect(message).not.toMatch(/Use --projector explode/);
+      },
+      scope: "project" as const,
+      version: 2,
+    };
+    await withProject(nativeLock, async (project) => {
+      let message = "";
+      try {
+        await updateSkills(options, {
+          isInstalled: async () => true,
+          lockEnvironment: project.env,
+          run: forbidSkillsCli,
+          sourceRoot: null,
+        });
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      expect(message).toContain("requires a catalog checkout");
+      expect(message).toContain("Run update from the ai-skills repository");
+      expect(message).not.toMatch(/Use --projector explode/);
+    });
+  });
+
+  /** Legacy lock for a native Cursor `lint` plugin at `pluginDir`. */
+  const cursorLock = (pluginDir: string, files: Record<string, string>) => ({
+    gatewayVersion: "0.0.0-dev",
+    plugins: {
+      lint: pluginEntry({
+        agents: { cursor: { files, projector: "native" as const, root: pluginDir } },
+        projector: "native" as const,
+        repo: "lgtm-hq/ai-skills",
+        sha: "v0.0.0-old",
+        skills: ["lint"],
+        vendor: "lgtm-hq",
+        version: "0.0.0-old",
+      }),
+    },
+    scope: "project" as const,
+    version: 2,
   });
 
   test("updates a native Cursor plugin by reassembling the local tree", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cursor-update-"));
-    try {
-      const sourceRoot = join(cwd, "catalog");
+    await withProject(null, async (project) => {
+      const sourceRoot = join(project.cwd, "catalog");
       await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
       await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint v2\n");
-      const pluginDir = join(cwd, ".cursor/plugins/local/lint");
-      const calls: string[][] = [];
-      let written;
+      const pluginDir = join(project.cwd, ".cursor/plugins/local/lint");
+      await writeLegacyLock(
+        cursorLock(pluginDir, { ".claude-plugin/plugin.json": "old" }),
+        project.env,
+      );
       await updateSkills(options, {
         isInstalled: async () => true,
-        lockEnvironment: { cwd },
+        lockEnvironment: project.env,
         now: () => new Date("2026-07-10T17:00:00.000Z"),
-        readLock: async () => ({
-          gatewayVersion: "0.0.0-dev",
-          plugins: {
-            lint: pluginEntry({
-              agents: {
-                cursor: {
-                  files: { ".claude-plugin/plugin.json": "old" },
-                  projector: "native" as const,
-                  root: pluginDir,
-                },
-              },
-              projector: "native" as const,
-              repo: "lgtm-hq/ai-skills",
-              sha: "v0.0.0-old",
-              skills: ["lint"],
-              vendor: "lgtm-hq",
-              version: "0.0.0-old",
-            }),
-          },
-          scope: "project" as const,
-          version: 2,
-        }),
-        run: async (args) => {
-          calls.push(args);
-        },
+        run: forbidSkillsCli,
         sourceRoot,
-        writeLock: async (next) => {
-          written = next;
-        },
+        warn: () => {},
       });
-      expect(calls).toEqual([]);
       expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint v2\n");
-      expect(written!.plugins.lint.agents.cursor.files["skills/lint/SKILL.md"]).toMatch(
-        /^[a-f0-9]{64}$/,
+      const written = await readState("project", project.env);
+      expect(written.plugins.lint.agents.cursor.files["skills/lint/SKILL.md"]).toBe(
+        sha("# lint v2\n"),
       );
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
+    });
   });
 
-  test("restores a native Cursor tree when update lock write fails", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cursor-update-restore-"));
-    try {
-      const sourceRoot = join(cwd, "catalog");
+  test("restores a native Cursor tree when the update cannot commit", async () => {
+    await withProject(null, async (project) => {
+      const sourceRoot = join(project.cwd, "catalog");
       await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
       await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint v2\n");
-      const pluginDir = join(cwd, ".cursor/plugins/local/lint");
+      const pluginDir = join(project.cwd, ".cursor/plugins/local/lint");
       await mkdir(join(pluginDir, "skills/lint"), { recursive: true });
       await writeFile(join(pluginDir, "skills/lint/SKILL.md"), "# lint v1\n");
+      await writeLegacyLock(cursorLock(pluginDir, { "skills/lint/SKILL.md": "old" }), project.env);
       await expect(
         updateSkills(options, {
           isInstalled: async () => true,
-          lockEnvironment: { cwd },
+          journal: { failBeforeCommit: true },
+          lockEnvironment: project.env,
           now: () => new Date("2026-07-10T17:00:00.000Z"),
-          readLock: async () => ({
-            gatewayVersion: "0.0.0-dev",
-            plugins: {
-              lint: pluginEntry({
-                agents: {
-                  cursor: {
-                    files: { "skills/lint/SKILL.md": "old" },
-                    projector: "native" as const,
-                    root: pluginDir,
-                  },
-                },
-                projector: "native" as const,
-                repo: "lgtm-hq/ai-skills",
-                sha: "v0.0.0-old",
-                skills: ["lint"],
-                vendor: "lgtm-hq",
-                version: "0.0.0-old",
-              }),
-            },
-            scope: "project" as const,
-            version: 2,
-          }),
-          run: async () => {
-            throw new Error("explode runner must not run");
-          },
+          run: forbidSkillsCli,
           sourceRoot,
-          writeLock: async () => {
-            throw new Error("EACCES");
-          },
+          warn: () => {},
         }),
-      ).rejects.toThrow("EACCES");
+      ).rejects.toThrow("Update rolled back: injected failure before commit");
       expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint v1\n");
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
+      await expect(access(join(pluginDir, ".claude-plugin"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expectUncommitted(project);
+    });
   });
 
-  test("restores a native Cursor tree when promote and inner restore fail", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cursor-update-swap-fail-"));
-    try {
-      const sourceRoot = join(cwd, "catalog");
+  test("restores a native Cursor tree when a write fails mid-update", async () => {
+    await withProject(null, async (project) => {
+      const sourceRoot = join(project.cwd, "catalog");
       await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
       await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint v2\n");
-      const pluginDir = join(cwd, ".cursor/plugins/local/lint");
+      const pluginDir = join(project.cwd, ".cursor/plugins/local/lint");
       await mkdir(join(pluginDir, "skills/lint"), { recursive: true });
       await writeFile(join(pluginDir, "skills/lint/SKILL.md"), "# lint v1\n");
-      let moves = 0;
+      await writeLegacyLock(cursorLock(pluginDir, { "skills/lint/SKILL.md": "old" }), project.env);
+      let writes = 0;
       await expect(
         updateSkills(options, {
           isInstalled: async () => true,
-          lockEnvironment: { cwd },
-          move: async (from, to) => {
-            moves += 1;
-            if (moves === 2) {
-              throw new Error("staging promote failed");
-            }
-            if (moves === 3) {
-              throw new Error("inner restore failed");
-            }
-            return rename(from, to);
-          },
-          now: () => new Date("2026-07-10T17:00:00.000Z"),
-          readLock: async () => ({
-            gatewayVersion: "0.0.0-dev",
-            plugins: {
-              lint: pluginEntry({
-                agents: {
-                  cursor: {
-                    files: { "skills/lint/SKILL.md": "old" },
-                    projector: "native" as const,
-                    root: pluginDir,
-                  },
-                },
-                projector: "native" as const,
-                repo: "lgtm-hq/ai-skills",
-                sha: "v0.0.0-old",
-                skills: ["lint"],
-                vendor: "lgtm-hq",
-                version: "0.0.0-old",
-              }),
+          journal: {
+            io: {
+              writeFile: (async (...args: Parameters<typeof writeFile>) => {
+                writes += 1;
+                if (writes === 2) {
+                  throw new Error("ENOSPC: disk full");
+                }
+                return writeFile(...args);
+              }) as typeof writeFile,
             },
-            scope: "project" as const,
-            version: 2,
-          }),
-          run: async () => {
-            throw new Error("explode runner must not run");
           },
+          lockEnvironment: project.env,
+          now: () => new Date("2026-07-10T17:00:00.000Z"),
+          run: forbidSkillsCli,
           sourceRoot,
-          writeLock: async () => {
-            throw new Error("writeLock must not run");
-          },
+          warn: () => {},
         }),
-      ).rejects.toThrow(
-        "staging promote failed (Cursor restore also failed: inner restore failed)",
-      );
+      ).rejects.toThrow("Update rolled back: ENOSPC: disk full");
       expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint v1\n");
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
+      expect((await readdir(join(pluginDir, "skills/lint"))).sort()).toEqual(["SKILL.md"]);
+      await expectUncommitted(project);
+    });
   });
 
   test("remove leaves untracked Cursor plugin files in place", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cursor-remove-"));
-    try {
-      const pluginDir = join(cwd, ".cursor/plugins/local/lint");
+    await withProject(null, async (project) => {
+      const pluginDir = join(project.cwd, ".cursor/plugins/local/lint");
       await mkdir(join(pluginDir, ".claude-plugin"), { recursive: true });
       await mkdir(join(pluginDir, "skills/lint"), { recursive: true });
       await writeFile(join(pluginDir, ".claude-plugin/plugin.json"), "{}\n");
       await writeFile(join(pluginDir, "skills/lint/SKILL.md"), "# lint\n");
       await writeFile(join(pluginDir, "USER-DATA.txt"), "keep\n");
-      const pluginJsonHash = await hashFile(join(pluginDir, ".claude-plugin/plugin.json"));
-      const skillHash = await hashFile(join(pluginDir, "skills/lint/SKILL.md"));
-      await removeSkills(options, {
-        lockEnvironment: { cwd },
-        readLock: async () => ({
-          gatewayVersion: "0.0.0-dev",
-          plugins: {
-            lint: pluginEntry({
-              agents: {
-                cursor: {
-                  files: {
-                    ".claude-plugin/plugin.json": pluginJsonHash,
-                    "skills/lint/SKILL.md": skillHash,
-                  },
-                  projector: "native" as const,
-                  root: pluginDir,
-                },
-              },
-              projector: "native" as const,
-              repo: "lgtm-hq/ai-skills",
-              sha: "v0.0.0-dev",
-              skills: ["lint"],
-              vendor: "lgtm-hq",
-              version: "0.0.0-dev",
-            }),
-          },
-          scope: "project" as const,
-          version: 2,
+      await writeLegacyLock(
+        cursorLock(pluginDir, {
+          ".claude-plugin/plugin.json": await hashFile(
+            join(pluginDir, ".claude-plugin/plugin.json"),
+          ),
+          "skills/lint/SKILL.md": await hashFile(join(pluginDir, "skills/lint/SKILL.md")),
         }),
-        run: async () => {
-          throw new Error("explode runner must not run");
-        },
-        writeLock: async () => {},
-      });
+        project.env,
+      );
+      await removeSkills(options, { lockEnvironment: project.env, run: forbidSkillsCli });
       expect(await readFile(join(pluginDir, "USER-DATA.txt"), "utf8")).toBe("keep\n");
       await expect(
         readFile(join(pluginDir, ".claude-plugin/plugin.json"), "utf8"),
       ).rejects.toMatchObject({ code: "ENOENT" });
       await expect(readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).rejects.toMatchObject(
-        {
-          code: "ENOENT",
-        },
+        { code: "ENOENT" },
       );
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
+    });
   });
 
   test("remove deletes an empty Cursor plugin directory after verified files", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-native-cursor-empty-remove-"));
-    try {
-      const pluginDir = join(cwd, ".cursor/plugins/local/lint");
+    await withProject(null, async (project) => {
+      const pluginDir = join(project.cwd, ".cursor/plugins/local/lint");
       await mkdir(join(pluginDir, ".claude-plugin"), { recursive: true });
       await mkdir(join(pluginDir, "skills/lint"), { recursive: true });
       await writeFile(join(pluginDir, ".claude-plugin/plugin.json"), "{}\n");
       await writeFile(join(pluginDir, "skills/lint/SKILL.md"), "# lint\n");
-      const pluginJsonHash = await hashFile(join(pluginDir, ".claude-plugin/plugin.json"));
-      const skillHash = await hashFile(join(pluginDir, "skills/lint/SKILL.md"));
-      await removeSkills(options, {
-        lockEnvironment: { cwd },
-        readLock: async () => ({
-          gatewayVersion: "0.0.0-dev",
-          plugins: {
-            lint: pluginEntry({
-              agents: {
-                cursor: {
-                  files: {
-                    ".claude-plugin/plugin.json": pluginJsonHash,
-                    "skills/lint/SKILL.md": skillHash,
-                  },
-                  projector: "native" as const,
-                  root: pluginDir,
-                },
-              },
-              projector: "native" as const,
-              repo: "lgtm-hq/ai-skills",
-              sha: "v0.0.0-dev",
-              skills: ["lint"],
-              vendor: "lgtm-hq",
-              version: "0.0.0-dev",
-            }),
-          },
-          scope: "project" as const,
-          version: 2,
+      await writeLegacyLock(
+        cursorLock(pluginDir, {
+          ".claude-plugin/plugin.json": await hashFile(
+            join(pluginDir, ".claude-plugin/plugin.json"),
+          ),
+          "skills/lint/SKILL.md": await hashFile(join(pluginDir, "skills/lint/SKILL.md")),
         }),
-        run: async () => {
-          throw new Error("explode runner must not run");
-        },
-        writeLock: async () => {},
-      });
+        project.env,
+      );
+      await removeSkills(options, { lockEnvironment: project.env, run: forbidSkillsCli });
       await expect(access(pluginDir)).rejects.toMatchObject({ code: "ENOENT" });
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
+    });
+  });
+
+  /** Legacy lock for an explode `leftover` plugin owning `files` under `dest`. */
+  const leftoverLock = (dest: string, files: Record<string, string>, skills: string[]) => ({
+    gatewayVersion: "0.0.0-old",
+    plugins: {
+      leftover: {
+        agents: { cursor: { files, projector: "explode" as const, root: dest } },
+        installedAt: "2026-07-10T16:00:00.000Z",
+        projector: "explode" as const,
+        repo: "lgtm-hq/ai-skills",
+        sha: "v0.0.0-old",
+        skills,
+        vendor: "lgtm-hq",
+        version: "0.0.0-old",
+      },
+    },
+    scope: "project" as const,
+    version: 2,
   });
 
   test("update explode does not claim a skipped identical dest", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-update-skip-"));
-    try {
-      const dest = join(cwd, ".cursor/skills");
-      const sourceRoot = join(cwd, "catalog");
+    await withProject(null, async (project) => {
+      const dest = join(project.cwd, ".cursor/skills");
+      const sourceRoot = join(project.cwd, "catalog");
       await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
       await mkdir(join(sourceRoot, "skills/test"), { recursive: true });
       await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
@@ -1941,141 +1745,59 @@ describe("gateway maintenance commands", () => {
       await mkdir(join(dest, "test"), { recursive: true });
       await writeFile(join(dest, "test/SKILL.md"), "# test\n");
       const testHash = await hashFile(join(sourceRoot, "skills/test/SKILL.md"));
-      const lockEnvironment = { cwd };
-      await writeFile(
-        join(cwd, "ai-skills-lock.json"),
-        `${JSON.stringify(
-          {
-            gatewayVersion: "0.0.0-old",
-            plugins: {
-              leftover: {
-                agents: {
-                  cursor: {
-                    files: { "test/SKILL.md": testHash },
-                    projector: "explode" as const,
-                    root: dest,
-                  },
-                },
-                installedAt: "2026-07-10T16:00:00.000Z",
-                projector: "explode" as const,
-                repo: "lgtm-hq/ai-skills",
-                sha: "v0.0.0-old",
-                skills: ["lint", "test"],
-                vendor: "lgtm-hq",
-                version: "0.0.0-old",
-              },
-            },
-            scope: "project" as const,
-            version: 2,
-          },
-          null,
-          2,
-        )}\n`,
+      await writeLegacyLock(
+        leftoverLock(dest, { "test/SKILL.md": testHash }, ["lint", "test"]),
+        project.env,
       );
       await updateSkills(
-        {
-          agents: ["cursor"],
-          global: false,
-          project: true,
-          skills: ["leftover"],
-          yes: true,
-        },
+        { agents: ["cursor"], global: false, project: true, skills: ["leftover"], yes: true },
         {
           isInstalled: async () => true,
-          lockEnvironment,
-          readLock: (scope) => readLockfile(scope, lockEnvironment),
-          run: async () => {
-            throw new Error("skills CLI must not run when catalog sources resolve");
-          },
+          lockEnvironment: project.env,
+          run: forbidSkillsCli,
           sourceRoot,
-          writeLock: (next) => writeLockfile(next, lockEnvironment),
+          warn: () => {},
         },
       );
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.plugins.leftover.sha).not.toBe("v0.0.0-old");
-      expect(lock.plugins.leftover.installedAt).not.toBe("2026-07-10T16:00:00.000Z");
-      expect(Object.keys(lock.plugins.leftover.agents.cursor.files).sort()).toEqual([
+      const updated = await readState("project", project.env);
+      expect(updated.plugins.leftover.sha).not.toBe("v0.0.0-old");
+      expect(updated.plugins.leftover.installedAt).not.toBe("2026-07-10T16:00:00.000Z");
+      expect(Object.keys(updated.plugins.leftover.agents.cursor.files).sort()).toEqual([
         "test/SKILL.md",
       ]);
       expect(await readFile(join(dest, "lint/SKILL.md"), "utf8")).toBe("# lint\n");
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
+    });
   });
 
-  test("update keeps owned files when explode returns no claims", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-explode-empty-claim-"));
-    try {
-      const dest = join(cwd, ".cursor/skills");
-      const sourceRoot = join(cwd, "catalog");
+  test("update keeps ownership of an owned dest whose content is unchanged", async () => {
+    await withProject(null, async (project) => {
+      const dest = join(project.cwd, ".cursor/skills");
+      const sourceRoot = join(project.cwd, "catalog");
       await mkdir(join(sourceRoot, "skills/lint"), { recursive: true });
       await writeFile(join(sourceRoot, "skills/lint/SKILL.md"), "# lint\n");
       await mkdir(join(dest, "lint"), { recursive: true });
       await writeFile(join(dest, "lint/SKILL.md"), "# lint\n");
       const lintHash = await hashFile(join(dest, "lint/SKILL.md"));
-      const lockEnvironment = { cwd };
-      await writeFile(
-        join(cwd, "ai-skills-lock.json"),
-        `${JSON.stringify(
-          {
-            gatewayVersion: "0.0.0-old",
-            plugins: {
-              leftover: {
-                agents: {
-                  cursor: {
-                    files: { "lint/SKILL.md": lintHash },
-                    projector: "explode" as const,
-                    root: dest,
-                  },
-                },
-                installedAt: "2026-07-10T16:00:00.000Z",
-                projector: "explode" as const,
-                repo: "lgtm-hq/ai-skills",
-                sha: "v0.0.0-old",
-                skills: ["lint"],
-                vendor: "lgtm-hq",
-                version: "0.0.0-old",
-              },
-            },
-            scope: "project" as const,
-            version: 2,
-          },
-          null,
-          2,
-        )}\n`,
+      await writeLegacyLock(
+        leftoverLock(dest, { "lint/SKILL.md": lintHash }, ["lint"]),
+        project.env,
       );
       await updateSkills(
+        { agents: ["cursor"], global: false, project: true, skills: ["leftover"], yes: true },
         {
-          agents: ["cursor"],
-          global: false,
-          project: true,
-          skills: ["leftover"],
-          yes: true,
-        },
-        {
-          explode: async () => ({
-            claimed: {},
-            createdDests: [],
-            createdStores: [],
-            skipped: [{ agent: "cursor", dest: join(dest, "lint"), skill: "lint" }],
-            swappedDests: [],
-            swappedStores: [],
-          }),
           isInstalled: async () => true,
-          lockEnvironment,
-          readLock: (scope) => readLockfile(scope, lockEnvironment),
-          run: async () => {
-            throw new Error("skills CLI must not run when explode is injected");
-          },
+          lockEnvironment: project.env,
+          run: forbidSkillsCli,
           sourceRoot,
-          writeLock: (next) => writeLockfile(next, lockEnvironment),
+          warn: () => {},
         },
       );
-      const lock = JSON.parse(await readFile(join(cwd, "ai-skills-lock.json"), "utf8"));
-      expect(lock.plugins.leftover.agents.cursor.files).toEqual({ "lint/SKILL.md": lintHash });
-      expect(lock.plugins.leftover.sha).not.toBe("v0.0.0-old");
-    } finally {
-      await rm(cwd, { force: true, recursive: true });
-    }
+      const updated = await readState("project", project.env);
+      expect(updated.plugins.leftover.agents.cursor.files).toEqual({ "lint/SKILL.md": lintHash });
+      expect(updated.plugins.leftover.sha).not.toBe("v0.0.0-old");
+      // The owned real directory stays a copy, not a store symlink.
+      expect((await lstat(join(dest, "lint"))).isDirectory()).toBe(true);
+      await expect(readlink(join(dest, "lint"))).rejects.toMatchObject({ code: "EINVAL" });
+    });
   });
 });
