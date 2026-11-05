@@ -61,18 +61,54 @@ const options = {
   yes: true,
 };
 
+/**
+ * Explode engine stand-in: records each call and claims `<skill>/SKILL.md`
+ * for every agent, as a managed explode would. Managed updates no longer
+ * hand off to the skills CLI (#579), so fixtures drive the explode lane.
+ */
+function recordingExplode(
+  calls: Array<{ agents: string[]; skills: string[] }>,
+  digest = "refreshed",
+): (
+  args: Parameters<typeof import("../lib/adapters/shared/skill-explode.ts").explodePlugin>[0],
+) => Promise<import("../lib/adapters/shared/skill-explode.ts").ExplodeResult> {
+  return async (args) => {
+    calls.push({ agents: args.agents.map((agent) => agent.id), skills: [...args.skills] });
+    return {
+      claimed: Object.fromEntries(
+        args.agents.map((agent) => [
+          agent.id,
+          Object.fromEntries(args.skills.map((skill) => [`${skill}/SKILL.md`, digest])),
+        ]),
+      ),
+      createdDests: [],
+      createdStores: [],
+      skipped: [],
+      swappedDests: [],
+      swappedStores: [],
+    };
+  };
+}
+
+/** Local source map for the explode lane (paths are never read by the stand-in). */
+const stubSources = Object.fromEntries(
+  [...reviewSkills, "lint", "test", "pdf", "retired"].map((name) => [name, `/catalog/${name}`]),
+);
+
 describe("gateway maintenance commands", () => {
-  test("updates surviving lock entries through a mocked skills CLI", async () => {
-    const calls: string[][] = [];
+  test("updates surviving lock entries through the explode lane", async () => {
+    const calls: Array<{ agents: string[]; skills: string[] }> = [];
     let written;
     const result = await updateSkills(options, {
+      explode: recordingExplode(calls),
       hash: async () => "refreshed",
       isInstalled: async (name) => name === "pdf",
       now: () => new Date("2026-07-10T17:00:00.000Z"),
       readLock: async () => lock,
-      run: async (args) => {
-        calls.push(args);
+      run: async () => {
+        throw new Error("managed updates must not call the skills CLI");
       },
+      sourceSkills: stubSources,
       writeLock: async (next) => {
         written = next;
       },
@@ -82,18 +118,7 @@ describe("gateway maintenance commands", () => {
       pruned: ["lint"],
       updated: ["pdf"],
     });
-    expect(calls).toEqual([
-      [
-        "skills@^1.5.0",
-        "add",
-        `anthropics/skills@${anthropics!.sha}`,
-        "-a",
-        "cursor",
-        "--skill",
-        "pdf",
-        "-y",
-      ],
-    ]);
+    expect(calls).toEqual([{ agents: ["cursor"], skills: ["pdf"] }]);
     expect(written!.plugins.pdf).toMatchObject({
       installedAt: "2026-07-10T17:00:00.000Z",
       sha: anthropics!.sha,
@@ -101,6 +126,26 @@ describe("gateway maintenance commands", () => {
     expect(written!.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toBe("refreshed");
     expect(written!.plugins.lint).toBeUndefined();
     expect(written!.skills).toBeUndefined();
+  });
+
+  test("refuses a managed update without a local artifact instead of calling the skills CLI", async () => {
+    let ran = false;
+    let written;
+    await expect(
+      updateSkills(options, {
+        hash: async () => "refreshed",
+        isInstalled: async (name) => name === "pdf",
+        readLock: async () => lock,
+        run: async () => {
+          ran = true;
+        },
+        writeLock: async (next) => {
+          written = next;
+        },
+      }),
+    ).rejects.toThrow("managed installs never fall back to the upstream skills CLI");
+    expect(ran).toBe(false);
+    expect(written).toBeUndefined();
   });
 
   test("skips update when the pin is current and files match", async () => {
@@ -189,7 +234,7 @@ describe("gateway maintenance commands", () => {
   });
 
   test("updates every tracked agent on a plugin even when -a is a subset", async () => {
-    const calls: string[][] = [];
+    const calls: Array<{ agents: string[]; skills: string[] }> = [];
     let written;
     const multiAgentLock = {
       ...lock,
@@ -212,38 +257,25 @@ describe("gateway maintenance commands", () => {
     await updateSkills(
       { ...options, agents: ["cursor"] },
       {
+        explode: recordingExplode(calls),
         hash: async () => "refreshed",
         isInstalled: async () => true,
         now: () => new Date("2026-07-10T17:00:00.000Z"),
         readLock: async () => multiAgentLock,
-        run: async (args) => {
-          calls.push(args);
-        },
+        sourceSkills: stubSources,
         writeLock: async (next) => {
           written = next;
         },
       },
     );
 
-    expect(calls).toEqual([
-      [
-        "skills@^1.5.0",
-        "add",
-        `anthropics/skills@${anthropics!.sha}`,
-        "-a",
-        "claude-code",
-        "cursor",
-        "--skill",
-        "pdf",
-        "-y",
-      ],
-    ]);
+    expect(calls).toEqual([{ agents: ["claude-code", "cursor"], skills: ["pdf"] }]);
     expect(written!.plugins.pdf.agents["claude-code"].files["pdf/SKILL.md"]).toBe("refreshed");
     expect(written!.plugins.pdf.agents.cursor.files["pdf/SKILL.md"]).toBe("refreshed");
   });
 
   test("updates same-source plugins against only their own tracked agents", async () => {
-    const calls: string[][] = [];
+    const calls: Array<{ agents: string[]; skills: string[] }> = [];
     const mixed = {
       ...lock,
       plugins: {
@@ -275,38 +307,18 @@ describe("gateway maintenance commands", () => {
     };
 
     await updateSkills(options, {
+      explode: recordingExplode(calls),
       hash: async () => "refreshed",
       isInstalled: async () => true,
       now: () => new Date("2026-07-10T17:00:00.000Z"),
       readLock: async () => mixed,
-      run: async (args) => {
-        calls.push(args);
-      },
-      sourceRoot: null,
+      sourceSkills: stubSources,
       writeLock: async () => {},
     });
 
     expect(calls).toEqual([
-      [
-        "skills@^1.5.0",
-        "add",
-        `lgtm-hq/ai-skills@v0.0.0-dev`,
-        "-a",
-        "cursor",
-        "--skill",
-        "lint",
-        "-y",
-      ],
-      [
-        "skills@^1.5.0",
-        "add",
-        `lgtm-hq/ai-skills@v0.0.0-dev`,
-        "-a",
-        "claude-code",
-        "--skill",
-        "test",
-        "-y",
-      ],
+      { agents: ["cursor"], skills: ["lint"] },
+      { agents: ["claude-code"], skills: ["test"] },
     ]);
   });
 
@@ -465,6 +477,9 @@ describe("gateway maintenance commands", () => {
   test("does not write the lock when update hashing fails", async () => {
     let written;
     const denied = Object.assign(new Error("EACCES"), { code: "EACCES" });
+    const catalog = await mkdtemp(join(tmpdir(), "ai-skills-hash-fail-"));
+    await mkdir(join(catalog, "pdf"), { recursive: true });
+    await writeFile(join(catalog, "pdf/SKILL.md"), "# pdf\n");
     await expect(
       updateSkills(options, {
         hash: async () => {
@@ -475,12 +490,13 @@ describe("gateway maintenance commands", () => {
           ...lock,
           plugins: { pdf: lock.plugins.pdf },
         }),
-        run: async () => {},
+        sourceSkills: { pdf: join(catalog, "pdf") },
         writeLock: async (next) => {
           written = next;
         },
       }),
     ).rejects.toThrow("EACCES");
+    await rm(catalog, { force: true, recursive: true });
     expect(written).toBeUndefined();
   });
 
@@ -596,7 +612,7 @@ describe("gateway maintenance commands", () => {
   });
 
   test("rematerializes current first-party plugin skills on update", async () => {
-    const calls: string[][] = [];
+    const calls: Array<{ agents: string[]; skills: string[] }> = [];
     let written;
     const stale = {
       ...lock,
@@ -621,27 +637,14 @@ describe("gateway maintenance commands", () => {
       isInstalled: async () => true,
       now: () => new Date("2026-07-10T17:00:00.000Z"),
       readLock: async () => stale,
-      run: async (args) => {
-        calls.push(args);
-      },
-      sourceRoot: null,
+      explode: recordingExplode(calls),
+      sourceSkills: stubSources,
       writeLock: async (next) => {
         written = next;
       },
     });
 
-    expect(calls).toEqual([
-      [
-        "skills@^1.5.0",
-        "add",
-        `lgtm-hq/ai-skills@v${getPackageVersion()}`,
-        "-a",
-        "cursor",
-        "--skill",
-        ...reviewSkills,
-        "-y",
-      ],
-    ]);
+    expect(calls).toEqual([{ agents: ["cursor"], skills: reviewSkills }]);
     expect(Object.keys(written!.plugins.review.agents.cursor.files).sort()).toEqual(
       reviewSkills.map((skill) => `${skill}/SKILL.md`).sort(),
     );
@@ -687,9 +690,26 @@ describe("gateway maintenance commands", () => {
             }),
           },
         }),
+        explode: async (args) => ({
+          claimed: {
+            cursor: {
+              "lint/SKILL.md": lintHash,
+              "lint/docs/guide.md": guideHash,
+              ...Object.fromEntries(
+                args.skills
+                  .filter((skill) => skill !== "lint")
+                  .map((skill) => [`${skill}/SKILL.md`, "refreshed"]),
+              ),
+            },
+          },
+          createdDests: [],
+          createdStores: [],
+          skipped: [],
+          swappedDests: [],
+          swappedStores: [],
+        }),
         rmdir: async () => {},
-        run: async () => {},
-        sourceRoot: null,
+        sourceSkills: stubSources,
         unlink: async () => {},
         warn: () => {},
         writeLock: async (next) => {
@@ -709,7 +729,7 @@ describe("gateway maintenance commands", () => {
   });
 
   test("hash-verifies and drops skills removed from the catalog on update", async () => {
-    const calls: string[][] = [];
+    const calls: Array<{ agents: string[]; skills: string[] }> = [];
     const unlinked: string[] = [];
     let written;
     const stale = {
@@ -738,10 +758,8 @@ describe("gateway maintenance commands", () => {
       isInstalled: async () => true,
       now: () => new Date("2026-07-10T17:00:00.000Z"),
       readLock: async () => stale,
-      run: async (args) => {
-        calls.push(args);
-      },
-      sourceRoot: null,
+      explode: recordingExplode(calls, "abc"),
+      sourceSkills: stubSources,
       unlink: async (path) => {
         unlinked.push(String(path));
       },
@@ -750,18 +768,7 @@ describe("gateway maintenance commands", () => {
       },
     });
 
-    expect(calls).toEqual([
-      [
-        "skills@^1.5.0",
-        "add",
-        `lgtm-hq/ai-skills@v${getPackageVersion()}`,
-        "-a",
-        "cursor",
-        "--skill",
-        ...reviewSkills,
-        "-y",
-      ],
-    ]);
+    expect(calls).toEqual([{ agents: ["cursor"], skills: reviewSkills }]);
     expect(unlinked).toEqual(["/tmp/project/.cursor/skills/retired/SKILL.md"]);
     expect(Object.keys(written!.plugins.review.agents.cursor.files).sort()).toEqual(
       reviewSkills.map((skill) => `${skill}/SKILL.md`).sort(),
@@ -798,8 +805,8 @@ describe("gateway maintenance commands", () => {
         isInstalled: async () => true,
         now: () => new Date("2026-07-10T17:00:00.000Z"),
         readLock: async () => stale,
-        run: async () => {},
-        sourceRoot: null,
+        explode: recordingExplode([], "abc"),
+        sourceSkills: stubSources,
         unlink: async () => {
           const error: NodeJS.ErrnoException = new Error("EACCES: permission denied");
           error.code = "EACCES";
@@ -854,8 +861,8 @@ describe("gateway maintenance commands", () => {
               }),
             },
           }),
-          run: async () => {},
-          sourceRoot: null,
+          explode: recordingExplode([]),
+          sourceSkills: stubSources,
           writeLock: async () => {
             throw new Error("ENOSPC: lock write failed");
           },
@@ -888,7 +895,9 @@ describe("gateway maintenance commands", () => {
           yes: true,
         },
         {
-          explode: async (args): Promise<import("../lib/projectors/explode.ts").ExplodeResult> => ({
+          explode: async (
+            args,
+          ): Promise<import("../lib/adapters/shared/skill-explode.ts").ExplodeResult> => ({
             claimed: args.skills.includes("lint")
               ? { cursor: { "test/SKILL.md": "keep" } }
               : { cursor: { "branch/SKILL.md": "keep" } },
@@ -951,12 +960,16 @@ describe("gateway maintenance commands", () => {
     }
   });
 
-  test("CLI fallback update hashes nested dest files so remove deletes them", async () => {
+  test("explode update records nested dest files so remove deletes them", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-cli-update-nested-"));
     try {
       const dest = join(cwd, ".cursor/skills");
       await mkdir(join(dest, "lint"), { recursive: true });
       await writeFile(join(dest, "lint/SKILL.md"), "# lint\n");
+      const source = join(cwd, "catalog/lint");
+      await mkdir(source, { recursive: true });
+      await writeFile(join(source, "SKILL.md"), "# lint\n");
+      await writeFile(join(source, "notes.md"), "notes\n");
       const lintHash = await hashFile(join(dest, "lint/SKILL.md"));
       const lockEnvironment = { cwd };
       await writeFile(
@@ -1001,10 +1014,7 @@ describe("gateway maintenance commands", () => {
           isInstalled: async () => true,
           lockEnvironment,
           readLock: (scope) => readLockfile(scope, lockEnvironment),
-          run: async () => {
-            await writeFile(join(dest, "lint/notes.md"), "notes\n");
-          },
-          sourceRoot: null,
+          sourceSkills: { lint: source },
           writeLock: (next) => writeLockfile(next, lockEnvironment),
         },
       );
@@ -1041,6 +1051,7 @@ describe("gateway maintenance commands", () => {
   test("drops only catalog-removed skills when the lock lists a v2 skills array", async () => {
     const calls: string[][] = [];
     const unlinked: string[] = [];
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-v2-array-home-"));
     const stale = {
       ...lock,
       plugins: {
@@ -1070,21 +1081,27 @@ describe("gateway maintenance commands", () => {
       },
     };
 
-    await updateSkills(options, {
-      exec: async () => ({ status: 0, stderr: "", stdout: "" }),
-      hash: async () => "abc",
-      isInstalled: async () => true,
-      now: () => new Date("2026-07-10T17:00:00.000Z"),
-      readLock: async () => stale,
-      run: async (args) => {
-        calls.push(args);
-      },
-      sourceRoot: null,
-      unlink: async (path) => {
-        unlinked.push(String(path));
-      },
-      writeLock: async () => {},
-    });
+    try {
+      await updateSkills(options, {
+        exec: async (command, args) => {
+          calls.push([command, ...args]);
+          return { status: 0, stderr: "", stdout: "" };
+        },
+        explode: recordingExplode([], "abc"),
+        hash: async () => "abc",
+        isInstalled: async () => true,
+        lockEnvironment: { home },
+        now: () => new Date("2026-07-10T17:00:00.000Z"),
+        readLock: async () => stale,
+        sourceSkills: stubSources,
+        unlink: async (path) => {
+          unlinked.push(String(path));
+        },
+        writeLock: async () => {},
+      });
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
 
     expect(calls.find((args) => args.includes("remove"))).toBeUndefined();
     expect(unlinked).toEqual(["/tmp/project/.cursor/skills/retired/SKILL.md"]);
@@ -1191,25 +1208,42 @@ describe("gateway maintenance commands", () => {
         }),
       },
     };
-    await updateSkills(options, {
-      exec: async (command, args) => {
-        execCalls.push([command, ...args]);
-        return { status: 0, stderr: "", stdout: "" };
-      },
-      hash: async () => "",
-      isInstalled: async () => true,
-      now: () => new Date("2026-07-10T17:00:00.000Z"),
-      readLock: async () => nativeLock,
-      run: async (args) => {
-        calls.push(args);
-      },
-      writeLock: async () => {},
-    });
-    expect(calls).toEqual([]);
-    expect(execCalls).toEqual([
-      ["claude", "plugin", "marketplace", "add", `lgtm-hq/ai-skills@v${getPackageVersion()}`],
-      ["claude", "plugin", "install", "review@ai-skills"],
-    ]);
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-native-update-home-"));
+    try {
+      await updateSkills(options, {
+        exec: async (command, args) => {
+          execCalls.push([command, ...args]);
+          return { status: 0, stderr: "", stdout: "" };
+        },
+        hash: async () => "",
+        isInstalled: async () => true,
+        lockEnvironment: { home },
+        now: () => new Date("2026-07-10T17:00:00.000Z"),
+        readLock: async () => nativeLock,
+        run: async (args) => {
+          calls.push(args);
+        },
+        writeLock: async () => {},
+      });
+      expect(calls).toEqual([]);
+      // Native delivery registers the locally rendered envelope, never a remote repo.
+      const envelope = join(home, ".ai-skills/native/claude-code");
+      expect(execCalls).toEqual([
+        ["claude", "plugin", "marketplace", "add", envelope],
+        ["claude", "plugin", "install", "review@ai-skills"],
+      ]);
+      const marketplace = JSON.parse(
+        await readFile(join(envelope, ".claude-plugin/marketplace.json"), "utf8"),
+      );
+      expect(marketplace.plugins.map((plugin: { name: string }) => plugin.name)).toEqual([
+        "review",
+      ]);
+      await expect(
+        readFile(join(envelope, "review/skills/lint/SKILL.md"), "utf8"),
+      ).resolves.toContain("name:");
+    } finally {
+      await rm(home, { force: true, recursive: true });
+    }
   });
 
   test("removes a native CLI plugin through the host CLI", async () => {

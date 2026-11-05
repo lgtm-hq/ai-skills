@@ -5,8 +5,10 @@ import { spawnSync } from "node:child_process";
 
 import { PACKAGE_ROOT } from "../lib/paths.ts";
 
-// Captured at fb3468e613584c2a7ec2aa337ffcda70a196ef63 before conversion.
-// Only the ephemeral fixture-home prefix is normalized; lock bytes stay intact.
+// Captured at fb3468e613584c2a7ec2aa337ffcda70a196ef63 before conversion and
+// re-captured for #579: managed installs explode a local catalog and the skills
+// CLI runs only for the explicit --unmanaged handoff, which writes no lock.
+// Only the ephemeral fixture-home and catalog prefixes are normalized.
 for (const mode of ["source", "dist"]) {
   test(`legacy CLI golden parity (${mode})`, () => {
     const result = spawnSync(

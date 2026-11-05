@@ -22,7 +22,7 @@ import {
   removeExplodedFiles,
   restoreExplodeInstall,
   snapshotDestPath,
-} from "../lib/projectors/explode.ts";
+} from "../lib/adapters/shared/skill-explode.ts";
 
 async function layout(root: string): Promise<{ dest: string; source: string; store: string }> {
   const source = join(root, "src");

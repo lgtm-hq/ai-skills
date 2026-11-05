@@ -5,6 +5,7 @@ import { listSkills, removeSkills, updateSkills } from "./gateway-commands.ts";
 import {
   batchesFromCliOptions,
   delegateArtifactCommand,
+  dryRunInstall,
   install,
   installInteractively,
 } from "./install.ts";
@@ -46,10 +47,33 @@ async function printLockedSkills(options: { global: boolean; project: boolean })
 }
 
 /**
+ * Whether `install --dry-run` asks for the composed adapter plan.
+ *
+ * With any other artifact option, or an artifact directory in the
+ * environment, the dry run belongs to the bundled engine (filter result).
+ */
+export function isAdapterDryRun(
+  command: string,
+  engine: string[],
+  environment: Record<string, string | undefined> = process.env,
+): boolean {
+  return (
+    command === "install" &&
+    engine.length === 1 &&
+    engine[0] === "--dry-run" &&
+    !environment.AI_SKILLS_ARTIFACTS
+  );
+}
+
+/**
  * Run the wrapper command.
  */
 export async function runCli(argv: string[]): Promise<void> {
   const { command, options } = parseArguments(argv);
+  if (isAdapterDryRun(command, options.engine)) {
+    console.log(await dryRunInstall(options));
+    return;
+  }
   if (options.engine.length > 0) {
     // Artifact consumption is engine-owned; forward the command explicitly.
     await delegateArtifactCommand(argv[0] === command ? argv : [command, ...argv]);

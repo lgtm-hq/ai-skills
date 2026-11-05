@@ -1,4 +1,5 @@
-import { AGENT_SKILL_PATHS, PROJECTOR_EXPLODE, PROJECTOR_NATIVE } from "./lockfile.ts";
+import { isKnownHost } from "./adapters/hosts.ts";
+import { PROJECTOR_EXPLODE, PROJECTOR_NATIVE } from "./lockfile.ts";
 
 /**
  * Minimum supported version of the upstream skills CLI (npm package `skills`).
@@ -39,6 +40,7 @@ export function parseArguments(argv: string[]): {
     yes: boolean;
     onConflict: string | null;
     skills: string[];
+    unmanaged: boolean;
     vendor: string | null;
   };
 } {
@@ -58,6 +60,7 @@ export function parseArguments(argv: string[]): {
     yes: false,
     onConflict: null,
     skills: [],
+    unmanaged: false,
     vendor: null,
   };
 
@@ -74,6 +77,8 @@ export function parseArguments(argv: string[]): {
       options.yes = true;
     } else if (argument === "--copy") {
       options.copy = true;
+    } else if (argument === "--unmanaged") {
+      options.unmanaged = true;
     } else if (argument === "--agent" || argument === "-a") {
       if (!value) {
         throw new Error(`${argument} requires an agent name`);
@@ -127,7 +132,7 @@ export function parseArguments(argv: string[]): {
     }
   }
 
-  const unknownAgent = options.agents.find((agent) => !Object.hasOwn(AGENT_SKILL_PATHS, agent));
+  const unknownAgent = options.agents.find((agent) => !isKnownHost(agent));
   if (unknownAgent) {
     throw new Error(`Unknown agent: ${unknownAgent}`);
   }
@@ -145,6 +150,14 @@ export function parseArguments(argv: string[]): {
   const installOnly = engineNames.find((name) => ENGINE_INSTALL_ONLY.has(name));
   if (installOnly && command !== "install") {
     throw new Error(`${installOnly} applies only to install; update replays the profile`);
+  }
+  if (options.unmanaged && command !== "install") {
+    throw new Error("--unmanaged applies only to install");
+  }
+  if (options.unmanaged && options.engine.length > 0) {
+    throw new Error(
+      "--unmanaged hands off to the skills CLI; it cannot combine with engine options",
+    );
   }
   if (command === "vendors" && args.length > 0) {
     throw new Error("vendors does not accept options");
@@ -169,7 +182,7 @@ export function parseArguments(argv: string[]): {
   if (command === "doctor" && options.skills.length > 0) {
     throw new Error("doctor does not accept --skill");
   }
-  if (options.migrate && !Object.hasOwn(AGENT_SKILL_PATHS, options.migrate)) {
+  if (options.migrate && !isKnownHost(options.migrate)) {
     throw new Error(`Unknown agent: ${options.migrate}`);
   }
   return { command, options };
@@ -182,6 +195,7 @@ export function parseArguments(argv: string[]): {
  */
 export function validateUnattendedOptions(options: {
   agents: string[];
+  unmanaged?: boolean;
   global: boolean;
   project: boolean;
   yes: boolean;
@@ -196,7 +210,7 @@ export function validateUnattendedOptions(options: {
   if (!options.global && !options.project) {
     throw new Error("-y requires an explicit --global or --project scope");
   }
-  if (options.agents.length === 0) {
+  if (options.agents.length === 0 && !options.unmanaged) {
     throw new Error("-y requires at least one -a/--agent");
   }
   if (options.vendor && (options.bundle || options.skills.length > 0)) {

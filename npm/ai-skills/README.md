@@ -12,12 +12,24 @@ packed archive. Generated vendor scripts are upstream assets, not authored gatew
 JavaScript. The source guard checks tracked and new authored package files;
 historical research archives outside this package remain intact.
 
+Host-specific code lives only in `lib/adapters/` (ADR 0010). Each host directory
+(`claude-code/`, `copilot/`, `cursor/`, `codex/`) declares its host table entry
+(skill directory, CLI binary, label, native route) and its adapter;
+`shared/skill-explode.ts` is the multi-host explode engine. `registry.ts`
+validates every adapter when it registers, `execute.ts` applies a plan's ops with
+in-memory undo inside the plan's declared roots, and `types.ts` is the contract.
+`test/adapters-host-literals.test.ts` fails when code outside `lib/adapters/`
+names a host or branches on one.
+
 The legacy golden fixture was captured from commit
 `fb3468e613584c2a7ec2aa337ffcda70a196ef63` before conversion, using the scenario in
-`scripts/golden-scenario.ts`. It exercises the original command dispatch against
-fixture homes with injected upstream execution and a fixed clock. It compares
+`scripts/golden-scenario.ts`. It was re-captured once, deliberately, for #579:
+managed installs now explode a local catalog, and the skills CLI runs only for the
+explicit `--unmanaged` handoff, which writes no lock. It exercises the original
+command dispatch against fixture homes with injected upstream execution and a
+fixed clock. It compares
 stdout, stderr, status, invocation arguments, lock JSON bytes, and written file
-bytes. Only the temporary home prefix is normalized. The test runs the scenario
+bytes. Only the temporary home and catalog prefixes are normalized. The test runs the scenario
 against both source and emitted modules in separate processes. The fixture must
 not be regenerated from migrated code to make a failed comparison pass.
 `test/fixtures/legacy-catalog/{bundles,vendors}.json` preserves the catalog inputs

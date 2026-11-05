@@ -13,12 +13,12 @@ import {
   isPluginInstalled,
   mergeLockEntries,
   otherPluginSkillNames,
-  ownedCursorTreeFiles,
   pluginSkillNames,
   pruneMissingLockEntries,
   readLockfile,
   reconcileLock,
 } from "../lib/lockfile.ts";
+import { ownedPluginTreeFiles } from "../lib/adapters/cursor/drop.ts";
 
 const explodeEntry = {
   agents: {
@@ -450,7 +450,7 @@ describe("gateway lockfile", () => {
       "skills/lint/SKILL.md": "ccc",
       "skills/retired/SKILL.md": "ddd",
     };
-    expect(ownedCursorTreeFiles(files, ["lint"])).toEqual({
+    expect(ownedPluginTreeFiles(files, ["lint"])).toEqual({
       ".claude-plugin/plugin.json": "aaa",
       "skills/lint/SKILL.md": "ccc",
     });

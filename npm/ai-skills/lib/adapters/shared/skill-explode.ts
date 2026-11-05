@@ -1,11 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   cp,
   lstat,
   mkdir,
   mkdtemp,
   readdir,
-  realpath,
   rename,
   rm,
   rmdir,
@@ -15,7 +14,9 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 
-import { hashFile, hashLockEntryPath, hashTree, isSafePluginId } from "../lockfile.ts";
+import { hashFile, hashLockEntryPath, hashTree, isSafePluginId } from "../../lockfile.ts";
+import { nodeReadOnlyFs } from "../fs.ts";
+import type { ReadOnlyFs } from "../types.ts";
 
 /** Recursive copy that keeps relative symlink targets as written. */
 const EXPLODE_COPY_OPTIONS = { recursive: true, verbatimSymlinks: true };
@@ -279,6 +280,56 @@ export async function explodePlugin(args: {
     }
     throw error;
   }
+}
+
+/**
+ * Decide an explode transaction without writing: the same validation and
+ * collision rules ``explodePlugin`` applies, hashed from the source trees
+ * (staging is a verbatim copy, so the hashes are identical). Reads only
+ * through ``fs``.
+ */
+export async function planExplode(args: {
+  agents: ExplodeAgent[];
+  skills: string[];
+  sourceSkills: Record<string, string>;
+  copy?: boolean;
+  storeRoot?: string;
+  retainStoreSkills?: Set<string>;
+  destRoots?: string[];
+  fs?: ReadOnlyFs;
+}): Promise<ExplodeDecisions> {
+  const fs = args.fs ?? nodeReadOnlyFs;
+  const hash = async (path: string) =>
+    createHash("sha256")
+      .update(await fs.readFile(path))
+      .digest("hex");
+  const copy = Boolean(args.copy);
+  if (args.agents.some((agent) => !(agent.copy ?? copy)) && !args.storeRoot) {
+    throw new Error("explodePlugin requires storeRoot unless copy is true");
+  }
+  const stagedSkills: Record<string, string> = {};
+  const stagedHashes: Record<string, Record<string, string>> = {};
+  for (const name of args.skills) {
+    assertSafeSkillName(name);
+    const source = args.sourceSkills[name];
+    if (!source) {
+      throw new Error(`Missing explode source for skill ${JSON.stringify(name)}`);
+    }
+    await assertSafeSourceTree(source, fs);
+    stagedSkills[name] = source;
+    stagedHashes[name] = await hashTree(source, hash, fs);
+  }
+  return planExplodeCommits({
+    agents: args.agents,
+    copy,
+    destRoots: args.destRoots ?? [],
+    fs,
+    hash,
+    retainStoreSkills: args.retainStoreSkills ?? new Set(),
+    stagedHashes,
+    stagedSkills,
+    storeRoot: args.storeRoot,
+  });
 }
 
 /**
@@ -676,24 +727,14 @@ async function planExplodeCommits(args: {
   agents: ExplodeAgent[];
   copy: boolean;
   destRoots: string[];
+  fs?: ReadOnlyFs;
   hash: (path: string) => Promise<string>;
   retainStoreSkills: Set<string>;
   stagedHashes: Record<string, Record<string, string>>;
   stagedSkills: Record<string, string>;
   storeRoot: string | undefined;
-}): Promise<{
-  claimed: Record<string, Record<string, string>>;
-  skipped: Array<{ agent: string; dest: string; skill: string }>;
-  toWrite: Array<{
-    agent: string;
-    copy: boolean;
-    dest: string;
-    replace: boolean;
-    skill: string;
-    staged: string;
-    storeDir: string;
-  }>;
-}> {
+}): Promise<ExplodeDecisions> {
+  const fs = args.fs ?? nodeReadOnlyFs;
   const claimed: Record<string, Record<string, string>> = {};
 
   const skipped: Array<{ agent: string; dest: string; skill: string }> = [];
@@ -729,6 +770,7 @@ async function planExplodeCommits(args: {
         planStoreReplacement({
           copy,
           destRoots: args.destRoots,
+          fs,
           hash: args.hash,
           retainStoreSkills: args.retainStoreSkills,
           skill,
@@ -737,8 +779,8 @@ async function planExplodeCommits(args: {
           storeDir,
           storeRoot: args.storeRoot,
         });
-      if (await pathExists(dest)) {
-        const existing = await hashExistingTree(dest, args.hash);
+      if (await pathExists(dest, fs)) {
+        const existing = await hashExistingTree(dest, args.hash, fs);
         const isEmpty = Object.keys(existing).length === 0;
         if (!isEmpty && owned.has(skill)) {
           const storeReplace = await storePlan();
@@ -796,6 +838,7 @@ async function planExplodeCommits(args: {
 async function planStoreReplacement(args: {
   copy: boolean;
   destRoots: string[];
+  fs: ReadOnlyFs;
   hash: (path: string) => Promise<string>;
   retainStoreSkills: Set<string>;
   skill: string;
@@ -804,10 +847,10 @@ async function planStoreReplacement(args: {
   storeDir: string;
   storeRoot: string | undefined;
 }): Promise<boolean> {
-  if (args.copy || !args.storeRoot || !(await pathExists(args.storeDir))) {
+  if (args.copy || !args.storeRoot || !(await pathExists(args.storeDir, args.fs))) {
     return false;
   }
-  const storeHashes = await hashExistingTree(args.storeDir, args.hash);
+  const storeHashes = await hashExistingTree(args.storeDir, args.hash, args.fs);
   if (Object.keys(storeHashes).length === 0) {
     return true;
   }
@@ -824,6 +867,7 @@ async function planStoreReplacement(args: {
     args.skill,
     args.destRoots,
     args.skipDests,
+    args.fs,
   );
   if (consumers.length > 0) {
     throw new Error(
@@ -845,10 +889,11 @@ async function destsSymlinkedToStore(
   skill: string,
   destRoots: string[],
   skipDests: string[],
+  fs: ReadOnlyFs,
 ): Promise<string[]> {
   let resolvedStore;
   try {
-    resolvedStore = await realpath(storeDir);
+    resolvedStore = await fs.realpath(storeDir);
   } catch (error) {
     if (isAbsentFsError(error)) {
       return [];
@@ -864,11 +909,11 @@ async function destsSymlinkedToStore(
       continue;
     }
     try {
-      const info = await lstat(candidate);
+      const info = await fs.lstat(candidate);
       if (!info.isSymbolicLink()) {
         continue;
       }
-      const target = await realpath(candidate);
+      const target = await fs.realpath(candidate);
       if (target === resolvedStore) {
         hits.push(candidate);
       }
@@ -945,29 +990,30 @@ async function commitStoreSkill(args: {
 /**
  * Reject source trees that contain symlinks escaping the skill root.
  */
-async function assertSafeSourceTree(root: string): Promise<void> {
-  const resolvedRoot = await realpath(root);
-  await walkRejectingEscapes(resolvedRoot, resolvedRoot);
+async function assertSafeSourceTree(root: string, fs: ReadOnlyFs = nodeReadOnlyFs): Promise<void> {
+  const resolvedRoot = await fs.realpath(root);
+  await walkRejectingEscapes(resolvedRoot, resolvedRoot, fs);
 }
 
 async function walkRejectingEscapes(
   dir: string,
   root: string,
+  fs: ReadOnlyFs,
   visiting: Set<string> = new Set(),
 ): Promise<void> {
-  const resolvedDir = await realpath(dir);
+  const resolvedDir = await fs.realpath(dir);
   if (visiting.has(resolvedDir)) {
     throw new Error(`Refusing cyclic symlink in explode source: ${dir}`);
   }
   visiting.add(resolvedDir);
   try {
-    const entries = await readdir(resolvedDir, { withFileTypes: true });
+    const entries = await fs.readdir(resolvedDir);
     for (const entry of entries) {
       const absolute = join(resolvedDir, entry.name);
       if (entry.isSymbolicLink()) {
         let target;
         try {
-          target = await realpath(absolute);
+          target = await fs.realpath(absolute);
         } catch (error) {
           if (isAbsentFsError(error)) {
             throw new Error(`Refusing dangling symlink in explode source: ${absolute}`);
@@ -975,14 +1021,14 @@ async function walkRejectingEscapes(
           throw error;
         }
         assertInsideRoot(root, target);
-        const info = await lstat(target);
+        const info = await fs.lstat(target);
         if (info.isDirectory()) {
-          await walkRejectingEscapes(target, root, visiting);
+          await walkRejectingEscapes(target, root, fs, visiting);
         }
         continue;
       }
       if (entry.isDirectory()) {
-        await walkRejectingEscapes(absolute, root, visiting);
+        await walkRejectingEscapes(absolute, root, fs, visiting);
       }
     }
   } finally {
@@ -998,31 +1044,32 @@ async function walkRejectingEscapes(
 async function hashExistingTree(
   dest: string,
   hash: (path: string) => Promise<string>,
+  fs: ReadOnlyFs = nodeReadOnlyFs,
 ): Promise<Record<string, string>> {
-  const info = await lstat(dest);
+  const info = await fs.lstat(dest);
   if (info.isFile()) {
     return { ".": await hash(dest) };
   }
   if (info.isSymbolicLink()) {
-    if (await danglingSymlink(dest)) {
+    if (await danglingSymlink(dest, fs)) {
       return {};
     }
-    const target = await realpath(dest);
-    const targetInfo = await lstat(target);
+    const target = await fs.realpath(dest);
+    const targetInfo = await fs.lstat(target);
     if (targetInfo.isFile()) {
       return { ".": await hash(dest) };
     }
-    return hashTree(target, hash);
+    return hashTree(target, hash, fs);
   }
-  return hashTree(dest, hash);
+  return hashTree(dest, hash, fs);
 }
 
 /**
  * True when ``path`` is a symlink whose target cannot be resolved.
  */
-async function danglingSymlink(path: string): Promise<boolean> {
+async function danglingSymlink(path: string, fs: ReadOnlyFs = nodeReadOnlyFs): Promise<boolean> {
   try {
-    await realpath(path);
+    await fs.realpath(path);
     return false;
   } catch (error) {
     if (isAbsentFsError(error)) {
@@ -1074,9 +1121,9 @@ function uniqueBackupPath(path: string): string {
   return `${path}.bak.${randomUUID()}`;
 }
 
-async function pathExists(path: string): Promise<boolean> {
+async function pathExists(path: string, fs: ReadOnlyFs = nodeReadOnlyFs): Promise<boolean> {
   try {
-    await lstat(path);
+    await fs.lstat(path);
     return true;
   } catch (error) {
     if (isAbsentFsError(error)) {
@@ -1104,6 +1151,21 @@ function isPruneStopError(error: unknown): boolean {
 
 function isCrossDeviceError(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "EXDEV");
+}
+
+/** Commit decisions shared by the engine and the adapter plan. */
+export interface ExplodeDecisions {
+  claimed: Record<string, Record<string, string>>;
+  skipped: Array<{ agent: string; dest: string; skill: string }>;
+  toWrite: Array<{
+    agent: string;
+    copy: boolean;
+    dest: string;
+    replace: boolean;
+    skill: string;
+    staged: string;
+    storeDir: string;
+  }>;
 }
 
 /** Agent id plus the exploded skills directory root. ``replace`` is the set of

@@ -1,18 +1,16 @@
 import * as clack from "@clack/prompts";
 
+import { HOST_DEFINITIONS } from "./adapters/hosts.ts";
 import { pluginAgentNames } from "./lockfile.ts";
 
 /**
- * Agents the gateway surfaces in interactive install.
+ * Agents the gateway surfaces in interactive install, read from the host table.
  *
- * Keep labels user-facing; values match upstream `skills -a` identifiers.
+ * Labels are user-facing; values match upstream `skills -a` identifiers.
  */
-export const KNOWN_AGENTS = [
-  { value: "claude-code", label: "Claude Code (plugin CLI)" },
-  { value: "cursor", label: "Cursor (~/.cursor/plugins/local)" },
-  { value: "codex", label: "Codex (~/.codex/skills)" },
-  { value: "copilot", label: "GitHub Copilot (plugin CLI)" },
-];
+export const KNOWN_AGENTS: ReadonlyArray<{ value: string; label: string }> = HOST_DEFINITIONS.map(
+  (host) => ({ value: host.id, label: host.label }),
+);
 
 /**
  * Informational suffix for a vendor row whose upstream moved past the baked pin.

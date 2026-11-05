@@ -1,0 +1,48 @@
+plan	lint	codex	skill-explode	explode	global	recovery=reversible	support=unverified
+roots	~/.codex/skills ~/.agents/skills
+op	mkdir	~/.agents/skills/lint
+op	write-file	~/.agents/skills/lint/SKILL.md	sha256:c783c773ea19d6042f3f2beb6e58743710adbf48a7d75846ecdd975c6b824425
+op	mkdir	~/.codex/skills
+op	symlink	~/.codex/skills/lint	-> ~/.agents/skills/lint
+op	mkdir	~/.agents/skills/test
+op	write-file	~/.agents/skills/test/SKILL.md	sha256:e621bcce928241db8b0609ac56504cd1e81a1d7d9625d6c00eca21d2de76295d
+op	mkdir	~/.codex/skills
+op	symlink	~/.codex/skills/test	-> ~/.agents/skills/test
+plan	lint	cursor	cursor-drop	native	global	recovery=reversible	support=unverified
+roots	~/.cursor/plugins/local/lint
+op	mkdir	~/.cursor/plugins/local/lint
+op	mkdir	~/.cursor/plugins/local/lint/skills/lint
+op	write-file	~/.cursor/plugins/local/lint/skills/lint/SKILL.md	sha256:c783c773ea19d6042f3f2beb6e58743710adbf48a7d75846ecdd975c6b824425
+op	mkdir	~/.cursor/plugins/local/lint/skills/test
+op	write-file	~/.cursor/plugins/local/lint/skills/test/SKILL.md	sha256:e621bcce928241db8b0609ac56504cd1e81a1d7d9625d6c00eca21d2de76295d
+op	mkdir	~/.cursor/plugins/local/lint/.claude-plugin
+op	write-file	~/.cursor/plugins/local/lint/.claude-plugin/plugin.json	sha256:b10cd781d4cddc99dc41faf5e62d55068ce9ac0222527a1e44846b5be2135e45
+plan	lint	claude-code	claude-cli	native	global	recovery=compensating	support=unverified
+roots	~/.ai-skills/native/claude-code
+deviation	cli-user-scope	#584	The host CLI install is user-scoped even when --project is passed; the gateway lock still records the requested scope
+deviation	existing-marketplace-kept	#584	An already registered "ai-skills" marketplace is accepted as is (already exists), so the host may still resolve plugins from that registration
+op	mkdir	~/.ai-skills/native/claude-code/.claude-plugin
+op	write-file	~/.ai-skills/native/claude-code/.claude-plugin/marketplace.json	sha256:16609fa450a8d7c0b80c959bf41a8df027ab9bc5a446c83a989eb5b5a2bba91a
+op	mkdir	~/.ai-skills/native/claude-code/lint/.claude-plugin
+op	write-file	~/.ai-skills/native/claude-code/lint/.claude-plugin/plugin.json	sha256:b10cd781d4cddc99dc41faf5e62d55068ce9ac0222527a1e44846b5be2135e45
+op	mkdir	~/.ai-skills/native/claude-code/lint/skills/lint
+op	write-file	~/.ai-skills/native/claude-code/lint/skills/lint/SKILL.md	sha256:c783c773ea19d6042f3f2beb6e58743710adbf48a7d75846ecdd975c6b824425
+op	mkdir	~/.ai-skills/native/claude-code/lint/skills/test
+op	write-file	~/.ai-skills/native/claude-code/lint/skills/test/SKILL.md	sha256:e621bcce928241db8b0609ac56504cd1e81a1d7d9625d6c00eca21d2de76295d
+op	host-exec	claude plugin marketplace add ~/.ai-skills/native/claude-code	irreversible: marketplace-add
+op	host-exec	claude plugin install lint@ai-skills	compensate: claude plugin uninstall lint@ai-skills
+plan	lint	copilot	copilot-cli	native	global	recovery=compensating	support=unverified
+roots	~/.ai-skills/native/copilot
+deviation	cli-user-scope	#584	The host CLI install is user-scoped even when --project is passed; the gateway lock still records the requested scope
+deviation	existing-marketplace-kept	#584	An already registered "ai-skills" marketplace is accepted as is (already exists), so the host may still resolve plugins from that registration
+deviation	source-tag-stripped	#584	The marketplace source has any trailing @<tag> removed before marketplace add
+op	mkdir	~/.ai-skills/native/copilot/.claude-plugin
+op	write-file	~/.ai-skills/native/copilot/.claude-plugin/marketplace.json	sha256:16609fa450a8d7c0b80c959bf41a8df027ab9bc5a446c83a989eb5b5a2bba91a
+op	mkdir	~/.ai-skills/native/copilot/lint/.claude-plugin
+op	write-file	~/.ai-skills/native/copilot/lint/.claude-plugin/plugin.json	sha256:b10cd781d4cddc99dc41faf5e62d55068ce9ac0222527a1e44846b5be2135e45
+op	mkdir	~/.ai-skills/native/copilot/lint/skills/lint
+op	write-file	~/.ai-skills/native/copilot/lint/skills/lint/SKILL.md	sha256:c783c773ea19d6042f3f2beb6e58743710adbf48a7d75846ecdd975c6b824425
+op	mkdir	~/.ai-skills/native/copilot/lint/skills/test
+op	write-file	~/.ai-skills/native/copilot/lint/skills/test/SKILL.md	sha256:e621bcce928241db8b0609ac56504cd1e81a1d7d9625d6c00eca21d2de76295d
+op	host-exec	copilot plugin marketplace add ~/.ai-skills/native/copilot	irreversible: marketplace-add
+op	host-exec	copilot plugin install lint@ai-skills	compensate: copilot plugin uninstall lint@ai-skills

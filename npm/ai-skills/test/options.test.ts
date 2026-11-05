@@ -22,6 +22,7 @@ describe("parseArguments", () => {
         projector: null,
         repair: false,
         skills: [],
+        unmanaged: false,
         vendor: null,
         yes: false,
       },

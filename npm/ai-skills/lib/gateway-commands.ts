@@ -1,4 +1,5 @@
 import { readdir, rmdir, unlink } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { loadBakedPlugin, loadBundles, loadVendorIndex, loadVendors } from "./catalog.ts";
@@ -9,7 +10,6 @@ import {
   hashLockEntryPath,
   hashTree,
   isCliOwnedNativeInstall,
-  ownedCursorTreeFiles,
   LOCKFILE_VERSION,
   otherPluginSkillNames,
   pluginAgentNames,
@@ -24,6 +24,15 @@ import {
 } from "./lockfile.ts";
 import { resolveScope } from "./options.ts";
 import { getPackageVersion } from "./package-version.ts";
+import { hostPluginsRoot, nativeRoute } from "./adapters/hosts.ts";
+import {
+  discardCursorPluginBackup,
+  findCatalogSourceRoot,
+  installCursorPlugin,
+  ownedPluginTreeFiles,
+  restoreCursorPluginInstall,
+} from "./adapters/cursor/drop.ts";
+import { uninstallCliPlugin } from "./adapters/shared/native-cli.ts";
 import {
   defaultStoreRoot,
   destSkillIsSymlink,
@@ -39,16 +48,9 @@ import {
   snapshotDestPath,
   unlinkDestSkillSymlink,
   warnSkippedExplodeDests,
-} from "./projectors/explode.ts";
-import { installCliPlugin, uninstallCliPlugin } from "./projectors/native-cli.ts";
-import {
-  cursorPluginsRoot,
-  discardCursorPluginBackup,
-  findCatalogSourceRoot,
-  installCursorPlugin,
-  restoreCursorPluginInstall,
-} from "./projectors/native-cursor.ts";
-import { buildSkillsArguments, runSkills } from "./skills-runner.ts";
+} from "./adapters/shared/skill-explode.ts";
+import { applyCliLane, finishTransactions, undoTransactions } from "./install-plan.ts";
+import { runSkills, unmanagedRequiredMessage } from "./skills-runner.ts";
 
 /**
  * Refresh lock-managed plugins using the current package tag or vendor registry pins.
@@ -81,14 +83,8 @@ export async function updateSkills(
   } = {},
 ): Promise<{ pruned: string[]; updated: string[] }> {
   const scope = resolveScope(options);
-  const scopedOptions = {
-    ...options,
-    global: scope === "global",
-    project: scope === "project",
-  };
   const readLock = dependencies.readLock ?? readLockfile;
   const writeLock = dependencies.writeLock ?? writeLockfile;
-  const run = dependencies.run ?? runSkills;
   const now = dependencies.now ?? (() => new Date());
   const lock = await readLock(scope);
   const { lock: prunedLock, pruned } = await pruneMissingLockEntries(
@@ -110,9 +106,10 @@ export async function updateSkills(
   const removeFile = dependencies.unlink ?? unlink;
   const removeDir = dependencies.rmdir ?? rmdir;
   const warn = dependencies.warn ?? ((message) => console.warn(message));
-  const cursorBackups = [];
+  const treeBackups = [];
+  const cliTransactions: import("./adapters/execute.ts").Transaction[] = [];
 
-  const explodeBackups: import("./projectors/explode.ts").ExplodeResult[] = [];
+  const explodeBackups: import("./adapters/shared/skill-explode.ts").ExplodeResult[] = [];
 
   const staleDestBackups: Array<{ backup: string; dest: string }> = [];
   let lockCommitted = false;
@@ -121,10 +118,10 @@ export async function updateSkills(
       const entry = selected[pluginId]!;
       const skills = await currentPluginSkills(pluginId, entry);
       catalogSkills[pluginId] = skills;
-      const source =
-        entry.vendor === "lgtm-hq"
-          ? `lgtm-hq/ai-skills@v${getPackageVersion()}`
-          : resolveVendorSource(entry, vendors);
+      if (entry.vendor !== "lgtm-hq") {
+        // Fails closed when the vendor left the registry.
+        resolveVendorSource(entry, vendors);
+      }
       const lanes = partitionLockedLanes(entry);
       if (lanes.explode.length > 0) {
         const baked = await loadBakedPlugin(pluginId);
@@ -170,58 +167,28 @@ export async function updateSkills(
           explodeBackups.push(exploded);
           warnSkippedExplodeDests(exploded.skipped, warn);
         } else {
-          // Vendor / non-checkout first-party still uses the skills CLI.
-          const copyAgents = [];
-          const symlinkAgents = [];
-          for (const agent of lanes.explode) {
-            const root = entry.agents[agent]!.root;
-            const files = entry.agents[agent]?.files ?? {};
-            const names = [...new Set([...skills, ...skillNamesFromFiles(files)])];
-            if (await destUsesCopyMaterialization(root, names)) {
-              copyAgents.push(agent);
-            } else {
-              symlinkAgents.push(agent);
-            }
-          }
-          for (const [agents, copy] of [
-            [symlinkAgents, false],
-            [copyAgents, true],
-          ] satisfies [string[], boolean][]) {
-            if (agents.length === 0) {
-              continue;
-            }
-            await run(
-              buildSkillsArguments(
-                {
-                  ...scopedOptions,
-                  agents,
-                  copy,
-                  onConflict: "overwrite",
-                  skills,
-                },
-                source,
-              ),
-            );
-          }
+          // Managed updates never hand off to the unmanaged skills CLI.
+          throw new Error(unmanagedRequiredMessage(pluginId));
         }
       }
-      if (lanes.cursorNative.length > 0) {
-        const cursorProgress: { swapped: boolean; destRoot?: string } = { swapped: false };
+      for (const agent of lanes.treeNative) {
+        const treeProgress: { swapped: boolean; destRoot?: string } = { swapped: false };
         try {
-          cursorBackups.push(
-            await rematerializeCursorPlugin(
+          treeBackups.push(
+            await rematerializePluginTree(
+              agent,
               pluginId,
               entry,
               skills,
               dependencies,
               prunedLock.scope,
-              cursorProgress,
+              treeProgress,
             ),
           );
         } catch (error) {
-          if (cursorProgress.swapped && cursorProgress.destRoot) {
-            cursorBackups.push({
-              destRoot: cursorProgress.destRoot,
+          if (treeProgress.swapped && treeProgress.destRoot) {
+            treeBackups.push({
+              destRoot: treeProgress.destRoot,
               pluginId,
               swapped: true,
             });
@@ -229,13 +196,14 @@ export async function updateSkills(
           throw error;
         }
       }
-      for (const agent of lanes.cliNative) {
-        await installCliPlugin({
-          agent,
-          exec: dependencies.exec,
-          pluginId,
-          source,
+      if (lanes.cliNative.length > 0) {
+        const composition = await cliComposition(pluginId, entry, skills, lanes, {
+          dependencies,
+          scope: prunedLock.scope,
         });
+        for (const agent of lanes.cliNative) {
+          cliTransactions.push(await applyCliLane(composition, agent, { exec: dependencies.exec }));
+        }
       }
     }
     const installedAt = now().toISOString();
@@ -293,7 +261,7 @@ export async function updateSkills(
         warn(`Warning: could not discard explode backups after update (${detail})`);
       }
     }
-    for (const item of cursorBackups) {
+    for (const item of treeBackups) {
       try {
         await discardCursorPluginBackup(item);
       } catch (error) {
@@ -301,6 +269,7 @@ export async function updateSkills(
         warn(`Warning: could not discard Cursor plugin backup after update (${detail})`);
       }
     }
+    await finishTransactions(cliTransactions, warn);
     try {
       await discardExplodeBackups({ swappedDests: staleDestBackups });
     } catch (error) {
@@ -332,7 +301,7 @@ export async function updateSkills(
           restoreErrors.push(restoreError);
         }
       }
-      for (const item of cursorBackups) {
+      for (const item of treeBackups) {
         try {
           await restoreCursorPluginInstall({
             ...item,
@@ -343,6 +312,7 @@ export async function updateSkills(
           restoreErrors.push(restoreError);
         }
       }
+      restoreErrors.push(...(await undoTransactions(cliTransactions)));
       if (restoreErrors.length > 0) {
         const original = error instanceof Error ? error.message : String(error);
         const restore = restoreErrors
@@ -409,7 +379,7 @@ export async function removeSkills(
       removeDir,
       removeFile,
     });
-    for (const agent of lanes.cursorNative) {
+    for (const agent of lanes.treeNative) {
       const pluginDir = entry.agents[agent]?.root;
       if (!pluginDir) {
         continue;
@@ -565,7 +535,8 @@ function selectPlugins(
 }
 
 /**
- * Resolve a vendor entry to its current registry pin.
+ * Resolve a vendor entry to its current registry pin (validation only now:
+ * managed updates explode the baked tree and never fetch this source).
  *
  * @throws {Error} When a lock entry's vendor has been removed from the registry.
  */
@@ -702,33 +673,28 @@ async function rematerializePluginFiles(
   for (const [agent, install] of Object.entries(entry.agents)) {
     const projector = agentProjector(entry, agent);
     if (projector === PROJECTOR_EXPLODE) {
-      if (explodeClaims) {
-        const claimed = explodeClaims[agent];
-        if (claimed && Object.keys(claimed).length > 0) {
-          agents[agent] = { ...install, files: claimed };
-          continue;
-        }
-        const retained: Record<string, string> = {};
-        for (const [relative, digest] of Object.entries(install.files)) {
-          if (current.has(relative.split("/")[0]!)) {
-            retained[relative] = digest;
-          }
-        }
-        if (Object.keys(retained).length > 0) {
-          agents[agent] = { ...install, files: retained };
-        }
+      // Managed updates always run the explode engine for explode lanes, so
+      // ownership comes from its claims; skipped dests keep prior ownership.
+      const claimed = explodeClaims?.[agent];
+      if (claimed && Object.keys(claimed).length > 0) {
+        agents[agent] = { ...install, files: claimed };
         continue;
       }
-      const files = await hashCliExplodeDestFiles(install.root, skillNames, hash);
-      if (Object.keys(files).length > 0) {
-        agents[agent] = { ...install, files };
+      const retained: Record<string, string> = {};
+      for (const [relative, digest] of Object.entries(install.files)) {
+        if (current.has(relative.split("/")[0]!)) {
+          retained[relative] = digest;
+        }
+      }
+      if (Object.keys(retained).length > 0) {
+        agents[agent] = { ...install, files: retained };
       }
       continue;
     }
-    if (projector === PROJECTOR_NATIVE && agent === "cursor") {
+    if (projector === PROJECTOR_NATIVE && nativeRoute(agent)?.kind === "tree") {
       agents[agent] = {
         ...install,
-        files: ownedCursorTreeFiles(await hashTree(install.root, hash), skillNames),
+        files: ownedPluginTreeFiles(await hashTree(install.root, hash), skillNames),
       };
       continue;
     }
@@ -771,58 +737,6 @@ async function rematerializePluginFiles(
     agents[agent] = { ...install, files };
   }
   return { ...entry, agents };
-}
-
-/**
- * Hash explode dest skill trees after a skills-CLI fallback update.
- *
- * Matches install ``createLockEntries``: walk each current skill directory so
- * nested files are locked. An empty or missing dest falls back to a
- * ``SKILL.md`` sentinel (detect-mode mocks). A dest that is a file hashes as
- * ``SKILL.md``.
- */
-async function hashCliExplodeDestFiles(
-  root: string,
-  skillNames: string[],
-  hash: typeof hashFile,
-): Promise<Record<string, string>> {
-  const files: Record<string, string> = {};
-  for (const name of skillNames) {
-    const skillDir = join(root, name);
-    let tree: Record<string, string> = {};
-    try {
-      tree = await hashTree(skillDir, hash);
-    } catch (error) {
-      if (error && typeof error === "object" && "code" in error && error.code === "ENOTDIR") {
-        try {
-          files[`${name}/SKILL.md`] = await hash(skillDir);
-        } catch (hashError) {
-          if (!isAbsentFsError(hashError)) {
-            throw hashError;
-          }
-          files[`${name}/SKILL.md`] = "";
-        }
-        continue;
-      }
-      throw error;
-    }
-    if (Object.keys(tree).length === 0) {
-      const relative = `${name}/SKILL.md`;
-      try {
-        files[relative] = await hash(join(skillDir, "SKILL.md"));
-      } catch (error) {
-        if (!isAbsentFsError(error)) {
-          throw error;
-        }
-        files[relative] = "";
-      }
-      continue;
-    }
-    for (const [relative, digest] of Object.entries(tree)) {
-      files[`${name}/${relative}`] = digest;
-    }
-  }
-  return files;
 }
 
 /**
@@ -876,7 +790,7 @@ async function snapshotStaleSkillDests(
 /**
  * Dest skill directory for a tracked relative path.
  *
- * Exploded installs use ``<skill>/...``. Cursor native trees use
+ * Exploded installs use ``<skill>/...``. Native plugin trees use
  * ``skills/<skill>/...``.
  */
 function staleSkillDestPath(root: string, relative: string): string | null {
@@ -1115,27 +1029,27 @@ function pluginReconcileStatus(
 }
 
 /**
- * Split a lock entry's agents by owning projector.
+ * Split a lock entry's agents by owning projector and native route kind.
  */
 function partitionLockedLanes(entry: import("./lockfile.ts").PluginLockEntry): {
   cliNative: string[];
-  cursorNative: string[];
+  treeNative: string[];
   explode: string[];
 } {
   const explode = [];
-  const cursorNative = [];
+  const treeNative = [];
   const cliNative = [];
   for (const agent of pluginAgentNames(entry)) {
     const projector = agentProjector(entry, agent);
     if (projector === PROJECTOR_EXPLODE) {
       explode.push(agent);
-    } else if (agent === "cursor") {
-      cursorNative.push(agent);
+    } else if (nativeRoute(agent)?.kind === "tree") {
+      treeNative.push(agent);
     } else {
       cliNative.push(agent);
     }
   }
-  return { cliNative, cursorNative, explode };
+  return { cliNative, treeNative, explode };
 }
 
 /**
@@ -1169,7 +1083,7 @@ async function siblingLockHasCliNative(
  *
  * Lock removal is persisted before uninstall so a write failure cannot drop a
  * still-tracked host plugin. If uninstall then fails, restore only unfinished
- * CLI agents. Cursor-native and explode lanes are already deleted before the
+ * CLI agents. Tree-native and explode lanes are already deleted before the
  * lock write; restamping them would report MISSING and rematerialize on update.
  */
 async function restoreLockAfterCliUninstallFailure(args: {
@@ -1222,9 +1136,10 @@ async function restoreLockAfterCliUninstallFailure(args: {
 }
 
 /**
- * Re-assemble a Cursor-local plugin tree from the current catalog membership.
+ * Re-assemble a host's local plugin tree from the current catalog membership.
  */
-async function rematerializeCursorPlugin(
+async function rematerializePluginTree(
+  agent: string,
   pluginId: string,
   entry: import("./lockfile.ts").PluginLockEntry,
   skills: string[],
@@ -1251,11 +1166,11 @@ async function rematerializeCursorPlugin(
         "repository, or remove and reinstall with --projector explode.",
     );
   }
-  const destRoot = cursorPluginsRoot({
-    cwd: dependencies.lockEnvironment?.cwd,
-    home: dependencies.lockEnvironment?.home,
+  const destRoot = hostPluginsRoot(agent, {
+    cwd: dependencies.lockEnvironment?.cwd ?? process.cwd(),
+    home: dependencies.lockEnvironment?.home ?? homedir(),
     scope,
-  });
+  })!;
   progress.destRoot = destRoot;
   const bundles = await loadBundles();
   await installCursorPlugin({
@@ -1284,4 +1199,62 @@ function skillNamesBelongTo(relative: string, names: string[]): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Composition for re-delivering a locked plugin to its CLI-native hosts.
+ *
+ * @throws {Error} When no local catalog source exists: native delivery never
+ *   falls back to a remote marketplace.
+ */
+async function cliComposition(
+  pluginId: string,
+  entry: import("./lockfile.ts").PluginLockEntry,
+  skills: string[],
+  lanes: ReturnType<typeof partitionLockedLanes>,
+  context: {
+    dependencies: {
+      lockEnvironment?: Parameters<typeof reconcileLock>[1];
+      sourceRoot?: string | null;
+      sourceSkills?: Record<string, string>;
+      storeRoot?: string;
+    };
+    scope: "global" | "project";
+  },
+): Promise<import("./install-plan.ts").InstallComposition> {
+  const { dependencies, scope } = context;
+  const catalogRoot =
+    dependencies.sourceRoot !== undefined
+      ? dependencies.sourceRoot
+      : findCatalogSourceRoot(dependencies.lockEnvironment?.cwd ?? process.cwd());
+  const native =
+    entry.vendor === "lgtm-hq"
+      ? resolveExplodeSourceSkills(skills, dependencies, catalogRoot)
+      : null;
+  if (!native) {
+    throw new Error(
+      `Native ${lanes.cliNative.join(", ")} update of ${pluginId} requires a locally ` +
+        "rendered artifact (a catalog checkout with skills/); the remote marketplace is " +
+        "never used. Run update from the ai-skills repository.",
+    );
+  }
+  const bundles = await loadBundles();
+  return {
+    copy: false,
+    description: bundles.groups[pluginId]?.description ?? pluginId,
+    destRoots: [],
+    env: {
+      cwd: dependencies.lockEnvironment?.cwd ?? process.cwd(),
+      home: dependencies.lockEnvironment?.home ?? homedir(),
+    },
+    existing: entry,
+    lanes,
+    pluginId,
+    retainStoreSkills: [],
+    scope,
+    skills,
+    sources: { explode: null, native },
+    storeRoot: dependencies.storeRoot ?? defaultStoreRoot(scope, dependencies.lockEnvironment),
+    version: getPackageVersion(),
+  };
 }
