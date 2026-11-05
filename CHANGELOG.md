@@ -13,10 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **engine**: package version normalization follows SemVer 2.0.0 strictly and
-  rejects numeric prerelease identifiers with leading zeroes and non-ASCII
-  digits, which the former regex accepted; first shipped in 0.30.9 (#633, #634).
-
 ### Deprecated
 
 ### Removed
@@ -24,6 +20,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.31.0] - 2026-11-05
+
+### Added
+
+- **vendors**: add init, validate and add authoring commands (#576) (#651) (bc4ea54)
+- **vendors**: rebuild repin on the lock/artifact model (#577) (#650) (8971c07)
+- **envelopes**: generate host plugin manifests from the artifact (#575) (#649)
+  (62c74a8)
+- **engine**: add ai-skills.lock, frozen source cache and lock/build commands (#574)
+  (#648) (d9dc931)
+- **engine**: build deterministic capability artifacts (#573) (#646) (da01337)
+- **provenance**: preserve authenticated capability lineage (#571) (#642) (bd9c4dd)
+- **selection**: add dependency-aware capability planning (#570) (#640) (e0187e0)
+- **engine**: add deterministic capability inventory (#569) (#638) (bb9f354)
+- **manifest**: introduce versioned ai-skills manifest (#568) (#635) (0891fba)
+
+### Changed
+
+- **changelog**: drop duplicate #570 Unreleased entry (#653) (660c02d)
+- **core**: batch M6 review follow-ups (#634) (#652) (3371796)
+- **engine**: package version normalization follows SemVer 2.0.0 strictly and
+  rejects numeric prerelease identifiers with leading zeroes and non-ASCII
+  digits, which the former regex accepted; first shipped in 0.30.9 (#633, #634).
+
+### Fixed
+
+- **ci**: adopt released aggregate gate repair (#645) (#647) (a2dfdee)
+- **security**: harden untrusted vendor ingestion (#572) (#643) (8615480)
+- **release**: prevent automatic mid-milestone merges (#636) (#637) (2da6c99)
 
 ## [0.30.9] - 2026-11-02
 
@@ -1181,7 +1207,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.9...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.31.0...HEAD
+[0.31.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.9...v0.31.0
 [0.30.9]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.8...v0.30.9
 [0.30.8]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.7...v0.30.8
 [0.30.6]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.5...v0.30.6
