@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import type { Scope } from "../adapters/types.ts";
 import type { LockEnvironment } from "../lockfile.ts";
 import { currentHash, JournalTxn, preHash, resultHash } from "./journal.ts";
-import type { ApplyHooks, JournalOp } from "./journal.ts";
+import type { ApplyHooks, JournalOp, Preimage } from "./journal.ts";
 import { readReceipt, scopeStateDir } from "./receipts.ts";
 import type { Receipt } from "./receipts.ts";
 import { restoreReceipt, withStateSession } from "./recover.ts";
@@ -143,6 +143,41 @@ async function planRollback(
       roots: item.roots,
     };
     const push = (next: JournalOp) => ops.push({ ...base, op: next });
+    /** Ops that put a preimage back at `path` (a tree around kept content). */
+    const restore = async (pre: Exclude<Preimage, { kind: "absent" }>, path: string) => {
+      if (pre.kind === "file") {
+        const content = await txn.readObject("pre", pre.hash);
+        push({ content, hash: pre.hash, kind: "write-file", mode: pre.mode, path: path });
+      } else if (pre.kind === "symlink") {
+        push({ kind: "symlink", path: path, target: pre.target });
+      } else {
+        const manifest = await txn.readManifest(pre.manifest);
+        push({ kind: "mkdir", path: path });
+        for (const entry of manifest.entries) {
+          const entryPath = join(path, entry.relative);
+          if (entry.kind === "dir") {
+            push({ kind: "mkdir", path: entryPath });
+            continue;
+          }
+          // Under a merge, a path still holding kept content is left alone.
+          if ((await state(entryPath)) !== null) {
+            continue;
+          }
+          if (entry.kind === "symlink") {
+            push({ kind: "symlink", path: entryPath, target: entry.target! });
+          } else {
+            const content = await txn.readObject("pre", entry.hash!);
+            push({
+              content,
+              hash: entry.hash!,
+              kind: "write-file",
+              mode: entry.mode ?? 0o644,
+              path: entryPath,
+            });
+          }
+        }
+      }
+    };
     switch (op.kind) {
       case "write-file":
       case "symlink": {
@@ -154,6 +189,11 @@ async function planRollback(
             push({ content, hash: pre.hash, kind: "write-file", mode: pre.mode, path: op.path });
           } else {
             push({ expectHash: current!, kind: "remove-owned", path: op.path });
+            // Executor ops replace only files or absent paths today; restore
+            // any other preimage kind the same way a removal is restored.
+            if (pre.kind !== "absent") {
+              await restore(pre, op.path);
+            }
           }
           simulated.set(op.path, preHash(pre));
         } else if (current !== preHash(pre) && current !== null) {
@@ -181,38 +221,7 @@ async function planRollback(
           keep(op.path, `occupied since ${label} removed it`);
           break;
         }
-        if (pre.kind === "file") {
-          const content = await txn.readObject("pre", pre.hash);
-          push({ content, hash: pre.hash, kind: "write-file", mode: pre.mode, path: op.path });
-        } else if (pre.kind === "symlink") {
-          push({ kind: "symlink", path: op.path, target: pre.target });
-        } else {
-          const manifest = await txn.readManifest(pre.manifest);
-          push({ kind: "mkdir", path: op.path });
-          for (const entry of manifest.entries) {
-            const path = join(op.path, entry.relative);
-            if (entry.kind === "dir") {
-              push({ kind: "mkdir", path });
-              continue;
-            }
-            // Under a merge, a path still holding kept content is left alone.
-            if ((await state(path)) !== null) {
-              continue;
-            }
-            if (entry.kind === "symlink") {
-              push({ kind: "symlink", path, target: entry.target! });
-            } else {
-              const content = await txn.readObject("pre", entry.hash!);
-              push({
-                content,
-                hash: entry.hash!,
-                kind: "write-file",
-                mode: entry.mode ?? 0o644,
-                path,
-              });
-            }
-          }
-        }
+        await restore(pre, op.path);
         if (merge) {
           break;
         }

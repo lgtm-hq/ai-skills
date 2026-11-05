@@ -10,6 +10,8 @@ import {
   readSkillsLock,
   scanInstalledSkills,
 } from "../lib/adopt.ts";
+import { acquireStateLock } from "../lib/journal/journal.ts";
+import { stateRoot } from "../lib/journal/receipts.ts";
 import { parseArguments, validateUnattendedCommandOptions } from "../lib/options.ts";
 import { readState } from "./fixtures/state.ts";
 
@@ -380,6 +382,58 @@ describe("planAdopt", () => {
 });
 
 describe("adoptSkills", () => {
+  test("asks for confirmation without holding the state lock and refuses on drift", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "ai-skills-adopt-confirm-"));
+    const home = await mkdtemp(join(tmpdir(), "ai-skills-adopt-confirm-home-"));
+    const env = { cwd, home };
+    try {
+      await mkdir(join(cwd, ".cursor/skills/pdf"), { recursive: true });
+      await writeFile(join(cwd, ".cursor/skills/pdf/SKILL.md"), "# pdf\n");
+      const skillsLock = {
+        version: 1,
+        skills: {
+          pdf: {
+            sourceType: "github",
+            sourceUrl: "https://github.com/anthropics/skills",
+            ref: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+            skillPath: "skills/pdf/SKILL.md",
+          },
+        },
+      };
+      let scans = 0;
+      const dependencies = (drift: boolean) => ({
+        confirm: async () => {
+          // Another command can take the lock while the user reads the prompt.
+          const release = await acquireStateLock(join(stateRoot(env), "lock"), { waitMs: 0 });
+          await release();
+          return true;
+        },
+        loadVendors: async () => ({ vendors }),
+        now: () => new Date("2026-07-10T21:00:00.000Z"),
+        pathEnvironment: env,
+        readSkillsLock: async () => skillsLock,
+        scanInstalled: async (): Promise<Record<string, string[]>> => {
+          scans += 1;
+          return drift && scans > 1 ? {} : { pdf: ["cursor"] };
+        },
+        write: () => {},
+      });
+      const options = { agents: [], global: false, project: true, yes: false };
+
+      await expect(adoptSkills(options, dependencies(true))).rejects.toThrow(
+        "Installed state changed while adopt was waiting for confirmation",
+      );
+      expect((await readState("project", env)).plugins).toEqual({});
+
+      const result = await adoptSkills(options, dependencies(false));
+      expect(result.adopted).toEqual(["anthropics"]);
+      expect(Object.keys((await readState("project", env)).plugins)).toEqual(["anthropics"]);
+    } finally {
+      await rm(cwd, { force: true, recursive: true });
+      await rm(home, { force: true, recursive: true });
+    }
+  });
+
   test("writes a gateway lock from skills-lock installs without calling skills CLI", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "ai-skills-adopt-"));
     try {

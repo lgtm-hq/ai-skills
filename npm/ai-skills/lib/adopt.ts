@@ -15,6 +15,7 @@ import {
   PROJECTOR_EXPLODE,
   refreshPluginFileHashes,
 } from "./lockfile.ts";
+import { readInstallState } from "./journal/receipts.ts";
 import { withStateSession } from "./journal/recover.ts";
 import type { JournalHooks } from "./journal/recover.ts";
 import { resolveScope } from "./options.ts";
@@ -269,6 +270,35 @@ export async function adoptSkills(
       }
     });
 
+  const plan = async (lock: Awaited<ReturnType<typeof readInstallState>>) => {
+    const stock = await readStock(scope);
+    const installed = filterAgents(await scanInstalled(scope), options.agents);
+    const { vendors } = await loadVendorCatalog();
+    return planAdopt(lock, installed, stock.skills, vendors, now, pathEnv);
+  };
+  const report = (planned: Awaited<ReturnType<typeof plan>>, wrote: boolean) => ({
+    adopted: wrote ? Object.keys(planned.adopt).sort() : [],
+    alreadyTracked: planned.alreadyTracked,
+    ambiguous: planned.ambiguous,
+    skippedMissingLock: planned.skippedMissingLock,
+    wrote,
+  });
+  // Plan and confirm without the state lock, so a prompt never blocks other
+  // commands; the commit below re-plans under the lock and refuses on drift.
+  const preview = await plan(await readInstallState(scope, pathEnv));
+  const summary = formatAdoptSummary(preview);
+  if (Object.keys(preview.adopt).length === 0) {
+    write(summary);
+    return report(preview, false);
+  }
+  if (!options.yes) {
+    if (!(await confirm(summary))) {
+      write("Adopt cancelled; installed state unchanged.");
+      return report(preview, false);
+    }
+  } else {
+    write(summary);
+  }
   return withStateSession(
     {
       env: pathEnv,
@@ -279,52 +309,32 @@ export async function adoptSkills(
         : { lockWaitMs: dependencies.journal.lockWaitMs }),
     },
     async (session) => {
-      const lock = session.view;
-      const stock = await readStock(scope);
-      const installed = await scanInstalled(scope);
-      const filteredInstalled = filterAgents(installed, options.agents);
-      const { vendors } = await loadVendorCatalog();
-      const plan = planAdopt(lock, filteredInstalled, stock.skills, vendors, now, pathEnv);
-      const summary = formatAdoptSummary(plan);
-      const unchanged = {
-        adopted: [],
-        alreadyTracked: plan.alreadyTracked,
-        ambiguous: plan.ambiguous,
-        skippedMissingLock: plan.skippedMissingLock,
-        wrote: false,
-      };
-      if (Object.keys(plan.adopt).length === 0) {
-        write(summary);
-        return unchanged;
+      const planned = await plan(session.view);
+      if (JSON.stringify(planned.adopt) !== JSON.stringify(preview.adopt)) {
+        throw new Error(
+          "Installed state changed while adopt was waiting for confirmation; nothing was " +
+            "recorded. Re-run adopt.",
+        );
       }
-      if (!options.yes) {
-        const accepted = await confirm(summary);
-        if (!accepted) {
-          write("Adopt cancelled; installed state unchanged.");
-          return unchanged;
-        }
-      } else {
-        write(summary);
-      }
-      const next = mergeLockEntries(lock, await hashAdoptedEntries(plan.adopt, dependencies.hash));
+      const next = mergeLockEntries(
+        session.view,
+        await hashAdoptedEntries(planned.adopt, dependencies.hash),
+      );
       // Adopt records ownership only: a transaction with no ops, committed by the receipt.
       await session.transact({
         hooks: dependencies.journal,
         kind: "adopt",
         next: {
           artifactDigest: session.receipt?.artifactDigest ?? null,
-          fingerprints: { adapters: {}, policy: session.receipt?.fingerprints.policy ?? null },
+          fingerprints: {
+            adapters: { ...session.receipt?.fingerprints.adapters },
+            policy: session.receipt?.fingerprints.policy ?? null,
+          },
           plugins: next.plugins,
         },
         ops: [],
       });
-      return {
-        adopted: Object.keys(plan.adopt).sort(),
-        alreadyTracked: plan.alreadyTracked,
-        ambiguous: plan.ambiguous,
-        skippedMissingLock: plan.skippedMissingLock,
-        wrote: true,
-      };
+      return report(planned, true);
     },
   );
 }

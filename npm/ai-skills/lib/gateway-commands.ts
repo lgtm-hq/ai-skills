@@ -353,8 +353,12 @@ async function removePlugin(
     }
     try {
       await removeDir(pluginDir);
-    } catch {
-      // Untracked files remain; keep the folder.
+    } catch (error) {
+      // Untracked files remain (or it is already gone): keep the folder.
+      // Anything else is a real failure and rolls the remove back.
+      if (!isAbsentOrOccupied(error)) {
+        throw error;
+      }
     }
   }
   for (const agent of lanes.cliNative) {
@@ -375,6 +379,18 @@ async function removePlugin(
       owner: pluginId,
     });
   }
+}
+
+/**
+ * Whether an rmdir failure only means the directory is non-empty or absent.
+ */
+function isAbsentOrOccupied(error: unknown): boolean {
+  return Boolean(
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    ["ENOTEMPTY", "EEXIST", "ENOENT", "ENOTDIR"].includes(String(error.code)),
+  );
 }
 
 /**
@@ -1023,7 +1039,9 @@ async function updateComposition(
     dependencies.sourceRoot !== undefined
       ? dependencies.sourceRoot
       : findCatalogSourceRoot(environment.cwd ?? process.cwd());
-  const baked = entry.vendor === "lgtm-hq" ? null : await loadBakedPlugin(pluginId);
+  // Any baked tree wins over the checkout, first-party included, so an update
+  // run from an installed package still finds its local source.
+  const baked = await loadBakedPlugin(pluginId);
   const explode =
     lanes.explode.length === 0
       ? null

@@ -191,7 +191,7 @@ JSON as build output. Settled _why_ lives in
     previous hashes, host CLI registrations the gateway created, adapter
     fingerprints and the generation number. An unknown receipt version fails
     closed. `AI_SKILLS_STATE_DIR` relocates the state root.
-  - Every `install`, `update`, `remove` and `adopt` runs as one journaled
+  - Every `install`, `update`, `remove`, `adopt` and `rollback` runs as one journaled
     transaction under `~/.ai-skills/state/journal/<txn>/` while holding
     `~/.ai-skills/state/lock`; a second command waits, then fails naming the
     holder, and a lock left by a dead process is recovered. The next mutating
@@ -199,7 +199,11 @@ JSON as build output. Settled _why_ lives in
     interrupted. If it can do neither, it stops and prints the journal path.
   - Earlier gateway lockfiles (`~/.ai-skills/lock.json`,
     `./ai-skills-lock.json`, schema v2) are still read but never written;
-    the first commit copies their entries into the receipt. v1 locks are
+    the first commit copies their entries into the receipt. From then on the
+    receipt is authoritative and the old file is ignored and goes stale: edits
+    to a committed `./ai-skills-lock.json` (a merge, a teammate's install) no
+    longer reach this machine. Teams that shared that file should install (or
+    `sk adopt`) on each machine; #586 converts and retires it. v1 locks are
     treated as empty. `list` annotates MISSING and MODIFIED installs instead
     of listing them as healthy.
 - **`rollback`** restores the previous generation of a scope byte for byte,

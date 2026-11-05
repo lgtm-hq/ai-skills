@@ -11,6 +11,7 @@ import {
   readlink,
   rename,
   rm,
+  rmdir,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1514,6 +1515,74 @@ describe("gateway maintenance commands", () => {
     });
   });
 
+  test("updates a first-party plugin from its baked tree without a catalog checkout", async () => {
+    const baked = await mkdtemp(join(tmpdir(), "ai-skills-baked-first-party-"));
+    const previous = process.env.AI_SKILLS_PLUGINS_BAKED;
+    try {
+      await mkdir(join(baked, ".claude-plugin"), { recursive: true });
+      await writeFile(
+        join(baked, ".claude-plugin/marketplace.json"),
+        JSON.stringify({ name: "ai-skills", plugins: [{ name: "zeta-tools", version: "9.9.9" }] }),
+      );
+      await writeFile(
+        join(baked, "BAKE.json"),
+        JSON.stringify({
+          vendors: [
+            {
+              id: "lgtm-hq",
+              plugins: [{ id: "zeta-tools" }],
+              repo: "lgtm-hq/ai-skills",
+              sha: "v0.0.0-dev",
+            },
+          ],
+        }),
+      );
+      await mkdir(join(baked, "zeta-tools/skills/zeta-one"), { recursive: true });
+      await writeFile(join(baked, "zeta-tools/skills/zeta-one/SKILL.md"), "# zeta-one baked\n");
+      process.env.AI_SKILLS_PLUGINS_BAKED = baked;
+      const stale = {
+        ...lock,
+        plugins: {
+          "zeta-tools": pluginEntry({
+            agents: {
+              cursor: {
+                files: { "zeta-one/SKILL.md": "abc" },
+                projector: "explode" as const,
+                root: `${FIXTURE_ROOT}/.cursor/skills`,
+              },
+            },
+            repo: "lgtm-hq/ai-skills",
+            sha: "v0.0.0-old",
+            vendor: "lgtm-hq",
+            version: "0.0.0-old",
+          }),
+        },
+      };
+      await withProject(stale, async (project) => {
+        const result = await updateSkills(options, {
+          isInstalled: async () => true,
+          lockEnvironment: project.env,
+          run: forbidSkillsCli,
+          warn: () => {},
+        });
+        expect(result.updated).toEqual(["zeta-tools"]);
+        expect(await readFile(join(project.cwd, ".cursor/skills/zeta-one/SKILL.md"), "utf8")).toBe(
+          "# zeta-one baked\n",
+        );
+        const written = await readState("project", project.env);
+        expect(written.plugins["zeta-tools"].version).toBe(getPackageVersion());
+        expect(written.plugins["zeta-tools"].sha).toBe(`v${getPackageVersion()}`);
+      });
+    } finally {
+      if (previous === undefined) {
+        delete process.env.AI_SKILLS_PLUGINS_BAKED;
+      } else {
+        process.env.AI_SKILLS_PLUGINS_BAKED = previous;
+      }
+      await rm(baked, { force: true, recursive: true });
+    }
+  });
+
   test("does not tell update to pass --projector explode when catalog is missing", async () => {
     const nativeLock = {
       gatewayVersion: "0.0.0-dev",
@@ -1571,6 +1640,38 @@ describe("gateway maintenance commands", () => {
     },
     scope: "project" as const,
     version: 2,
+  });
+
+  test("rolls back a remove when the plugin directory cannot be removed", async () => {
+    await withProject(null, async (project) => {
+      const pluginDir = join(project.cwd, ".cursor/plugins/local/lint");
+      await mkdir(join(pluginDir, "skills/lint"), { recursive: true });
+      await writeFile(join(pluginDir, "skills/lint/SKILL.md"), "# lint\n");
+      await writeLegacyLock(
+        cursorLock(pluginDir, { "skills/lint/SKILL.md": sha("# lint\n") }),
+        project.env,
+      );
+      await expect(
+        removeSkills(options, {
+          journal: {
+            io: {
+              rmdir: (async (path: string) => {
+                if (path === pluginDir) {
+                  throw Object.assign(new Error("EACCES: permission denied"), {
+                    code: "EACCES",
+                  });
+                }
+                return rmdir(path);
+              }) as typeof rmdir,
+            },
+          },
+          lockEnvironment: project.env,
+          run: forbidSkillsCli,
+        }),
+      ).rejects.toThrow("Remove rolled back: EACCES");
+      expect(await readFile(join(pluginDir, "skills/lint/SKILL.md"), "utf8")).toBe("# lint\n");
+      await expectUncommitted(project);
+    });
   });
 
   test("updates a native Cursor plugin by reassembling the local tree", async () => {

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
   chmod,
-  link,
   lstat,
   mkdir,
   open,
@@ -12,6 +11,7 @@ import {
   rmdir,
   stat,
   symlink,
+  truncate,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -28,7 +28,14 @@ import {
 import type { ExecResult } from "../adapters/shared/native-cli.ts";
 import type { Op, Scope, WriteFileOp } from "../adapters/types.ts";
 import type { PluginLockEntry } from "../lockfile.ts";
-import { appendDurable, fsyncPath, isCode, mkdirDurable, writeDurable } from "./durable.ts";
+import {
+  appendDurable,
+  fsyncPath,
+  isCode,
+  mkdirDurable,
+  syncCreatedDirs,
+  writeDurable,
+} from "./durable.ts";
 import { isRecord, parseReceipt } from "./receipts.ts";
 import type { Receipt } from "./receipts.ts";
 
@@ -209,6 +216,13 @@ export class JournalTxn {
   private dynamicSeen = false;
   private failedSeen = false;
 
+  /**
+   * How to mend a log whose last append a crash interrupted, before the next
+   * append: drop a torn tail, or terminate a complete record that lost its
+   * newline. Without this the next record would be glued onto the tail.
+   */
+  private tail: { truncate: number } | { newline: true } | null = null;
+
   private constructor(dir: string, intent: Intent, records: LogRecord[]) {
     this.dir = dir;
     this.intent = intent;
@@ -316,6 +330,18 @@ export class JournalTxn {
     }
     const records: LogRecord[] = [];
     const text = await readFile(join(dir, "log.jsonl"), "utf8");
+    let tail: JournalTxn["tail"] = null;
+    if (text !== "" && !text.endsWith("\n")) {
+      const complete = text.slice(0, text.lastIndexOf("\n") + 1);
+      let parsed = false;
+      try {
+        JSON.parse(text.slice(complete.length));
+        parsed = true;
+      } catch {
+        // Torn: the record never completed.
+      }
+      tail = parsed ? { newline: true } : { truncate: Buffer.byteLength(complete) };
+    }
     const lines = text.split("\n");
     for (const [index, line] of lines.entries()) {
       if (line === "") {
@@ -337,7 +363,9 @@ export class JournalTxn {
       }
       records.push(record);
     }
-    return new JournalTxn(dir, intent, records);
+    const txn = new JournalTxn(dir, intent, records);
+    txn.tail = tail;
+    return txn;
   }
 
   get id(): string {
@@ -583,7 +611,17 @@ export class JournalTxn {
   }
 
   private async append(record: LogRecord): Promise<void> {
-    await appendDurable(join(this.dir, "log.jsonl"), JSON.stringify(record));
+    const log = join(this.dir, "log.jsonl");
+    if (this.tail) {
+      if ("truncate" in this.tail) {
+        await truncate(log, this.tail.truncate);
+        await fsyncPath(log);
+      } else {
+        await appendDurable(log, "");
+      }
+      this.tail = null;
+    }
+    await appendDurable(log, JSON.stringify(record));
     this.track(record);
   }
 
@@ -1174,10 +1212,7 @@ async function missingDirs(path: string): Promise<string[]> {
 }
 
 async function makeDirectory(path: string, io: JournalIo): Promise<void> {
-  const created = await io.mkdir(path, { recursive: true });
-  if (created) {
-    await fsyncPath(dirname(created));
-  }
+  await syncCreatedDirs(path, await io.mkdir(path, { recursive: true }));
 }
 
 async function chmodQuiet(path: string, mode: number, io: JournalIo): Promise<void> {
@@ -1437,9 +1472,8 @@ export async function acquireStateLock(
     if (current === undefined) {
       continue;
     }
-    if (await isStaleLock(path, current)) {
+    if ((await isStaleLock(path, current)) && (await breakStaleLock(path, current))) {
       options.onStale?.(current);
-      await breakLock(path, current);
       continue;
     }
     if (Date.now() - started >= waitMs) {
@@ -1505,27 +1539,55 @@ export function pidAlive(pid: number): boolean {
   }
 }
 
-async function breakLock(path: string, judged: LockHolder | null): Promise<void> {
-  // Move it aside, then check it is the lock judged stale: a competing
-  // recoverer may already have replaced it with a fresh one, which is put back.
-  const aside = `${path}.stale-${randomUUID()}`;
+/**
+ * Remove a lock judged stale, unless it changed since it was judged.
+ *
+ * Recoverers serialize on an `O_EXCL` guard (`<lock>.recover`) and re-read the
+ * lock under it, so the lock file is removed only while it is still the exact
+ * stale lock that was judged (same token, or still torn). A fresh lock is never
+ * moved or deleted, and the lock path is never empty while a valid holder has
+ * it. A guard left by a recoverer that died is cleared once it is old.
+ *
+ * @returns Whether this call removed the stale lock.
+ */
+export async function breakStaleLock(path: string, judged: LockHolder | null): Promise<boolean> {
+  const guard = `${path}.recover`;
   try {
-    await rename(path, aside);
+    await (await open(guard, "wx", 0o644)).close();
   } catch (error) {
-    if (isCode(error, "ENOENT")) {
-      return;
+    if (!isCode(error, "EEXIST")) {
+      throw error;
     }
-    throw error;
+    try {
+      if (Date.now() - (await stat(guard)).mtimeMs > TORN_LOCK_MS) {
+        await rm(guard, { force: true });
+      }
+    } catch (statError) {
+      if (!isCode(statError, "ENOENT")) {
+        throw statError;
+      }
+    }
+    return false;
   }
-  const moved = await readLockHolder(aside);
-  if (judged !== null && moved?.token !== judged.token) {
-    await link(aside, path).catch((error: unknown) => {
-      if (!isCode(error, "EEXIST")) {
+  try {
+    const current = await readLockHolder(path);
+    if (current === undefined) {
+      return false;
+    }
+    const unchanged = judged === null ? current === null : current?.token === judged.token;
+    if (!unchanged || !(await isStaleLock(path, current))) {
+      return false;
+    }
+    await unlink(path).catch((error: unknown) => {
+      if (!isCode(error, "ENOENT")) {
         throw error;
       }
     });
+    await fsyncPath(dirname(path));
+    return true;
+  } finally {
+    await rm(guard, { force: true });
   }
-  await rm(aside, { force: true });
 }
 
 async function releaseStateLock(path: string, token: string): Promise<void> {

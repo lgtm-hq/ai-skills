@@ -1,8 +1,6 @@
 [
   {
-    "args": [
-      "vendors"
-    ],
+    "args": ["vendors"],
     "stdout": "mattpocock\tmattpocock/skills\t3cca18b368ae95cdbdebbff572ccafa662551015\tMIT\nanthropics\tanthropics/skills\tca45fc496a3436251f191354091d557da31c15b5\tApache-2.0\nanthropics-claude-code\tanthropics/claude-code\tab9b2cf7bb9e4f98ff264c07a22e46d83c29c558\tCommercial\ncaveman\tJuliusBrussee/caveman\t15581d14007fd01fb3f132016741962f34936ca2\tMIT\ndavidondrej\tdavidondrej/skills\t7201ee3854ada65e1863f68690800aa483e6d085\tMIT\n",
     "stderr": "",
     "status": 0,
@@ -10,15 +8,7 @@
     "tree": {}
   },
   {
-    "args": [
-      "install",
-      "-y",
-      "--project",
-      "-a",
-      "codex",
-      "--bundle",
-      "review"
-    ],
+    "args": ["install", "-y", "--project", "-a", "codex", "--bundle", "review"],
     "stdout": "1 installed · 0 already present · 0 repaired\n",
     "stderr": "",
     "status": 0,
@@ -39,10 +29,7 @@
     }
   },
   {
-    "args": [
-      "list",
-      "--project"
-    ],
+    "args": ["list", "--project"],
     "stdout": "review\tlgtm-hq\tlgtm-hq/ai-skills\tv0.0.0-dev\tcodex\tcoderabbit,greptile,lint,lintro-review,test\n",
     "stderr": "",
     "status": 0,
@@ -63,13 +50,7 @@
     }
   },
   {
-    "args": [
-      "doctor",
-      "-y",
-      "--project",
-      "-a",
-      "codex"
-    ],
+    "args": ["doctor", "-y", "--project", "-a", "codex"],
     "stdout": "host\tcodex\texplode\tprobe\tn/a\nplugin\treview\tcodex\texplode\t\n",
     "stderr": "",
     "status": 0,
@@ -90,13 +71,7 @@
     }
   },
   {
-    "args": [
-      "update",
-      "-y",
-      "--project",
-      "-a",
-      "codex"
-    ],
+    "args": ["update", "-y", "--project", "-a", "codex"],
     "stdout": "",
     "stderr": "",
     "status": 0,
@@ -117,15 +92,7 @@
     }
   },
   {
-    "args": [
-      "remove",
-      "-y",
-      "--project",
-      "-a",
-      "codex",
-      "--skill",
-      "review"
-    ],
+    "args": ["remove", "-y", "--project", "-a", "codex", "--skill", "review"],
     "stdout": "",
     "stderr": "",
     "status": 0,
@@ -141,10 +108,7 @@
     }
   },
   {
-    "args": [
-      "list",
-      "--project"
-    ],
+    "args": ["list", "--project"],
     "stdout": "",
     "stderr": "",
     "status": 0,
@@ -205,10 +169,7 @@
     }
   },
   {
-    "args": [
-      "list",
-      "--project"
-    ],
+    "args": ["list", "--project"],
     "stdout": "",
     "stderr": "",
     "status": 0,
@@ -229,9 +190,7 @@
     }
   },
   {
-    "args": [
-      "--bad-flag"
-    ],
+    "args": ["--bad-flag"],
     "stdout": "",
     "stderr": "Unknown option: --bad-flag\n",
     "status": 1,

@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promise
 import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { acquireStateLock, StateLockBusyError } from "../lib/journal/journal.ts";
+import { acquireStateLock, breakStaleLock, StateLockBusyError } from "../lib/journal/journal.ts";
 import { readReceipt, stateRoot } from "../lib/journal/receipts.ts";
 import { withStateSession } from "../lib/journal/recover.ts";
 import { PACKAGE_ROOT } from "../lib/paths.ts";
@@ -131,6 +131,31 @@ describe("state lock", () => {
       expect(JSON.parse(await readFile(lock, "utf8")).pid).toBe(process.pid);
       await release();
       await expect(readFile(lock, "utf8")).rejects.toThrow("ENOENT");
+    });
+  });
+
+  test("stale recovery never removes a lock that changed since it was judged", async () => {
+    await withHome(async (_home, lock) => {
+      await mkdir(dirname(lock), { recursive: true });
+      const fresh = { hostname: hostname(), pid: process.pid, startedAt: "now", token: "fresh" };
+      await writeFile(lock, JSON.stringify(fresh));
+      // Judged torn, or judged as another holder: the fresh lock stays.
+      expect(await breakStaleLock(lock, null)).toBe(false);
+      expect(await breakStaleLock(lock, { ...fresh, pid: 999_999_999, token: "dead" })).toBe(false);
+      expect(JSON.parse(await readFile(lock, "utf8")).token).toBe("fresh");
+      // Another recoverer holds the guard: nothing is touched.
+      const dead = { ...fresh, pid: 999_999_999, token: "dead" };
+      await writeFile(lock, JSON.stringify(dead));
+      await writeFile(`${lock}.recover`, "");
+      expect(await breakStaleLock(lock, dead)).toBe(false);
+      expect(JSON.parse(await readFile(lock, "utf8")).token).toBe("dead");
+      // An abandoned guard is cleared once old; the stale lock then goes.
+      const old = new Date(Date.now() - 60_000);
+      await utimes(`${lock}.recover`, old, old);
+      expect(await breakStaleLock(lock, dead)).toBe(false);
+      expect(await breakStaleLock(lock, dead)).toBe(true);
+      await expect(readFile(lock, "utf8")).rejects.toThrow("ENOENT");
+      await expect(readFile(`${lock}.recover`, "utf8")).rejects.toThrow("ENOENT");
     });
   });
 
