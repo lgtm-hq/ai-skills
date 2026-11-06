@@ -50,7 +50,7 @@ jobs:
 
       - name: Set up uv without installing project dependencies
         # yamllint disable-line rule:line-length
-        uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: false
 
@@ -76,7 +76,7 @@ jobs:
       - name: Append GitHub-signed generated file with head-race protection
         if: steps.regenerate.outputs.changed == 'true'
         # yamllint disable-line rule:line-length
-        uses: lgtm-hq/lgtm-ci/.github/actions/create-signed-commit@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+        uses: lgtm-hq/lgtm-ci/.github/actions/create-signed-commit@b830ca6972f0c9cbaeb1363283de594f68d66acf # v0.87.0
         with:
           token: ${{ steps.app-token.outputs.token }}
           branch: ${{ github.head_ref }}

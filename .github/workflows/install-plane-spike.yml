@@ -18,7 +18,7 @@ concurrency:
 jobs:
   changes:
     name: Check harness inputs
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       changed: ${{ steps.inputs.outputs.changed }}
@@ -37,9 +37,9 @@ jobs:
           fetch-depth: 0
       - name: Set up change-detector Python
         # yamllint disable-line rule:line-length
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.13'
+          python-version: '3.15'
       - name: Compare changed files with harness inputs
         id: inputs
         run: python3 scripts/ci/install_plane_changes.py
@@ -96,7 +96,7 @@ jobs:
           bun-version: ${{ steps.pins.outputs.bun }}
       - name: Set up uv (build/setup only)
         # yamllint disable-line rule:line-length
-        uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: ${{ steps.pins.outputs.uv }}
           enable-cache: false
@@ -120,7 +120,7 @@ jobs:
       - name: Upload raw evidence even on collection failure
         if: always()
         # yamllint disable-line rule:line-length
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: spike-evidence-${{ matrix.runner }}
           path: |
@@ -133,7 +133,7 @@ jobs:
         # yamllint disable-line rule:line-length
         if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' && steps.build.outcome == 'success' }}
         # yamllint disable-line rule:line-length
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: spike-linux-payloads
           path: |
@@ -147,7 +147,7 @@ jobs:
     name: Linux empty-allowlist offline evidence
     needs: native
     if: ${{ !cancelled() && needs.native.result != 'skipped' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     defaults:
       run:
@@ -175,7 +175,7 @@ jobs:
       - name: Download already built local-file payloads
         id: payloads
         # yamllint disable-line rule:line-length
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: spike-linux-payloads
           path: build/spike
@@ -236,7 +236,7 @@ jobs:
           SPIKE_MEASURE_OUTCOME: ${{ steps.measure.outcome }}
           SPIKE_ACQUISITION_OUTCOME: ${{ steps.acquisition.outcome }}
         # yamllint disable-line rule:line-length
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: spike-evidence-linux-empty-allowlist
           path: build/spike/results/*.json
@@ -259,7 +259,7 @@ jobs:
     name: Install plane harness gate
     needs: [changes, native, offline-linux]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Harden runner

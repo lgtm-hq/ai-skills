@@ -49,11 +49,11 @@ jobs:
     with:
       egress-policy: block
       job-name: '🛠️ Lintro Code Quality'
-      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
+      tooling-ref: 'b830ca6972f0c9cbaeb1363283de594f68d66acf' # v0.87.0
       # Override the reusable default so CI matches
       # pyproject.toml's canonical lintro pin and validate-lintro-version.yml.
       # yamllint disable-line rule:line-length
-      lintro-image: ghcr.io/lgtm-hq/py-lintro@sha256:087b6c6a24830c0904aef88e8fdbcb51d1078fcef842d72f9656e21ba6e6f3fd
+      lintro-image: ghcr.io/lgtm-hq/py-lintro@sha256:9f7510d65d063e2f0f1bdccb2b8f486d744ba21753341e75e5bbd8c9b29a9aae
 
   publish-quality-summary:
     needs: quality
@@ -62,11 +62,11 @@ jobs:
       && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.fork == false
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-publish-quality-summary.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-publish-quality-summary.yml@b830ca6972f0c9cbaeb1363283de594f68d66acf # v0.87.0
     with:
       egress-policy: block
       exit-code: ${{ needs.quality.outputs.exit-code }}
-      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
+      tooling-ref: 'b830ca6972f0c9cbaeb1363283de594f68d66acf' # v0.87.0
     permissions:
       contents: read
       pull-requests: write
@@ -75,12 +75,12 @@ jobs:
     name: Run pytest suite
     needs: quality
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-test-python.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-test-python.yml@b830ca6972f0c9cbaeb1363283de594f68d66acf # v0.87.0
     with:
       egress-policy: block
       python-version: '3.13'
       test-path: tests
-      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
+      tooling-ref: 'b830ca6972f0c9cbaeb1363283de594f68d66acf' # v0.87.0
     permissions:
       # actions: write is required at compile time by the reusable
       # workflow's aggregate job (matrix mode only, skipped here), which
@@ -94,12 +94,12 @@ jobs:
   validate:
     needs: quality
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@b830ca6972f0c9cbaeb1363283de594f68d66acf # v0.87.0
     with:
       job-name: '📚 Validate Skill Structure'
       setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/validate.sh
-      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
+      tooling-ref: 'b830ca6972f0c9cbaeb1363283de594f68d66acf' # v0.87.0
       egress-policy: block
       egress-preset: quality
       # Harden-runner pre reads inputs only. setup installs ripgrep via apt and
@@ -154,12 +154,12 @@ jobs:
       contents: read
       pull-requests: write
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@b830ca6972f0c9cbaeb1363283de594f68d66acf # v0.87.0
     with:
       job-name: '🍞 Bake vendor plugins'
       setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/ci/bake_vendor_plugins_gate.sh
-      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
+      tooling-ref: 'b830ca6972f0c9cbaeb1363283de594f68d66acf' # v0.87.0
       egress-policy: block
       egress-preset: quality
       # Same allowlist as validate: uv/PyPI plus GitHub tarball hosts.
@@ -210,12 +210,12 @@ jobs:
       contents: read
       pull-requests: write
     # yamllint disable-line rule:line-length
-    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@8f0fd9339df5d30a529aa572ceb51345b8be33a0 # v0.79.2
+    uses: lgtm-hq/lgtm-ci/.github/workflows/reusable-validate.yml@b830ca6972f0c9cbaeb1363283de594f68d66acf # v0.87.0
     with:
       job-name: '🔒 Lock check and offline build'
       setup-commands: bash scripts/install-validate-deps.sh
       script: scripts/ci/lock_build_gate.sh
-      tooling-ref: '8f0fd9339df5d30a529aa572ceb51345b8be33a0' # v0.79.2
+      tooling-ref: 'b830ca6972f0c9cbaeb1363283de594f68d66acf' # v0.87.0
       egress-policy: block
       egress-preset: quality
       # Same allowlist as the vendor bake: uv/PyPI plus GitHub tarball hosts.
@@ -326,7 +326,7 @@ jobs:
           bun-version: ${{ steps.bun-version.outputs.bun-version }}
       - name: Set up uv
         # yamllint disable-line rule:line-length
-        uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Install Python test prerequisites
         run: uv sync --frozen
       - name: Check gateway package

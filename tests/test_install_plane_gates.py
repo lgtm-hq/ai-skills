@@ -33,16 +33,17 @@ def test_aggregate_gate_uses_released_source_without_candidate_override() -> Non
     workflow = yaml.safe_load((workflows / "all-checks-gate.yml").read_text())
     assert_that(workflow["jobs"]).contains_only("gate")
     job = workflow["jobs"]["gate"]
-    # Fixed external acceptance contract: v0.83.13 contains the reviewed helper.
+    # Fixed external acceptance contract: v0.87.0 keeps the reviewed helper
+    # first released in v0.83.13.
     assert_that(job["uses"]).is_equal_to(
-        f"{reusable}fff562d6558f7513f50dd128ea2461aab6855a03"
+        f"{reusable}b830ca6972f0c9cbaeb1363283de594f68d66acf"
     )
     # No source/head/ignore overrides: the reusable selects its own workflow SHA.
     assert_that(job["with"]).is_equal_to(
         {
             "allow-empty": False,
             "egress-policy": "block",
-            "runner-image": "ubuntu-24.04",
+            "runner-image": "ubuntu-26.04",
         }
     )
     assert_that(job["permissions"]).is_equal_to(

@@ -20,7 +20,7 @@ concurrency:
 jobs:
   release-spike:
     name: Require current-head release harness
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Poll covers the full sequential harness plus 30 minutes of queue allowance;
     # leave another five minutes for this job's checkout/setup and final result.
     timeout-minutes: 100

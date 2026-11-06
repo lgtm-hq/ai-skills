@@ -6,8 +6,8 @@
   "lockVersion": 1,
   "manifest": {
     "apiVersion": "ai-skills.dev/v1",
-    "digest": "sha256:5a22b4803b09672154cf5a4c1e72ed08cf86945578ed7edde8e07fb36bed07f3",
-    "inputsDigest": "sha256:062cd558c9a013d253872b713f80ed0b778102ffd31f25408501b536cdc1be1d"
+    "digest": "sha256:1b5c33204df6a7872551b133c96fa1fdb7527984853c2d81a1d5e0555ee18e84",
+    "inputsDigest": "sha256:60b6d7c8ea077113641e7a3d7e7e1f084bf90eaaae883e4752833d2916bedd01"
   },
   "packages": [
     {
@@ -2558,7 +2558,7 @@
       "version": "15581d1"
     },
     {
-      "artifactDigest": "sha256:0da1cd132b207886a4d5aa9261d36634d10eb36ffc3d084b8bb8f7d7e64efa36",
+      "artifactDigest": "sha256:f10139ae03a7f7997eab377808ae2e8a13bb8e79653f446924ff113f4a78d504",
       "capabilities": [
         {
           "closure": [
@@ -2576,7 +2576,7 @@
                   "path": "skills/thinking-and-docs/4x4",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:856e970fa9f4d905aecfe6a16d7aed467aa7571b550c9bb00bf7ee5a80c9d853"
                 },
@@ -2610,7 +2610,7 @@
                   "path": "skills/thinking-and-docs/adr-verbatim",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:9f76582a298db4fa0ae4fd10deea928174ca15cb5d64112c7fc75d9a633ba799"
                 },
@@ -2644,7 +2644,7 @@
                   "path": "skills/ops-and-setup/anti-sleep",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:3d6294dc95fa346bbca3b6675347c70599ea977592de6a58092734d13b86177a"
                 },
@@ -2678,7 +2678,7 @@
                   "path": "skills/thinking-and-docs/ask-then-build",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:6d0dd818dc9dc852a985298f30111ccbe18a27f2c2b5a2bdbbfe13db56e72959"
                 },
@@ -2712,7 +2712,7 @@
                   "path": "skills/agent-orchestration/bb-cli",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:60ce033d67a26e8367ce1c82c92c49238d8b045b5589833038cd26a80024a5b3"
                 },
@@ -2746,7 +2746,7 @@
                   "path": "skills/agent-orchestration/bb-plugins",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:827103d335d66aeef5bb559fe851c1a2ad1922269a734b1cb0b40b1fb5d484fc"
                 },
@@ -2780,7 +2780,7 @@
                   "path": "skills/thinking-and-docs/before-building",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:6123968b2d1a7c4de396949aa66449c9dbc47eb44b5f2876545975cb45caa714"
                 },
@@ -2814,7 +2814,7 @@
                   "path": "skills/thinking-and-docs/better-prompt",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:989b23e091d251da15d464a3f33e32b7814cb6d2c54eb7279f67734a57e1acac"
                 },
@@ -2848,7 +2848,7 @@
                   "path": "skills/ops-and-setup/boat",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:941643230616d181ea778db476f053a4b605612820429735c486648216c09ba1"
                 },
@@ -2882,7 +2882,7 @@
                   "path": "skills/research-and-web/browser-harness",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:8956f9543fbf76420edbd3ff938ad0a9aa5b68fd2c10a4fd46e2cbbb5f06a911"
                 },
@@ -2916,7 +2916,7 @@
                   "path": "skills/research-and-web/browser-use",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:284de12d95defe04bd65270fdc73753dfd0b57aa85aecbcb06fa494dc18530f6"
                 },
@@ -2950,7 +2950,7 @@
                   "path": "skills/agent-orchestration/cmux",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:938ad7bcf9267f57b125f1748f066fc1fa51103f891e8fd377a664d196214ae8"
                 },
@@ -2984,7 +2984,7 @@
                   "path": "skills/agent-orchestration/codex-subagent",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:84773c02535e478c4dbce6aee5ea0fbf5444d64697a76f80d5869bb12f00b901"
                 },
@@ -3018,7 +3018,7 @@
                   "path": "skills/ops-and-setup/create-readonly-db-role",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:540967e6c9cef224e7437318978f7336a9025c431d3c125bf7380ff9f2f01996"
                 },
@@ -3052,7 +3052,7 @@
                   "path": "skills/ops-and-setup/cua-driver",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:8245cabfd3f29fd1cb7ea46da2df63e1adec7d365ce490dee89b203491674002"
                 },
@@ -3086,7 +3086,7 @@
                   "path": "skills/thinking-and-docs/decisions",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:a4c2a647e127d996b757b3318209c57db260a86f400a9f87b502571a317f9e0f"
                 },
@@ -3120,7 +3120,7 @@
                   "path": "skills/research-and-web/deep-research",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:b4b541ca2db924bafcded875a520fef4cb248f96c06210b27163b1f1a0c554ea"
                 },
@@ -3155,7 +3155,7 @@
                   "path": "skills/research-and-web/deep-scrape",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:0ff43596a8d45002f66c78e17952cf42bb60456e651b62a98f6d2f4354a2762b"
                 },
@@ -3189,7 +3189,7 @@
                   "path": "skills/research-and-web/deepapi",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:0f3f41da69dd50f96a63baf6f90ffba170c2b67e573404a2414c1b280dda6ea7"
                 },
@@ -3223,7 +3223,7 @@
                   "path": "skills/thinking-and-docs/designs",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:9768252b21edbec490b48299e02285240686790977c47593c53ef4d41966ae4f"
                 },
@@ -3257,7 +3257,7 @@
                   "path": "skills/skill-authoring/distribute-skill-to-all-agents",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:5c660660736190867a176f5c244f064fb34ec441e57637ce8a59bb0458aad2d2"
                 },
@@ -3291,7 +3291,7 @@
                   "path": "skills/research-and-web/domain-checker",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:3c0bd95d0689e857699dc1818ec5184b299881bba69f30a6e4ec1b4bb9c7d0ef"
                 },
@@ -3325,7 +3325,7 @@
                   "path": "skills/skill-authoring/effective-agent-skills",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:cbfabf7efceeeb2d79c01b3d2e93d53ed75c61d9178738b0e4aa9ee944b29ba3"
                 },
@@ -3359,7 +3359,7 @@
                   "path": "skills/agent-orchestration/fable-review",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:83a028997879772eca279d4f8d274130f418b1deb2e7a4b9091ee3cd4dd4d7b6"
                 },
@@ -3393,7 +3393,7 @@
                   "path": "skills/agent-orchestration/fable-safe-prompt",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:c190f5b1d15f484402d1ad36ea498c4a597fe9002557d24d2fd1eafdd5c8f978"
                 },
@@ -3427,7 +3427,7 @@
                   "path": "skills/thinking-and-docs/file-tree",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:3a6450bec4e6fccdf7f3258dcaee741a4120e0dce22151d3c293e0358e624251"
                 },
@@ -3461,7 +3461,7 @@
                   "path": "skills/research-and-web/fireflies-transcript",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:557164270e480edfa98c39c75e0b568717145f03df42015d3985b4e3bb3abe66"
                 },
@@ -3495,7 +3495,7 @@
                   "path": "skills/agent-orchestration/git-worktree",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:64220387c3b33110a25c36174ecb471fd1929172fa4a814db416d5e2157319a9"
                 },
@@ -3529,7 +3529,7 @@
                   "path": "skills/ops-and-setup/github-outside-sandbox",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:4639c30fad305ba868d0838d21118263b34bfd7156a4b36ff77784d2509f4ecd"
                 },
@@ -3563,7 +3563,7 @@
                   "path": "skills/ops-and-setup/global-agent-guardrails",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:892132b51659bdc1a629b92feb205c1de5c936021984da921ccc1b6847495c74"
                 },
@@ -3597,7 +3597,7 @@
                   "path": "skills/agent-orchestration/goal-loop",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:209aa22a8d875eaa5e8a9919ab6c7cf7a1a8349a2cff8de0b7e815b78b78dad9"
                 },
@@ -3631,7 +3631,7 @@
                   "path": "skills/agent-orchestration/gpt-review",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:8227a85af38230209142e7a89f1306ec773e9718f0fc7384c43f0423a694a131"
                 },
@@ -3665,7 +3665,7 @@
                   "path": "skills/agent-orchestration/handoff",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [
                     "alias"
                   ],
@@ -3703,7 +3703,7 @@
                   "path": "skills/agent-orchestration/herdr",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:da7074c6cb22c0fca3d1b0843573bddcc745994d7e379047328ae5431b5c2372"
                 },
@@ -3737,7 +3737,7 @@
                   "path": "skills/thinking-and-docs/image-prompt",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:a35ea1c70c0f604e59bbb891fa45e732c0518dd761889686940f392a58d75926"
                 },
@@ -3771,7 +3771,7 @@
                   "path": "skills/thinking-and-docs/keep-track",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:a6fe8615cd59b84ab8239d2197cfbf2f07a9a4faebd0c79b5f5a01de40eac294"
                 },
@@ -3805,7 +3805,7 @@
                   "path": "skills/agent-orchestration/kimi-review",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:5ff8efe6a87930ac6511feef0a1d4b74b34e328168e53df2a7e15d247ac94db8"
                 },
@@ -3839,7 +3839,7 @@
                   "path": "skills/agent-orchestration/larp-detector",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:7be1384edfbe13319b00c1e8d6d7a1f33598801190ddde06ae35c886f3a0d293"
                 },
@@ -3873,7 +3873,7 @@
                   "path": "skills/agent-orchestration/muse-review",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:3a62dd00f57159d38a9abca176737bb2ddfdc6b38fef4cdb3731cefb7f55aad6"
                 },
@@ -3907,7 +3907,7 @@
                   "path": "skills/agent-orchestration/nagent",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:00a659c573662d3df9184098b13a2317adcbec1360d9892cfc99719686613fdb"
                 },
@@ -3941,7 +3941,7 @@
                   "path": "skills/agent-orchestration/new-grok-bot",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:d1e26a0d36238e6fb7b1aa784b3a6dffc4e25747d82e0a15175ae4d91e7f4817"
                 },
@@ -3975,7 +3975,7 @@
                   "path": "skills/research-and-web/online-shopping",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:debe2e650fdf972fe96539477503db9b37607450ecf8d3937201ef05035743a2"
                 },
@@ -4009,7 +4009,7 @@
                   "path": "skills/ops-and-setup/openrouter",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:49c97862130c501835cc7a708896ae7fba095cfc535376cd7c35bc9eb469a8af"
                 },
@@ -4043,7 +4043,7 @@
                   "path": "skills/ops-and-setup/persistent-localhost",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:44c1a10bdda306cc88d7253ca1439c4568f8bf56bdadac2e955a607d936153ec"
                 },
@@ -4077,7 +4077,7 @@
                   "path": "skills/ops-and-setup/prompt-for-others",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:5f666ddc63537f1c0c87bdd9f03c1efd8904d586a8b3bf1e6ea83e40075caaa4"
                 },
@@ -4111,7 +4111,7 @@
                   "path": "skills/skill-authoring/push-skills",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:283d5a9a693b4a9dc466eae10a617f93e561f51af5a353e3ac009f8656bc14b7"
                 },
@@ -4145,7 +4145,7 @@
                   "path": "skills/thinking-and-docs/read-all-adrs",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:16c0564cc0fea03607d50ddb0c4769394fe2b0d8cb0ab3b3789eaf942bf17ec9"
                 },
@@ -4179,7 +4179,7 @@
                   "path": "skills/thinking-and-docs/remind",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:0d06eb4fd2667d894af7ac9c80e41a9a69c9a05d489351d0f8fe08f526f00cc6"
                 },
@@ -4213,7 +4213,7 @@
                   "path": "skills/thinking-and-docs/rename",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:1c856289f4b23afc53280648bc01905b8f6d5bd5a994ffe1f0d0ae73a4a0b645"
                 },
@@ -4247,7 +4247,7 @@
                   "path": "skills/ops-and-setup/rename-process",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:6a632ae1f007693f219cbd7440bc84e24fc7856fd0d03b9177f503bf73ebf230"
                 },
@@ -4281,7 +4281,7 @@
                   "path": "skills/ops-and-setup/repo-sync",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:25008ef997b490141fc0a907299001de0895e6ff38e7ce612511d15207b5a6a7"
                 },
@@ -4315,7 +4315,7 @@
                   "path": "skills/agent-orchestration/reset-cursor-acp",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:ef7da64078197cec4decb18d4b77a40e60d2ed9b47933d8953b34c374089852b"
                 },
@@ -4349,7 +4349,7 @@
                   "path": "skills/ops-and-setup/risky-changes",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:bd9c169d653c0ab101405c499f13b215b4e773bda383ad86898316244aab8476"
                 },
@@ -4383,7 +4383,7 @@
                   "path": "skills/thinking-and-docs/save-idea",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:d413cdb0be7a0763e7cda4768c996c417708d0b40725f4e43ba21099048b1bec"
                 },
@@ -4417,7 +4417,7 @@
                   "path": "skills/agent-orchestration/self-archive",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:28fa33b27d2bdc7320114010f0536f46cc79502f3123ebcb33a01963291acba3"
                 },
@@ -4451,7 +4451,7 @@
                   "path": "skills/ops-and-setup/setup-help",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:759e1a19a09ab29a55e4bc68c491995c5e1cbaee06e87449fb9119a60215b629"
                 },
@@ -4485,7 +4485,7 @@
                   "path": "skills/thinking-and-docs/signal-from-expert",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:89267f93cc5d8465b312b492e5ae354f7e87112fba77bff6ba3e75182b589512"
                 },
@@ -4519,7 +4519,7 @@
                   "path": "skills/thinking-and-docs/stop-overthinking",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:3dca048e09c1d82b78c27cb922545a6a47598bb87278274293886e2914d8113c"
                 },
@@ -4553,7 +4553,7 @@
                   "path": "skills/thinking-and-docs/teach",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [
                     "alias"
                   ],
@@ -4591,7 +4591,7 @@
                   "path": "skills/agent-orchestration/total-review",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:5cf1151f767b271635e1795fb3ec2cddb63ebf78bed0072e5bbdb831ab92303e"
                 },
@@ -4625,7 +4625,7 @@
                   "path": "skills/research-and-web/varied-search",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:64b5ce4c9a30f2993e521d70d1464c81aae1cf0699294de7f908c126798ee05b"
                 },
@@ -4659,7 +4659,7 @@
                   "path": "skills/research-and-web/who-is-this",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:3845b9e09a618bd58ae550cee52cb24b646fae3623e5377797e50c75df4100d3"
                 },
@@ -4693,7 +4693,7 @@
                   "path": "skills/research-and-web/deepapi",
                   "publisher": "davidondrej",
                   "renamedFrom": null,
-                  "rev": "7201ee3854ada65e1863f68690800aa483e6d085",
+                  "rev": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
                   "transforms": [],
                   "treeDigest": "sha256:0f3f41da69dd50f96a63baf6f90ffba170c2b67e573404a2414c1b280dda6ea7"
                 },
@@ -4713,7 +4713,7 @@
         }
       ],
       "treeDigest": "sha256:8e88f582266beee6825c1beeb56118eae64865f48c3f6321d8503f7c6f1611e1",
-      "version": "7201ee3"
+      "version": "8aa01cf"
     },
     {
       "artifactDigest": "sha256:ab96b17ab5c06efab88490e575e5e9b7715e1522a9e6a0fe80811da9a0b9b055",
@@ -7053,8 +7053,8 @@
       },
       "id": "davidondrej",
       "repo": "davidondrej/skills",
-      "sha": "7201ee3854ada65e1863f68690800aa483e6d085",
-      "sourceDigest": "sha256:133076b4acd2a40c7fe81747587c7c8997856b56bfdb92500e96ff49fead5c90"
+      "sha": "8aa01cf45110ae378bdf5c319cd41ac8fdbdf448",
+      "sourceDigest": "sha256:6d49cdb082e640de4c49d5ee36df3b48929a43c8f1b637bdc2dfe3df7a374a4c"
     },
     {
       "filters": {
