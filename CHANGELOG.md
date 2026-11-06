@@ -21,6 +21,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.32.0] - 2026-11-06
+
+### Added
+
+- **install**: install receipts, durable transaction journal, crash recovery and
+  rollback (#658) (041cbea)
+- **install**: add the destination adapter contract and registry (#657) (40cf427)
+- **install**: consume artifacts with digest verification, filtering, origin denies and
+  a consumer profile (#655) (4478858)
+
+### Changed
+
+- **deps**: update step-security/harden-runner action to v2.22.4 (patch) (#673)
+  (fe54666)
+- **deps**: consolidated dependency catch-up (open and rate-limited Renovate updates)
+  (#667) (8b33d09)
+
 ## [0.31.0] - 2026-11-05
 
 ### Added
@@ -1207,7 +1224,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI with py-lintro image, `scripts/validate.sh`, and pytest coverage ([#3])
 - Pin `lgtm-hq/lgtm-ci` reusable release workflows to commits present on GitHub ([#7])
 
-[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/lgtm-hq/ai-skills/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.9...v0.31.0
 [0.30.9]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.8...v0.30.9
 [0.30.8]: https://github.com/lgtm-hq/ai-skills/compare/v0.30.7...v0.30.8
