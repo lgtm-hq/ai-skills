@@ -8,7 +8,7 @@ dependencies = ["pyyaml>=6.0.2", "markdown-it-py>=4.2.0", "jsonschema>=4.26.0"]
 ai-skills-engine = "ai_skills_engine.cli:main"
 
 [build-system]
-requires = ["uv_build>=0.11.26,<0.12"]
+requires = ["uv_build>=0.13.7,<0.14"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -27,7 +27,7 @@ dev = [
   # ci.yml's lintro-image override; this dependency is the canonical version pin.
   # The validate-lintro-version workflow fails the build if this drifts
   # from the pinned image, so local `uv run lintro chk` matches CI.
-  "lintro==0.173.7",
+  "lintro==0.178.1",
   "pytest-cov>=7.0.0",
   "pytest-timeout>=2.4.0",
   "pytest-xdist>=3.8.0",

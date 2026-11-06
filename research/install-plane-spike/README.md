@@ -146,7 +146,7 @@ pytest, assertpy and PyYAML at exact repository-lock versions and uses
 `uv --no-project --isolated`, so a local `.venv` cannot supply undeclared test
 dependencies. Set `SPIKE_PYTHON` to the settings pin when invoking it. Build also
 enforces Bun tests and typecheck. Collector runs exercise compiled TypeScript and
-bundled Python separately. Shared uv 0.11.26 supports the selected CPython 3.14.6
+bundled Python separately. Shared uv 0.13.7 supports the selected CPython 3.14.6
 on every target; local historical 3.14.7 results are not interchangeable with it.
 
 Registry measurement publishes a scripts-free npm wrapper with optional os/cpu
