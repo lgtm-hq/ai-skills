@@ -19,6 +19,7 @@ unavailable or a skill here explicitly overrides that preference.
 - `babysit-pr`: Autonomously drive an open PR to merge-ready state by triaging Greptile and CodeRabbit review comments, fixing CI failures, handling CodeRabbit rate limits, and looping until checks are green with no unresolved actionable threads. With the --merge flag, also merge the PR(s) once binding merge-queue conditions are met. Use when asked to babysit a PR, shepherd a PR, or keep a PR merge-ready until review/CI cycles complete. (`skills/babysit-pr/SKILL.md`)
 - `backlog`: Interactive dispatcher for backlog work. Asks one routing question — drive PRs to merge, or implement issues to open-PR state — then follow-ups based on the answer, and hands off to implement-issues / babysit-pr with standing policy applied. Use when asked to work the backlog or run /backlog. (`skills/backlog/SKILL.md`)
 - `branch`: Start work on a new branch or worktree. Use when asked to start a new branch, new worktree, begin work on a feature/fix, or start fresh. Supports issue numbers and plain descriptions. (`skills/branch/SKILL.md`)
+- `catch-up-deps`: Org-wide dependency catch-up - fold every open and rate-limited Renovate update for a repo into one consolidated PR, migrate breaking majors, reassess vulnerability suppressions, shepherd it to merge and through release, then move to the next repo in the owner's priority order. Strict authority boundaries - no gate or toleration changes, no unrequested issues, bot-owned follow-ups merged from the bot's own PR. Use when asked to catch up dependencies, clear the Renovate backlog, or consolidate dependency PRs. (`skills/catch-up-deps/SKILL.md`)
 - `coderabbit`: Run CodeRabbit CLI for pre-push AI diff review. Use when asked for CodeRabbit, cr review, or as part of the default pre-push review set with greptile and lintro-review. Max 2-3 runs per change set. (`skills/coderabbit/SKILL.md`)
 - `commit`: Pre-commit workflow and commit guidelines. Use when asked to commit changes. Requires passing lint and tests, signed commits, semantic prefixes, imperative mood. (`skills/commit/SKILL.md`)
 - `greptile`: Run Greptile CLI for pre-push AI branch review. Use when asked for Greptile review, raycast/extensions pre-PR checks, or as part of the default pre-push review set with coderabbit and lintro-review. Max 2 runs per change set. (`skills/greptile/SKILL.md`)
@@ -53,7 +54,7 @@ unavailable or a skill here explicitly overrides that preference.
 - `turbo-verify`: Verify that a theme implementation is complete and follows all project standards. Use after adding a new theme to turbo-themes. (`skills/turbo-verify/SKILL.md`)
 - `which-pr`: Report which PR is being worked on in the current conversation. Use when asked about the current PR context. (`skills/which-pr/SKILL.md`)
 
-Total skills: 40
+Total skills: 41
 
 <!-- markdownlint-enable MD013 -->
 

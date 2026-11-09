@@ -90,6 +90,8 @@ packages:
         path: skills/babysit-pr
       - id: backlog
         path: skills/backlog
+      - id: catch-up-deps
+        path: skills/catch-up-deps
       - id: implement-issues
         path: skills/implement-issues
       - id: which-pr

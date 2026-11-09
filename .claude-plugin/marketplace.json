@@ -89,6 +89,7 @@
       "skills": [
         "./skills/babysit-pr",
         "./skills/backlog",
+        "./skills/catch-up-deps",
         "./skills/implement-issues",
         "./skills/which-pr"
       ]
