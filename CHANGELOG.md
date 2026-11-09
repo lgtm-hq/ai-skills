@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **skills**: add `catch-up-deps` for consolidated dependency catch-ups, and an
+  **Authority boundaries** section in `stand-general`
+
 ### Changed
 
 ### Deprecated

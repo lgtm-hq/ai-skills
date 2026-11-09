@@ -72,6 +72,7 @@ groups:
     skills:
       - babysit-pr
       - backlog
+      - catch-up-deps
       - implement-issues
       - which-pr
 

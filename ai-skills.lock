@@ -6,8 +6,8 @@
   "lockVersion": 1,
   "manifest": {
     "apiVersion": "ai-skills.dev/v1",
-    "digest": "sha256:1b5c33204df6a7872551b133c96fa1fdb7527984853c2d81a1d5e0555ee18e84",
-    "inputsDigest": "sha256:60b6d7c8ea077113641e7a3d7e7e1f084bf90eaaae883e4752833d2916bedd01"
+    "digest": "sha256:63e3a0c148ae549df61a9bf74a0d9b6ef5b2af5852755f3979e4ecf006c28857",
+    "inputsDigest": "sha256:f669084b52acf1475d678993a9067fc77c0713715c4d7b5eee2b579a5a16aa9a"
   },
   "packages": [
     {
@@ -5385,7 +5385,7 @@
       "version": "0.31.0"
     },
     {
-      "artifactDigest": "sha256:96f0087b50fb487d25367bc2b89f544e841ef9f47e54dadace08af1c017806fe",
+      "artifactDigest": "sha256:bd4996c693091e767d57670dc88268f3191917879f2f36191885fbc1b1d44c81",
       "capabilities": [
         {
           "closure": [
@@ -5429,7 +5429,7 @@
                   "renamedFrom": null,
                   "rev": null,
                   "transforms": [],
-                  "treeDigest": "sha256:4034f769aecbc2037d000c679ec8e48a111c762bc726fbd56a694ba29814eb73"
+                  "treeDigest": "sha256:c30b979d07674a5221baec7ca1ee1aa19999f12b03cfdf81201ece821e09b9bc"
                 }
               ]
             }
@@ -5534,11 +5534,11 @@
       ],
       "id": "lgtm-hq/standards",
       "resources": [],
-      "treeDigest": "sha256:13ee9d995656465ee5009082d986561d79836dfc6df3e00186a28405f12d3bba",
+      "treeDigest": "sha256:e5251d7bd00b277c3fcec6a986ec40f0683b29ba57712c29c14d6a0ae9f26901",
       "version": "0.31.0"
     },
     {
-      "artifactDigest": "sha256:5fc2e43ee0c37b2151bb96e1484793299ccf7cf703f38b708c4032569c0c3363",
+      "artifactDigest": "sha256:82ba3a87ea7f9529cebedef271fca6f961b43ab4b4cb5962b82b58bed0ae2f67",
       "capabilities": [
         {
           "closure": [
@@ -5583,6 +5583,30 @@
                   "rev": null,
                   "transforms": [],
                   "treeDigest": "sha256:856a6b6fbe671ede0721fbf3f3b3ab7cc5063f1c6bac150171ef69260f45d8dc"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "closure": [
+            "lgtm-hq/subagents:skill/catch-up-deps"
+          ],
+          "id": "lgtm-hq/subagents:skill/catch-up-deps",
+          "lineage": [
+            {
+              "attestations": [],
+              "id": "lgtm-hq/subagents:skill/catch-up-deps",
+              "lineage": [
+                {
+                  "id": "lgtm-hq/subagents:skill/catch-up-deps",
+                  "origin": "github.com/lgtm-hq/ai-skills",
+                  "path": "skills/catch-up-deps",
+                  "publisher": "lgtm-hq",
+                  "renamedFrom": null,
+                  "rev": null,
+                  "transforms": [],
+                  "treeDigest": "sha256:c6a88846decb4191eff0296efad34b59a2d9496dac383f3d64e68300c8f4896c"
                 }
               ]
             }
@@ -5639,7 +5663,7 @@
       ],
       "id": "lgtm-hq/subagents",
       "resources": [],
-      "treeDigest": "sha256:f681fa95a92069d943f0d861491c168742f7c40faca5718981e744eaa4246fc1",
+      "treeDigest": "sha256:da0f4bd6702e0e4fdc69be898bae4cac735a48f252b54c8efd3717cb0adb45bd",
       "version": "0.31.0"
     },
     {

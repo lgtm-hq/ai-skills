@@ -64,6 +64,39 @@ When adding a module or significant function:
   locally before merging, not just the parts CI checks.
 - Backlog handling for dependency issues/PRs (closing, repurposing,
   announcing changes): follow the `issue` skill's Backlog Stewardship section.
+- **Prefer the bot's own PR.** Digest and version follow-ups that Renovate or
+  a release bot will open are merged from that PR, not re-created by hand; see
+  **Authority boundaries** below.
+- Clearing a whole backlog of updates: follow the `catch-up-deps` skill.
+
+## Authority boundaries
+
+Some decisions belong to the owner, however obvious the fix looks. Unless the
+owner granted it explicitly for the task at hand:
+
+- **Gate configuration.** Never add, remove or relax a CI gate, skip allowlist,
+  toleration, lint suppression or vulnerability ignore. Removing an entry that
+  looks stale counts too. Report what the gate caught and propose the change;
+  the owner decides. The one exception is a vulnerability suppression
+  reassessed inside a dependency catch-up the owner asked for, and each of
+  those carries a reason, an expiry and an issue link.
+- **Issues.** Filing an issue that the owner's instructions or the repo's
+  standing policy already call for (red `main`, a babysit blocker) is fine.
+  Filing one to record your own finding or design proposal is not: say it in a
+  sentence and let the owner decide whether it becomes backlog.
+- **Bot-owned pull requests.** When a bot will open the PR (Renovate digest
+  bumps, release version PRs, tap bumps), merge the bot's PR rather than
+  hand-rolling a copy. Close stale bot PRs with a pointer to the one that
+  supersedes them instead of merging old ones.
+- **Publish gates and environments.** Human gates by default. With an explicit
+  grant, approve only what the owner named, one in flight per environment, and
+  stop at the first failure.
+- **Holds.** Work the owner put on hold stays untouched until they lift it,
+  even when it sits next to what you are doing.
+
+When unsure whether a decision is yours, ask before acting. A correct change
+made without authority is still a violation. Consumers: `babysit-pr`,
+`backlog`, `implement-issues`, `catch-up-deps`.
 
 ## Per-repo agent context (`AGENTS.md` / `CLAUDE.md`)
 
