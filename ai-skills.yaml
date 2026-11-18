@@ -217,7 +217,7 @@ vendors:
           skills: '*'
   - id: caveman
     repo: JuliusBrussee/caveman
-    sha: 15581d14007fd01fb3f132016741962f34936ca2
+    sha: a192894723a8f47e7f504c7b5041967ff1f18e55
     branch: main
     displayRef: latest
     license: MIT
