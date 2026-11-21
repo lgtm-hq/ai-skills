@@ -188,7 +188,7 @@ vendors:
             - claude-api
   - id: anthropics-claude-code
     repo: anthropics/claude-code
-    sha: ab9b2cf7bb9e4f98ff264c07a22e46d83c29c558
+    sha: 26a5b52bb5d9f53bff6b4804214ec88deab78ce3
     branch: main
     displayRef: latest
     license: Commercial
