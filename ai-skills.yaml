@@ -418,7 +418,7 @@ vendors:
                 - readme-src-rules-caveman-activate-md
   - id: davidondrej
     repo: davidondrej/skills
-    sha: 8aa01cf45110ae378bdf5c319cd41ac8fdbdf448
+    sha: 0199ba918e835c0801db67ea4fc03039a5cc9974
     branch: main
     displayRef: latest
     license: MIT
